@@ -1,0 +1,30 @@
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+.DS_Store
+
+# Env / secrets
+.env
+.env.local
+
+# Runner local state
+.ainp/
+~/.ai-native/
+
+# Java / Maven
+target/
+*.class
+.mvn/wrapper/maven-wrapper.jar
+
+# Editor
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/
+
+# Local tooling state
+.omc/
+.playwright-mcp/

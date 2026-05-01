@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AI Native Platform</title>
+    <style>
+      :root {
+        --bg: #0d1117;
+        --panel: #161b22;
+        --border: #30363d;
+        --fg: #e6edf3;
+        --muted: #8b949e;
+        --accent: #58a6ff;
+        --pass: #3fb950;
+        --fail: #f85149;
+        --warn: #d29922;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+      }
+      header {
+        padding: 12px 20px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+      }
+      header h1 { font-size: 15px; margin: 0; font-weight: 600; }
+      header .mode { color: var(--muted); font-size: 12px; }
+      main {
+        display: grid;
+        grid-template-columns: 220px 1fr 320px;
+        height: calc(100vh - 47px);
+      }
+      aside, section, .right { padding: 16px; overflow: auto; }
+      aside { border-right: 1px solid var(--border); }
+      .right { border-left: 1px solid var(--border); }
+      h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 8px; }
+      ul { list-style: none; padding: 0; margin: 0; }
+      li {
+        padding: 6px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      li.active { background: var(--panel); }
+      .row { display: grid; grid-template-columns: 100px 1fr; gap: 4px 12px; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+      .row:last-child { border-bottom: 0; }
+      .row .k { color: var(--muted); }
+      .pill {
+        display: inline-block;
+        padding: 1px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+      }
+      .pill.passed, .pill.pass { background: rgba(63,185,80,.15); color: var(--pass); }
+      .pill.failed, .pill.fail { background: rgba(248,81,73,.15); color: var(--fail); }
+      .pill.running, .pill.pending { background: rgba(88,166,255,.15); color: var(--accent); }
+      .pill.warn { background: rgba(210,153,34,.15); color: var(--warn); }
+      pre { background: var(--panel); padding: 10px; border-radius: 4px; overflow: auto; font-size: 12px; }
+      .placeholder { color: var(--muted); padding: 20px; text-align: center; }
+      .stages { display: flex; flex-direction: column; gap: 4px; }
+      .stage { padding: 4px 8px; border-radius: 4px; font-size: 12px; color: var(--muted); }
+      .stage.current { background: var(--panel); color: var(--fg); }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>AI Native Platform <span class="mode" id="api-status">checking API…</span></h1>
+      <span class="mode">Trusted Local Worktree Mode · MVP</span>
+    </header>
+    <main>
+      <aside>
+        <h2>Workflow Runs</h2>
+        <ul id="runs-list"></ul>
+      </aside>
+      <section>
+        <h2>Lifecycle</h2>
+        <div class="stages" id="stages"></div>
+        <div style="height:16px"></div>
+        <h2>Detail</h2>
+        <div id="detail" class="placeholder">Pick a run on the left.</div>
+      </section>
+      <div class="right">
+        <h2>Evidence</h2>
+        <div id="evidence" class="placeholder">CommandRuns / GateRuns will surface here.</div>
+        <div style="height:16px"></div>
+        <h2>Approval</h2>
+        <div id="approval" class="placeholder">No human gate required at this MVP step.</div>
+      </div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

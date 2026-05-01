@@ -1,0 +1,883 @@
+import type {
+  Project,
+  WorkflowRun,
+  StepRun,
+  CommandRun,
+  GateRun,
+  Artifact,
+  BuildRun,
+  TestRun,
+  AgentTask,
+  AgentResult,
+} from '@ainp/shared';
+import { db } from './db';
+
+/**
+ * SQLite-backed store. Keeps a Map-like surface for the entities that the
+ * earlier in-memory store exposed (projects, workflowRuns, stepRuns,
+ * commandRuns) so existing callers in workflow-engine.ts and routes don't
+ * change. Newer entities expose explicit repo methods.
+ */
+
+interface MapLike<T extends { id: string }> {
+  set(id: string, value: T): void;
+  get(id: string): T | undefined;
+  has(id: string): boolean;
+  values(): T[];
+  readonly size: number;
+}
+
+function bool(b: boolean): number {
+  return b ? 1 : 0;
+}
+
+function unbool(n: number | bigint | null): boolean {
+  return Boolean(n);
+}
+
+/** Positional INSERT helper. Keys define column order; values bind 1:1. */
+function upsertRow(table: string, row: Record<string, unknown>): void {
+  const cols = Object.keys(row);
+  const sql = `INSERT OR REPLACE INTO ${table} (${cols.join(',')}) VALUES (${cols
+    .map(() => '?')
+    .join(',')})`;
+  db.prepare(sql).run(...(Object.values(row) as never[]));
+}
+
+function insertRow(table: string, row: Record<string, unknown>): void {
+  const cols = Object.keys(row);
+  const sql = `INSERT INTO ${table} (${cols.join(',')}) VALUES (${cols
+    .map(() => '?')
+    .join(',')})`;
+  db.prepare(sql).run(...(Object.values(row) as never[]));
+}
+
+function countRows(table: string): number {
+  return (db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number }).c;
+}
+
+// ---- projects --------------------------------------------------------------
+
+interface ProjectRow {
+  id: string;
+  name: string;
+  local_path: string;
+  language: string;
+  build_tool: string;
+  default_branch: string;
+  registered_at: string;
+}
+
+function rowToProject(r: ProjectRow): Project {
+  return {
+    id: r.id,
+    name: r.name,
+    localPath: r.local_path,
+    language: r.language as Project['language'],
+    buildTool: r.build_tool as Project['buildTool'],
+    defaultBranch: r.default_branch,
+    registeredAt: r.registered_at,
+  };
+}
+
+const projects: MapLike<Project> & {
+  findByName(name: string): Project | undefined;
+} = {
+  set(_id, p) {
+    upsertRow('projects', {
+      id: p.id,
+      name: p.name,
+      local_path: p.localPath,
+      language: p.language,
+      build_tool: p.buildTool,
+      default_branch: p.defaultBranch,
+      registered_at: p.registeredAt,
+    });
+  },
+  get(id) {
+    const r = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as ProjectRow | null;
+    return r ? rowToProject(r) : undefined;
+  },
+  has(id) {
+    return Boolean(db.prepare('SELECT 1 FROM projects WHERE id = ?').get(id));
+  },
+  values() {
+    return (db.prepare('SELECT * FROM projects').all() as ProjectRow[]).map(rowToProject);
+  },
+  get size() {
+    return countRows('projects');
+  },
+  findByName(name) {
+    const r = db.prepare('SELECT * FROM projects WHERE name = ?').get(name) as ProjectRow | null;
+    return r ? rowToProject(r) : undefined;
+  },
+};
+
+// ---- workflow_runs ---------------------------------------------------------
+
+interface WorkflowRunRow {
+  id: string;
+  project_id: string;
+  type: string;
+  status: string;
+  current_stage: string;
+  config_snapshot_id: string | null;
+  branch: string;
+  workspace_path: string | null;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+function rowToWorkflowRun(r: WorkflowRunRow): WorkflowRun {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    type: r.type as WorkflowRun['type'],
+    status: r.status as WorkflowRun['status'],
+    currentStage: r.current_stage as WorkflowRun['currentStage'],
+    configSnapshotId: r.config_snapshot_id,
+    branch: r.branch,
+    workspacePath: r.workspace_path,
+    title: r.title,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+const workflowRuns: MapLike<WorkflowRun> & {
+  byProject(projectId: string): WorkflowRun[];
+} = {
+  set(_id, run) {
+    upsertRow('workflow_runs', {
+      id: run.id,
+      project_id: run.projectId,
+      type: run.type,
+      status: run.status,
+      current_stage: run.currentStage,
+      config_snapshot_id: run.configSnapshotId,
+      branch: run.branch,
+      workspace_path: run.workspacePath,
+      title: run.title,
+      created_at: run.createdAt,
+      updated_at: run.updatedAt,
+    });
+  },
+  get(id) {
+    const r = db.prepare('SELECT * FROM workflow_runs WHERE id = ?').get(id) as
+      | WorkflowRunRow
+      | null;
+    return r ? rowToWorkflowRun(r) : undefined;
+  },
+  has(id) {
+    return Boolean(db.prepare('SELECT 1 FROM workflow_runs WHERE id = ?').get(id));
+  },
+  values() {
+    return (
+      db.prepare('SELECT * FROM workflow_runs ORDER BY created_at ASC').all() as WorkflowRunRow[]
+    ).map(rowToWorkflowRun);
+  },
+  get size() {
+    return countRows('workflow_runs');
+  },
+  byProject(projectId) {
+    return (
+      db
+        .prepare('SELECT * FROM workflow_runs WHERE project_id = ? ORDER BY created_at ASC')
+        .all(projectId) as WorkflowRunRow[]
+    ).map(rowToWorkflowRun);
+  },
+};
+
+// ---- step_runs -------------------------------------------------------------
+
+interface StepRunRow {
+  id: string;
+  workflow_run_id: string;
+  stage: string;
+  name: string;
+  status: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+function rowToStepRun(r: StepRunRow): StepRun {
+  return {
+    id: r.id,
+    workflowRunId: r.workflow_run_id,
+    stage: r.stage as StepRun['stage'],
+    name: r.name,
+    status: r.status as StepRun['status'],
+    startedAt: r.started_at,
+    completedAt: r.completed_at,
+  };
+}
+
+const stepRuns: MapLike<StepRun> & {
+  byWorkflow(workflowRunId: string): StepRun[];
+} = {
+  set(_id, s) {
+    upsertRow('step_runs', {
+      id: s.id,
+      workflow_run_id: s.workflowRunId,
+      stage: s.stage,
+      name: s.name,
+      status: s.status,
+      started_at: s.startedAt,
+      completed_at: s.completedAt,
+    });
+  },
+  get(id) {
+    const r = db.prepare('SELECT * FROM step_runs WHERE id = ?').get(id) as StepRunRow | null;
+    return r ? rowToStepRun(r) : undefined;
+  },
+  has(id) {
+    return Boolean(db.prepare('SELECT 1 FROM step_runs WHERE id = ?').get(id));
+  },
+  values() {
+    return (db.prepare('SELECT * FROM step_runs').all() as StepRunRow[]).map(rowToStepRun);
+  },
+  get size() {
+    return countRows('step_runs');
+  },
+  byWorkflow(workflowRunId) {
+    return (
+      db
+        .prepare(
+          'SELECT * FROM step_runs WHERE workflow_run_id = ? ORDER BY COALESCE(started_at, "") ASC',
+        )
+        .all(workflowRunId) as StepRunRow[]
+    ).map(rowToStepRun);
+  },
+};
+
+// ---- command_runs ----------------------------------------------------------
+
+interface CommandRunRow {
+  id: string;
+  workflow_run_id: string;
+  step_run_id: string | null;
+  cwd: string;
+  command: string;
+  stage: string;
+  status: string;
+  exit_code: number | null;
+  started_at: string;
+  finished_at: string | null;
+  duration_ms: number | null;
+  stdout_ref: string;
+  stderr_ref: string;
+  stdout_bytes: number;
+  stderr_bytes: number;
+  timed_out: number;
+  truncated: number;
+}
+
+function rowToCommandRun(r: CommandRunRow): CommandRun {
+  return {
+    id: r.id,
+    workflowRunId: r.workflow_run_id,
+    stepRunId: r.step_run_id,
+    cwd: r.cwd,
+    command: r.command,
+    stage: r.stage as CommandRun['stage'],
+    status: r.status as CommandRun['status'],
+    exitCode: r.exit_code,
+    startedAt: r.started_at,
+    finishedAt: r.finished_at,
+    durationMs: r.duration_ms,
+    stdoutRef: r.stdout_ref,
+    stderrRef: r.stderr_ref,
+    stdoutBytes: r.stdout_bytes,
+    stderrBytes: r.stderr_bytes,
+    timedOut: unbool(r.timed_out),
+    truncated: unbool(r.truncated),
+  };
+}
+
+const commandRuns: MapLike<CommandRun> & {
+  byWorkflow(workflowRunId: string): CommandRun[];
+  byStep(stepRunId: string): CommandRun[];
+} = {
+  set(_id, c) {
+    upsertRow('command_runs', {
+      id: c.id,
+      workflow_run_id: c.workflowRunId,
+      step_run_id: c.stepRunId,
+      cwd: c.cwd,
+      command: c.command,
+      stage: c.stage,
+      status: c.status,
+      exit_code: c.exitCode,
+      started_at: c.startedAt,
+      finished_at: c.finishedAt,
+      duration_ms: c.durationMs,
+      stdout_ref: c.stdoutRef,
+      stderr_ref: c.stderrRef,
+      stdout_bytes: c.stdoutBytes,
+      stderr_bytes: c.stderrBytes,
+      timed_out: bool(c.timedOut),
+      truncated: bool(c.truncated),
+    });
+  },
+  get(id) {
+    const r = db.prepare('SELECT * FROM command_runs WHERE id = ?').get(id) as
+      | CommandRunRow
+      | null;
+    return r ? rowToCommandRun(r) : undefined;
+  },
+  has(id) {
+    return Boolean(db.prepare('SELECT 1 FROM command_runs WHERE id = ?').get(id));
+  },
+  values() {
+    return (db.prepare('SELECT * FROM command_runs').all() as CommandRunRow[]).map(
+      rowToCommandRun,
+    );
+  },
+  get size() {
+    return countRows('command_runs');
+  },
+  byWorkflow(workflowRunId) {
+    return (
+      db
+        .prepare('SELECT * FROM command_runs WHERE workflow_run_id = ? ORDER BY started_at ASC')
+        .all(workflowRunId) as CommandRunRow[]
+    ).map(rowToCommandRun);
+  },
+  byStep(stepRunId) {
+    return (
+      db
+        .prepare('SELECT * FROM command_runs WHERE step_run_id = ? ORDER BY started_at ASC')
+        .all(stepRunId) as CommandRunRow[]
+    ).map(rowToCommandRun);
+  },
+};
+
+// ---- gate_runs -------------------------------------------------------------
+
+interface GateRunRow {
+  id: string;
+  gate_id: string;
+  workflow_run_id: string;
+  step_run_id: string | null;
+  status: string;
+  rule_results_json: string;
+  evidence_refs_json: string;
+  command_run_ids_json: string;
+  decided_at: string;
+  agent_note: string | null;
+}
+
+function rowToGateRun(r: GateRunRow): GateRun {
+  return {
+    id: r.id,
+    gateId: r.gate_id as GateRun['gateId'],
+    workflowRunId: r.workflow_run_id,
+    stepRunId: r.step_run_id,
+    status: r.status as GateRun['status'],
+    ruleResults: JSON.parse(r.rule_results_json),
+    evidenceRefs: JSON.parse(r.evidence_refs_json),
+    commandRunIds: JSON.parse(r.command_run_ids_json),
+    decidedAt: r.decided_at,
+    agentNote: r.agent_note,
+  };
+}
+
+const gateRuns = {
+  insert(g: GateRun): void {
+    insertRow('gate_runs', {
+      id: g.id,
+      gate_id: g.gateId,
+      workflow_run_id: g.workflowRunId,
+      step_run_id: g.stepRunId,
+      status: g.status,
+      rule_results_json: JSON.stringify(g.ruleResults),
+      evidence_refs_json: JSON.stringify(g.evidenceRefs),
+      command_run_ids_json: JSON.stringify(g.commandRunIds),
+      decided_at: g.decidedAt,
+      agent_note: g.agentNote,
+    });
+  },
+  get(id: string): GateRun | undefined {
+    const r = db.prepare('SELECT * FROM gate_runs WHERE id = ?').get(id) as GateRunRow | null;
+    return r ? rowToGateRun(r) : undefined;
+  },
+  byWorkflow(workflowRunId: string): GateRun[] {
+    return (
+      db
+        .prepare('SELECT * FROM gate_runs WHERE workflow_run_id = ? ORDER BY decided_at ASC')
+        .all(workflowRunId) as GateRunRow[]
+    ).map(rowToGateRun);
+  },
+  latestForGate(workflowRunId: string, gateId: GateRun['gateId']): GateRun | undefined {
+    const r = db
+      .prepare(
+        'SELECT * FROM gate_runs WHERE workflow_run_id = ? AND gate_id = ? ORDER BY decided_at DESC LIMIT 1',
+      )
+      .get(workflowRunId, gateId) as GateRunRow | null;
+    return r ? rowToGateRun(r) : undefined;
+  },
+  get size(): number {
+    return countRows('gate_runs');
+  },
+};
+
+// ---- artifacts -------------------------------------------------------------
+
+interface ArtifactRow {
+  id: string;
+  kind: string;
+  uri: string;
+  workflow_run_id: string;
+  step_run_id: string | null;
+  size: number;
+  content_type: string;
+  created_at: string;
+  metadata_json: string;
+}
+
+function rowToArtifact(r: ArtifactRow): Artifact {
+  return {
+    id: r.id,
+    kind: r.kind as Artifact['kind'],
+    uri: r.uri,
+    workflowRunId: r.workflow_run_id,
+    stepRunId: r.step_run_id,
+    size: r.size,
+    contentType: r.content_type,
+    createdAt: r.created_at,
+    metadata: JSON.parse(r.metadata_json) as Record<string, unknown>,
+  };
+}
+
+const artifacts = {
+  insert(a: Artifact): void {
+    insertRow('artifacts', {
+      id: a.id,
+      kind: a.kind,
+      uri: a.uri,
+      workflow_run_id: a.workflowRunId,
+      step_run_id: a.stepRunId,
+      size: a.size,
+      content_type: a.contentType,
+      created_at: a.createdAt,
+      metadata_json: JSON.stringify(a.metadata),
+    });
+  },
+  get(id: string): Artifact | undefined {
+    const r = db.prepare('SELECT * FROM artifacts WHERE id = ?').get(id) as ArtifactRow | null;
+    return r ? rowToArtifact(r) : undefined;
+  },
+  byWorkflow(workflowRunId: string): Artifact[] {
+    return (
+      db
+        .prepare('SELECT * FROM artifacts WHERE workflow_run_id = ? ORDER BY created_at ASC')
+        .all(workflowRunId) as ArtifactRow[]
+    ).map(rowToArtifact);
+  },
+  byKind(workflowRunId: string, kind: Artifact['kind']): Artifact[] {
+    return (
+      db
+        .prepare(
+          'SELECT * FROM artifacts WHERE workflow_run_id = ? AND kind = ? ORDER BY created_at ASC',
+        )
+        .all(workflowRunId, kind) as ArtifactRow[]
+    ).map(rowToArtifact);
+  },
+};
+
+// ---- build_runs ------------------------------------------------------------
+
+interface BuildRunRow {
+  id: string;
+  workflow_run_id: string;
+  step_run_id: string | null;
+  language: string;
+  build_tool: string;
+  jdk_version: string;
+  maven_command: string;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+  command_run_ids_json: string;
+  artifact_ids_json: string;
+}
+
+function rowToBuildRun(r: BuildRunRow): BuildRun {
+  return {
+    id: r.id,
+    workflowRunId: r.workflow_run_id,
+    stepRunId: r.step_run_id,
+    language: r.language as BuildRun['language'],
+    buildTool: r.build_tool as BuildRun['buildTool'],
+    jdkVersion: r.jdk_version,
+    mavenCommand: r.maven_command,
+    status: r.status as BuildRun['status'],
+    startedAt: r.started_at,
+    completedAt: r.completed_at,
+    commandRunIds: JSON.parse(r.command_run_ids_json),
+    artifactIds: JSON.parse(r.artifact_ids_json),
+  };
+}
+
+const buildRuns = {
+  insert(b: BuildRun): void {
+    insertRow('build_runs', {
+      id: b.id,
+      workflow_run_id: b.workflowRunId,
+      step_run_id: b.stepRunId,
+      language: b.language,
+      build_tool: b.buildTool,
+      jdk_version: b.jdkVersion,
+      maven_command: b.mavenCommand,
+      status: b.status,
+      started_at: b.startedAt,
+      completed_at: b.completedAt,
+      command_run_ids_json: JSON.stringify(b.commandRunIds),
+      artifact_ids_json: JSON.stringify(b.artifactIds),
+    });
+  },
+  byWorkflow(workflowRunId: string): BuildRun[] {
+    return (
+      db
+        .prepare('SELECT * FROM build_runs WHERE workflow_run_id = ? ORDER BY started_at ASC')
+        .all(workflowRunId) as BuildRunRow[]
+    ).map(rowToBuildRun);
+  },
+};
+
+// ---- test_runs -------------------------------------------------------------
+
+interface TestRunRow {
+  id: string;
+  build_run_id: string;
+  framework: string;
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  errors: number;
+  report_artifact_ids_json: string;
+}
+
+function rowToTestRun(r: TestRunRow): TestRun {
+  return {
+    id: r.id,
+    buildRunId: r.build_run_id,
+    framework: r.framework as TestRun['framework'],
+    total: r.total,
+    passed: r.passed,
+    failed: r.failed,
+    skipped: r.skipped,
+    errors: r.errors,
+    reportArtifactIds: JSON.parse(r.report_artifact_ids_json),
+  };
+}
+
+const testRuns = {
+  insert(t: TestRun): void {
+    insertRow('test_runs', {
+      id: t.id,
+      build_run_id: t.buildRunId,
+      framework: t.framework,
+      total: t.total,
+      passed: t.passed,
+      failed: t.failed,
+      skipped: t.skipped,
+      errors: t.errors,
+      report_artifact_ids_json: JSON.stringify(t.reportArtifactIds),
+    });
+  },
+  byBuild(buildRunId: string): TestRun[] {
+    return (
+      db
+        .prepare('SELECT * FROM test_runs WHERE build_run_id = ?')
+        .all(buildRunId) as TestRunRow[]
+    ).map(rowToTestRun);
+  },
+};
+
+// ---- agent tasks/results ---------------------------------------------------
+
+interface AgentTaskRow {
+  id: string;
+  workflow_run_id: string;
+  step_run_id: string | null;
+  kind: string;
+  backend: string;
+  prompt: string;
+  input_artifact_ids_json: string;
+  created_at: string;
+}
+
+function rowToAgentTask(r: AgentTaskRow): AgentTask {
+  return {
+    id: r.id,
+    workflowRunId: r.workflow_run_id,
+    stepRunId: r.step_run_id,
+    kind: r.kind as AgentTask['kind'],
+    backend: r.backend as AgentTask['backend'],
+    prompt: r.prompt,
+    inputArtifactIds: JSON.parse(r.input_artifact_ids_json),
+    createdAt: r.created_at,
+  };
+}
+
+const agentTasks = {
+  insert(t: AgentTask): void {
+    insertRow('agent_tasks', {
+      id: t.id,
+      workflow_run_id: t.workflowRunId,
+      step_run_id: t.stepRunId,
+      kind: t.kind,
+      backend: t.backend,
+      prompt: t.prompt,
+      input_artifact_ids_json: JSON.stringify(t.inputArtifactIds),
+      created_at: t.createdAt,
+    });
+  },
+  get(id: string): AgentTask | undefined {
+    const r = db.prepare('SELECT * FROM agent_tasks WHERE id = ?').get(id) as
+      | AgentTaskRow
+      | null;
+    return r ? rowToAgentTask(r) : undefined;
+  },
+  byWorkflow(workflowRunId: string): AgentTask[] {
+    return (
+      db
+        .prepare('SELECT * FROM agent_tasks WHERE workflow_run_id = ? ORDER BY created_at ASC')
+        .all(workflowRunId) as AgentTaskRow[]
+    ).map(rowToAgentTask);
+  },
+};
+
+interface AgentResultRow {
+  id: string;
+  task_id: string;
+  status: string;
+  summary: string;
+  output_artifact_ids_json: string;
+  started_at: string;
+  completed_at: string;
+}
+
+function rowToAgentResult(r: AgentResultRow): AgentResult {
+  return {
+    id: r.id,
+    taskId: r.task_id,
+    status: r.status as AgentResult['status'],
+    summary: r.summary,
+    outputArtifactIds: JSON.parse(r.output_artifact_ids_json),
+    startedAt: r.started_at,
+    completedAt: r.completed_at,
+  };
+}
+
+const agentResults = {
+  insert(r: AgentResult): void {
+    insertRow('agent_results', {
+      id: r.id,
+      task_id: r.taskId,
+      status: r.status,
+      summary: r.summary,
+      output_artifact_ids_json: JSON.stringify(r.outputArtifactIds),
+      started_at: r.startedAt,
+      completed_at: r.completedAt,
+    });
+  },
+  byTask(taskId: string): AgentResult | undefined {
+    const r = db.prepare('SELECT * FROM agent_results WHERE task_id = ?').get(taskId) as
+      | AgentResultRow
+      | null;
+    return r ? rowToAgentResult(r) : undefined;
+  },
+};
+
+// ---- approvals + audit_log + runners --------------------------------------
+
+export interface Approval {
+  id: string;
+  workflowRunId: string;
+  gateRunId: string | null;
+  gateId: string;
+  decision: 'approved' | 'rejected';
+  actor: string;
+  comment: string | null;
+  decidedAt: string;
+}
+
+interface ApprovalRow {
+  id: string;
+  workflow_run_id: string;
+  gate_run_id: string | null;
+  gate_id: string;
+  decision: string;
+  actor: string;
+  comment: string | null;
+  decided_at: string;
+}
+
+function rowToApproval(r: ApprovalRow): Approval {
+  return {
+    id: r.id,
+    workflowRunId: r.workflow_run_id,
+    gateRunId: r.gate_run_id,
+    gateId: r.gate_id,
+    decision: r.decision as Approval['decision'],
+    actor: r.actor,
+    comment: r.comment,
+    decidedAt: r.decided_at,
+  };
+}
+
+const approvals = {
+  insert(a: Approval): void {
+    insertRow('approvals', {
+      id: a.id,
+      workflow_run_id: a.workflowRunId,
+      gate_run_id: a.gateRunId,
+      gate_id: a.gateId,
+      decision: a.decision,
+      actor: a.actor,
+      comment: a.comment,
+      decided_at: a.decidedAt,
+    });
+  },
+  byWorkflow(workflowRunId: string): Approval[] {
+    return (
+      db
+        .prepare('SELECT * FROM approvals WHERE workflow_run_id = ? ORDER BY decided_at ASC')
+        .all(workflowRunId) as ApprovalRow[]
+    ).map(rowToApproval);
+  },
+  latestForGate(workflowRunId: string, gateId: string): Approval | undefined {
+    const r = db
+      .prepare(
+        'SELECT * FROM approvals WHERE workflow_run_id = ? AND gate_id = ? ORDER BY decided_at DESC LIMIT 1',
+      )
+      .get(workflowRunId, gateId) as ApprovalRow | null;
+    return r ? rowToApproval(r) : undefined;
+  },
+};
+
+export interface AuditEntry {
+  id: string;
+  workflowRunId: string | null;
+  kind: string;
+  payload: Record<string, unknown>;
+  at: string;
+}
+
+interface AuditRow {
+  id: string;
+  workflow_run_id: string | null;
+  kind: string;
+  payload_json: string;
+  at: string;
+}
+
+function rowToAudit(r: AuditRow): AuditEntry {
+  return {
+    id: r.id,
+    workflowRunId: r.workflow_run_id,
+    kind: r.kind,
+    payload: JSON.parse(r.payload_json),
+    at: r.at,
+  };
+}
+
+const auditLog = {
+  insert(e: AuditEntry): void {
+    insertRow('audit_log', {
+      id: e.id,
+      workflow_run_id: e.workflowRunId,
+      kind: e.kind,
+      payload_json: JSON.stringify(e.payload),
+      at: e.at,
+    });
+  },
+  byWorkflow(workflowRunId: string): AuditEntry[] {
+    return (
+      db
+        .prepare('SELECT * FROM audit_log WHERE workflow_run_id = ? ORDER BY at ASC')
+        .all(workflowRunId) as AuditRow[]
+    ).map(rowToAudit);
+  },
+};
+
+export interface RunnerRecord {
+  id: string;
+  host: string;
+  version: string;
+  jdkVersion: string | null;
+  mavenVersion: string | null;
+  gitVersion: string | null;
+  lastSeenAt: string;
+  status: 'online' | 'stale' | 'offline';
+}
+
+interface RunnerRow {
+  id: string;
+  host: string;
+  version: string;
+  jdk_version: string | null;
+  maven_version: string | null;
+  git_version: string | null;
+  last_seen_at: string;
+  status: string;
+}
+
+function rowToRunner(r: RunnerRow): RunnerRecord {
+  return {
+    id: r.id,
+    host: r.host,
+    version: r.version,
+    jdkVersion: r.jdk_version,
+    mavenVersion: r.maven_version,
+    gitVersion: r.git_version,
+    lastSeenAt: r.last_seen_at,
+    status: r.status as RunnerRecord['status'],
+  };
+}
+
+const runners = {
+  upsert(r: RunnerRecord): void {
+    upsertRow('runners', {
+      id: r.id,
+      host: r.host,
+      version: r.version,
+      jdk_version: r.jdkVersion,
+      maven_version: r.mavenVersion,
+      git_version: r.gitVersion,
+      last_seen_at: r.lastSeenAt,
+      status: r.status,
+    });
+  },
+  list(): RunnerRecord[] {
+    return (
+      db.prepare('SELECT * FROM runners ORDER BY last_seen_at DESC').all() as RunnerRow[]
+    ).map(rowToRunner);
+  },
+};
+
+// ---- public surface --------------------------------------------------------
+
+export const store = {
+  projects,
+  workflowRuns,
+  stepRuns,
+  commandRuns,
+  gateRuns,
+  artifacts,
+  buildRuns,
+  testRuns,
+  agentTasks,
+  agentResults,
+  approvals,
+  auditLog,
+  runners,
+  // Back-compat helpers used by older routes:
+  projectByName: (name: string) => projects.findByName(name),
+  workflowRunsByProject: (projectId: string) => workflowRuns.byProject(projectId),
+  commandRunsByWorkflow: (workflowRunId: string) => commandRuns.byWorkflow(workflowRunId),
+};

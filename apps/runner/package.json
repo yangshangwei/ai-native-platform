@@ -1,0 +1,16 @@
+{
+  "name": "@ainp/runner",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "ainp-runner": "./src/index.ts"
+  },
+  "scripts": {
+    "runner": "bun run src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@ainp/shared": "workspace:*"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "ai-native-platform",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build:shared": "bun run --filter @ainp/shared build",
+    "dev:api": "bun run --filter @ainp/api dev",
+    "dev:web": "bun run --filter @ainp/web dev",
+    "runner": "bun run --filter @ainp/runner runner",
+    "smoke": "bun run scripts/smoke.ts",
+    "e2e": "bun run scripts/e2e.ts",
+    "typecheck": "bun x tsc -p packages/shared/tsconfig.json --noEmit && bun x tsc -p apps/api/tsconfig.json --noEmit && bun x tsc -p apps/runner/tsconfig.json --noEmit && bun x tsc -p apps/web/tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "@types/node": "^22.10.0",
+    "@types/bun": "^1.2.0",
+    "vitest": "^2.1.5"
+  }
+}

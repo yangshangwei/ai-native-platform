@@ -1,0 +1,13 @@
+{
+  "name": "@ainp/web",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun run serve.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@ainp/shared": "workspace:*"
+  }
+}
