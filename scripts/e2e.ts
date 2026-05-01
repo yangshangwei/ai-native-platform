@@ -163,7 +163,7 @@ async function main(): Promise<void> {
     fail(`workflow stage=${detail.run.currentStage}`);
 
   const stagesSeen = new Set(detail.steps.map((s) => s.stage));
-  for (const required of ['requirement', 'design', 'implementation', 'build_test', 'review']) {
+  for (const required of ['context_pack', 'requirement', 'design', 'implementation', 'build_test', 'review']) {
     if (!stagesSeen.has(required)) fail(`missing stage step: ${required}`);
   }
 
@@ -196,6 +196,8 @@ async function main(): Promise<void> {
 
   const kinds = new Set(detail.artifacts.map((a) => a.kind));
   for (const required of [
+    'project_profile',
+    'context_pack',
     'requirement_draft',
     'design_doc',
     'diff',

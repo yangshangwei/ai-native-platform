@@ -9,6 +9,8 @@ import { DEFAULT_MAX_LOG_BYTES, DEFAULT_TIMEOUT_MS, WORKTREES_DIR } from './conf
 import { sendHeartbeat } from './heartbeat';
 import { findSkillForStage } from './skills';
 import { NativeBackend } from './agents/native';
+import { generateProjectProfile } from './profile';
+import { collectAcceptedKnowledge, persistKnowledgeCandidate } from './knowledge';
 
 export interface OrchestrateOpts {
   project: string;
@@ -55,6 +57,9 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<void> {
   let ok = true;
 
   try {
+    // 0. context_pack — generate (or reuse) project profile + assemble Context Pack
+    await runContextPack();
+
     // 1. requirement
     await runStage('requirement', 'requirement_draft', 'requirement_gate');
 
@@ -198,7 +203,18 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<void> {
     console.log(`[runner] awaiting knowledge_gate approval…`);
     const promoted = await awaitApproval(run.id, 'knowledge_gate');
     console.log(`[runner]   knowledge_gate -> ${promoted ? 'approved' : 'rejected'}`);
-    if (!promoted) ok = false;
+    if (!promoted) {
+      ok = false;
+    } else {
+      const stored = await persistKnowledgeCandidate({
+        projectId: project.id,
+        runId: run.id,
+        candidateUri: knowJson.artifact.uri,
+      });
+      if (stored) {
+        console.log(`[runner] knowledge persisted -> ${stored}`);
+      }
+    }
   } catch (err) {
     ok = false;
     console.error('[runner] orchestration failed:', err instanceof Error ? err.message : err);
@@ -215,6 +231,74 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<void> {
   if (!ok) process.exitCode = 1;
 
   // ---- helpers ----
+  async function runContextPack(): Promise<void> {
+    // a. project profile (lazy: scan once and reuse on subsequent runs).
+    const profileResult = await generateProjectProfile({
+      projectId: project.id,
+      name: project.name,
+      localPath: project.localPath,
+      reuseIfPresent: true,
+    });
+
+    const { step } = await api.stepStarted({
+      workflowRunId: run.id,
+      stage: 'context_pack',
+      name: 'context_pack',
+    });
+    const stepId = step.id;
+    const stageArtifactsDir = join(runArtifactsDir, 'context_pack');
+    await mkdir(stageArtifactsDir, { recursive: true });
+
+    const profileArtifact = await api.postArtifact({
+      workflowRunId: run.id,
+      stepRunId: stepId,
+      kind: 'project_profile',
+      uri: `file://${profileResult.profileMdPath}`,
+      size: Buffer.byteLength(profileResult.markdown, 'utf8'),
+      contentType: 'text/markdown',
+      metadata: {
+        projectId: project.id,
+        projectName: project.name,
+        generatedAt: profileResult.profile.generatedAt,
+      },
+    });
+    inputs['project_profile.md'] = profileResult.markdown;
+    console.log(`[runner] project_profile artifact ${profileArtifact.id}`);
+
+    // b. accepted knowledge from prior runs (knowledge → context loop).
+    const acceptedKnowledge = await collectAcceptedKnowledge(project.id);
+    inputs['accepted_knowledge.md'] = acceptedKnowledge;
+    if (acceptedKnowledge) {
+      console.log(`[runner] accepted_knowledge: ${acceptedKnowledge.length} bytes`);
+    }
+
+    // c. run the Context Pack skill.
+    const skill = findSkillForStage('context_pack');
+    if (!skill) throw new Error('no skill for stage context_pack');
+    const result = await backend.run(skill, {
+      workflowRunId: run.id,
+      workspacePath: workspace.path,
+      branch: workspace.branch,
+      title: opts.title,
+      artifactsDir: stageArtifactsDir,
+      inputs,
+    });
+    for (const out of result.outputs) {
+      const a = await api.postArtifact({
+        workflowRunId: run.id,
+        stepRunId: stepId,
+        kind: 'context_pack',
+        uri: `file://${out.path}`,
+        size: out.size,
+        contentType: out.contentType,
+        metadata: { skill: skill.id, output: out.name, stage: 'context_pack' },
+      });
+      inputs[out.name] = await Bun.file(out.path).text();
+      console.log(`[runner] context_pack artifact ${a.id} (${out.name})`);
+    }
+    await api.stepFinished({ stepRunId: stepId, status: 'passed' });
+  }
+
   async function runStage(
     stage: 'requirement' | 'design' | 'review',
     artifactKind: 'requirement_draft' | 'design_doc' | 'other',
@@ -336,3 +420,4 @@ async function awaitApproval(
   }
   throw new Error(`approval timeout for ${gateId} on ${workflowRunId}`);
 }
+
