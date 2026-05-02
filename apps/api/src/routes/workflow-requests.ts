@@ -38,6 +38,7 @@ workflowRequests.post('/', async (c) => {
   let project = body.projectId ? store.projects.get(body.projectId) : undefined;
   if (!project && body.projectName) project = store.projectByName(body.projectName);
   if (!project) return c.json({ error: 'projectId or projectName required' }, 400);
+  if ((project.status ?? 'active') === 'archived') return c.json({ error: 'project is archived' }, 400);
   if (!body.title?.trim()) return c.json({ error: 'title required' }, 400);
 
   const request = createWorkflowRequest({

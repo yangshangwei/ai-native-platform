@@ -35,9 +35,12 @@ interface ProjectDto {
   sourceAuthKind?: ProjectSourceAuthKind;
   sourceUsername?: string | null;
   hasSourceCredential?: boolean;
+  status?: 'active' | 'archived';
+  archivedAt?: string | null;
   language: string;
   buildTool: string;
   defaultBranch: string;
+  sourceBranches?: string[];
   registeredAt: string;
 }
 
@@ -63,6 +66,15 @@ interface SourceDetectFailure {
 
 type SourceDetectResult = SourceDetectSuccess | SourceDetectFailure;
 
+type ProjectBranchListResult =
+  | {
+      ok: true;
+      defaultBranch: string;
+      detectedDefaultBranch: string;
+      branches: string[];
+      metadata: Record<string, string>;
+    }
+  | { ok: false; error: string };
 
 interface LocalDirectoryItem {
   name: string;
@@ -93,6 +105,17 @@ interface ProjectSourceFormState {
   defaultBranch: string;
   detectResult: SourceDetectResult | null;
   detecting: boolean;
+}
+
+
+interface ProjectDeletePreviewDto {
+  canHardDelete: boolean;
+  canArchive: boolean;
+  activeRequests: number;
+  activeRuns: number;
+  totalRequests: number;
+  totalRuns: number;
+  recommendation: 'hard_delete' | 'archive' | 'blocked_active_work' | 'already_archived';
 }
 
 interface RunnerDto {
@@ -166,6 +189,8 @@ const knowledgeDecisions = new Map<string, 'accepted' | 'ignored' | 'edited'>();
 const knowledgeEdits = new Map<string, string>();
 const approvalInFlight = new Set<string>();
 const approvalLastSubmittedAt = new Map<string, number>();
+const projectActionInFlight = new Set<string>();
+const projectBranchRefreshInFlight = new Set<string>();
 
 
 const localDirectoryPicker: LocalDirectoryPickerState = {
@@ -293,6 +318,23 @@ function projectName(projectId: string): string {
 function selectedProject(): ProjectDto | null {
   const active = data.activeDetail?.run.projectId ?? data.runs[0]?.projectId ?? data.projects[0]?.id;
   return data.projects.find((p) => p.id === active) ?? data.projects[0] ?? null;
+}
+
+function activeProjects(): ProjectDto[] {
+  return data.projects.filter((p) => (p.status ?? 'active') === 'active');
+}
+
+function sourceBranchesForProject(project: ProjectDto | null | undefined): string[] {
+  if (!project) return ['main'];
+  return normalizeBranchList(project.defaultBranch, project.sourceBranches);
+}
+
+function normalizeBranchList(defaultBranch: string | null | undefined, branches: string[] | null | undefined): string[] {
+  const normalized = [defaultBranch ?? 'main', ...(branches ?? [])]
+    .map((branch) => branch.trim())
+    .filter(Boolean);
+  const unique = [...new Set(normalized)];
+  return unique.length ? unique : ['main'];
 }
 
 function latestRunner(): RunnerDto | null {
@@ -1346,7 +1388,7 @@ function renderProjectsPage(): HTMLElement {
       el('section', {
         class: 'panel',
         children: [
-          panelHeader('已接入项目', '点击项目卡片可回填到左侧编辑。'),
+          panelHeader('已接入项目', '点击卡片编辑；删除会先判断是否应归档以保留历史。'),
           data.projects.length
             ? el('div', { class: 'stack', children: data.projects.map(renderProjectCard) })
             : el('p', { class: 'muted', text: '暂无项目。' }),
@@ -1662,16 +1704,35 @@ function renderToolchainReadiness(): HTMLElement {
 
 function renderProjectCard(project: ProjectDto): HTMLElement {
   const sourceKind = project.sourceKind ?? 'local';
+  const status = project.status ?? 'active';
+  const action = el('button', {
+    class: status === 'archived' ? 'button ghost small' : 'button danger small',
+    text: projectActionInFlight.has(project.id) ? '处理中…' : status === 'archived' ? '已归档' : '删除 / 归档',
+    attrs: { type: 'button' },
+  });
+  action.disabled = projectActionInFlight.has(project.id) || status === 'archived';
+  action.onclick = (event) => {
+    event.stopPropagation();
+    void deleteOrArchiveProject(project);
+  };
+
   const card = el('article', {
     class: `project-card ${projectSourceForm.editingProjectId === project.id ? 'active' : ''}`,
     attrs: { role: 'button', tabindex: '0', title: '点击回填到左侧编辑' },
     children: [
-      el('div', { children: [el('strong', { text: project.name }), pill(sourceKindLabel(sourceKind), 'muted')] }),
+      el('div', { children: [el('strong', { text: project.name }), pill(status === 'archived' ? '已归档' : sourceKindLabel(sourceKind), status === 'archived' ? 'warn' : 'muted')] }),
       field('Branch', project.defaultBranch),
       field('Auth', authSummary(project)),
+      status === 'archived' ? field('Archived', fmtTime(project.archivedAt)) : null,
       field(sourceKind === 'local' ? 'Path' : 'Repo URL', el('code', { text: project.sourceUrl ?? project.localPath })),
       sourceKind !== 'local' ? field('Managed', el('code', { text: project.localPath })) : null,
-      el('small', { class: 'muted', text: '点击编辑此项目' }),
+      el('div', {
+        class: 'project-card-footer',
+        children: [
+          el('small', { class: 'muted', text: '点击编辑此项目' }),
+          el('div', { class: 'project-card-actions', children: [action] }),
+        ],
+      }),
     ],
   });
   card.onclick = () => editProject(project);
@@ -1682,6 +1743,64 @@ function renderProjectCard(project: ProjectDto): HTMLElement {
     }
   };
   return card;
+}
+
+async function deleteOrArchiveProject(project: ProjectDto): Promise<void> {
+  projectActionInFlight.add(project.id);
+  render();
+  try {
+    const preview = await api<ProjectDeletePreviewDto>(`/projects/${encodeURIComponent(project.id)}/delete-preview`);
+    if (preview.recommendation === 'blocked_active_work') {
+      lastError = `项目 ${project.name} 还有运行中任务/请求（requests=${preview.activeRequests}, runs=${preview.activeRuns}），不能删除或归档。`;
+      return;
+    }
+    if (preview.canHardDelete) {
+      if (!window.confirm(`项目 ${project.name} 没有任何任务历史。确认永久删除项目配置和凭据？`)) return;
+      await api<{ ok: boolean }>(`/projects/${encodeURIComponent(project.id)}`, { method: 'DELETE' });
+      if (projectSourceForm.editingProjectId === project.id) resetProjectSourceForm();
+      lastError = null;
+      await loadData({ render: false });
+      return;
+    }
+    if (preview.canArchive) {
+      if (!window.confirm(`项目 ${project.name} 已有历史任务，将归档而不是物理删除。归档后不能再创建新需求/bug，历史仍保留。确认归档？`)) return;
+      await api<ProjectDto>(`/projects/${encodeURIComponent(project.id)}/archive`, { method: 'POST' });
+      if (projectSourceForm.editingProjectId === project.id) resetProjectSourceForm();
+      lastError = null;
+      await loadData({ render: false });
+      return;
+    }
+    lastError = `项目 ${project.name} 当前不能删除：${preview.recommendation}`;
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+  } finally {
+    projectActionInFlight.delete(project.id);
+    render();
+  }
+}
+
+async function refreshProjectBranches(projectId: string, onUpdated?: () => void): Promise<void> {
+  if (projectBranchRefreshInFlight.has(projectId)) return;
+  projectBranchRefreshInFlight.add(projectId);
+  onUpdated?.();
+  try {
+    const result = await api<ProjectBranchListResult>(`/projects/${encodeURIComponent(projectId)}/branches`);
+    if (!result.ok) {
+      lastError = `刷新项目分支失败：${result.error}`;
+      return;
+    }
+    const project = data.projects.find((p) => p.id === projectId);
+    if (project) {
+      project.defaultBranch = result.defaultBranch || project.defaultBranch;
+      project.sourceBranches = normalizeBranchList(project.defaultBranch, result.branches);
+    }
+    lastError = null;
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+  } finally {
+    projectBranchRefreshInFlight.delete(projectId);
+    onUpdated?.();
+  }
 }
 
 function editProject(project: ProjectDto): void {
@@ -1701,7 +1820,7 @@ function editProject(project: ProjectDto): void {
     localPath: sourceKind === 'local' ? project.localPath : null,
     projectName: project.name,
     defaultBranch: project.defaultBranch || 'main',
-    branches: [project.defaultBranch || 'main'],
+    branches: sourceBranchesForProject(project),
     metadata: { source: 'registered-project', action: 'edit-prefill' },
   };
   projectSourceForm.detecting = false;
@@ -1735,16 +1854,19 @@ function controlledInput(
   return el('label', { class: 'input-block', children: [el('span', { text: label }), input] });
 }
 
-function projectSourcePayload(): Record<string, string> {
-  const base: Record<string, string> = {
+function projectSourcePayload(): Record<string, unknown> {
+  const base: Record<string, unknown> = {
     sourceKind: projectSourceForm.sourceKind,
     defaultBranch: projectSourceForm.defaultBranch || 'main',
   };
+  const detectedBranches = projectSourceForm.detectResult?.ok ? projectSourceForm.detectResult.branches : [];
+  const sourceBranches = normalizeBranchList(projectSourceForm.defaultBranch || 'main', detectedBranches);
+  const withBranches = { ...base, sourceBranches };
   if (projectSourceForm.sourceKind === 'local') {
-    return { ...base, localPath: projectSourceForm.sourceValue };
+    return { ...withBranches, localPath: projectSourceForm.sourceValue };
   }
   return {
-    ...base,
+    ...withBranches,
     sourceUrl: projectSourceForm.sourceValue,
     sourceAuthKind: projectSourceForm.sourceAuthKind,
     ...(projectSourceForm.sourceUsername ? { sourceUsername: projectSourceForm.sourceUsername } : {}),
@@ -1816,20 +1938,83 @@ function resetProjectSourceForm(): void {
 
 function renderNewTaskPage(): HTMLElement {
   const form = el('form', { class: 'form-card wide' });
+  const projects = activeProjects();
   const projectSelect = el('select', { attrs: { name: 'projectId' } });
-  for (const project of data.projects) {
+  for (const project of projects) {
     projectSelect.appendChild(el('option', { text: project.name, attrs: { value: project.id } }));
+  }
+  if (!projects.length) {
+    projectSelect.appendChild(el('option', { text: '暂无可用项目', attrs: { value: '' } }));
+    projectSelect.setAttribute('disabled', 'disabled');
   }
   const typeSelect = el('select', { attrs: { name: 'type' } });
   for (const type of ['feature', 'bugfix', 'smoke']) typeSelect.appendChild(el('option', { text: type, attrs: { value: type } }));
   const title = el('textarea', { attrs: { name: 'title', rows: '7', placeholder: '描述业务目标、验收标准、约束。例如：为报告页增加导出按钮，并确保 mvn test 通过。' } });
+  const branchSelect = el('select', { attrs: { name: 'branch' } });
+  const branchRefresh = el('button', { class: 'button secondary small', text: '刷新分支', attrs: { type: 'button' } });
+  const branchHint = el('p', { class: 'muted compact' });
+  const clickedBranchProjects = new Set<string>();
+  const updateBranchSelect = (projectId: string, preferredBranch: string | null = branchSelect.value || null) => {
+    const project = projects.find((p) => p.id === projectId) ?? projects[0] ?? null;
+    const previousBranch = preferredBranch?.trim() || '';
+    const branches = sourceBranchesForProject(project);
+    const nextBranch = branches.includes(previousBranch)
+      ? previousBranch
+      : branches.includes(project?.defaultBranch ?? '')
+        ? project?.defaultBranch ?? branches[0]!
+        : branches[0]!;
+    branchSelect.replaceChildren();
+    for (const branch of branches) {
+      const option = el('option', { text: branch === project?.defaultBranch ? `${branch}（默认）` : branch, attrs: { value: branch } });
+      if (branch === project?.defaultBranch) option.setAttribute('selected', 'selected');
+      branchSelect.appendChild(option);
+    }
+    branchSelect.value = nextBranch;
+    branchSelect.disabled = !project;
+    const refreshing = Boolean(project && projectBranchRefreshInFlight.has(project.id));
+    branchRefresh.textContent = refreshing ? '加载中…' : '刷新分支';
+    branchRefresh.disabled = !project || refreshing;
+    branchHint.textContent = project
+      ? `默认带入项目接入配置的默认分支 ${project.defaultBranch || 'main'}；点击 Source Branch 会从当前 Project 的源地址加载分支列表，也可以在这里为本次任务临时切换。`
+      : '请先接入一个 active 项目。';
+  };
+  const refreshBranches = (projectId: string, force = false) => {
+    const project = projects.find((p) => p.id === projectId);
+    if (!project || (!force && sourceBranchesForProject(project).length > 1)) return;
+    void refreshProjectBranches(project.id, () => updateBranchSelect(projectSelect.value, branchSelect.value));
+  };
+  projectSelect.onchange = () => {
+    updateBranchSelect(projectSelect.value, null);
+    refreshBranches(projectSelect.value);
+  };
+  branchSelect.onchange = () => updateBranchSelect(projectSelect.value, branchSelect.value);
+  const loadBranchesForCurrentProject = () => {
+    const projectId = projectSelect.value;
+    const firstClickForProject = !clickedBranchProjects.has(projectId);
+    clickedBranchProjects.add(projectId);
+    refreshBranches(projectId, firstClickForProject);
+  };
+  branchSelect.onfocus = loadBranchesForCurrentProject;
+  branchSelect.onclick = loadBranchesForCurrentProject;
+  branchRefresh.onclick = () => refreshBranches(projectSelect.value, true);
+  updateBranchSelect(projectSelect.value, null);
+  refreshBranches(projectSelect.value);
+  const submit = el('button', { class: 'button primary', text: 'Create Workflow Request', attrs: { type: 'submit' } });
+  if (!projects.length) submit.setAttribute('disabled', 'disabled');
   form.append(
     panelHeader('创建任务请求', 'UI 只入队；本地 runner watch 负责认领、建 worktree、执行 gate、等待人工确认。'),
     el('label', { class: 'input-block', children: [el('span', { text: 'Project' }), projectSelect] }),
     el('label', { class: 'input-block', children: [el('span', { text: 'Type' }), typeSelect] }),
     el('label', { class: 'input-block', children: [el('span', { text: 'Task Title / Intent' }), title] }),
-    el('label', { class: 'input-block', children: [el('span', { text: 'Source Branch' }), el('input', { attrs: { name: 'branch', placeholder: selectedProject()?.defaultBranch ?? 'main' } })] }),
-    el('div', { class: 'button-row', children: [el('button', { class: 'button primary', text: 'Create Workflow Request', attrs: { type: 'submit' } }), actionLink('查看工作台', 'workbench')] }),
+    el('div', {
+      class: 'input-block',
+      children: [
+        el('span', { text: 'Source Branch' }),
+        el('div', { class: 'branch-select-row', children: [branchSelect, branchRefresh] }),
+        branchHint,
+      ],
+    }),
+    el('div', { class: 'button-row', children: [submit, actionLink('查看工作台', 'workbench')] }),
   );
   form.onsubmit = (event) => void submitWorkflowRequest(event, form);
 

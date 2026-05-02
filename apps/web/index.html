@@ -191,6 +191,8 @@
       .project-card { cursor: pointer; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
       .project-card:hover, .project-card.active { border-color: var(--primary-2); background: #eff6ff; transform: translateY(-1px); }
       .build-card div, .project-card div:first-child, .runner-card div:first-child, .report-row { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
+      .project-card-footer { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-top: 4px; }
+      .project-card-actions { display: flex; justify-content: flex-end; gap: 8px; margin-left: auto; }
       .field-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; padding: 6px 0; }
       .field-label { color: var(--muted); }
       .field-row code, .evidence-row code { overflow-wrap: anywhere; }
@@ -235,6 +237,7 @@
       .form-card.wide { min-height: 520px; }
       .input-block { display: grid; gap: 7px; }
       .input-block span { font-weight: 800; color: var(--text); }
+      .branch-select-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
       input, select, textarea { width: 100%; border: 1px solid var(--line-strong); border-radius: 14px; padding: 11px 12px; background: #fff; color: var(--text); }
       textarea { resize: vertical; min-height: 170px; }
       .ordered-list { margin: 0; padding-left: 20px; color: var(--muted); }

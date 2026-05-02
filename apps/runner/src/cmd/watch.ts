@@ -3,8 +3,8 @@ import { api } from '../api-client';
 import { sendHeartbeat } from '../heartbeat';
 import { cmdOrchestrate } from '../orchestrator';
 
-type PendingRequest = Pick<WorkflowRequest, 'id' | 'projectId' | 'title'>;
-type ClaimedRequest = Pick<WorkflowRequest, 'id' | 'projectId' | 'title'>;
+type PendingRequest = Pick<WorkflowRequest, 'id' | 'projectId' | 'title' | 'branch'>;
+type ClaimedRequest = Pick<WorkflowRequest, 'id' | 'projectId' | 'title' | 'branch'>;
 
 export type WatchProcessResult = 'idle' | 'lost' | 'processed' | 'failed';
 
@@ -66,6 +66,7 @@ export async function cmdWatch(opts: WatchOpts = {}): Promise<void> {
         cmdOrchestrate({
           project: request.projectId,
           title: request.title,
+          sourceBranch: request.branch,
           cleanup: !opts.keepWorktree,
           setExitCode: false,
         }),

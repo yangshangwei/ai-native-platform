@@ -46,6 +46,7 @@ export const api = {
     projectName: string;
     title: string;
     type?: 'smoke' | 'feature' | 'bugfix';
+    sourceBranch?: string;
   }) =>
     request<WorkflowRun>('POST', '/workflow-runs', { ...params, type: params.type ?? 'smoke' }),
 

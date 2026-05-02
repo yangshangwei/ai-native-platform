@@ -8,14 +8,14 @@ describe('runner watch workflow request processing', () => {
     const result = await processNextWorkflowRequest({
       runnerId: 'runner@test',
       listPending: async () => [
-        { id: 'wreq_1', projectId: 'proj_1', title: 'build UI workbench' },
+        { id: 'wreq_1', projectId: 'proj_1', title: 'build UI workbench', branch: 'develop' },
       ],
       claim: async (requestId, runnerId) => {
         calls.push(`claim:${requestId}:${runnerId}`);
-        return { id: requestId, projectId: 'proj_1', title: 'build UI workbench' };
+        return { id: requestId, projectId: 'proj_1', title: 'build UI workbench', branch: 'develop' };
       },
       orchestrate: async (request) => {
-        calls.push(`orchestrate:${request.projectId}:${request.title}`);
+        calls.push(`orchestrate:${request.projectId}:${request.title}:${request.branch}`);
         return { workflowRunId: 'run_1', ok: true };
       },
       complete: async (requestId, completion) => {
@@ -26,7 +26,7 @@ describe('runner watch workflow request processing', () => {
     expect(result).toBe('processed');
     expect(calls).toEqual([
       'claim:wreq_1:runner@test',
-      'orchestrate:proj_1:build UI workbench',
+      'orchestrate:proj_1:build UI workbench:develop',
       'complete:wreq_1:run_1:true',
     ]);
   });
@@ -38,8 +38,8 @@ describe('runner watch workflow request processing', () => {
     await expect(
       processNextWorkflowRequest({
         runnerId: 'runner@test',
-        listPending: async () => [{ id: 'wreq_fail', projectId: 'proj_1', title: 'bad task' }],
-        claim: async (requestId) => ({ id: requestId, projectId: 'proj_1', title: 'bad task' }),
+        listPending: async () => [{ id: 'wreq_fail', projectId: 'proj_1', title: 'bad task', branch: 'main' }],
+        claim: async (requestId) => ({ id: requestId, projectId: 'proj_1', title: 'bad task', branch: 'main' }),
         orchestrate: async () => {
           throw new Error('boom');
         },

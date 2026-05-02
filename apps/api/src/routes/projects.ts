@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { spawn } from 'node:child_process';
-import { readdir } from 'node:fs/promises';
+import { readdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import { newId, nowIso, type Project, type ProjectSourceAuthKind, type ProjectSourceKind } from '@ainp/shared';
@@ -21,6 +21,8 @@ interface RegisterProjectBody {
   language?: Project['language'];
   buildTool?: Project['buildTool'];
   defaultBranch?: string;
+  sourceBranches?: unknown;
+  branches?: unknown;
 }
 
 interface DetectSourceBody {
@@ -36,13 +38,38 @@ interface PublicProject extends Omit<Project, 'sourceCredential'> {
   hasSourceCredential: boolean;
 }
 
+interface BranchList {
+  ok: true;
+  defaultBranch: string;
+  detectedDefaultBranch: string;
+  branches: string[];
+  metadata: Record<string, string>;
+}
+
+interface DeletePreview {
+  canHardDelete: boolean;
+  canArchive: boolean;
+  activeRequests: number;
+  activeRuns: number;
+  totalRequests: number;
+  totalRuns: number;
+  recommendation: 'hard_delete' | 'archive' | 'blocked_active_work' | 'already_archived';
+}
+
 interface ShellResult {
   exitCode: number | null;
   stdout: string;
   stderr: string;
 }
 
-projects.get('/', (c) => c.json({ items: [...store.projects.values()].map(publicProject) }));
+projects.get('/', (c) => {
+  const status = c.req.query('status');
+  let items = [...store.projects.values()];
+  if (status === 'active' || status === 'archived') {
+    items = items.filter((project) => (project.status ?? 'active') === status);
+  }
+  return c.json({ items: items.map(publicProject) });
+});
 
 
 projects.get('/local-directories', async (c) => {
@@ -87,12 +114,65 @@ projects.post('/', async (c) => {
     language: body.language ?? 'java',
     buildTool: body.buildTool ?? 'maven',
     defaultBranch: normalized.defaultBranch,
+    sourceBranches: normalized.sourceBranches,
+    status: 'active',
+    archivedAt: null,
     registeredAt: nowIso(),
   };
   store.projects.set(project.id, project);
   return c.json(publicProject(project), 201);
 });
 
+
+
+projects.get('/:id/delete-preview', (c) => {
+  const project = projectByIdOrName(c.req.param('id'));
+  if (!project) return c.json({ error: 'not found' }, 404);
+  return c.json(deletePreview(project));
+});
+
+projects.post('/:id/archive', (c) => {
+  const project = projectByIdOrName(c.req.param('id'));
+  if (!project) return c.json({ error: 'not found' }, 404);
+  const preview = deletePreview(project);
+  if (!preview.canArchive) {
+    return c.json({ error: 'project has active work and cannot be archived', preview }, 409);
+  }
+  const archived: Project = { ...project, status: 'archived', archivedAt: project.archivedAt ?? nowIso() };
+  store.projects.set(archived.id, archived);
+  return c.json(publicProject(archived));
+});
+
+projects.delete('/:id', async (c) => {
+  const project = projectByIdOrName(c.req.param('id'));
+  if (!project) return c.json({ error: 'not found' }, 404);
+  const preview = deletePreview(project);
+  if (!preview.canHardDelete) {
+    return c.json({ error: 'project has workflow history; archive it instead of deleting', preview }, 409);
+  }
+  store.projects.delete(project.id);
+  if ((project.sourceKind ?? 'local') !== 'local') {
+    await rm(dirname(project.localPath), { recursive: true, force: true }).catch(() => undefined);
+  }
+  return c.json({ ok: true, action: 'hard_deleted', projectId: project.id });
+});
+
+projects.get('/:id/branches', async (c) => {
+  const project = projectByIdOrName(c.req.param('id'));
+  if (!project) return c.json({ error: 'not found' }, 404);
+  const result = await detectRegisteredProjectBranches(project);
+  if (!result.ok) return c.json(result, 200);
+
+  const branches = normalizeSourceBranches(result.branches, project.defaultBranch);
+  store.projects.set(project.id, { ...project, sourceBranches: branches });
+  return c.json({
+    ok: true,
+    defaultBranch: project.defaultBranch,
+    detectedDefaultBranch: result.defaultBranch,
+    branches,
+    metadata: result.metadata,
+  } satisfies BranchList);
+});
 
 projects.put('/:id', async (c) => {
   const id = c.req.param('id');
@@ -138,6 +218,9 @@ projects.put('/:id', async (c) => {
     language: body.language ?? existing.language,
     buildTool: body.buildTool ?? existing.buildTool,
     defaultBranch: normalized.defaultBranch,
+    sourceBranches: normalized.sourceBranches,
+    status: existing.status ?? 'active',
+    archivedAt: existing.archivedAt ?? null,
   };
   store.projects.set(updated.id, updated);
   return c.json(publicProject(updated), 200);
@@ -228,6 +311,7 @@ function normalizeRegisterBody(body: RegisterProjectBody):
       sourceUsername: string | null;
       sourceCredential: string | null;
       defaultBranch: string;
+      sourceBranches: string[];
     }
   | { error: string } {
   const name = body.name?.trim();
@@ -238,6 +322,7 @@ function normalizeRegisterBody(body: RegisterProjectBody):
   const sourceAuthKind = normalizeAuthKind(sourceKind, body.sourceAuthKind);
   if (!isSourceAuthKind(sourceAuthKind)) return { error: 'sourceAuthKind must be one of none, ssh, token, basic' };
   const defaultBranch = body.defaultBranch?.trim() || 'main';
+  const sourceBranches = normalizeSourceBranches(body.sourceBranches ?? body.branches, defaultBranch);
 
   if (sourceKind === 'local') {
     if (!body.localPath?.trim()) return { error: 'localPath is required for local projects' };
@@ -250,6 +335,7 @@ function normalizeRegisterBody(body: RegisterProjectBody):
       sourceUsername: null,
       sourceCredential: null,
       defaultBranch,
+      sourceBranches,
     };
   }
 
@@ -267,6 +353,58 @@ function normalizeRegisterBody(body: RegisterProjectBody):
     sourceUsername: body.sourceUsername?.trim() || null,
     sourceCredential: body.sourceCredential?.trim() || null,
     defaultBranch,
+    sourceBranches,
+  };
+}
+
+async function detectRegisteredProjectBranches(project: Project): Promise<
+  | {
+      ok: true;
+      defaultBranch: string;
+      branches: string[];
+      metadata: Record<string, string>;
+    }
+  | { ok: false; error: string }
+> {
+  const sourceKind = project.sourceKind ?? 'local';
+  return detectProjectSource({
+    sourceKind,
+    localPath: sourceKind === 'local' ? project.localPath : undefined,
+    sourceUrl: sourceKind === 'local' ? undefined : project.sourceUrl ?? undefined,
+    sourceAuthKind: project.sourceAuthKind ?? 'none',
+    sourceUsername: project.sourceUsername ?? undefined,
+    sourceCredential: project.sourceCredential ?? undefined,
+  });
+}
+
+function projectByIdOrName(idOrName: string): Project | undefined {
+  return store.projects.get(idOrName) ?? store.projectByName(idOrName);
+}
+
+function deletePreview(project: Project): DeletePreview {
+  const requests = store.workflowRequests.values().filter((req) => req.projectId === project.id);
+  const runs = store.workflowRunsByProject(project.id);
+  const activeRequests = requests.filter((req) => req.status === 'pending' || req.status === 'claimed').length;
+  const activeRuns = runs.filter((run) => run.status === 'pending' || run.status === 'running' || run.status === 'awaiting_human').length;
+  const totalRequests = requests.length;
+  const totalRuns = runs.length;
+  const canHardDelete = totalRequests === 0 && totalRuns === 0;
+  const hasActiveWork = activeRequests > 0 || activeRuns > 0;
+  const isArchived = (project.status ?? 'active') === 'archived';
+  return {
+    canHardDelete,
+    canArchive: !hasActiveWork && !isArchived,
+    activeRequests,
+    activeRuns,
+    totalRequests,
+    totalRuns,
+    recommendation: isArchived
+      ? 'already_archived'
+      : hasActiveWork
+        ? 'blocked_active_work'
+        : canHardDelete
+          ? 'hard_delete'
+          : 'archive',
   };
 }
 
@@ -277,6 +415,8 @@ function publicProject(project: Project): PublicProject {
     ...rest,
     sourceKind: rest.sourceKind ?? 'local',
     sourceUrl: rest.sourceUrl ?? null,
+    status: rest.status ?? 'active',
+    archivedAt: rest.archivedAt ?? null,
     sourceAuthKind: rest.sourceAuthKind ?? 'none',
     sourceUsername: rest.sourceUsername ?? null,
     hasSourceCredential: Boolean(sourceCredential),
@@ -359,6 +499,27 @@ function git(args: string[], cwd?: string): Promise<ShellResult> {
 
 function uniqueLines(value: string): string[] {
   return [...new Set(value.split('\n').map((line) => line.trim()).filter(Boolean))];
+}
+
+function normalizeSourceBranches(branches: unknown, defaultBranch: string): string[] {
+  const branchList =
+    Array.isArray(branches)
+      ? branches
+      : typeof branches === 'string'
+        ? branches
+            .split(',')
+            .map((branch) => branch.trim())
+            .filter(Boolean)
+        : [];
+  const normalized = [
+    ...new Set(
+      [defaultBranch, ...branchList]
+        .filter((branch): branch is string => typeof branch === 'string')
+        .map((branch) => branch.trim())
+        .filter(Boolean),
+    ),
+  ];
+  return normalized.length ? normalized : ['main'];
 }
 
 function parseLsRemoteHeads(output: string): { branches: string[]; defaultBranch: string } {

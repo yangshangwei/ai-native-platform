@@ -111,6 +111,33 @@ test('registers a local git project with backward-compatible localPath', async (
   });
 });
 
+test('stores and refreshes source branch options for a registered project', async () => {
+  const repo = await makeGitRepo(['main', 'develop']);
+  const res = await app.request('/projects', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: `branch-options-${Date.now()}`,
+      sourceKind: 'local',
+      localPath: repo,
+      defaultBranch: 'main',
+      sourceBranches: ['main', 'develop'],
+    }),
+  });
+
+  expect(res.status).toBe(201);
+  const project = (await res.json()) as { id: string; sourceBranches: string[] };
+  expect(project.sourceBranches).toEqual(['main', 'develop']);
+
+  const branches = await app.request(`/projects/${project.id}/branches`);
+  expect(branches.status).toBe(200);
+  expect(await branches.json()).toMatchObject({
+    ok: true,
+    defaultBranch: 'main',
+    branches: expect.arrayContaining(['main', 'develop']),
+  });
+});
+
 test('registers GitHub, Gitee, generic Git, and private GitLab sources by repo URL', async () => {
   for (const input of [
     {
@@ -260,4 +287,101 @@ test('updates an existing project while keeping saved credential when omitted', 
 
   const secretRes = await app.request(`/projects/${created.id}?includeSecret=1`);
   expect(await secretRes.json()).toMatchObject({ sourceCredential: 'old-secret' });
+});
+
+async function registerLocalProject(name: string): Promise<{ id: string; name: string }> {
+  const res = await app.request('/projects', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name, localPath: `/tmp/${name}`, defaultBranch: 'main' }),
+  });
+  expect(res.status).toBe(201);
+  return (await res.json()) as { id: string; name: string };
+}
+
+test('hard deletes a project only when it has no linked workflow history', async () => {
+  const project = await registerLocalProject(`delete-empty-${Date.now()}`);
+
+  const preview = await app.request(`/projects/${project.id}/delete-preview`);
+  expect(preview.status).toBe(200);
+  expect(await preview.json()).toMatchObject({
+    canHardDelete: true,
+    canArchive: true,
+    totalRequests: 0,
+    totalRuns: 0,
+    recommendation: 'hard_delete',
+  });
+
+  const deleted = await app.request(`/projects/${project.id}`, { method: 'DELETE' });
+  expect(deleted.status).toBe(200);
+  expect(await deleted.json()).toMatchObject({ ok: true, action: 'hard_deleted' });
+
+  const byId = await app.request(`/projects/${project.id}`);
+  expect(byId.status).toBe(404);
+});
+
+test('blocks project archive while active workflow requests exist', async () => {
+  const project = await registerLocalProject(`delete-active-${Date.now()}`);
+  const requestRes = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectId: project.id, title: 'pending feature', type: 'feature' }),
+  });
+  expect(requestRes.status).toBe(201);
+
+  const preview = await app.request(`/projects/${project.id}/delete-preview`);
+  expect(await preview.json()).toMatchObject({
+    canHardDelete: false,
+    canArchive: false,
+    activeRequests: 1,
+    recommendation: 'blocked_active_work',
+  });
+
+  const archive = await app.request(`/projects/${project.id}/archive`, { method: 'POST' });
+  expect(archive.status).toBe(409);
+  expect(await archive.json()).toMatchObject({ error: expect.stringContaining('active') });
+});
+
+test('archives a project with completed history and keeps it out of active project lists', async () => {
+  const project = await registerLocalProject(`archive-history-${Date.now()}`);
+  const requestRes = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectId: project.id, title: 'historical feature', type: 'feature' }),
+  });
+  const request = (await requestRes.json()) as { id: string };
+  await app.request(`/workflow-requests/${request.id}/claim`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ runnerId: 'runner@archive-test' }),
+  });
+  await app.request(`/workflow-requests/${request.id}/complete`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ok: true, workflowRunId: null }),
+  });
+
+  const preview = await app.request(`/projects/${project.id}/delete-preview`);
+  expect(await preview.json()).toMatchObject({
+    canHardDelete: false,
+    canArchive: true,
+    totalRequests: 1,
+    activeRequests: 0,
+    recommendation: 'archive',
+  });
+
+  const archive = await app.request(`/projects/${project.id}/archive`, { method: 'POST' });
+  expect(archive.status).toBe(200);
+  expect(await archive.json()).toMatchObject({ status: 'archived', archivedAt: expect.any(String) });
+
+  const activeList = await app.request('/projects?status=active');
+  const activeItems = ((await activeList.json()) as { items: Array<{ id: string }> }).items;
+  expect(activeItems.map((p) => p.id)).not.toContain(project.id);
+
+  const createAfterArchive = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectId: project.id, title: 'should be blocked', type: 'feature' }),
+  });
+  expect(createAfterArchive.status).toBe(400);
 });

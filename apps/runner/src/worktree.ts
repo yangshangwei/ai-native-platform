@@ -9,6 +9,7 @@ import type { ExecutionEnvironment, WorkflowRun, WorkspaceRef, CommandSpec, Comm
  * Trusted Local Worktree environment.
  *
  *   path  = ~/.ai-native/worktrees/{projectId}/{runId}/workspace
+ *   sourceBranch = run.sourceBranch (registered project default unless the request overrides it)
  *   branch = run.branch (already set by Workflow Engine to ai/{runId}-{slug})
  *
  * Important: this is NOT a security sandbox. We only isolate the working
@@ -22,7 +23,8 @@ export class TrustedLocalWorktreeEnvironment implements ExecutionEnvironment {
   }
 
   async prepare(run: WorkflowRun): Promise<WorkspaceRef> {
-    await this.ensureSourceRepository();
+    const sourceBranch = run.sourceBranch || this.project.defaultBranch;
+    await this.ensureSourceRepository(sourceBranch);
 
     const workspacePath = this.workspacePath(run.id);
     if (existsSync(workspacePath)) {
@@ -33,7 +35,7 @@ export class TrustedLocalWorktreeEnvironment implements ExecutionEnvironment {
     // Create the worktree from the project's source repo.
     const result = await sh(
       'git',
-      ['worktree', 'add', '-b', run.branch, workspacePath, 'HEAD'],
+      ['worktree', 'add', '-b', run.branch, workspacePath, sourceBranch || 'HEAD'],
       { cwd: this.project.localPath },
     );
     if (result.exitCode !== 0) {
@@ -75,14 +77,14 @@ export class TrustedLocalWorktreeEnvironment implements ExecutionEnvironment {
     await sh('git', ['branch', '-D', workspace.branch], { cwd: this.project.localPath });
   }
 
-  private async ensureSourceRepository(): Promise<void> {
+  private async ensureSourceRepository(sourceBranch: string): Promise<void> {
     if ((this.project.sourceKind ?? 'local') === 'local') return;
     if (!this.project.sourceUrl) throw new Error(`sourceUrl required for ${this.project.sourceKind} project`);
 
     if (!existsSync(join(this.project.localPath, '.git'))) {
       await mkdir(dirname(this.project.localPath), { recursive: true });
       const cloneUrl = this.authenticatedSourceUrl();
-      const clone = await sh('git', ['clone', '--branch', this.project.defaultBranch, cloneUrl, this.project.localPath]);
+      const clone = await sh('git', ['clone', '--branch', sourceBranch, cloneUrl, this.project.localPath]);
       if (clone.exitCode !== 0) {
         throw new Error(`git clone failed (exit=${clone.exitCode}): ${this.sanitizeGitError(clone.stderr || clone.stdout)}`);
       }
@@ -92,13 +94,13 @@ export class TrustedLocalWorktreeEnvironment implements ExecutionEnvironment {
       return;
     }
 
-    const fetch = await sh('git', ['fetch', this.authenticatedSourceUrl(), this.project.defaultBranch, '--prune'], { cwd: this.project.localPath });
+    const fetch = await sh('git', ['fetch', this.authenticatedSourceUrl(), sourceBranch, '--prune'], { cwd: this.project.localPath });
     if (fetch.exitCode !== 0) {
       throw new Error(`git fetch failed (exit=${fetch.exitCode}): ${this.sanitizeGitError(fetch.stderr || fetch.stdout)}`);
     }
-    const checkout = await sh('git', ['checkout', this.project.defaultBranch], { cwd: this.project.localPath });
+    const checkout = await sh('git', ['checkout', '-B', sourceBranch, 'FETCH_HEAD'], { cwd: this.project.localPath });
     if (checkout.exitCode !== 0) {
-      throw new Error(`git checkout ${this.project.defaultBranch} failed (exit=${checkout.exitCode}): ${checkout.stderr || checkout.stdout}`);
+      throw new Error(`git checkout ${sourceBranch} failed (exit=${checkout.exitCode}): ${checkout.stderr || checkout.stdout}`);
     }
     const reset = await sh('git', ['reset', '--hard', 'FETCH_HEAD'], { cwd: this.project.localPath });
     if (reset.exitCode !== 0) {

@@ -25,9 +25,12 @@ const MIGRATIONS: string[] = [
      source_auth_kind TEXT NOT NULL DEFAULT 'none',
      source_username TEXT,
      source_credential TEXT,
+     status TEXT NOT NULL DEFAULT 'active',
+     archived_at TEXT,
      language TEXT NOT NULL,
      build_tool TEXT NOT NULL,
      default_branch TEXT NOT NULL,
+     source_branches_json TEXT,
      registered_at TEXT NOT NULL
    )`,
   `CREATE TABLE IF NOT EXISTS workflow_runs (
@@ -37,6 +40,7 @@ const MIGRATIONS: string[] = [
      status TEXT NOT NULL,
      current_stage TEXT NOT NULL,
      config_snapshot_id TEXT,
+     source_branch TEXT,
      branch TEXT NOT NULL,
      workspace_path TEXT,
      title TEXT NOT NULL,
@@ -236,4 +240,18 @@ if (!projectColumns.has('source_username')) {
 }
 if (!projectColumns.has('source_credential')) {
   runSql(`ALTER TABLE projects ADD COLUMN source_credential TEXT`);
+}
+if (!projectColumns.has('status')) {
+  runSql(`ALTER TABLE projects ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`);
+}
+if (!projectColumns.has('archived_at')) {
+  runSql(`ALTER TABLE projects ADD COLUMN archived_at TEXT`);
+}
+if (!projectColumns.has('source_branches_json')) {
+  runSql(`ALTER TABLE projects ADD COLUMN source_branches_json TEXT`);
+}
+
+const workflowRunColumns = columnNames('workflow_runs');
+if (!workflowRunColumns.has('source_branch')) {
+  runSql(`ALTER TABLE workflow_runs ADD COLUMN source_branch TEXT`);
 }

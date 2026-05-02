@@ -29,6 +29,8 @@ export interface WorkflowRun {
   currentStage: WorkflowStage;
   /** Reserved for future configuration snapshot reference. */
   configSnapshotId: string | null;
+  /** Source branch used as the base when preparing the run worktree. */
+  sourceBranch: string;
   /** ai/{runId}-{slug} */
   branch: string;
   /** Path to the worktree workspace, set after Runner prepares it. */

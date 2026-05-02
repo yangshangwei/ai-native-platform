@@ -38,6 +38,7 @@ export interface WorkflowRunDto {
   title: string;
   status: string;
   currentStage: Stage;
+  sourceBranch?: string;
   branch: string;
   workspacePath: string | null;
   createdAt: string;

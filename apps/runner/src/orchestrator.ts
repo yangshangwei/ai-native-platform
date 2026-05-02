@@ -23,6 +23,7 @@ import {
 export interface OrchestrateOpts {
   project: string;
   title: string;
+  sourceBranch?: string;
   /** Default true — auto-clean worktree at the end. */
   cleanup?: boolean;
   /** Default true for CLI mode; watch mode keeps the daemon alive on failed jobs. */
@@ -56,6 +57,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     projectName: project.name,
     title: opts.title,
     type: 'feature',
+    sourceBranch: opts.sourceBranch ?? project.defaultBranch,
   });
   console.log(`[runner] workflow-run ${run.id} created`);
 

@@ -37,6 +37,17 @@ function unbool(n: number | bigint | null): boolean {
   return Boolean(n);
 }
 
+function parseStringArrayJson(value: string | null): string[] | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return undefined;
+    return parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+  } catch {
+    return undefined;
+  }
+}
+
 /** Positional INSERT helper. Keys define column order; values bind 1:1. */
 function upsertRow(table: string, row: Record<string, unknown>): void {
   const cols = Object.keys(row);
@@ -69,9 +80,12 @@ interface ProjectRow {
   source_auth_kind: string | null;
   source_username: string | null;
   source_credential: string | null;
+  status: string | null;
+  archived_at: string | null;
   language: string;
   build_tool: string;
   default_branch: string;
+  source_branches_json: string | null;
   registered_at: string;
 }
 
@@ -85,15 +99,19 @@ function rowToProject(r: ProjectRow): Project {
     sourceAuthKind: (r.source_auth_kind ?? 'none') as Project['sourceAuthKind'],
     sourceUsername: r.source_username ?? null,
     sourceCredential: r.source_credential ?? null,
+    status: (r.status ?? 'active') as Project['status'],
+    archivedAt: r.archived_at ?? null,
     language: r.language as Project['language'],
     buildTool: r.build_tool as Project['buildTool'],
     defaultBranch: r.default_branch,
+    sourceBranches: parseStringArrayJson(r.source_branches_json),
     registeredAt: r.registered_at,
   };
 }
 
 const projects: MapLike<Project> & {
   findByName(name: string): Project | undefined;
+  delete(id: string): void;
 } = {
   set(_id, p) {
     upsertRow('projects', {
@@ -105,9 +123,12 @@ const projects: MapLike<Project> & {
       source_auth_kind: p.sourceAuthKind ?? 'none',
       source_username: p.sourceUsername ?? null,
       source_credential: p.sourceCredential ?? null,
+      status: p.status ?? 'active',
+      archived_at: p.archivedAt ?? null,
       language: p.language,
       build_tool: p.buildTool,
       default_branch: p.defaultBranch,
+      source_branches_json: p.sourceBranches ? JSON.stringify(p.sourceBranches) : null,
       registered_at: p.registeredAt,
     });
   },
@@ -128,6 +149,9 @@ const projects: MapLike<Project> & {
     const r = db.prepare('SELECT * FROM projects WHERE name = ?').get(name) as ProjectRow | null;
     return r ? rowToProject(r) : undefined;
   },
+  delete(id) {
+    db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+  },
 };
 
 // ---- workflow_runs ---------------------------------------------------------
@@ -139,6 +163,7 @@ interface WorkflowRunRow {
   status: string;
   current_stage: string;
   config_snapshot_id: string | null;
+  source_branch: string | null;
   branch: string;
   workspace_path: string | null;
   title: string;
@@ -154,6 +179,7 @@ function rowToWorkflowRun(r: WorkflowRunRow): WorkflowRun {
     status: r.status as WorkflowRun['status'],
     currentStage: r.current_stage as WorkflowRun['currentStage'],
     configSnapshotId: r.config_snapshot_id,
+    sourceBranch: r.source_branch ?? '',
     branch: r.branch,
     workspacePath: r.workspace_path,
     title: r.title,
@@ -173,6 +199,7 @@ const workflowRuns: MapLike<WorkflowRun> & {
       status: run.status,
       current_stage: run.currentStage,
       config_snapshot_id: run.configSnapshotId,
+      source_branch: run.sourceBranch || null,
       branch: run.branch,
       workspace_path: run.workspacePath,
       title: run.title,

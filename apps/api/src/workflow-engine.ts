@@ -52,6 +52,7 @@ export function createWorkflowRun(params: {
   projectId: ProjectId;
   type: WorkflowRunType;
   title: string;
+  sourceBranch?: string;
 }): WorkflowRun {
   const id = newId('run');
   const branch = `ai/${id}-${slugify(params.title)}`;
@@ -64,13 +65,14 @@ export function createWorkflowRun(params: {
     status: 'pending',
     currentStage: 'init',
     configSnapshotId: null,
+    sourceBranch: params.sourceBranch?.trim() || 'main',
     branch,
     workspacePath: null,
     createdAt: now,
     updatedAt: now,
   };
   store.workflowRuns.set(id, run);
-  audit(id, 'workflow_run.created', { type: run.type, title: run.title });
+  audit(id, 'workflow_run.created', { type: run.type, title: run.title, sourceBranch: run.sourceBranch });
   return run;
 }
 

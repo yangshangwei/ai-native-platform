@@ -27,6 +27,7 @@ workflowRuns.post('/', async (c) => {
     projectName?: string;
     type?: WorkflowRunType;
     title?: string;
+    sourceBranch?: string;
   };
 
   let projectId = body.projectId;
@@ -34,15 +35,18 @@ workflowRuns.post('/', async (c) => {
     projectId = store.projectByName(body.projectName)?.id;
   }
   if (!projectId) return c.json({ error: 'projectId or projectName required' }, 400);
-  if (!store.projects.has(projectId)) {
+  const project = store.projects.get(projectId);
+  if (!project) {
     return c.json({ error: `project ${projectId} not registered` }, 404);
   }
+  if ((project.status ?? 'active') === 'archived') return c.json({ error: 'project is archived' }, 400);
   if (!body.title) return c.json({ error: 'title required' }, 400);
 
   const run = createWorkflowRun({
     projectId,
     type: body.type ?? 'smoke',
     title: body.title,
+    sourceBranch: body.sourceBranch?.trim() || project.defaultBranch,
   });
   return c.json(run, 201);
 });
