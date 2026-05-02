@@ -56,10 +56,13 @@
 ### 1.5 看 Java / Maven 编译测试门禁
 
 11. `2026-05-01-ai-native-platform-java-maven-build-gate-notes.md`
-    - 当前 MVP 只管 Java + Maven 时，如何做 sandbox build / test。
+    - 早期 Java / Maven build gate 讨论；其中 “sandbox” 表述已被本地 worktree 决策修正。
 
 12. `2026-05-01-ai-native-platform-java-maven-build-gate-implementation.md`
     - BuildRun、CommandRun、Surefire / Failsafe report parsing、Compile Gate、Test Gate。
+
+12.1 `2026-05-02-ai-native-platform-local-worktree-decision.md`
+   - 当前已拍板执行环境：本地编译环境 + Git worktree，不追求沙箱级强制。
 
 ### 1.6 看配置系统
 
@@ -118,7 +121,7 @@ Context Pack：工程背景、已有实现、历史决策、历史 bug
   ↓
 开发实现：Implementation Agent + Diff Scope Gate + Sensitive Change Gate
   ↓
-Java / Maven Sandbox Build：Compile Gate + Test Gate
+Java / Maven Local Worktree Build：Compile Gate + Test Gate
   ↓
 审查验收：Review + Acceptance Gate + Human Acceptance
   ↓
@@ -138,7 +141,7 @@ Knowledge Capture：经验候选、确认、入库
 5. AgentBackend 应可插拔，Claude Code / Codex / Native Runner 都只是执行载体。
 6. 尽量用脚本和真实命令校验，避免 LLM 自称完成。
 7. 每个 Gate 都要有结构化 GateRun / RuleResult。
-8. 当前 Build MVP 只覆盖 Java + Maven，并且必须在 sandbox 中跑 compile/test。
+8. 当前 Build MVP 只覆盖 Java + Maven，并且必须在本地 git worktree 中使用本机 JDK/Maven/Git 跑 compile/test；不追求沙箱级强制。
 9. 配置需要 UI 化、版本化、可发布、可回滚、运行时可追溯。
 10. 每次交付必须生成 Completion Report，并把有效经验沉淀为 Knowledge Candidate。
 

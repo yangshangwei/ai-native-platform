@@ -244,7 +244,7 @@
 5. Workflow Engine：状态机、StepRun、GateRun、Retry、Rollback、Pause。
 6. Hook：固定动作、前置检查、后置记录、通知。
 7. Quality Gate / Rule Engine：脚本化校验、规则管理、执行记录。
-8. Java / Maven Sandbox Build：compile/test/report parsing。
+8. Java / Maven Local Worktree Build：compile/test/report parsing。
 9. UI 化配置：Agent、Prompt、Workflow、Hook、Gate、Tool Policy、平台运行配置。
 10. Completion Report：审计、溯源、交付说明。
 11. Knowledge Capture：项目经验沉淀、候选审核、未来检索。

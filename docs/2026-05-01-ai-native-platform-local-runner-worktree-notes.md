@@ -1,5 +1,5 @@
 # AI Native 云开发平台：Local Runner 与 Git Worktree MVP 方案
-本文记录开发阶段执行环境的 MVP 决策：优先采用 Local Runner + Git worktree 的本地可信模式，后续预留 Docker / Cloud Sandbox 扩展。
+本文记录开发阶段执行环境的 MVP 决策：采用 Local Runner + Git worktree 的本地可信模式。2026-05-02 已进一步拍板：当前主线不追求 Docker / Cloud Sandbox / Tool Policy 的沙箱级强制；编译测试使用本机 JDK/Maven/Git 环境。
 ## 1. 决策结论
 第一版采用：
 ```text
@@ -17,7 +17,7 @@ Trusted Local Worktree Mode
 - 兼容本地 Maven settings、公司内网、本地证书。
 - 不污染用户当前 IDE 工作区。
 - 易于快速跑通 AI Native 生命周期闭环。
-但它不是强安全沙箱。
+但它不是强安全沙箱，也不需要在当前阶段升级为强安全沙箱。
 ## 2. Worktree 解决什么，不解决什么
 Git worktree 解决：
 ```text
