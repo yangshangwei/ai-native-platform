@@ -61,6 +61,12 @@ export const SKILLS: SkillSpec[] = [
         required: true,
         description: 'requirement_draft markdown',
       },
+      {
+        name: 'requirement.json',
+        kind: 'artifact',
+        required: false,
+        description: 'structured requirement JSON sidecar',
+      },
     ],
     toolPolicy: { allowedCommands: [], writableGlobs: [], networkAllowed: false },
     requiredGates: ['requirement_gate'],
@@ -88,6 +94,18 @@ export const SKILLS: SkillSpec[] = [
     ],
     outputs: [
       { name: 'design.md', kind: 'artifact', required: true, description: 'design markdown' },
+      {
+        name: 'design.json',
+        kind: 'artifact',
+        required: false,
+        description: 'structured design JSON sidecar',
+      },
+      {
+        name: 'traceability.json',
+        kind: 'artifact',
+        required: false,
+        description: 'AC-to-design/files/tests/gates traceability map',
+      },
     ],
     toolPolicy: { allowedCommands: [], writableGlobs: [], networkAllowed: false },
     requiredGates: ['design_gate'],

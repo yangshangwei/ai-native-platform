@@ -13,6 +13,9 @@ import type { SkillSpec } from '@ainp/shared';
  */
 export interface AgentTaskContext {
   workflowRunId: string;
+  /** Step run that owns this agent invocation. Used for streaming events.
+   *  May be null when the orchestrator runs an agent outside of a step. */
+  stepRunId?: string | null;
   workspacePath: string;
   branch: string;
   /** The user's original task title — what they typed in `runner orchestrate`. */
@@ -54,9 +57,16 @@ export class NativeBackend implements AgentBackend {
           await this.writeMarkdown(ctx, 'context_pack.md', await renderContextPack(ctx)),
         );
       case 'requirement':
-        return single(await this.writeMarkdown(ctx, 'requirement.md', renderRequirement(ctx)));
+        return multiple([
+          await this.writeMarkdown(ctx, 'requirement.md', renderRequirement(ctx)),
+          await this.writeJson(ctx, 'requirement.json', buildRequirementSidecar(ctx)),
+        ]);
       case 'design':
-        return single(await this.writeMarkdown(ctx, 'design.md', renderDesign(ctx)));
+        return multiple([
+          await this.writeMarkdown(ctx, 'design.md', renderDesign(ctx)),
+          await this.writeJson(ctx, 'design.json', buildDesignSidecar(ctx)),
+          await this.writeJson(ctx, 'traceability.json', buildTraceabilitySidecar(ctx)),
+        ]);
       case 'implementation':
         return await this.runImplementation(ctx);
       case 'review':
@@ -77,6 +87,22 @@ export class NativeBackend implements AgentBackend {
       name,
       path,
       contentType: 'text/markdown',
+      size: Buffer.byteLength(body, 'utf8'),
+    };
+  }
+
+  private async writeJson(
+    ctx: AgentTaskContext,
+    name: string,
+    value: unknown,
+  ): Promise<AgentArtifactOutput> {
+    const body = `${JSON.stringify(value, null, 2)}\n`;
+    const path = join(ctx.artifactsDir, name);
+    await writeFile(path, body, 'utf8');
+    return {
+      name,
+      path,
+      contentType: 'application/json',
       size: Buffer.byteLength(body, 'utf8'),
     };
   }
@@ -134,7 +160,100 @@ function single(out: AgentArtifactOutput): { outputs: AgentArtifactOutput[] } {
   return { outputs: [out] };
 }
 
+function multiple(outputs: AgentArtifactOutput[]): { outputs: AgentArtifactOutput[] } {
+  return { outputs };
+}
+
 // ---- canned templates ------------------------------------------------------
+
+function buildRequirementSidecar(ctx: AgentTaskContext) {
+  return {
+    schemaVersion: 'ainp.requirement.v1',
+    title: 'Requirement Draft',
+    runId: ctx.workflowRunId,
+    userRequest: ctx.title,
+    goals: [
+      `REQ-001 supports the user request: "${ctx.title}".`,
+    ],
+    userScenarios: [
+      `As a maintainer, I can deliver "${ctx.title}" inside the existing Java/Maven sample and verify it with the local toolchain.`,
+    ],
+    acceptanceCriteria: [
+      { id: 'AC-001', text: '`mvn -B -DskipTests compile` passes inside the worktree.' },
+      { id: 'AC-002', text: '`mvn -B test` passes inside the worktree and Surefire reports are parsed.' },
+      { id: 'AC-003', text: 'Diff stays inside the allowed source paths.' },
+      { id: 'AC-004', text: 'Required gates pass and human approvals are recorded.' },
+    ],
+    nonGoals: ['No public API changes; no dependency upgrades.'],
+    openQuestions: [],
+  };
+}
+
+function buildDesignSidecar(ctx: AgentTaskContext) {
+  return {
+    schemaVersion: 'ainp.design.v1',
+    title: 'Design',
+    runId: ctx.workflowRunId,
+    summary: [
+      'D-001: apply a low-risk source-only implementation in Calculator.java and verify it through compile/test gates.',
+    ],
+    affectedModules: ['Java sample application'],
+    filesTouched: ['src/main/java/sample/Calculator.java'],
+    testStrategy: [
+      'AC-001: Run `mvn -B -DskipTests compile` and require `compile_gate=pass`.',
+      'AC-002: Run `mvn -B test`, parse Surefire XML, and require `test_gate=pass`.',
+      'AC-003: Capture `git diff --name-only` and require `diff_scope_gate=pass`.',
+      'AC-004: Record approval rows for requirement, design, acceptance, and knowledge gates.',
+    ],
+    risks: ['None expected; comment-only edit in the native baseline.'],
+    coverage: [
+      {
+        requirement: 'REQ-001',
+        design: 'D-001',
+        acceptanceCriteria: ['AC-001', 'AC-002', 'AC-003', 'AC-004'],
+        verification: 'Compile/Test gates + Diff Scope/Sensitive gates',
+        status: 'covered',
+      },
+    ],
+  };
+}
+
+function buildTraceabilitySidecar(ctx: AgentTaskContext) {
+  return {
+    schemaVersion: 'ainp.traceability.v1',
+    runId: ctx.workflowRunId,
+    items: {
+      'AC-001': {
+        designItems: ['D-001'],
+        files: ['src/main/java/sample/Calculator.java'],
+        tests: ['maven-compile'],
+        gates: ['compile_gate'],
+        artifacts: ['design.json'],
+      },
+      'AC-002': {
+        designItems: ['D-001'],
+        files: ['src/main/java/sample/Calculator.java'],
+        tests: ['maven-surefire'],
+        gates: ['test_gate'],
+        artifacts: ['design.json'],
+      },
+      'AC-003': {
+        designItems: ['D-001'],
+        files: ['src/main/java/sample/Calculator.java'],
+        tests: [],
+        gates: ['diff_scope_gate'],
+        artifacts: ['changes.diff', 'changed-files.txt'],
+      },
+      'AC-004': {
+        designItems: ['D-001'],
+        files: [],
+        tests: [],
+        gates: ['requirement_gate', 'design_gate', 'acceptance_gate', 'knowledge_gate'],
+        artifacts: ['requirement.json', 'design.json', 'traceability.json'],
+      },
+    },
+  };
+}
 
 function renderRequirement(ctx: AgentTaskContext): string {
   return `# Requirement Draft
@@ -142,19 +261,28 @@ function renderRequirement(ctx: AgentTaskContext): string {
 Run: \`${ctx.workflowRunId}\`
 Title: ${ctx.title}
 
+## Requirement IDs
+- REQ-001: Deliver the requested change within the existing Java/Maven sample while preserving the current build and tests.
+
 ## User Request
 ${ctx.title}
 
 ## Goals
-- Deliver "${ctx.title}" within the existing Java/Maven sample.
+- REQ-001 supports the user request: "${ctx.title}".
 
 ## Non-goals
 - No public API changes; no dependency upgrades.
 
 ## Acceptance criteria
-- \`mvn -B test\` passes inside the worktree.
-- Diff stays inside the allowed source paths.
-- All required gates pass.
+- AC-001: \`mvn -B -DskipTests compile\` passes inside the worktree.
+- AC-002: \`mvn -B test\` passes inside the worktree and Surefire reports are parsed.
+- AC-003: Diff stays inside the allowed source paths.
+- AC-004: Required gates pass and human approvals are recorded.
+
+## Traceability seed
+| Requirement | Acceptance Criteria | Context Evidence |
+|---|---|---|
+| REQ-001 | AC-001, AC-002, AC-003, AC-004 | Context Pack excerpt below |
 
 ## Notes
 NativeBackend stub output. Replace with a real Agent backend (Codex / Claude
@@ -169,19 +297,34 @@ function renderDesign(ctx: AgentTaskContext): string {
 Run: \`${ctx.workflowRunId}\`
 Title: ${ctx.title}
 
+## Requirement Coverage Matrix
+| Requirement | Design item | Acceptance criteria | Verification |
+|---|---|---|---|
+| REQ-001 | D-001: low-risk source-only implementation in \`Calculator.java\` | AC-001, AC-002, AC-003, AC-004 | Compile/Test gates + Diff Scope/Sensitive gates |
+
 ## Approach
-Add a non-functional marker comment to \`Calculator.java\` and rebuild. The
+D-001: Add a non-functional marker comment to \`Calculator.java\` and rebuild. The
 existing JUnit tests must continue to pass. Used as a smoke for the gate +
 build pipeline.
 
 ## Files touched
 - \`src/main/java/sample/Calculator.java\`
 
+## Test Strategy
+- AC-001: Run \`mvn -B -DskipTests compile\` and require \`compile_gate=pass\`.
+- AC-002: Run \`mvn -B test\`, parse Surefire XML, and require \`test_gate=pass\`.
+- AC-003: Capture \`git diff --name-only\` and require \`diff_scope_gate=pass\`.
+- AC-004: Record approval rows for requirement, design, acceptance, and knowledge gates.
+
 ## Risks
 - None expected; comment-only edit.
 
 ## Reversibility
 - Single-line revert.
+
+## Context Evidence
+- Existing implementation path: \`src/main/java/sample/Calculator.java\`
+- Context Pack excerpt below grounds the scope in the current project.
 
 ${contextPackExcerpt(ctx)}`;
 }
@@ -339,6 +482,21 @@ async function renderContextPack(ctx: AgentTaskContext): Promise<string> {
       parts.push(`- \`${h.path}\``);
       for (const m of h.matches) {
         parts.push(`  - L${m.line} (\`${m.keyword}\`): \`${m.text}\``);
+      }
+    }
+  }
+  parts.push('');
+  parts.push('## Evidence refs');
+  if (hits.length === 0) {
+    parts.push('- type: project_profile');
+    parts.push('  ref: `project_profile.md`');
+    parts.push('  claim: Project profile is the fallback evidence source for this request.');
+  } else {
+    for (const h of hits) {
+      for (const m of h.matches) {
+        parts.push(`- type: file`);
+        parts.push(`  ref: \`${h.path}:${m.line}\``);
+        parts.push(`  claim: Keyword \`${m.keyword}\` matched current source: \`${m.text}\``);
       }
     }
   }

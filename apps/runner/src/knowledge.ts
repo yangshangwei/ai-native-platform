@@ -10,9 +10,15 @@
  */
 
 import { existsSync } from 'node:fs';
-import { copyFile, mkdir, readFile, readdir } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { profileDirFor } from './profile';
+
+export interface KnowledgePromotionAction {
+  targetId: string | null;
+  action: string;
+  payload: Record<string, unknown>;
+}
 
 export async function collectAcceptedKnowledge(projectId: string): Promise<string> {
   const dir = join(profileDirFor(projectId), 'knowledge');
@@ -41,6 +47,7 @@ export async function persistKnowledgeCandidate(opts: {
   projectId: string;
   runId: string;
   candidateUri: string;
+  actions?: KnowledgePromotionAction[];
 }): Promise<string | null> {
   if (!opts.candidateUri.startsWith('file://')) return null;
   const src = opts.candidateUri.slice('file://'.length);
@@ -48,6 +55,67 @@ export async function persistKnowledgeCandidate(opts: {
   const destDir = join(profileDirFor(opts.projectId), 'knowledge');
   await mkdir(destDir, { recursive: true });
   const dest = join(destDir, `${opts.runId}.md`);
-  await copyFile(src, dest);
+  if (opts.actions && opts.actions.length > 0) {
+    await writeFile(dest, renderCuratedKnowledge(opts.runId, opts.actions), 'utf8');
+  } else {
+    await copyFile(src, dest);
+  }
   return dest;
+}
+
+function renderCuratedKnowledge(runId: string, actions: KnowledgePromotionAction[]): string {
+  const latestByTarget = new Map<string, KnowledgePromotionAction>();
+  actions.forEach((action, index) => {
+    latestByTarget.set(action.targetId ?? `__untargeted_${index}`, action);
+  });
+
+  const promoted = [...latestByTarget.entries()]
+    .filter(([, action]) => action.action === 'accepted' || action.action === 'edited')
+    .map(([targetId, action]) => {
+      const kind = typeof action.payload.kind === 'string' ? action.payload.kind : 'Lesson';
+      const text = typeof action.payload.text === 'string' ? action.payload.text.trim() : '';
+      const evidence =
+        typeof action.payload.evidence === 'string' ? action.payload.evidence.trim() : '';
+      const originalText =
+        typeof action.payload.originalText === 'string' ? action.payload.originalText.trim() : '';
+      return {
+        targetId,
+        action: action.action,
+        kind,
+        text,
+        evidence,
+        originalText,
+      };
+    })
+    .filter((item) => item.text.length > 0);
+
+  const lines = [
+    '# Accepted Knowledge',
+    '',
+    `- **From workflow run:** \`${runId}\``,
+    `- **Promotion mode:** curated human decisions`,
+    '',
+    '## Promoted entries',
+  ];
+
+  if (promoted.length === 0) {
+    lines.push('', '_No knowledge entries were accepted or edited for promotion._');
+  } else {
+    for (const item of promoted) {
+      lines.push(
+        '',
+        `### ${item.targetId}`,
+        '',
+        `- **Kind:** ${item.kind}`,
+        `- **Decision:** ${item.action}`,
+        `- **Text:** ${item.text}`,
+      );
+      if (item.evidence) lines.push(`- **Evidence:** ${item.evidence}`);
+      if (item.originalText && item.originalText !== item.text) {
+        lines.push(`- **Edited from:** ${item.originalText}`);
+      }
+    }
+  }
+
+  return `${lines.join('\n')}\n`;
 }

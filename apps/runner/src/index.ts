@@ -2,6 +2,7 @@
 import { cmdRegister } from './cmd/register';
 import { cmdRun } from './cmd/run';
 import { cmdDoctor } from './cmd/doctor';
+import { cmdWatch } from './cmd/watch';
 import { cmdOrchestrate } from './orchestrator';
 import { api } from './api-client';
 
@@ -33,12 +34,14 @@ Usage:
   ainp-runner register --path <path> --name <name>
   ainp-runner run --project <name> --command "<whitelisted command>" [--title <t>] [--keep-worktree]
   ainp-runner orchestrate --project <name> --title "<task>" [--keep-worktree]
+  ainp-runner watch [--once] [--poll-ms <ms>] [--keep-worktree]
 
 Examples:
   ainp-runner doctor
   ainp-runner register --path ./examples/java-maven-sample --name java-sample
   ainp-runner run --project java-sample --command "mvn -B test" --title "smoke mvn test"
   ainp-runner orchestrate --project java-sample --title "add a no-op marker comment"
+  ainp-runner watch --once
 `);
   process.exit(2);
 }
@@ -85,6 +88,15 @@ async function main(): Promise<void> {
         project,
         title,
         cleanup: !flags['keep-worktree'],
+      });
+      return;
+    }
+    case 'watch': {
+      await cmdWatch({
+        once: Boolean(flags.once),
+        pollMs:
+          typeof flags['poll-ms'] === 'string' ? Number(flags['poll-ms']) : undefined,
+        keepWorktree: Boolean(flags['keep-worktree']),
       });
       return;
     }

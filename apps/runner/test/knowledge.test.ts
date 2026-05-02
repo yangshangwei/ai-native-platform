@@ -82,4 +82,59 @@ describe('knowledge feedback loop', () => {
     expect(idxA).toBeGreaterThanOrEqual(0);
     expect(idxB).toBeGreaterThan(idxA);
   });
+
+  it('promotes only accepted or edited knowledge actions when decisions exist', async () => {
+    const { persistKnowledgeCandidate, collectAcceptedKnowledge } = await import('../src/knowledge');
+
+    const candidatePath = join(TMP, 'candidate-decisions.md');
+    writeFileSync(
+      candidatePath,
+      '# Knowledge Candidate\n\n- Pattern: keep all of this only as fallback.\n',
+      'utf8',
+    );
+
+    const dest = await persistKnowledgeCandidate({
+      projectId: 'proj_k_decisions',
+      runId: 'run_decisions',
+      candidateUri: `file://${candidatePath}`,
+      actions: [
+        {
+          targetId: 'KS-001',
+          action: 'accepted',
+          payload: {
+            kind: 'Pattern',
+            text: 'Use local worktrees for reversible implementation.',
+            evidence: 'design=D-001',
+          },
+        },
+        {
+          targetId: 'KS-002',
+          action: 'edited',
+          payload: {
+            kind: 'Decision',
+            text: 'Promote curated knowledge entries only after human review.',
+            originalText: 'Promote everything.',
+            evidence: 'knowledge_gate',
+          },
+        },
+        {
+          targetId: 'KS-003',
+          action: 'ignored',
+          payload: {
+            kind: 'Pitfall',
+            text: 'This ignored lesson must not be promoted.',
+            evidence: 'operator ignored',
+          },
+        },
+      ],
+    });
+
+    expect(dest).toBeTruthy();
+    const acc = await collectAcceptedKnowledge('proj_k_decisions');
+    expect(acc).toContain('Use local worktrees for reversible implementation.');
+    expect(acc).toContain('Promote curated knowledge entries only after human review.');
+    expect(acc).toContain('Edited from');
+    expect(acc).not.toContain('This ignored lesson must not be promoted.');
+    expect(acc).not.toContain('keep all of this only as fallback');
+  });
 });

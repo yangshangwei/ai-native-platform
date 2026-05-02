@@ -1,11 +1,15 @@
 import type {
   CommandRun,
   WorkflowRun,
+  WorkflowRequest,
   WorkflowStage,
   Project,
   GateRun,
   Artifact,
   ArtifactKind,
+  AgentStreamEventInput,
+  AgentBackendKind,
+  AgentTaskKind,
 } from '@ainp/shared';
 import { API_BASE } from './config';
 
@@ -37,10 +41,91 @@ export const api = {
   }) =>
     request<WorkflowRun>('POST', '/workflow-runs', { ...params, type: params.type ?? 'smoke' }),
 
+  listWorkflowRequests: (params: { status?: WorkflowRequest['status'] } = {}) => {
+    const qs = params.status ? `?status=${encodeURIComponent(params.status)}` : '';
+    return request<{ items: WorkflowRequest[] }>('GET', `/workflow-requests${qs}`);
+  },
+
+  createWorkflowRequest: (params: {
+    projectId?: string;
+    projectName?: string;
+    title: string;
+    type?: 'smoke' | 'feature' | 'bugfix';
+    branch?: string;
+  }) =>
+    request<WorkflowRequest>('POST', '/workflow-requests', {
+      ...params,
+      type: params.type ?? 'feature',
+    }),
+
+  claimWorkflowRequest: async (params: { requestId: string; runnerId: string }) => {
+    try {
+      return await request<WorkflowRequest>(
+        'POST',
+        `/workflow-requests/${encodeURIComponent(params.requestId)}/claim`,
+        { runnerId: params.runnerId },
+      );
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('-> 409:')) return null;
+      throw err;
+    }
+  },
+
+  completeWorkflowRequest: (params: {
+    requestId: string;
+    workflowRunId: string | null;
+    ok: boolean;
+    error?: string | null;
+  }) =>
+    request<WorkflowRequest>(
+      'POST',
+      `/workflow-requests/${encodeURIComponent(params.requestId)}/complete`,
+      {
+        workflowRunId: params.workflowRunId,
+        ok: params.ok,
+        error: params.error ?? null,
+      },
+    ),
+
   getWorkflowRun: (id: string) =>
-    request<{ run: WorkflowRun; steps: unknown[]; commands: CommandRun[] }>(
+    request<{
+      run: WorkflowRun;
+      steps: unknown[];
+      commands: CommandRun[];
+      actions: Array<{
+        id: string;
+        workflowRunId: string;
+        kind: string;
+        targetId: string | null;
+        action: string;
+        actor: string;
+        payload: Record<string, unknown>;
+        createdAt: string;
+      }>;
+    }>(
       'GET',
       `/workflow-runs/${id}`,
+    ),
+
+  getArtifactContent: (id: string) =>
+    request<{
+      artifact: Artifact;
+      text: string;
+      contentType: string;
+      filename: string;
+    }>('GET', `/artifacts/${encodeURIComponent(id)}/content`),
+
+  getLatestArtifactContent: (params: { workflowRunId: string; kind: ArtifactKind }) =>
+    request<{
+      artifact: Artifact;
+      text: string;
+      contentType: string;
+      filename: string;
+    }>(
+      'GET',
+      `/artifacts/workflow-runs/${encodeURIComponent(params.workflowRunId)}/${encodeURIComponent(
+        params.kind,
+      )}/latest/content`,
     ),
 
   workspacePrepared: (params: { workflowRunId: string; workspacePath: string }) =>
@@ -122,6 +207,32 @@ export const api = {
     params?: { changedFiles?: string[]; allowedPrefixes?: string[] };
   }) => request<{ ok: boolean; gate: GateRun }>('POST', '/runner/events/run-gate', params),
 
+  agentTaskStarted: (params: {
+    workflowRunId: string;
+    stepRunId: string | null;
+    kind: AgentTaskKind;
+    backend: AgentBackendKind;
+    prompt: string;
+    inputArtifactIds?: string[];
+  }) =>
+    request<{ ok: boolean; task: { id: string } }>(
+      'POST',
+      '/runner/events/agent-task-started',
+      params,
+    ),
+
+  agentTaskFinished: (params: {
+    taskId: string;
+    status: 'success' | 'failed' | 'cancelled';
+    summary: string;
+    outputArtifactIds?: string[];
+  }) =>
+    request<{ ok: boolean; result: { id: string } }>(
+      'POST',
+      '/runner/events/agent-task-finished',
+      params,
+    ),
+
   approve: (params: {
     workflowRunId: string;
     gateId: GateRun['gateId'];
@@ -144,7 +255,11 @@ export const api = {
       'GET',
       `/approvals?workflowRunId=${encodeURIComponent(workflowRunId)}`,
     );
-    const found = r.items.find((a) => a.gateId === gateId);
+    const found = [...r.items].reverse().find((a) => a.gateId === gateId);
     return found ? found.decision : null;
   },
+
+  /** Push a single agent stream event so the API can persist + broadcast it. */
+  postAgentEvent: (input: AgentStreamEventInput) =>
+    request('POST', '/runner/events/agent-stream', input),
 };
