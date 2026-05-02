@@ -43,6 +43,10 @@ const server = Bun.serve({
     let path = url.pathname === '/' ? '/index.html' : url.pathname;
     let file = safeJoin(ROOT, path);
     if (!file) return new Response('forbidden', { status: 403 });
+    if (!existsSync(file) && !path.includes('.') && existsSync(`${file}.ts`)) {
+      file = `${file}.ts`;
+      path = `${path}.ts`;
+    }
     if (!existsSync(file) || !statSync(file).isFile()) {
       // SPA fallback: serve index.html for unknown routes
       file = join(ROOT, 'index.html');

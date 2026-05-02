@@ -1,362 +1,1814 @@
-export {};
+import {
+  STAGE_LABELS,
+  STAGES,
+  STAGE_TO_GATE,
+  buildAcceptanceChecklist,
+  buildRunProjection,
+  buildWorkbenchOverview,
+  changedFilesFromDiff,
+  latestArtifactOfKind,
+  parseCompletionReportArtifact,
+  parseDesignArtifact,
+  parseKnowledgeArtifact,
+  parseRequirementArtifact,
+  type KnowledgeSuggestion,
+  type ArtifactDto,
+  type DesignDoc,
+  type GateRunDto,
+  type RequirementDoc,
+  type RunDetail,
+  type Stage,
+  type WorkflowRunDto,
+} from './projection';
 
 const API_BASE = '/api';
 
-const STAGES = [
-  'init',
-  'context_pack',
-  'requirement',
-  'design',
-  'implementation',
-  'build_test',
-  'review',
-  'completion',
-  'knowledge',
-] as const;
+type Page = 'workbench' | 'projects' | 'new-task' | 'reports' | 'knowledge' | 'settings';
+type StatusKind = 'good' | 'warn' | 'bad' | 'info' | 'muted';
 
-type Stage = (typeof STAGES)[number];
+interface ProjectDto {
+  id: string;
+  name: string;
+  localPath: string;
+  language: string;
+  buildTool: string;
+  defaultBranch: string;
+  registeredAt: string;
+}
 
-const STAGE_TO_GATE: Partial<Record<Stage, string>> = {
-  requirement: 'requirement_gate',
-  design: 'design_gate',
-  review: 'acceptance_gate',
-  knowledge: 'knowledge_gate',
-};
+interface RunnerDto {
+  id: string;
+  host: string;
+  version: string;
+  jdkVersion: string | null;
+  mavenVersion: string | null;
+  gitVersion: string | null;
+  lastSeenAt: string;
+  status: 'online' | 'stale' | 'offline';
+}
 
-interface WorkflowRun {
+interface WorkflowRequestDto {
   id: string;
   projectId: string;
+  type: 'feature' | 'bugfix' | 'smoke';
   title: string;
-  status: string;
-  currentStage: Stage;
   branch: string;
-  workspacePath: string | null;
+  status: 'pending' | 'claimed' | 'completed' | 'failed' | 'cancelled';
+  claimedBy: string | null;
+  workflowRunId: string | null;
+  error: string | null;
   createdAt: string;
+  updatedAt: string;
 }
 
-interface CommandRunDto {
-  id: string;
-  command: string;
-  status: string;
-  exitCode: number | null;
-  durationMs: number | null;
-  stdoutRef: string;
-  stderrRef: string;
-  startedAt: string;
+interface HealthDto {
+  ok: boolean;
+  counts: Record<string, number>;
 }
 
-interface GateRunDto {
-  id: string;
-  gateId: string;
-  status: 'pass' | 'warn' | 'fail';
-  decidedAt: string;
-  ruleResults: Array<{ ruleId: string; status: string; message: string }>;
+interface ArtifactContentDto {
+  artifact: ArtifactDto;
+  text: string;
+  contentType: string;
+  filename: string;
 }
 
-interface ArtifactDto {
-  id: string;
-  kind: string;
-  uri: string;
-  createdAt: string;
+interface CommandLogsDto {
+  commandRun: RunDetail['commands'][number];
+  stdout: { text: string; contentType: string; filename: string };
+  stderr: { text: string; contentType: string; filename: string };
 }
 
-interface ApprovalDto {
-  id: string;
-  gateId: string;
-  decision: 'approved' | 'rejected';
-  actor: string;
-  decidedAt: string;
+interface AppData {
+  health: HealthDto | null;
+  projects: ProjectDto[];
+  runners: RunnerDto[];
+  requests: WorkflowRequestDto[];
+  runs: WorkflowRunDto[];
+  activeDetail: RunDetail | null;
 }
 
-interface BuildRunDto {
-  id: string;
-  status: string;
-  jdkVersion: string;
-  mavenCommand: string;
-}
+const data: AppData = {
+  health: null,
+  projects: [],
+  runners: [],
+  requests: [],
+  runs: [],
+  activeDetail: null,
+};
 
-interface TestRunDto {
-  framework: string;
-  total: number;
-  passed: number;
-  failed: number;
-  errors: number;
-  skipped: number;
-}
-
-interface RunDetail {
-  run: WorkflowRun;
-  steps: Array<{ id: string; stage: Stage; name: string; status: string }>;
-  commands: CommandRunDto[];
-  gates: GateRunDto[];
-  artifacts: ArtifactDto[];
-  builds: BuildRunDto[];
-  tests: TestRunDto[];
-  approvals: ApprovalDto[];
-  audit: Array<{ id: string; kind: string; at: string }>;
-}
-
+let activePage: Page = 'workbench';
 let activeRunId: string | null = null;
+let loadingDetailFor: string | null = null;
+let lastError: string | null = null;
+const artifactContent = new Map<string, ArtifactContentDto | null>();
+const commandLogs = new Map<string, CommandLogsDto | null>();
+const knowledgeDecisions = new Map<string, 'accepted' | 'ignored' | 'edited'>();
+const knowledgeEdits = new Map<string, string>();
+const approvalInFlight = new Set<string>();
+const approvalLastSubmittedAt = new Map<string, number>();
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, init);
-  if (!res.ok) throw new Error(`api ${path}: ${res.status}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`api ${path}: ${res.status} ${text}`);
+  }
   return (await res.json()) as T;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
-  opts: { class?: string; text?: string; children?: Node[] } = {},
+  opts: {
+    class?: string;
+    id?: string;
+    text?: string;
+    children?: Array<Node | null | undefined | false>;
+    attrs?: Record<string, string>;
+  } = {},
 ): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
   if (opts.class) node.className = opts.class;
+  if (opts.id) node.id = opts.id;
   if (opts.text !== undefined) node.textContent = opts.text;
-  if (opts.children) for (const c of opts.children) node.appendChild(c);
+  if (opts.attrs) for (const [k, v] of Object.entries(opts.attrs)) node.setAttribute(k, v);
+  if (opts.children) {
+    for (const child of opts.children) if (child) node.appendChild(child);
+  }
   return node;
 }
 
-function row(key: string, valueNode: Node): HTMLElement {
-  const k = el('span', { class: 'k', text: key });
-  const wrap = el('div', { class: 'row' });
-  wrap.appendChild(k);
-  wrap.appendChild(valueNode);
-  return wrap;
-}
-
-function pill(status: string): HTMLElement {
-  return el('span', { class: `pill ${status}`, text: status });
+function icon(path: string): SVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.classList.add('icon');
+  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  p.setAttribute('d', path);
+  p.setAttribute('fill', 'none');
+  p.setAttribute('stroke', 'currentColor');
+  p.setAttribute('stroke-width', '2');
+  p.setAttribute('stroke-linecap', 'round');
+  p.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(p);
+  return svg;
 }
 
 function clear(node: HTMLElement): void {
-  while (node.firstChild) node.removeChild(node.firstChild);
+  node.replaceChildren();
 }
 
-async function refreshStatus(): Promise<void> {
-  const target = document.getElementById('api-status');
-  if (!target) return;
-  try {
-    const h = await api<{ ok: boolean; counts: Record<string, number> }>('/health');
-    target.textContent = `· API ok · runs=${h.counts.workflowRuns} · cmds=${h.counts.commandRuns} · gates=${h.counts.gateRuns}`;
-  } catch {
-    target.textContent = '· API unreachable';
+function fmtTime(value: string | null | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
+
+function shortId(id: string): string {
+  return id.length > 14 ? `${id.slice(0, 14)}…` : id;
+}
+
+function statusKind(status: string): StatusKind {
+  if (['passed', 'pass', 'success', 'approved', 'online', 'completed'].includes(status)) return 'good';
+  if (['failed', 'fail', 'rejected', 'offline', 'cancelled'].includes(status)) return 'bad';
+  if (['warn', 'stale', 'awaiting_human'].includes(status)) return 'warn';
+  if (['running', 'pending', 'claimed'].includes(status)) return 'info';
+  return 'muted';
+}
+
+function pill(label: string, kind: StatusKind = statusKind(label)): HTMLElement {
+  return el('span', { class: `pill ${kind}`, text: label });
+}
+
+function metric(label: string, value: string, hint?: string, kind: StatusKind = 'muted'): HTMLElement {
+  return el('div', {
+    class: 'metric-card',
+    children: [
+      el('span', { class: 'metric-label', text: label }),
+      el('strong', { class: `metric-value ${kind}`, text: value }),
+      hint ? el('span', { class: 'metric-hint', text: hint }) : null,
+    ],
+  });
+}
+
+function field(label: string, value: Node | string): HTMLElement {
+  const valueNode = typeof value === 'string' ? el('span', { text: value }) : value;
+  return el('div', {
+    class: 'field-row',
+    children: [el('span', { class: 'field-label', text: label }), valueNode],
+  });
+}
+
+function button(label: string, className = 'button secondary'): HTMLButtonElement {
+  const btn = el('button', { class: className, text: label, attrs: { type: 'button' } });
+  return btn;
+}
+
+function projectName(projectId: string): string {
+  return data.projects.find((p) => p.id === projectId)?.name ?? projectId;
+}
+
+function selectedProject(): ProjectDto | null {
+  const active = data.activeDetail?.run.projectId ?? data.runs[0]?.projectId ?? data.projects[0]?.id;
+  return data.projects.find((p) => p.id === active) ?? data.projects[0] ?? null;
+}
+
+function latestRunner(): RunnerDto | null {
+  return [...data.runners].sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))[0] ?? null;
+}
+
+function agentBackendLabel(): string {
+  const tasks = data.activeDetail?.agentTasks ?? [];
+  return tasks.at(-1)?.backend ?? 'native / codex / claude_code';
+}
+
+function buildEnvLabel(): string {
+  const runner = latestRunner();
+  if (!runner) return '等待 runner heartbeat';
+  const jdk = runner.jdkVersion ? `JDK ${runner.jdkVersion}` : 'JDK ?';
+  const mvn = runner.mavenVersion ? `Maven ${runner.mavenVersion.split('\n')[0]}` : 'Maven ?';
+  return `${jdk} · ${mvn}`;
+}
+
+function setHash(page: Page, runId?: string): void {
+  if (runId) window.location.hash = `run/${runId}`;
+  else window.location.hash = page;
+}
+
+function parseHash(): void {
+  const raw = window.location.hash.replace(/^#/, '');
+  if (raw.startsWith('run/')) {
+    activePage = 'workbench';
+    activeRunId = decodeURIComponent(raw.slice('run/'.length));
+    return;
+  }
+  if (['workbench', 'projects', 'new-task', 'reports', 'knowledge', 'settings'].includes(raw)) {
+    activePage = raw as Page;
   }
 }
 
-async function refreshRuns(): Promise<void> {
-  const list = document.getElementById('runs-list');
-  if (!list) return;
+async function loadData(opts: { render?: boolean; keepDetail?: boolean } = {}): Promise<void> {
   try {
-    const { items } = await api<{ items: WorkflowRun[] }>('/workflow-runs');
-    clear(list);
-    if (items.length === 0) {
-      const empty = el('li', {
-        text: 'No runs yet. Run: bun run runner -- orchestrate --project java-sample --title "..."',
-      });
-      empty.style.color = 'var(--muted)';
-      empty.style.fontSize = '11px';
-      list.appendChild(empty);
-      return;
+    const [health, projects, runners, requests, runs] = await Promise.all([
+      api<HealthDto>('/health').catch(() => null),
+      api<{ items: ProjectDto[] }>('/projects').then((r) => r.items).catch(() => []),
+      api<{ items: RunnerDto[] }>('/runners').then((r) => r.items).catch(() => []),
+      api<{ items: WorkflowRequestDto[] }>('/workflow-requests').then((r) => r.items).catch(() => []),
+      api<{ items: WorkflowRunDto[] }>('/workflow-runs').then((r) => r.items).catch(() => []),
+    ]);
+    data.health = health;
+    data.projects = projects;
+    data.runners = runners;
+    data.requests = requests;
+    data.runs = [...runs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    if (!activeRunId && data.runs.length > 0) activeRunId = data.runs[0]!.id;
+    if (activeRunId && (!opts.keepDetail || data.activeDetail?.run.id !== activeRunId)) {
+      await loadRunDetail(activeRunId, false);
     }
-    // Newest first
-    const sorted = [...items].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
-    for (const run of sorted) {
-      const title = el('div', { text: run.title });
-      title.style.fontSize = '12px';
-      title.style.fontWeight = '600';
-      const meta = el('div');
-      meta.style.fontSize = '11px';
-      meta.style.color = 'var(--muted)';
-      meta.appendChild(document.createTextNode(`${run.id.slice(0, 14)}… `));
-      meta.appendChild(pill(run.status));
-      const li = el('li', { children: [title, meta] });
-      if (run.id === activeRunId) li.classList.add('active');
-      li.onclick = () => {
-        activeRunId = run.id;
-        void showRun(run.id);
-        document
-          .querySelectorAll('#runs-list li')
-          .forEach((node) => node.classList.remove('active'));
-        li.classList.add('active');
-      };
-      list.appendChild(li);
-    }
-    // auto-select the first run if none selected yet
-    if (!activeRunId && sorted.length > 0) {
-      activeRunId = sorted[0]!.id;
-      void showRun(activeRunId);
-      list.querySelector('li')?.classList.add('active');
-    }
+    lastError = null;
   } catch (err) {
-    clear(list);
-    const errLi = el('li', { text: (err as Error).message });
-    errLi.style.color = 'var(--fail)';
-    list.appendChild(errLi);
+    lastError = err instanceof Error ? err.message : String(err);
+  }
+  if (opts.render !== false) render();
+}
+
+async function loadRunDetail(runId: string, shouldRender = true): Promise<void> {
+  if (loadingDetailFor === runId) return;
+  loadingDetailFor = runId;
+  try {
+    data.activeDetail = await api<RunDetail>(`/workflow-runs/${encodeURIComponent(runId)}`);
+    activeRunId = runId;
+    primeArtifactPreviews(data.activeDetail.artifacts);
+    attachStream(runId);
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+  } finally {
+    loadingDetailFor = null;
+  }
+  if (shouldRender) render();
+}
+
+function primeArtifactPreviews(artifacts: ArtifactDto[]): void {
+  const previewKinds = new Set([
+    'requirement_draft',
+    'design_doc',
+    'traceability',
+    'diff',
+    'context_pack',
+    'project_profile',
+    'other',
+    'completion_report',
+    'knowledge_candidate',
+    'surefire_report',
+    'failsafe_report',
+  ]);
+  for (const artifact of artifacts) {
+    if (previewKinds.has(artifact.kind)) void ensureArtifactContent(artifact.id);
   }
 }
 
-async function showRun(id: string): Promise<void> {
-  const stagesNode = document.getElementById('stages')!;
-  const detail = document.getElementById('detail')!;
-  const evidence = document.getElementById('evidence')!;
-  const approval = document.getElementById('approval')!;
+async function ensureCommandLogs(commandRunId: string): Promise<void> {
+  if (commandLogs.has(commandRunId)) return;
+  commandLogs.set(commandRunId, null);
+  try {
+    commandLogs.set(
+      commandRunId,
+      await api<CommandLogsDto>(`/command-runs/${encodeURIComponent(commandRunId)}/logs`),
+    );
+  } catch {
+    commandLogs.set(commandRunId, null);
+  }
+  render();
+}
 
-  const data = await api<RunDetail>(`/workflow-runs/${encodeURIComponent(id)}`);
+async function ensureArtifactContent(artifactId: string): Promise<void> {
+  if (artifactContent.has(artifactId)) return;
+  artifactContent.set(artifactId, null);
+  try {
+    artifactContent.set(
+      artifactId,
+      await api<ArtifactContentDto>(`/artifacts/${encodeURIComponent(artifactId)}/content`),
+    );
+  } catch {
+    artifactContent.set(artifactId, null);
+  }
+  if (data.activeDetail?.artifacts.some((a) => a.id === artifactId)) render();
+}
 
-  // ---- left: stages ----
-  clear(stagesNode);
-  for (const stage of STAGES) {
-    const div = el('div', {
-      class: 'stage' + (stage === data.run.currentStage ? ' current' : ''),
-      text: stage,
+function render(): void {
+  const root = document.getElementById('app');
+  if (!root) return;
+  clear(root);
+  root.appendChild(renderShell());
+}
+
+function renderShell(): HTMLElement {
+  return el('div', {
+    class: 'app-shell',
+    children: [renderSidebar(), el('main', { class: 'main-shell', children: [renderTopbar(), renderPage()] })],
+  });
+}
+
+function renderSidebar(): HTMLElement {
+  const navItems: Array<{ page: Page; label: string; help: string; path: string }> = [
+    { page: 'workbench', label: '工作台', help: '生命周期与人工确认', path: 'M4 6h16M4 12h10M4 18h16' },
+    { page: 'projects', label: '项目接入', help: '注册本地仓库', path: 'M3 7h18M6 7v12h12V7M9 7V5h6v2' },
+    { page: 'new-task', label: '新建任务', help: '进入 runner 队列', path: 'M12 5v14M5 12h14' },
+    { page: 'reports', label: '报告', help: '交付证据汇总', path: 'M7 3h7l5 5v13H7zM14 3v6h6' },
+    { page: 'knowledge', label: '知识库', help: '候选与沉淀', path: 'M4 19V5a2 2 0 012-2h12v16H6a2 2 0 01-2-2zM8 7h8M8 11h8M8 15h5' },
+    { page: 'settings', label: '配置', help: '本地 worktree 模式', path: 'M12 8a4 4 0 100 8 4 4 0 000-8zM4 12h2m12 0h2M12 4v2m0 12v2' },
+  ];
+
+  const nav = el('nav', { class: 'nav-list' });
+  for (const item of navItems) {
+    const a = el('button', {
+      class: `nav-item ${activePage === item.page ? 'active' : ''}`,
+      attrs: { type: 'button' },
+      children: [
+        icon(item.path),
+        el('span', {
+          children: [el('strong', { text: item.label }), el('small', { text: item.help })],
+        }),
+      ],
     });
-    stagesNode.appendChild(div);
+    a.onclick = () => setHash(item.page);
+    nav.appendChild(a);
   }
 
-  // ---- center: detail + steps ----
-  clear(detail);
-  detail.classList.remove('placeholder');
-  detail.appendChild(row('Run', el('span', { text: data.run.id })));
-  detail.appendChild(row('Title', el('span', { text: data.run.title })));
-  detail.appendChild(row('Status', pill(data.run.status)));
-  detail.appendChild(row('Stage', el('span', { text: data.run.currentStage })));
-  detail.appendChild(row('Branch', el('span', { text: data.run.branch })));
-  detail.appendChild(
-    row('Workspace', el('code', { text: data.run.workspacePath ?? '<not prepared>' })),
+  return el('aside', {
+    class: 'sidebar',
+    children: [
+      el('div', {
+        class: 'brand',
+        children: [
+          el('div', { class: 'brand-mark', text: 'AI' }),
+          el('div', {
+            children: [
+              el('strong', { text: 'AI Native Platform' }),
+              el('span', { text: 'Delivery Workbench' }),
+            ],
+          }),
+        ],
+      }),
+      nav,
+      renderQueueSummary(),
+    ],
+  });
+}
+
+function renderQueueSummary(): HTMLElement {
+  const pending = data.requests.filter((r) => r.status === 'pending').length;
+  const claimed = data.requests.filter((r) => r.status === 'claimed').length;
+  const last = data.requests[0];
+  return el('section', {
+    class: 'sidebar-card',
+    children: [
+      el('h2', { text: 'Runner Queue' }),
+      el('div', {
+        class: 'queue-stats',
+        children: [metric('Pending', String(pending), '等待 watch', 'info'), metric('Claimed', String(claimed), '执行中', 'warn')],
+      }),
+      last
+        ? el('p', { class: 'muted compact', text: `${shortId(last.id)} · ${last.status} · ${last.title}` })
+        : el('p', { class: 'muted compact', text: '暂无任务请求。' }),
+      el('code', { class: 'command-chip', text: 'bun run runner -- watch' }),
+    ],
+  });
+}
+
+function renderTopbar(): HTMLElement {
+  const project = selectedProject();
+  const run = data.activeDetail?.run ?? data.runs[0] ?? null;
+  const runner = latestRunner();
+  return el('header', {
+    class: 'topbar',
+    children: [
+      el('div', {
+        class: 'topbar-title',
+        children: [
+          el('span', { class: 'eyebrow', text: 'AI 软件交付工作台' }),
+          el('h1', { text: titleForPage() }),
+        ],
+      }),
+      el('div', {
+        class: 'context-strip',
+        children: [
+          contextItem('Project', project?.name ?? '未接入', 'info'),
+          contextItem('Branch', run?.branch ?? project?.defaultBranch ?? '—', 'muted'),
+          contextItem('Runner', runner ? runner.status : 'offline', runner ? statusKind(runner.status) : 'bad'),
+          contextItem('Agent Backend', agentBackendLabel(), 'muted'),
+          contextItem('Build Env', buildEnvLabel(), runner ? 'good' : 'warn'),
+        ],
+      }),
+    ],
+  });
+}
+
+function titleForPage(): string {
+  switch (activePage) {
+    case 'projects':
+      return '项目接入';
+    case 'new-task':
+      return '新建任务';
+    case 'reports':
+      return '交付报告';
+    case 'knowledge':
+      return '知识库';
+    case 'settings':
+      return '运行配置';
+    default:
+      return data.activeDetail?.run.title ?? '工作台首页';
+  }
+}
+
+function contextItem(label: string, value: string, kind: StatusKind): HTMLElement {
+  return el('div', {
+    class: 'context-item',
+    children: [el('span', { text: label }), el('strong', { class: kind, text: value })],
+  });
+}
+
+function renderPage(): HTMLElement {
+  if (lastError) {
+    return el('section', { class: 'page-stack', children: [renderError(lastError), renderCurrentPage()] });
+  }
+  return renderCurrentPage();
+}
+
+function renderCurrentPage(): HTMLElement {
+  switch (activePage) {
+    case 'projects':
+      return renderProjectsPage();
+    case 'new-task':
+      return renderNewTaskPage();
+    case 'reports':
+      return renderReportsPage();
+    case 'knowledge':
+      return renderKnowledgePage();
+    case 'settings':
+      return renderSettingsPage();
+    default:
+      return renderWorkbenchPage();
+  }
+}
+
+function renderError(message: string): HTMLElement {
+  return el('div', {
+    class: 'notice bad',
+    children: [el('strong', { text: '数据刷新失败' }), el('span', { text: message })],
+  });
+}
+
+function renderWorkbenchPage(): HTMLElement {
+  if (!data.activeDetail) {
+    return el('section', {
+      class: 'empty-state',
+      children: [
+        el('h2', { text: '还没有 Workflow Run' }),
+        el('p', { text: '先接入项目并创建任务；runner watch 会从队列认领并执行到人工确认点。' }),
+        actionLink('新建任务', 'new-task'),
+      ],
+    });
+  }
+
+  const detail = data.activeDetail;
+  const projection = buildRunProjection(detail);
+  return el('section', {
+    class: 'workbench-grid',
+    children: [
+      el('div', {
+        class: 'workspace-main',
+        children: [
+          renderWorkbenchOverviewPanel(),
+          renderRunHero(detail, projection),
+          renderLifecycle(detail, projection),
+          renderStagePanels(detail),
+        ],
+      }),
+      el('aside', {
+        class: 'workspace-side',
+        children: [renderRunsPanel(), renderApprovalPanel(detail, projection.pendingGate), renderEvidencePanel(detail), renderAgentStreamPanel()],
+      }),
+    ],
+  });
+}
+
+function renderWorkbenchOverviewPanel(): HTMLElement {
+  const overview = buildWorkbenchOverview({
+    runs: data.runs,
+    requests: data.requests,
+    detailsByRunId: data.activeDetail ? { [data.activeDetail.run.id]: data.activeDetail } : {},
+  });
+  return el('section', {
+    class: 'panel overview-panel',
+    children: [
+      panelHeader('工作台首页', '待我处理、失败 Gate、运行中任务、最近报告'),
+      el('div', {
+        class: 'overview-grid',
+        children: [
+          renderOverviewBucket('待我处理', overview.toConfirm, 'warn'),
+          renderFailedGateBucket(overview.failedGates),
+          renderOverviewBucket('运行中 Agent', overview.running, 'info'),
+          renderRequestBucket(overview.pendingRequests),
+          renderOverviewBucket('最近完成 Report', overview.recentReports, 'good'),
+        ],
+      }),
+    ],
+  });
+}
+
+function renderOverviewBucket(title: string, runs: WorkflowRunDto[], kind: StatusKind): HTMLElement {
+  return el('article', {
+    class: 'overview-card',
+    children: [
+      el('div', { class: 'overview-card-head', children: [el('strong', { text: title }), pill(String(runs.length), kind)] }),
+      runs.length
+        ? el('div', {
+            class: 'stack',
+            children: runs.slice(0, 3).map((run) => {
+              const open = button(shortId(run.id), 'button ghost small');
+              open.onclick = () => setHash('workbench', run.id);
+              return el('div', {
+                class: 'mini-row',
+                children: [el('span', { text: run.title }), open],
+              });
+            }),
+          })
+        : el('p', { class: 'muted compact', text: '暂无。' }),
+    ],
+  });
+}
+
+function renderFailedGateBucket(items: Array<{ runId: string; gateId: string }>): HTMLElement {
+  return el('article', {
+    class: 'overview-card',
+    children: [
+      el('div', { class: 'overview-card-head', children: [el('strong', { text: '失败 Gate' }), pill(String(items.length), items.length ? 'bad' : 'good')] }),
+      items.length
+        ? el('div', {
+            class: 'stack',
+            children: items.map((item) => el('div', { class: 'mini-row', children: [el('span', { text: item.gateId }), el('code', { text: shortId(item.runId) })] })),
+          })
+        : el('p', { class: 'muted compact', text: '没有失败 Gate。' }),
+    ],
+  });
+}
+
+function renderRequestBucket(requests: Array<{ title: string; status: string }>): HTMLElement {
+  return el('article', {
+    class: 'overview-card',
+    children: [
+      el('div', { class: 'overview-card-head', children: [el('strong', { text: '待认领任务' }), pill(String(requests.length), requests.length ? 'info' : 'muted')] }),
+      requests.length
+        ? el('div', {
+            class: 'stack',
+            children: requests.slice(0, 3).map((request) => el('div', { class: 'mini-row', children: [el('span', { text: request.title }), pill(request.status)] })),
+          })
+        : el('p', { class: 'muted compact', text: '队列为空。' }),
+    ],
+  });
+}
+
+function renderRunHero(detail: RunDetail, projection: ReturnType<typeof buildRunProjection>): HTMLElement {
+  return el('section', {
+    class: 'hero-card',
+    children: [
+      el('div', {
+        class: 'hero-copy',
+        children: [
+          el('div', {
+            class: 'run-meta-line',
+            children: [pill(detail.run.status), el('span', { text: shortId(detail.run.id) }), el('span', { text: fmtTime(detail.run.createdAt) })],
+          }),
+          el('h2', { text: detail.run.title }),
+          el('p', { text: `本地 worktree：${detail.run.workspacePath ?? '尚未准备'} · 分支：${detail.run.branch}` }),
+        ],
+      }),
+      el('div', {
+        class: 'metric-grid',
+        children: [
+          metric('Commands', String(projection.summary.commands), '真实命令', 'info'),
+          metric('Gates', `${projection.summary.gatesPassed}/${detail.gates.length}`, `${projection.summary.gatesWarned} warn · ${projection.summary.gatesFailed} fail`, projection.summary.gatesFailed ? 'bad' : 'good'),
+          metric('Tests', `${projection.summary.testsPassed}/${projection.summary.testsTotal}`, 'Surefire/Failsafe', projection.summary.testsTotal ? 'good' : 'muted'),
+          metric('Build', projection.summary.buildStatus, '本地 JDK/Maven', statusKind(projection.summary.buildStatus)),
+        ],
+      }),
+    ],
+  });
+}
+
+function renderLifecycle(detail: RunDetail, projection: ReturnType<typeof buildRunProjection>): HTMLElement {
+  return el('section', {
+    class: 'panel',
+    children: [
+      panelHeader('Lifecycle Board', '从需求到知识沉淀的端到端闭环'),
+      el('div', {
+        class: 'stage-board',
+        children: projection.stages.map((stage) => {
+          const step = detail.steps.find((s) => s.stage === stage.id);
+          return el('article', {
+            class: `stage-card ${stage.state}`,
+            children: [
+              el('span', { class: 'stage-index', text: String(STAGES.indexOf(stage.id) + 1).padStart(2, '0') }),
+              el('strong', { text: stage.label }),
+              el('small', { text: step?.name ?? stage.gateId ?? '等待进入' }),
+              el('span', { class: `stage-state ${stage.state}`, text: stage.state }),
+            ],
+          });
+        }),
+      }),
+    ],
+  });
+}
+
+function renderStagePanels(detail: RunDetail): HTMLElement {
+  return el('section', {
+    class: 'stage-panel-grid',
+    children: [
+      renderRequirementPanel(detail),
+      renderDesignPanel(detail),
+      renderImplementationPanel(detail),
+      renderBuildTestPanel(detail),
+      renderAcceptancePanel(detail),
+      renderKnowledgeSuggestionsPanel(detail),
+    ],
+  });
+}
+
+function panelHeader(title: string, subtitle?: string): HTMLElement {
+  return el('div', {
+    class: 'panel-header',
+    children: [el('h2', { text: title }), subtitle ? el('p', { text: subtitle }) : null],
+  });
+}
+
+function renderDocumentPanel(detail: RunDetail, kind: string, title: string, subtitle: string): HTMLElement {
+  const artifact = latestArtifactOfKind(detail.artifacts, kind);
+  const content = artifact ? artifactContent.get(artifact.id) : null;
+  return el('article', {
+    class: 'panel doc-panel',
+    children: [
+      panelHeader(title, subtitle),
+      artifact
+        ? el('div', {
+            class: 'doc-meta',
+            children: [pill(artifact.kind, 'muted'), el('code', { text: shortId(artifact.id) })],
+          })
+        : el('p', { class: 'muted', text: '尚未产生该阶段产物。' }),
+      artifact
+        ? el('pre', {
+            class: 'doc-preview',
+            text: content?.text ? previewText(content.text) : 'Loading artifact preview…',
+          })
+        : null,
+    ],
+  });
+}
+
+function artifactText(detail: RunDetail, kind: string): string {
+  const artifact = latestArtifactOfKind(detail.artifacts, kind);
+  return artifact ? (artifactContent.get(artifact.id)?.text ?? '') : '';
+}
+
+function artifactTextBy(
+  detail: RunDetail,
+  kind: string,
+  predicate: (artifact: ArtifactDto) => boolean,
+): string {
+  const artifact =
+    detail.artifacts
+      .filter((candidate) => candidate.kind === kind && predicate(candidate))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .at(-1) ?? null;
+  return artifact ? (artifactContent.get(artifact.id)?.text ?? '') : '';
+}
+
+function markdownArtifactText(detail: RunDetail, kind: string): string {
+  return (
+    artifactTextBy(
+      detail,
+      kind,
+      (artifact) =>
+        artifact.contentType.includes('markdown') ||
+        (typeof artifact.metadata?.output === 'string' && artifact.metadata.output.endsWith('.md')),
+    ) || artifactText(detail, kind)
   );
-  detail.appendChild(row('Created', el('span', { text: data.run.createdAt })));
+}
 
-  if (data.steps.length > 0) {
-    detail.appendChild(el('h2', { text: 'Steps' }));
-    for (const s of data.steps) {
-      const wrap = el('div', { class: 'row' });
-      wrap.appendChild(el('span', { class: 'k', text: s.stage }));
-      const right = el('span');
-      right.appendChild(pill(s.status));
-      right.appendChild(document.createTextNode(' ' + s.name));
-      wrap.appendChild(right);
-      detail.appendChild(wrap);
-    }
-  }
+function structuredArtifactText(detail: RunDetail, kind: string): string {
+  return artifactTextBy(
+    detail,
+    kind,
+    (artifact) =>
+      artifact.contentType === 'application/json' ||
+      artifact.metadata?.structured === true ||
+      (typeof artifact.metadata?.output === 'string' && artifact.metadata.output.endsWith('.json')),
+  );
+}
 
-  if (data.builds.length > 0) {
-    detail.appendChild(el('h2', { text: 'Builds & Tests' }));
-    for (const b of data.builds) {
-      const right = el('span');
-      right.appendChild(pill(b.status));
-      right.appendChild(document.createTextNode(` ${b.mavenCommand} (jdk=${b.jdkVersion})`));
-      detail.appendChild(row('build', right));
-    }
-    for (const t of data.tests) {
-      detail.appendChild(
-        row(
-          t.framework,
-          el('span', {
-            text: `total=${t.total} passed=${t.passed} failed=${t.failed} errors=${t.errors} skipped=${t.skipped}`,
+function parsedRequirement(detail: RunDetail): RequirementDoc {
+  return parseRequirementArtifact(
+    markdownArtifactText(detail, 'requirement_draft'),
+    structuredArtifactText(detail, 'requirement_draft'),
+  );
+}
+
+function parsedDesign(detail: RunDetail): DesignDoc {
+  return parseDesignArtifact(
+    markdownArtifactText(detail, 'design_doc'),
+    structuredArtifactText(detail, 'design_doc'),
+  );
+}
+
+function parsedKnowledge(detail: RunDetail): KnowledgeSuggestion[] {
+  return parseKnowledgeArtifact(
+    markdownArtifactText(detail, 'knowledge_candidate'),
+    structuredArtifactText(detail, 'knowledge_candidate'),
+  );
+}
+
+function renderRequirementPanel(detail: RunDetail): HTMLElement {
+  const req = parsedRequirement(detail);
+  const gate = [...detail.gates].reverse().find((g) => g.gateId === 'requirement_gate');
+  return el('article', {
+    class: 'panel doc-panel structured-panel',
+    children: [
+      panelHeader('Requirement', '目标、验收标准、非目标、待确认问题'),
+      renderTextList('目标', req.goals),
+      renderAcList(req.acceptanceCriteria, detail),
+      renderTextList('非目标', req.nonGoals),
+      renderTextList('待确认', req.openQuestions),
+      gate ? renderRuleList('Requirement Gate', gate) : el('p', { class: 'muted compact', text: 'Requirement Gate 尚未运行。' }),
+      renderRawFallback(detail, 'requirement_draft'),
+    ],
+  });
+}
+
+function renderDesignPanel(detail: RunDetail): HTMLElement {
+  const design = parsedDesign(detail);
+  const gate = [...detail.gates].reverse().find((g) => g.gateId === 'design_gate');
+  return el('article', {
+    class: 'panel doc-panel structured-panel',
+    children: [
+      panelHeader('Design', '需求覆盖矩阵、测试策略、风险'),
+      design.coverage.length ? renderCoverageTable(design.coverage) : el('p', { class: 'muted', text: '等待需求覆盖矩阵。' }),
+      renderTextList('测试策略', design.testStrategy),
+      renderTextList('风险', design.risks),
+      renderTextList('影响文件', design.filesTouched),
+      gate ? renderRuleList('Design Gate', gate) : el('p', { class: 'muted compact', text: 'Design Gate 尚未运行。' }),
+      renderRawFallback(detail, 'design_doc'),
+    ],
+  });
+}
+
+function renderTextList(title: string, items: string[]): HTMLElement {
+  return el('section', {
+    class: 'structured-section',
+    children: [
+      el('h3', { text: title }),
+      items.length
+        ? el('ul', { class: 'clean-list', children: items.map((item) => el('li', { text: item })) })
+        : el('p', { class: 'muted compact', text: '暂无结构化内容。' }),
+    ],
+  });
+}
+
+function renderAcList(items: Array<{ id: string; text: string }>, detail?: RunDetail): HTMLElement {
+  return el('section', {
+    class: 'structured-section',
+    children: [
+      el('h3', { text: '验收标准' }),
+      items.length
+        ? el('div', {
+            class: 'ac-list',
+            children: items.map((item) => {
+              const latestAction = detail?.actions
+                .filter((action) => action.kind === 'requirement_item_action' && action.targetId === item.id)
+                .at(-1);
+              const confirm = button(latestAction?.action === 'confirm' ? '已确认' : '确认', 'button secondary small');
+              confirm.disabled = latestAction?.action === 'confirm';
+              if (detail) {
+                confirm.onclick = () => void submitRequirementAction(detail.run.id, item.id, 'confirm');
+              }
+              return el('div', {
+                class: 'ac-card',
+                children: [
+                  pill(item.id, 'info'),
+                  el('span', { text: item.text }),
+                  detail ? el('div', { class: 'button-row compact', children: [confirm] }) : null,
+                ],
+              });
+            }),
+          })
+        : el('p', { class: 'muted compact', text: '暂无 AC。' }),
+    ],
+  });
+}
+
+function renderCoverageTable(rows: DesignDoc['coverage']): HTMLElement {
+  return el('div', {
+    class: 'coverage-table',
+    children: [
+      el('div', { class: 'coverage-row header', children: [el('strong', { text: '需求' }), el('strong', { text: '设计覆盖' }), el('strong', { text: '测试策略' }), el('strong', { text: '状态' })] }),
+      ...rows.map((row) =>
+        el('div', {
+          class: 'coverage-row',
+          children: [
+            el('span', { text: `${row.requirement} ${row.acceptanceCriteria.join(', ')}`.trim() }),
+            el('span', { text: row.design }),
+            el('span', { text: row.verification }),
+            pill(row.status, row.status === 'covered' ? 'good' : 'warn'),
+          ],
+        }),
+      ),
+    ],
+  });
+}
+
+function renderRuleList(title: string, gate: GateRunDto): HTMLElement {
+  return el('details', {
+    class: 'rule-list',
+    children: [
+      el('summary', { children: [el('strong', { text: title }), pill(gate.status)] }),
+      gate.ruleResults.length
+        ? el('div', {
+            class: 'stack',
+            children: gate.ruleResults.map((rule) =>
+              el('div', { class: 'mini-row', children: [el('span', { text: rule.ruleId }), pill(rule.status)] }),
+            ),
+          })
+        : el('p', { class: 'muted compact', text: '无规则详情。' }),
+    ],
+  });
+}
+
+function renderRawFallback(detail: RunDetail, kind: string): HTMLElement {
+  const text = markdownArtifactText(detail, kind);
+  if (!text) return el('p', { class: 'muted compact', text: '原始产物加载中或尚未生成。' });
+  const details = el('details', { class: 'raw-details' });
+  details.append(
+    el('summary', { text: '查看原始 Markdown' }),
+    el('pre', { class: 'doc-preview', text: previewText(text) }),
+  );
+  return details;
+}
+
+function previewText(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= 1400) return trimmed;
+  return `${trimmed.slice(0, 1400)}\n\n… truncated for overview; open artifact path for full content.`;
+}
+
+function renderImplementationPanel(detail: RunDetail): HTMLElement {
+  const diff = latestArtifactOfKind(detail.artifacts, 'diff');
+  const content = diff ? artifactContent.get(diff.id) : null;
+  const implStep = detail.steps.find((s) => s.stage === 'implementation');
+  const changedFiles = changedFilesFromDiff(content?.text ?? '');
+  const design = parsedDesign(detail);
+  const relatedAcs = [...new Set(design.coverage.flatMap((row) => row.acceptanceCriteria))];
+  const sensitiveGate = [...detail.gates].reverse().find((g) => g.gateId === 'sensitive_change_gate');
+  return el('article', {
+    class: 'panel doc-panel',
+    children: [
+      panelHeader('Implementation', '当前动作、修改文件、Diff Gate / Sensitive Gate'),
+      implStep ? field('Step', el('span', { children: [pill(implStep.status), document.createTextNode(` ${implStep.name}`)] })) : el('p', { class: 'muted', text: '等待实现阶段。' }),
+      renderGateChips(detail.gates.filter((g) => ['diff_scope_gate', 'sensitive_change_gate'].includes(g.gateId))),
+      renderTextList('修改文件', changedFiles),
+      renderTextList('关联 AC', relatedAcs),
+      sensitiveGate?.status === 'warn'
+        ? el('div', { class: 'notice-inline warn', text: 'Sensitive Change Gate 为 warn：需要人工检查风险后继续。' })
+        : null,
+      diff ? el('pre', { class: 'doc-preview code', text: content?.text ? previewText(content.text) : 'Loading diff…' }) : null,
+    ],
+  });
+}
+
+function renderGateChips(gates: GateRunDto[]): HTMLElement {
+  if (gates.length === 0) return el('p', { class: 'muted compact', text: 'No gate evidence yet.' });
+  return el('div', {
+    class: 'chip-row',
+    children: gates.map((gate) => el('span', { class: 'gate-chip', children: [pill(gate.status), el('span', { text: gate.gateId })] })),
+  });
+}
+
+function renderBuildTestPanel(detail: RunDetail): HTMLElement {
+  const surefireArtifacts = detail.artifacts.filter((a) => ['surefire_report', 'failsafe_report'].includes(a.kind));
+  return el('article', {
+    class: 'panel doc-panel',
+    children: [
+      panelHeader('Build & Test', '本机 JDK/Maven 真实命令与报告'),
+      detail.builds.length === 0
+        ? el('p', { class: 'muted', text: '等待 build_test 阶段。' })
+        : el('div', {
+            class: 'stack',
+            children: detail.builds.map((build) =>
+              el('div', {
+                class: 'build-card',
+                children: [
+                  el('div', { children: [pill(build.status), el('strong', { text: ` ${build.mavenCommand}` })] }),
+                  el('small', { text: `JDK ${build.jdkVersion}` }),
+                ],
+              }),
+            ),
+          }),
+      detail.tests.length
+        ? el('div', {
+            class: 'test-grid',
+            children: detail.tests.map((test) =>
+              metric(test.framework, `${test.passed}/${test.total}`, `${test.failed} failed · ${test.errors} errors · ${test.skipped} skipped`, test.failed || test.errors ? 'bad' : 'good'),
+            ),
+          })
+        : null,
+      detail.commands.length ? renderCommandLogPanel(detail.commands) : null,
+      surefireArtifacts.length ? renderTestReportPreviews(surefireArtifacts) : null,
+    ],
+  });
+}
+
+function renderCommandLogPanel(commands: RunDetail['commands']): HTMLElement {
+  return el('details', {
+    class: 'raw-details',
+    children: [
+      el('summary', { text: `查看命令日志 (${commands.length})` }),
+      el('div', {
+        class: 'stack',
+        children: commands.map((command) => {
+          const logs = commandLogs.get(command.id);
+          const load = button(logs ? 'Refresh logs' : 'Load logs', 'button secondary small');
+          load.onclick = () => void ensureCommandLogs(command.id);
+          return el('article', {
+            class: 'log-card',
+            children: [
+              field('Command', el('code', { text: command.command })),
+              field('Status', el('span', { children: [pill(command.status), document.createTextNode(` exit=${command.exitCode ?? '∅'}`)] })),
+              load,
+              logs
+                ? el('pre', {
+                    class: 'doc-preview code',
+                    text: previewText([`# stdout (${logs.stdout.filename})`, logs.stdout.text, `# stderr (${logs.stderr.filename})`, logs.stderr.text].join('\n')),
+                  })
+                : null,
+            ],
+          });
+        }),
+      }),
+    ],
+  });
+}
+
+function renderTestReportPreviews(artifacts: ArtifactDto[]): HTMLElement {
+  return el('details', {
+    class: 'raw-details',
+    children: [
+      el('summary', { text: `查看测试报告 (${artifacts.length})` }),
+      el('div', {
+        class: 'stack',
+        children: artifacts.map((artifact) =>
+          el('article', {
+            class: 'log-card',
+            children: [
+              field('Report', el('code', { text: artifact.uri })),
+              el('pre', { class: 'doc-preview code', text: previewText(artifactContent.get(artifact.id)?.text ?? 'Loading test report…') }),
+            ],
           }),
         ),
-      );
-    }
-  }
-
-  // ---- right: evidence (gates + commands + artifacts) ----
-  clear(evidence);
-  evidence.classList.remove('placeholder');
-
-  if (data.gates.length > 0) {
-    evidence.appendChild(el('h2', { text: 'Gates' }));
-    for (const g of data.gates) {
-      const right = el('span');
-      right.appendChild(pill(g.status));
-      right.appendChild(document.createTextNode(' ' + g.gateId));
-      evidence.appendChild(row(g.gateId, right));
-    }
-  }
-
-  if (data.commands.length > 0) {
-    evidence.appendChild(el('h2', { text: 'Commands' }));
-    for (const c of data.commands) {
-      const right = el('span');
-      right.appendChild(pill(c.status));
-      right.appendChild(document.createTextNode(` exit=${c.exitCode ?? '∅'} (${c.durationMs ?? '∅'}ms)`));
-      evidence.appendChild(row('cmd', el('code', { text: c.command })));
-      evidence.appendChild(row('status', right));
-    }
-  }
-
-  if (data.artifacts.length > 0) {
-    evidence.appendChild(el('h2', { text: 'Artifacts' }));
-    for (const a of data.artifacts) {
-      evidence.appendChild(row(a.kind, el('code', { text: a.uri })));
-    }
-  }
-
-  // ---- right: approval ----
-  clear(approval);
-  if (data.run.status === 'awaiting_human') {
-    const gateId = STAGE_TO_GATE[data.run.currentStage];
-    if (gateId) {
-      const heading = el('h2', { text: 'Awaiting decision' });
-      const desc = el('div', {
-        text: `Stage ${data.run.currentStage} is paused at ${gateId}.`,
-        class: 'placeholder',
-      });
-      desc.style.padding = '0';
-      desc.style.textAlign = 'left';
-      desc.style.color = 'var(--fg)';
-      const approveBtn = el('button', { text: `Approve ${gateId}` });
-      approveBtn.style.cssText =
-        'padding:6px 12px;background:var(--pass);color:#0d1117;border:0;border-radius:4px;cursor:pointer;font-weight:600;margin-right:8px;';
-      const rejectBtn = el('button', { text: 'Reject' });
-      rejectBtn.style.cssText =
-        'padding:6px 12px;background:var(--fail);color:#0d1117;border:0;border-radius:4px;cursor:pointer;font-weight:600;';
-      approveBtn.onclick = () => void approve(id, gateId, true);
-      rejectBtn.onclick = () => void approve(id, gateId, false);
-      approval.appendChild(heading);
-      approval.appendChild(desc);
-      const btnRow = el('div');
-      btnRow.style.marginTop = '10px';
-      btnRow.appendChild(approveBtn);
-      btnRow.appendChild(rejectBtn);
-      approval.appendChild(btnRow);
-    }
-  } else {
-    const heading = el('h2', { text: 'Approval' });
-    const text = el('div', {
-      text:
-        data.approvals.length === 0
-          ? 'No approvals recorded.'
-          : `${data.approvals.length} decision(s) recorded.`,
-      class: 'placeholder',
-    });
-    text.style.padding = '0';
-    text.style.textAlign = 'left';
-    approval.appendChild(heading);
-    approval.appendChild(text);
-    if (data.approvals.length > 0) {
-      for (const a of data.approvals) {
-        const right = el('span');
-        right.appendChild(pill(a.decision));
-        right.appendChild(document.createTextNode(` by ${a.actor}`));
-        approval.appendChild(row(a.gateId, right));
-      }
-    }
-  }
-}
-
-async function approve(workflowRunId: string, gateId: string, approved: boolean): Promise<void> {
-  const comment = approved ? 'approved via web UI' : 'rejected via web UI';
-  await api('/approvals', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ workflowRunId, gateId, approved, actor: 'web', comment }),
+      }),
+    ],
   });
-  await showRun(workflowRunId);
 }
 
-await refreshStatus();
-await refreshRuns();
+function renderAcceptancePanel(detail: RunDetail): HTMLElement {
+  const req = parsedRequirement(detail);
+  const design = parsedDesign(detail);
+  const checklist = buildAcceptanceChecklist(req, design, detail);
+  const reviewText = artifactText(detail, 'other');
+  return el('article', {
+    class: 'panel doc-panel structured-panel',
+    children: [
+      panelHeader('Acceptance Checklist', 'AC 覆盖、测试证据与风险确认'),
+      checklist.length
+        ? el('div', {
+            class: 'acceptance-list',
+            children: checklist.map((item) =>
+              el('div', {
+                class: `acceptance-card ${item.status}`,
+                children: [
+                  el('div', { children: [pill(item.id, item.status === 'passed' ? 'good' : item.status === 'at_risk' ? 'warn' : 'bad'), el('strong', { text: item.text })] }),
+                  item.evidence.length ? el('small', { text: `Evidence: ${item.evidence.join(' · ')}` }) : null,
+                  item.risk ? el('small', { class: 'warn', text: item.risk }) : null,
+                ],
+              }),
+            ),
+          })
+        : el('p', { class: 'muted', text: '暂无 AC checklist。' }),
+      reviewText ? el('details', { class: 'raw-details', children: [el('summary', { text: '查看 Review 原文' }), el('pre', { class: 'doc-preview', text: previewText(reviewText) })] }) : null,
+    ],
+  });
+}
+
+function renderKnowledgeSuggestionsPanel(detail: RunDetail): HTMLElement {
+  const suggestions = parsedKnowledge(detail);
+  return el('article', {
+    class: 'panel doc-panel structured-panel',
+    children: [
+      panelHeader('Knowledge Suggestions', '候选经验，人工接受后才入库'),
+      suggestions.length
+        ? el('div', { class: 'stack', children: suggestions.map((suggestion, index) => renderKnowledgeSuggestion(suggestion, index, detail)) })
+        : el('p', { class: 'muted', text: '暂无 Knowledge 候选。' }),
+    ],
+  });
+}
+
+function renderRunsPanel(): HTMLElement {
+  return el('section', {
+    class: 'panel side-panel',
+    children: [
+      panelHeader('Runs', '最新工作流'),
+      el('div', {
+        class: 'run-list',
+        children: data.runs.slice(0, 12).map((run) => {
+          const item = el('button', {
+            class: `run-item ${run.id === activeRunId ? 'active' : ''}`,
+            attrs: { type: 'button' },
+            children: [
+              el('strong', { text: run.title }),
+              el('span', { text: `${projectName(run.projectId)} · ${STAGE_LABELS[run.currentStage]}` }),
+              pill(run.status),
+            ],
+          });
+          item.onclick = () => setHash('workbench', run.id);
+          return item;
+        }),
+      }),
+    ],
+  });
+}
+
+function renderApprovalPanel(detail: RunDetail, pendingGate: string | null): HTMLElement {
+  const sensitiveWarn = [...detail.gates]
+    .reverse()
+    .find((g) => g.gateId === 'sensitive_change_gate' && g.status === 'warn');
+  const sensitiveDecision = detail.approvals.find((a) => a.gateId === 'sensitive_change_gate');
+  if ((!pendingGate || pendingGate === 'sensitive_change_gate') && sensitiveWarn && !sensitiveDecision) {
+    const approveBtn = button('批准敏感变更继续', 'button primary');
+    const rejectBtn = button('要求修改', 'button danger');
+    approveBtn.onclick = () => void submitApproval(detail.run.id, 'sensitive_change_gate', true);
+    rejectBtn.onclick = () => void submitApproval(detail.run.id, 'sensitive_change_gate', false);
+    return el('section', {
+      class: 'panel side-panel checkpoint',
+      children: [
+        panelHeader('Sensitive Change Checkpoint', '发现敏感路径或高风险变更'),
+        renderRuleList('Sensitive Change Gate', sensitiveWarn),
+        el('p', { text: '请检查 diff、设计范围和风险说明后再决定是否继续。' }),
+        el('div', { class: 'button-row', children: [approveBtn, rejectBtn] }),
+      ],
+    });
+  }
+
+  if (!pendingGate) {
+    return el('section', {
+      class: 'panel side-panel',
+      children: [
+        panelHeader('Human Checkpoint', '人工确认点'),
+        detail.approvals.length
+          ? el('div', { class: 'stack', children: detail.approvals.map(renderApprovalRow) })
+          : el('p', { class: 'muted', text: '当前无需人工确认。' }),
+      ],
+    });
+  }
+
+  const isAcceptance = pendingGate === 'acceptance_gate';
+  const approveBtn = button(isAcceptance ? '接受风险并验收' : `Approve ${pendingGate}`, 'button primary');
+  const rejectBtn = button('Reject', 'button danger');
+  const inFlight = approvalInFlight.has(`${detail.run.id}:${pendingGate}`);
+  approveBtn.disabled = inFlight;
+  rejectBtn.disabled = inFlight;
+  approveBtn.onclick = () =>
+    void (isAcceptance
+      ? submitAcceptanceDecision(detail.run.id, 'accept_risk')
+      : submitApproval(detail.run.id, pendingGate, true));
+  rejectBtn.onclick = () =>
+    void (isAcceptance
+      ? submitAcceptanceDecision(detail.run.id, 'reject')
+      : submitApproval(detail.run.id, pendingGate, false));
+
+  return el('section', {
+    class: 'panel side-panel checkpoint',
+    children: [
+      panelHeader('Awaiting Human', `${STAGE_LABELS[detail.run.currentStage]} 暂停在 ${pendingGate}`),
+      el('p', { text: isAcceptance ? '请逐项检查 AC checklist；若证据不足但可接受，需显式接受风险。' : '请先检查需求/设计/构建证据，再批准进入下一阶段。' }),
+      el('div', { class: 'button-row', children: [approveBtn, rejectBtn] }),
+    ],
+  });
+}
+
+function renderApprovalRow(approval: { gateId: string; decision: string; actor: string; decidedAt: string }): HTMLElement {
+  return el('div', {
+    class: 'approval-row',
+    children: [
+      el('span', { children: [pill(approval.decision), document.createTextNode(` ${approval.gateId}`)] }),
+      el('small', { text: `${approval.actor} · ${fmtTime(approval.decidedAt)}` }),
+    ],
+  });
+}
+
+function renderEvidencePanel(detail: RunDetail): HTMLElement {
+  return el('section', {
+    class: 'panel side-panel evidence-panel',
+    children: [
+      panelHeader('Evidence Drill-down', '工程证据默认折叠'),
+      renderDetails('Gate Runs', detail.gates.map(renderGateRow)),
+      renderDetails('Command Runs', detail.commands.map(renderCommandRow)),
+      renderDetails('Artifacts', detail.artifacts.map(renderArtifactRow)),
+      renderDetails('Agent Audit', detail.agentTasks.map((task) => renderAgentTaskRow(task, detail))),
+    ],
+  });
+}
+
+function renderDetails(title: string, children: HTMLElement[]): HTMLElement {
+  const details = el('details', { class: 'evidence-group' });
+  details.appendChild(el('summary', { text: `${title} (${children.length})` }));
+  details.appendChild(children.length ? el('div', { class: 'stack', children }) : el('p', { class: 'muted compact', text: 'No evidence yet.' }));
+  return details;
+}
+
+function renderGateRow(gate: GateRunDto): HTMLElement {
+  return el('div', {
+    class: 'evidence-row',
+    children: [
+      el('span', { children: [pill(gate.status), document.createTextNode(` ${gate.gateId}`)] }),
+      gate.ruleResults.length
+        ? el('small', { text: gate.ruleResults.map((r) => `${r.ruleId}:${r.status}`).join(' · ') })
+        : el('small', { text: fmtTime(gate.decidedAt) }),
+    ],
+  });
+}
+
+function renderCommandRow(command: RunDetail['commands'][number]): HTMLElement {
+  return el('div', {
+    class: 'evidence-row',
+    children: [
+      el('span', { children: [pill(command.status), document.createTextNode(` exit=${command.exitCode ?? '∅'}`)] }),
+      el('code', { text: command.command }),
+    ],
+  });
+}
+
+function renderArtifactRow(artifact: ArtifactDto): HTMLElement {
+  return el('div', {
+    class: 'evidence-row',
+    children: [el('span', { children: [pill(artifact.kind, 'muted'), document.createTextNode(` ${shortId(artifact.id)}`)] }), el('code', { text: artifact.uri })],
+  });
+}
+
+function renderAgentTaskRow(task: RunDetail['agentTasks'][number], detail: RunDetail): HTMLElement {
+  const result = detail.agentResults.find((r) => r.taskId === task.id);
+  return el('div', {
+    class: 'evidence-row',
+    children: [
+      el('span', { children: [pill(result?.status ?? 'pending'), document.createTextNode(` ${task.backend}:${task.kind}`)] }),
+      result?.summary ? el('small', { text: result.summary }) : null,
+    ],
+  });
+}
+
+function renderAgentStreamPanel(): HTMLElement {
+  return el('section', {
+    class: 'panel side-panel stream-panel',
+    children: [
+      el('div', {
+        class: 'stream-head',
+        children: [el('h2', { text: 'Agent Stream' }), el('span', { id: 'stream-status', class: 'stream-status idle', text: 'disconnected' })],
+      }),
+      el('div', { id: 'stream-body', class: 'stream-body' }),
+    ],
+  });
+}
+
+function renderProjectsPage(): HTMLElement {
+  const form = el('form', { class: 'form-card' });
+  form.append(
+    panelHeader('接入本地项目', '使用本机 Git 仓库；runner 会为每次执行创建独立 worktree。'),
+    labeledInput('Project Name', 'name', 'java-sample'),
+    labeledInput('Local Path', 'localPath', './examples/java-maven-sample'),
+    labeledInput('Default Branch', 'defaultBranch', 'main'),
+  );
+  const submit = el('button', { class: 'button primary', text: 'Register Project', attrs: { type: 'submit' } });
+  form.appendChild(submit);
+  form.onsubmit = (event) => void submitProject(event, form);
+
+  return el('section', {
+    class: 'page-grid two-col',
+    children: [
+      form,
+      el('section', {
+        class: 'panel',
+        children: [
+          panelHeader('已接入项目', 'Project / Branch / Local Path'),
+          data.projects.length
+            ? el('div', { class: 'stack', children: data.projects.map(renderProjectCard) })
+            : el('p', { class: 'muted', text: '暂无项目。' }),
+          renderProjectProfilePreview(),
+          renderToolchainReadiness(),
+        ],
+      }),
+    ],
+  });
+}
+
+function renderProjectProfilePreview(): HTMLElement {
+  const detail = data.activeDetail;
+  const profile = detail ? latestArtifactOfKind(detail.artifacts, 'project_profile') : null;
+  const text = profile ? artifactContent.get(profile.id)?.text : null;
+  return el('details', {
+    class: 'raw-details',
+    children: [
+      el('summary', { text: 'Project Profile 预览' }),
+      text
+        ? el('pre', { class: 'doc-preview', text: previewText(text) })
+        : el('p', { class: 'muted compact', text: '运行一次 workflow 后会生成 project_profile。' }),
+    ],
+  });
+}
+
+function renderToolchainReadiness(): HTMLElement {
+  const runner = latestRunner();
+  return el('article', {
+    class: 'runner-card',
+    children: [
+      panelHeader('Local Runner / Toolchain', runner ? `${runner.status} · ${fmtTime(runner.lastSeenAt)}` : '尚未连接'),
+      field('JDK', runner?.jdkVersion ?? '—'),
+      field('Maven', runner?.mavenVersion?.split('\n')[0] ?? '—'),
+      field('Git', runner?.gitVersion ?? '—'),
+      el('code', { class: 'command-chip', text: 'bun run runner -- doctor && bun run runner -- watch' }),
+    ],
+  });
+}
+
+function renderProjectCard(project: ProjectDto): HTMLElement {
+  return el('article', {
+    class: 'project-card',
+    children: [
+      el('div', { children: [el('strong', { text: project.name }), pill(project.buildTool, 'muted')] }),
+      field('Branch', project.defaultBranch),
+      field('Path', el('code', { text: project.localPath })),
+    ],
+  });
+}
+
+function labeledInput(label: string, name: string, placeholder: string): HTMLElement {
+  return el('label', {
+    class: 'input-block',
+    children: [el('span', { text: label }), el('input', { attrs: { name, placeholder } })],
+  });
+}
+
+async function submitProject(event: SubmitEvent, form: HTMLFormElement): Promise<void> {
+  event.preventDefault();
+  const fd = new FormData(form);
+  try {
+    await api<ProjectDto>('/projects', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: String(fd.get('name') ?? '').trim(),
+        localPath: String(fd.get('localPath') ?? '').trim(),
+        defaultBranch: String(fd.get('defaultBranch') ?? 'main').trim() || 'main',
+      }),
+    });
+    form.reset();
+    await loadData({ render: true });
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+    render();
+  }
+}
+
+function renderNewTaskPage(): HTMLElement {
+  const form = el('form', { class: 'form-card wide' });
+  const projectSelect = el('select', { attrs: { name: 'projectId' } });
+  for (const project of data.projects) {
+    projectSelect.appendChild(el('option', { text: project.name, attrs: { value: project.id } }));
+  }
+  const typeSelect = el('select', { attrs: { name: 'type' } });
+  for (const type of ['feature', 'bugfix', 'smoke']) typeSelect.appendChild(el('option', { text: type, attrs: { value: type } }));
+  const title = el('textarea', { attrs: { name: 'title', rows: '7', placeholder: '描述业务目标、验收标准、约束。例如：为报告页增加导出按钮，并确保 mvn test 通过。' } });
+  form.append(
+    panelHeader('创建任务请求', 'UI 只入队；本地 runner watch 负责认领、建 worktree、执行 gate、等待人工确认。'),
+    el('label', { class: 'input-block', children: [el('span', { text: 'Project' }), projectSelect] }),
+    el('label', { class: 'input-block', children: [el('span', { text: 'Type' }), typeSelect] }),
+    el('label', { class: 'input-block', children: [el('span', { text: 'Task Title / Intent' }), title] }),
+    el('label', { class: 'input-block', children: [el('span', { text: 'Source Branch' }), el('input', { attrs: { name: 'branch', placeholder: selectedProject()?.defaultBranch ?? 'main' } })] }),
+    el('div', { class: 'button-row', children: [el('button', { class: 'button primary', text: 'Create Workflow Request', attrs: { type: 'submit' } }), actionLink('查看工作台', 'workbench')] }),
+  );
+  form.onsubmit = (event) => void submitWorkflowRequest(event, form);
+
+  return el('section', {
+    class: 'page-grid two-col',
+    children: [
+      form,
+      el('aside', {
+        class: 'panel',
+        children: [
+          panelHeader('端到端闭环', '下一步'),
+          el('ol', {
+            class: 'ordered-list',
+            children: [
+              el('li', { text: '创建 Workflow Request。' }),
+              el('li', { text: '本地运行 `bun run runner -- watch`。' }),
+              el('li', { text: 'Runner 使用 Git worktree 执行需求、设计、实现、编译测试。' }),
+              el('li', { text: 'UI 在人工确认点展示证据并审批。' }),
+            ],
+          }),
+          el('code', { class: 'command-chip large', text: 'bun run runner -- watch --keep-worktree' }),
+        ],
+      }),
+    ],
+  });
+}
+
+async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement): Promise<void> {
+  event.preventDefault();
+  const fd = new FormData(form);
+  const projectId = String(fd.get('projectId') ?? '');
+  const project = data.projects.find((p) => p.id === projectId);
+  try {
+    const request = await api<WorkflowRequestDto>('/workflow-requests', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        projectId,
+        type: String(fd.get('type') ?? 'feature'),
+        title: String(fd.get('title') ?? '').trim(),
+        branch: String(fd.get('branch') ?? '').trim() || project?.defaultBranch,
+      }),
+    });
+    form.reset();
+    await loadData({ render: false });
+    lastError = null;
+    activePage = 'workbench';
+    window.location.hash = 'workbench';
+    render();
+    console.log('[web] workflow request created', request.id);
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+    render();
+  }
+}
+
+function renderReportsPage(): HTMLElement {
+  return el('section', {
+    class: 'page-stack',
+    children: [
+      renderActiveReportDetail(),
+      el('section', {
+        class: 'panel',
+        children: [
+          panelHeader('Completion Reports', '按 run 聚合状态、测试、gate 与报告产物'),
+          data.runs.length
+            ? el('div', { class: 'report-list', children: data.runs.map(renderReportRow) })
+            : el('p', { class: 'muted', text: '暂无报告。' }),
+        ],
+      }),
+    ],
+  });
+}
+
+function renderReportRow(run: WorkflowRunDto): HTMLElement {
+  const open = button('Open', 'button secondary small');
+  open.onclick = () => setHash('workbench', run.id);
+  const viewReport = button('Report', 'button secondary small');
+  viewReport.onclick = () => {
+    activeRunId = run.id;
+    void loadRunDetail(run.id, true);
+  };
+  return el('article', {
+    class: 'report-row',
+    children: [
+      el('div', { children: [el('strong', { text: run.title }), el('small', { text: `${projectName(run.projectId)} · ${fmtTime(run.createdAt)}` })] }),
+      pill(run.status),
+      el('div', { class: 'button-row', children: [viewReport, open] }),
+    ],
+  });
+}
+
+function renderActiveReportDetail(): HTMLElement | null {
+  const detail = data.activeDetail;
+  if (!detail) return null;
+  const reportMarkdown = markdownArtifactText(detail, 'completion_report');
+  const reportJson = structuredArtifactText(detail, 'completion_report');
+  if (!reportMarkdown && !reportJson) return null;
+  const report = parseCompletionReportArtifact(reportMarkdown, reportJson);
+  return el('section', {
+    class: 'panel report-detail',
+    children: [
+      panelHeader(report.title, `Run ${shortId(detail.run.id)} · 每段可追溯到 evidence`),
+      report.summary.length ? el('div', { class: 'summary-list', children: report.summary.map((item) => el('div', { class: 'summary-item', text: item })) }) : null,
+      ...report.sections.map((section) =>
+        el('details', {
+          class: 'report-section',
+          children: [
+            el('summary', { text: section.title }),
+            el('pre', { class: 'doc-preview', text: previewText(section.body) }),
+          ],
+        }),
+      ),
+    ],
+  });
+}
+
+function renderKnowledgeSuggestion(
+  suggestion: KnowledgeSuggestion,
+  index: number,
+  detail: RunDetail,
+): HTMLElement {
+  const runId = detail.run.id;
+  const key = `${runId}:${index}`;
+  const targetId = `KS-${String(index + 1).padStart(3, '0')}`;
+  const persisted = detail.actions
+    .filter((action) => action.kind === 'knowledge_suggestion_action' && action.targetId === targetId)
+    .at(-1);
+  const decision = persisted?.action ?? knowledgeDecisions.get(key);
+  const persistedText = typeof persisted?.payload.text === 'string' ? persisted.payload.text : null;
+  const text = persistedText ?? knowledgeEdits.get(key) ?? suggestion.text;
+  const accept = button(decision === 'accepted' ? '已接受' : '接受', 'button secondary small');
+  const edit = button(decision === 'edited' ? '已编辑' : '编辑', 'button secondary small');
+  const ignore = button(decision === 'ignored' ? '已忽略' : '忽略', 'button secondary small');
+  accept.onclick = () => void submitKnowledgeAction(detail.run.id, targetId, 'accepted', {
+    text,
+    kind: suggestion.kind,
+    evidence: suggestion.evidence,
+  });
+  edit.onclick = () => {
+    const next = window.prompt('编辑 Knowledge 候选', text);
+    if (next !== null && next.trim()) {
+      void submitKnowledgeAction(detail.run.id, targetId, 'edited', {
+        text: next.trim(),
+        originalText: suggestion.text,
+        kind: suggestion.kind,
+        evidence: suggestion.evidence,
+      });
+    }
+  };
+  ignore.onclick = () => void submitKnowledgeAction(detail.run.id, targetId, 'ignored', {
+    text,
+    kind: suggestion.kind,
+    evidence: suggestion.evidence,
+  });
+
+  // Optimistic local fallback is kept only for transient render state before
+  // the persisted workflow action comes back in the run detail.
+  accept.onmousedown = () => {
+    knowledgeDecisions.set(key, 'accepted');
+  };
+  ignore.onmousedown = () => {
+    knowledgeDecisions.set(key, 'ignored');
+  };
+  return el('article', {
+    class: `knowledge-card ${decision ?? ''}`,
+    children: [
+      el('div', { class: 'knowledge-head', children: [pill(suggestion.kind, 'info'), decision ? pill(decision, decision === 'ignored' ? 'muted' : 'good') : null] }),
+      el('p', { text }),
+      suggestion.evidence ? el('small', { text: `Evidence: ${suggestion.evidence}` }) : null,
+      el('div', { class: 'button-row', children: [accept, edit, ignore] }),
+    ],
+  });
+}
+
+function renderKnowledgePage(): HTMLElement {
+  const detail = data.activeDetail;
+  const suggestions = detail ? parsedKnowledge(detail) : [];
+  const pendingKnowledge = detail?.run.status === 'awaiting_human' && detail.run.currentStage === 'knowledge';
+  const approve = pendingKnowledge ? button('确认 accepted/edited 候选入库', 'button primary') : null;
+  if (approve && detail) approve.onclick = () => void submitApproval(detail.run.id, 'knowledge_gate', true);
+  return el('section', {
+    class: 'page-grid two-col',
+    children: [
+      el('section', {
+        class: 'panel',
+        children: [
+          panelHeader('Knowledge Suggestions', '接受 / 编辑 / 忽略，人工确认后才进入长期 Knowledge Store'),
+          suggestions.length && detail
+            ? el('div', { class: 'stack', children: suggestions.map((s, i) => renderKnowledgeSuggestion(s, i, detail)) })
+            : el('p', { class: 'muted', text: '当前选中的 run 尚未生成 Knowledge Candidate。' }),
+          approve,
+        ],
+      }),
+      el('aside', {
+        class: 'panel',
+        children: [
+          panelHeader('Knowledge Store', '当前 MVP 存储在本地项目知识目录'),
+          detail ? field('Run', shortId(detail.run.id)) : null,
+          el('p', { class: 'muted', text: '下一步可增加按项目浏览 accepted knowledge、失效条件、检索排序。' }),
+        ],
+      }),
+    ],
+  });
+}
+
+function renderSettingsPage(): HTMLElement {
+  const backend = agentBackendLabel();
+  return el('section', {
+    class: 'page-grid two-col',
+    children: [
+      el('section', {
+        class: 'panel',
+        children: [
+          panelHeader('运行决策', 'Local Runner + Git worktree'),
+          el('div', {
+            class: 'decision-list',
+            children: [
+              field('Execution', '本地编译环境（host JDK / Maven / Git）'),
+              field('Isolation', 'Git worktree 隔离工作目录与分支；不是安全沙箱'),
+              field('Quality Boundary', '真实命令 + Gate + Diff + Approval + Audit'),
+              field('Sandbox Policy', '不做 Docker/K8s/microVM/tool-policy 级强制'),
+            ],
+          }),
+          el('div', {
+            class: 'config-grid',
+            children: [
+              metric('Workflow Template', 'Java Maven Standard', '9-stage lifecycle', 'info'),
+              metric('Agent Backend', backend, 'AINP_AGENT_BACKEND', 'muted'),
+              metric('Gate Rule Set', 'MVP deterministic', 'requirement/design/diff/build/test', 'good'),
+              metric('Skill Version', 'built-in', 'context/req/design/impl/review', 'muted'),
+            ],
+          }),
+        ],
+      }),
+      el('section', {
+        class: 'panel',
+        children: [
+          panelHeader('Runner Status', '工具链 heartbeat'),
+          latestRunner()
+            ? el('div', { class: 'stack', children: data.runners.map(renderRunnerCard) })
+            : el('p', { class: 'muted', text: '尚未收到 runner heartbeat。运行 `bun run runner -- doctor` 或 `watch`。' }),
+        ],
+      }),
+    ],
+  });
+}
+
+function renderRunnerCard(runner: RunnerDto): HTMLElement {
+  return el('article', {
+    class: 'runner-card',
+    children: [
+      el('div', { children: [el('strong', { text: runner.id }), pill(runner.status)] }),
+      field('Host', runner.host),
+      field('JDK', runner.jdkVersion ?? '—'),
+      field('Maven', runner.mavenVersion?.split('\n')[0] ?? '—'),
+      field('Git', runner.gitVersion ?? '—'),
+      field('Last Seen', fmtTime(runner.lastSeenAt)),
+    ],
+  });
+}
+
+function actionLink(label: string, page: Page): HTMLButtonElement {
+  const btn = button(label, 'button secondary');
+  btn.onclick = () => setHash(page);
+  return btn;
+}
+
+async function submitApproval(workflowRunId: string, gateId: string, approved: boolean): Promise<void> {
+  const key = `${workflowRunId}:${gateId}`;
+  const now = Date.now();
+  const last = approvalLastSubmittedAt.get(key) ?? 0;
+  if (approvalInFlight.has(key) || now - last < 2_000) return;
+  approvalInFlight.add(key);
+  approvalLastSubmittedAt.set(key, now);
+  render();
+  try {
+    await api('/approvals', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        workflowRunId,
+        gateId,
+        approved,
+        actor: 'web',
+        comment: approved ? 'approved via workbench UI' : 'rejected via workbench UI',
+      }),
+    });
+    await loadRunDetail(workflowRunId, false);
+    await loadData({ render: false, keepDetail: true });
+  } finally {
+    approvalInFlight.delete(key);
+    render();
+  }
+}
+
+async function submitAcceptanceDecision(
+  workflowRunId: string,
+  decision: 'accept_risk' | 'reject',
+): Promise<void> {
+  const key = `${workflowRunId}:acceptance_gate`;
+  if (approvalInFlight.has(key)) return;
+  approvalInFlight.add(key);
+  render();
+  try {
+    await api(`/workflow-runs/${encodeURIComponent(workflowRunId)}/acceptance-decision`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        decision,
+        actor: 'web',
+        comment: decision === 'accept_risk' ? 'risk accepted via workbench UI' : 'acceptance rejected via workbench UI',
+        payload: { source: 'acceptance-checklist' },
+      }),
+    });
+    await loadRunDetail(workflowRunId, false);
+    await loadData({ render: false, keepDetail: true });
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+  } finally {
+    approvalInFlight.delete(key);
+    render();
+  }
+}
+
+async function submitRequirementAction(
+  workflowRunId: string,
+  targetId: string,
+  action: string,
+): Promise<void> {
+  try {
+    await api(`/workflow-runs/${encodeURIComponent(workflowRunId)}/requirement-actions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        targetId,
+        action,
+        actor: 'web',
+        payload: { source: 'requirement-card' },
+      }),
+    });
+    await loadRunDetail(workflowRunId, false);
+    await loadData({ render: false, keepDetail: true });
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+  } finally {
+    render();
+  }
+}
+
+async function submitKnowledgeAction(
+  workflowRunId: string,
+  targetId: string,
+  action: 'accepted' | 'edited' | 'ignored',
+  payload: Record<string, unknown>,
+): Promise<void> {
+  const index = Number(targetId.replace(/^KS-/, '')) - 1;
+  const key = `${workflowRunId}:${Number.isFinite(index) ? index : targetId}`;
+  knowledgeDecisions.set(key, action);
+  if (typeof payload.text === 'string') knowledgeEdits.set(key, payload.text);
+  render();
+  try {
+    await api(`/workflow-runs/${encodeURIComponent(workflowRunId)}/knowledge-actions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        targetId,
+        action,
+        actor: 'web',
+        payload,
+      }),
+    });
+    await loadRunDetail(workflowRunId, false);
+    await loadData({ render: false, keepDetail: true });
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+  } finally {
+    render();
+  }
+}
+
+// ---- Agent Stream (SSE live tail) ----------------------------------------
+
+interface AgentStreamEvent {
+  id: string;
+  workflowRunId: string;
+  stepRunId: string | null;
+  agentKind: string;
+  sequence: number;
+  type: 'system' | 'assistant' | 'user' | 'result' | 'stderr' | 'raw' | 'meta';
+  payload: Record<string, unknown>;
+  text: string | null;
+  ts: string;
+}
+
+let streamES: EventSource | null = null;
+let streamRunId: string | null = null;
+let streamLastSeq = -1;
+const STREAM_EVENT_TYPES = ['system', 'assistant', 'user', 'result', 'stderr', 'meta', 'raw'] as const;
+
+function setStreamStatus(label: string, cls: 'live' | 'idle' | 'error'): void {
+  const node = document.getElementById('stream-status');
+  if (!node) return;
+  node.textContent = label;
+  node.className = `stream-status ${cls}`;
+}
+
+function appendStreamEvent(ev: AgentStreamEvent): void {
+  if (ev.sequence <= streamLastSeq) return;
+  streamLastSeq = ev.sequence;
+  const body = document.getElementById('stream-body');
+  if (!body) return;
+  const text = ev.text ?? `(${ev.type})`;
+  for (const line of text.split('\n')) {
+    if (!line) continue;
+    body.appendChild(el('div', { class: `stream-line ${ev.type}`, text: line }));
+  }
+  while (body.childElementCount > 600) body.removeChild(body.firstChild!);
+  body.scrollTop = body.scrollHeight;
+}
+
+function detachStream(): void {
+  if (streamES) streamES.close();
+  streamES = null;
+  streamRunId = null;
+  streamLastSeq = -1;
+  setStreamStatus('disconnected', 'idle');
+}
+
+function attachStream(runId: string): void {
+  if (streamRunId === runId && streamES && streamES.readyState !== EventSource.CLOSED) return;
+  detachStream();
+  streamRunId = runId;
+  setStreamStatus('connecting…', 'idle');
+
+  const es = new EventSource(`${API_BASE}/workflow-runs/${encodeURIComponent(runId)}/agent-stream?sinceSeq=-1`);
+  streamES = es;
+  es.addEventListener('ready', () => setStreamStatus('live', 'live'));
+  es.addEventListener('ping', () => setStreamStatus('live', 'live'));
+  for (const type of STREAM_EVENT_TYPES) {
+    es.addEventListener(type, (raw) => {
+      try {
+        appendStreamEvent(JSON.parse((raw as MessageEvent<string>).data) as AgentStreamEvent);
+      } catch {
+        // ignore malformed SSE payloads
+      }
+    });
+  }
+  es.onerror = () => {
+    if (streamES === es) setStreamStatus('reconnecting…', 'error');
+  };
+}
+
+window.addEventListener('hashchange', async () => {
+  parseHash();
+  if (activeRunId) await loadRunDetail(activeRunId, false);
+  render();
+});
+window.addEventListener('beforeunload', detachStream);
+
+parseHash();
+await loadData({ render: true });
 setInterval(() => {
-  void refreshStatus();
-  void refreshRuns();
-  if (activeRunId) void showRun(activeRunId);
-}, 2000);
+  if (activePage === 'new-task' || activePage === 'projects') {
+    void loadData({ render: false, keepDetail: true });
+    return;
+  }
+  void loadData({ render: true, keepDetail: true });
+  if (activeRunId) void loadRunDetail(activeRunId, true);
+}, 3000);
