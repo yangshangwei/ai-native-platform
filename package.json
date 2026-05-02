@@ -13,9 +13,11 @@
     "dev:web": "bun run --filter @ainp/web dev",
     "runner": "bun run --filter @ainp/runner runner",
     "smoke": "bun run scripts/smoke.ts",
+    "smoke:codex": "bun run scripts/smoke-codex.ts",
     "e2e": "bun run scripts/e2e.ts",
     "typecheck": "bun x tsc -p packages/shared/tsconfig.json --noEmit && bun x tsc -p apps/api/tsconfig.json --noEmit && bun x tsc -p apps/runner/tsconfig.json --noEmit && bun x tsc -p apps/web/tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "smoke:claude-code": "bun run scripts/smoke-claude-code.ts"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

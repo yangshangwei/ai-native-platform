@@ -10,8 +10,9 @@
  *   - all 9 stages reached (init through knowledge)
  *   - 4 human gates approved
  *   - rule-based gates (requirement, design, diff_scope, sensitive_change,
- *     compile_optional, test) recorded with status=pass
- *   - mvn -B test command landed with exit=0
+ *     compile, test) recorded with status=pass
+ *   - mvn compile + mvn test commands landed with exit=0
+ *   - AgentTask / AgentResult audit rows are present
  *   - completion_report and knowledge_candidate artifacts present
  *   - acceptance + knowledge approvals recorded
  *
@@ -153,6 +154,8 @@ async function main(): Promise<void> {
     builds: Array<{ id: string; status: string }>;
     tests: Array<{ framework: string; total: number; failed: number; errors: number }>;
     approvals: Array<{ gateId: string; decision: string }>;
+    agentTasks: Array<{ id: string; kind: string; backend: string }>;
+    agentResults: Array<{ id: string; taskId: string; status: string }>;
   }>(`/workflow-runs/${workflowRunId}`);
 
   log(`run.status=${detail.run.status} stage=${detail.run.currentStage}`);
@@ -173,6 +176,7 @@ async function main(): Promise<void> {
     'design_gate',
     'diff_scope_gate',
     'sensitive_change_gate',
+    'compile_gate',
     'test_gate',
     'acceptance_gate',
     'knowledge_gate',
@@ -184,6 +188,7 @@ async function main(): Promise<void> {
     'requirement_gate',
     'design_gate',
     'diff_scope_gate',
+    'compile_gate',
     'test_gate',
     'acceptance_gate',
     'knowledge_gate',
@@ -191,8 +196,16 @@ async function main(): Promise<void> {
     if (gateById.get(gid) !== 'pass') fail(`${gid} status=${gateById.get(gid)}`);
   }
 
-  const mvnCmd = detail.commands.find((c) => c.command.includes('mvn'));
-  if (!mvnCmd || mvnCmd.exitCode !== 0) fail(`mvn command did not pass: ${JSON.stringify(mvnCmd)}`);
+  const compileCmd = detail.commands.find((c) => c.command.includes('-DskipTests compile'));
+  if (!compileCmd || compileCmd.exitCode !== 0) fail(`compile command did not pass: ${JSON.stringify(compileCmd)}`);
+  const testCmd = detail.commands.find((c) => c.command.includes('mvn') && c.command.includes(' test'));
+  if (!testCmd || testCmd.exitCode !== 0) fail(`test command did not pass: ${JSON.stringify(testCmd)}`);
+
+  if (detail.agentTasks.length < 5) fail(`expected agent task audit rows, got ${detail.agentTasks.length}`);
+  if (detail.agentResults.length !== detail.agentTasks.length)
+    fail(`agent result count ${detail.agentResults.length} != task count ${detail.agentTasks.length}`);
+  if (detail.agentResults.some((r) => r.status !== 'success'))
+    fail(`non-success agent result: ${JSON.stringify(detail.agentResults)}`);
 
   const kinds = new Set(detail.artifacts.map((a) => a.kind));
   for (const required of [
