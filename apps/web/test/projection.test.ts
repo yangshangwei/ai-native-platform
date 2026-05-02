@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { USER_VISIBLE_STAGES, buildRunProjection, latestArtifactOfKind } from '../src/projection';
+import { USER_VISIBLE_STAGES, artifactViewerScrollKey, buildRunProjection, isReadableFileArtifact, latestArtifactOfKind } from '../src/projection';
 
 describe('web workflow run projection', () => {
   it('marks the current awaiting-human stage as blocked with the matching approval gate', () => {
@@ -69,7 +69,6 @@ describe('web workflow run projection', () => {
     });
   });
 
-
   it('does not mark stages as done when completion is only a failed terminal override', () => {
     const projection = buildRunProjection({
       run: {
@@ -121,7 +120,6 @@ describe('web workflow run projection', () => {
     expect(projection.stages.find((s) => s.id === 'completion')?.state).toBe('waiting');
   });
 
-
   it('keeps technical preparation stages out of the user-facing lifecycle', () => {
     expect(USER_VISIBLE_STAGES).toEqual([
       'requirement',
@@ -132,6 +130,15 @@ describe('web workflow run projection', () => {
       'completion',
       'knowledge',
     ]);
+  });
+
+  it('allows local file artifacts to be opened inline while blocking non-file URIs', () => {
+    expect(isReadableFileArtifact({ uri: 'file:///tmp/context_pack.md' })).toBe(true);
+    expect(isReadableFileArtifact({ uri: 'https://example.com/context_pack.md' })).toBe(false);
+  });
+
+  it('uses a stable scroll key for artifact file previews', () => {
+    expect(artifactViewerScrollKey({ id: 'art_123' }, 'stage:requirement')).toBe('artifact:stage:requirement:art_123');
   });
 
   it('selects the newest artifact of a kind for document panels', () => {

@@ -4,10 +4,12 @@ import {
   STAGES,
   USER_VISIBLE_STAGES,
   STAGE_TO_GATE,
+  artifactViewerScrollKey,
   buildAcceptanceChecklist,
   buildRunProjection,
   buildWorkbenchOverview,
   changedFilesFromDiff,
+  isReadableFileArtifact,
   latestArtifactOfKind,
   parseCompletionReportArtifact,
   parseDesignArtifact,
@@ -202,6 +204,10 @@ let loadingDetailFor: string | null = null;
 let runnerStartInFlight = false;
 let lastError: string | null = null;
 const artifactContent = new Map<string, ArtifactContentDto | null>();
+const openArtifactViewers = new Set<string>();
+const scrollPositionState = new Map<string, { top: number; left: number }>();
+const SCROLLABLE_STATE_SELECTOR = '[data-scroll-key], .doc-preview';
+let viewportScrollPosition = { top: 0, left: 0 };
 const commandLogs = new Map<string, CommandLogsDto | null>();
 const detailsOpenState = new Map<string, boolean>();
 const knowledgeDecisions = new Map<string, 'accepted' | 'ignored' | 'edited'>();
@@ -505,15 +511,87 @@ function render(): void {
   const root = document.getElementById('app');
   if (!root) return;
   captureDetailsOpenState(root);
+  captureViewportScrollPosition();
+  captureScrollPositionState(root);
   clear(root);
   root.appendChild(renderShell());
   restoreDetailsOpenState(root);
+  restoreScrollPositionState(root);
+  restoreViewportScrollPosition();
 }
 
 function captureDetailsOpenState(root: HTMLElement): void {
   root.querySelectorAll('details').forEach((details) => {
     detailsOpenState.set(detailsStateKey(details), details.open);
   });
+}
+
+function captureViewportScrollPosition(): void {
+  viewportScrollPosition = { top: window.scrollY, left: window.scrollX };
+}
+
+function restoreViewportScrollPosition(): void {
+  window.scrollTo(viewportScrollPosition.left, viewportScrollPosition.top);
+  const restored = { top: window.scrollY, left: window.scrollX };
+  requestAnimationFrame(() => {
+    if (window.scrollY === restored.top && window.scrollX === restored.left) {
+      window.scrollTo(viewportScrollPosition.left, viewportScrollPosition.top);
+    }
+  });
+}
+
+function captureScrollPositionState(root: HTMLElement): void {
+  root.querySelectorAll<HTMLElement>(SCROLLABLE_STATE_SELECTOR).forEach((node) => {
+    scrollPositionState.set(scrollStateKey(node), { top: node.scrollTop, left: node.scrollLeft });
+  });
+}
+
+function restoreScrollPositionState(root: HTMLElement): void {
+  root.querySelectorAll<HTMLElement>(SCROLLABLE_STATE_SELECTOR).forEach((node) => {
+    const key = scrollStateKey(node);
+    const saved = scrollPositionState.get(key);
+    if (saved) restoreScrollableNode(node, saved);
+    node.onscroll = () => {
+      scrollPositionState.set(key, { top: node.scrollTop, left: node.scrollLeft });
+    };
+  });
+}
+
+function restoreScrollableNode(node: HTMLElement, saved: { top: number; left: number }): void {
+  node.scrollTop = saved.top;
+  node.scrollLeft = saved.left;
+  const restored = { top: node.scrollTop, left: node.scrollLeft };
+  requestAnimationFrame(() => {
+    if (node.scrollTop === restored.top && node.scrollLeft === restored.left) {
+      node.scrollTop = saved.top;
+      node.scrollLeft = saved.left;
+    }
+  });
+}
+
+function scrollStateKey(node: HTMLElement): string {
+  return [window.location.hash || activePage, node.dataset.scrollKey ?? fallbackScrollStateKey(node)]
+    .filter(Boolean)
+    .join(' > ');
+}
+
+function fallbackScrollStateKey(node: HTMLElement): string {
+  const context: string[] = [];
+  let current: HTMLElement | null = node.parentElement;
+  while (current) {
+    if (current instanceof HTMLDetailsElement) context.push(detailsSummaryKey(current));
+    current = current.parentElement;
+  }
+  const text = node.textContent ?? '';
+  return ['preview', ...context.reverse(), shortTextHash(text)].join(':');
+}
+
+function shortTextHash(text: string): string {
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = Math.imul(31, hash) + text.charCodeAt(i) | 0;
+  }
+  return Math.abs(hash).toString(36);
 }
 
 function restoreDetailsOpenState(root: HTMLElement): void {
@@ -1183,7 +1261,7 @@ function renderStageBackendDetail(detail: RunDetail, stage: ReturnType<typeof bu
       gates.length ? renderDetails('Gate Runs', gates.map(renderGateRow)) : null,
       tasks.length ? renderDetails('Agent Tasks', tasks.map((task) => renderAgentTaskRow(task, detail))) : null,
       commands.length ? renderDetails('Command Runs', commands.map(renderCommandRow)) : null,
-      artifacts.length ? renderDetails('Artifacts', artifacts.map(renderArtifactRow)) : null,
+      artifacts.length ? renderDetails('Artifacts', artifacts.map((artifact) => renderArtifactRow(artifact, `stage:${stage.id}`))) : null,
       audit.length ? renderDetails('Audit', audit.map(renderAuditRow)) : null,
     ],
   });
@@ -1767,7 +1845,7 @@ function renderEvidencePanel(detail: RunDetail): HTMLElement {
       panelHeader('Evidence Drill-down', '工程证据默认折叠'),
       renderDetails('Gate Runs', detail.gates.map(renderGateRow)),
       renderDetails('Command Runs', detail.commands.map(renderCommandRow)),
-      renderDetails('Artifacts', detail.artifacts.map(renderArtifactRow)),
+      renderDetails('Artifacts', detail.artifacts.map((artifact) => renderArtifactRow(artifact, 'evidence'))),
       renderDetails('Agent Audit', detail.agentTasks.map((task) => renderAgentTaskRow(task, detail))),
     ],
   });
@@ -1802,10 +1880,63 @@ function renderCommandRow(command: RunDetail['commands'][number]): HTMLElement {
   });
 }
 
-function renderArtifactRow(artifact: ArtifactDto): HTMLElement {
+function renderArtifactRow(artifact: ArtifactDto, viewerScope: string): HTMLElement {
+  const canReadInline = isReadableFileArtifact(artifact);
+  const isOpen = openArtifactViewers.has(artifact.id);
+  const toggle = button(isOpen ? '收起文件' : '查看文件内容', 'button secondary small');
+  toggle.disabled = !canReadInline;
+  toggle.onclick = () => toggleArtifactViewer(artifact);
+
   return el('div', {
-    class: 'evidence-row',
-    children: [el('span', { children: [pill(artifact.kind, 'muted'), document.createTextNode(` ${shortId(artifact.id)}`)] }), el('code', { text: artifact.uri })],
+    class: 'evidence-row artifact-row',
+    children: [
+      el('div', {
+        class: 'evidence-row-head',
+        children: [
+          el('span', { children: [pill(artifact.kind, 'muted'), document.createTextNode(` ${shortId(artifact.id)}`)] }),
+          toggle,
+        ],
+      }),
+      el('code', { text: artifact.uri }),
+      !canReadInline ? el('small', { text: '当前只支持直接查看本地 file:// Artifact。' }) : null,
+      isOpen ? renderArtifactInlineViewer(artifact, viewerScope) : null,
+    ],
+  });
+}
+
+function toggleArtifactViewer(artifact: ArtifactDto): void {
+  if (openArtifactViewers.has(artifact.id)) {
+    openArtifactViewers.delete(artifact.id);
+    render();
+    return;
+  }
+  openArtifactViewers.add(artifact.id);
+  void ensureArtifactContent(artifact.id);
+  render();
+}
+
+function renderArtifactInlineViewer(artifact: ArtifactDto, viewerScope: string): HTMLElement {
+  const content = artifactContent.get(artifact.id);
+  if (!content) {
+    return el('p', { class: 'muted compact', text: '正在加载文件内容；如果长时间没有出现，说明该文件暂不可读取。' });
+  }
+
+  return el('div', {
+    class: 'artifact-inline-viewer',
+    children: [
+      el('div', {
+        class: 'doc-meta',
+        children: [
+          pill(content.filename, 'info'),
+          pill(content.contentType, 'muted'),
+        ],
+      }),
+      el('pre', {
+        class: 'doc-preview code',
+        text: previewText(content.text),
+        attrs: { 'data-scroll-key': artifactViewerScrollKey(artifact, viewerScope) },
+      }),
+    ],
   });
 }
 

@@ -174,6 +174,14 @@ export interface RunProjection {
   };
 }
 
+export function isReadableFileArtifact(artifact: Pick<ArtifactDto, 'uri'>): boolean {
+  return artifact.uri.startsWith('file://');
+}
+
+export function artifactViewerScrollKey(artifact: Pick<ArtifactDto, 'id'>, scope = 'default'): string {
+  return `artifact:${scope}:${artifact.id}`;
+}
+
 export function latestArtifactOfKind<T extends Pick<ArtifactDto, 'kind' | 'createdAt'>>(
   artifacts: T[],
   kind: string,
