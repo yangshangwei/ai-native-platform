@@ -23,7 +23,7 @@ import {
 
 const API_BASE = '/api';
 
-type Page = 'workbench' | 'projects' | 'new-task' | 'reports' | 'knowledge' | 'settings';
+type Page = 'workbench' | 'task' | 'projects' | 'new-task' | 'reports' | 'knowledge' | 'settings';
 type StatusKind = 'good' | 'warn' | 'bad' | 'info' | 'muted';
 
 interface ProjectDto {
@@ -161,6 +161,18 @@ interface CommandLogsDto {
   stderr: { text: string; contentType: string; filename: string };
 }
 
+interface RunnerControlStatusDto {
+  mode: 'api-managed-local-runner';
+  running: boolean;
+  pid: number | null;
+  startedAt: string | null;
+  stoppedAt: string | null;
+  command: string[];
+  lastExit: { code: number | null; signal: string | null; at: string } | null;
+  recentLogs: string[];
+  latestHeartbeat: RunnerDto | null;
+}
+
 interface AppData {
   health: HealthDto | null;
   projects: ProjectDto[];
@@ -168,6 +180,7 @@ interface AppData {
   requests: WorkflowRequestDto[];
   runs: WorkflowRunDto[];
   activeDetail: RunDetail | null;
+  runnerControl: RunnerControlStatusDto | null;
 }
 
 const data: AppData = {
@@ -177,11 +190,14 @@ const data: AppData = {
   requests: [],
   runs: [],
   activeDetail: null,
+  runnerControl: null,
 };
 
 let activePage: Page = 'workbench';
 let activeRunId: string | null = null;
+let activeTaskRequestId: string | null = null;
 let loadingDetailFor: string | null = null;
+let runnerStartInFlight = false;
 let lastError: string | null = null;
 const artifactContent = new Map<string, ArtifactContentDto | null>();
 const commandLogs = new Map<string, CommandLogsDto | null>();
@@ -191,6 +207,7 @@ const approvalInFlight = new Set<string>();
 const approvalLastSubmittedAt = new Map<string, number>();
 const projectActionInFlight = new Set<string>();
 const projectBranchRefreshInFlight = new Set<string>();
+const runnerAutoStartAttemptedForRequest = new Set<string>();
 
 
 const localDirectoryPicker: LocalDirectoryPickerState = {
@@ -341,6 +358,11 @@ function latestRunner(): RunnerDto | null {
   return [...data.runners].sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))[0] ?? null;
 }
 
+function activeTaskRequest(): WorkflowRequestDto | null {
+  if (!activeTaskRequestId) return null;
+  return data.requests.find((request) => request.id === activeTaskRequestId) ?? null;
+}
+
 function agentBackendLabel(): string {
   const tasks = data.activeDetail?.agentTasks ?? [];
   return tasks.at(-1)?.backend ?? 'native / codex / claude_code';
@@ -354,8 +376,9 @@ function buildEnvLabel(): string {
   return `${jdk} · ${mvn}`;
 }
 
-function setHash(page: Page, runId?: string): void {
-  if (runId) window.location.hash = `run/${runId}`;
+function setHash(page: Page, id?: string): void {
+  if (page === 'task' && id) window.location.hash = `task/${encodeURIComponent(id)}`;
+  else if (id) window.location.hash = `run/${encodeURIComponent(id)}`;
   else window.location.hash = page;
 }
 
@@ -364,8 +387,17 @@ function parseHash(): void {
   if (raw.startsWith('run/')) {
     activePage = 'workbench';
     activeRunId = decodeURIComponent(raw.slice('run/'.length));
+    activeTaskRequestId = null;
     return;
   }
+  if (raw.startsWith('task/')) {
+    activePage = 'task';
+    activeTaskRequestId = decodeURIComponent(raw.slice('task/'.length));
+    activeRunId = null;
+    data.activeDetail = null;
+    return;
+  }
+  activeTaskRequestId = null;
   if (['workbench', 'projects', 'new-task', 'reports', 'knowledge', 'settings'].includes(raw)) {
     activePage = raw as Page;
   }
@@ -373,22 +405,28 @@ function parseHash(): void {
 
 async function loadData(opts: { render?: boolean; keepDetail?: boolean } = {}): Promise<void> {
   try {
-    const [health, projects, runners, requests, runs] = await Promise.all([
+    const [health, projects, runners, requests, runs, runnerControl] = await Promise.all([
       api<HealthDto>('/health').catch(() => null),
       api<{ items: ProjectDto[] }>('/projects').then((r) => r.items).catch(() => []),
       api<{ items: RunnerDto[] }>('/runners').then((r) => r.items).catch(() => []),
       api<{ items: WorkflowRequestDto[] }>('/workflow-requests').then((r) => r.items).catch(() => []),
       api<{ items: WorkflowRunDto[] }>('/workflow-runs').then((r) => r.items).catch(() => []),
+      api<RunnerControlStatusDto>('/runner/control/status').catch(() => null),
     ]);
     data.health = health;
     data.projects = projects;
     data.runners = runners;
     data.requests = requests;
     data.runs = [...runs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    data.runnerControl = runnerControl;
 
-    if (!activeRunId && data.runs.length > 0) activeRunId = data.runs[0]!.id;
+    const taskRequest = activeTaskRequest();
+    if (taskRequest?.workflowRunId) activeRunId = taskRequest.workflowRunId;
+    if (!activeRunId && activePage !== 'task' && data.runs.length > 0) activeRunId = data.runs[0]!.id;
     if (activeRunId && (!opts.keepDetail || data.activeDetail?.run.id !== activeRunId)) {
       await loadRunDetail(activeRunId, false);
+    } else if (!activeRunId && activePage === 'task') {
+      data.activeDetail = null;
     }
     lastError = null;
   } catch (err) {
@@ -525,18 +563,22 @@ function renderQueueSummary(): HTMLElement {
   const pending = data.requests.filter((r) => r.status === 'pending').length;
   const claimed = data.requests.filter((r) => r.status === 'claimed').length;
   const last = data.requests[0];
+  const control = data.runnerControl;
   return el('section', {
     class: 'sidebar-card',
     children: [
-      el('h2', { text: 'Runner Queue' }),
+      el('h2', { text: '自动执行' }),
       el('div', {
         class: 'queue-stats',
-        children: [metric('Pending', String(pending), '等待 watch', 'info'), metric('Claimed', String(claimed), '执行中', 'warn')],
+        children: [
+          metric('Pending', String(pending), control?.running ? '自动认领中' : '等待 Runner', 'info'),
+          metric('Claimed', String(claimed), '执行中', 'warn'),
+        ],
       }),
       last
         ? el('p', { class: 'muted compact', text: `${shortId(last.id)} · ${last.status} · ${last.title}` })
         : el('p', { class: 'muted compact', text: '暂无任务请求。' }),
-      el('code', { class: 'command-chip', text: 'bun run runner -- watch' }),
+      el('p', { class: 'muted compact', text: control?.running ? `Runner pid=${control.pid ?? '—'}` : 'UI 会尝试自动启动 Runner；命令行仅作兜底。' }),
     ],
   });
 }
@@ -571,6 +613,8 @@ function renderTopbar(): HTMLElement {
 
 function titleForPage(): string {
   switch (activePage) {
+    case 'task':
+      return activeTaskRequest()?.title ?? data.activeDetail?.run.title ?? '任务工作流';
     case 'projects':
       return '项目接入';
     case 'new-task':
@@ -602,6 +646,8 @@ function renderPage(): HTMLElement {
 
 function renderCurrentPage(): HTMLElement {
   switch (activePage) {
+    case 'task':
+      return renderTaskDetailPage();
     case 'projects':
       return renderProjectsPage();
     case 'new-task':
@@ -625,34 +671,51 @@ function renderError(message: string): HTMLElement {
 }
 
 function renderWorkbenchPage(): HTMLElement {
-  if (!data.activeDetail) {
+  return el('section', {
+    class: 'page-grid',
+    children: [
+      renderWorkbenchOverviewPanel(),
+      renderTaskListPanel(),
+      renderRunnerControlPanel(),
+    ],
+  });
+}
+
+function renderTaskDetailPage(): HTMLElement {
+  const request = activeTaskRequest();
+  if (!request) {
     return el('section', {
       class: 'empty-state',
       children: [
-        el('h2', { text: '还没有 Workflow Run' }),
-        el('p', { text: '先接入项目并创建任务；runner watch 会从队列认领并执行到人工确认点。' }),
-        actionLink('新建任务', 'new-task'),
+        el('h2', { text: '找不到这个任务请求' }),
+        el('p', { text: '它可能已经被删除，或者当前页面链接不是有效的 Workflow Request。' }),
+        actionLink('返回工作台总览', 'workbench'),
       ],
     });
   }
 
-  const detail = data.activeDetail;
-  const projection = buildRunProjection(detail);
+  const detail = request.workflowRunId && data.activeDetail?.run.id === request.workflowRunId ? data.activeDetail : null;
+  const projection = detail ? buildRunProjection(detail) : null;
   return el('section', {
-    class: 'workbench-grid',
+    class: 'task-detail-grid',
     children: [
       el('div', {
         class: 'workspace-main',
         children: [
-          renderWorkbenchOverviewPanel(),
-          renderRunHero(detail, projection),
-          renderLifecycle(detail, projection),
-          renderStagePanels(detail),
+          renderTaskHero(request, detail, projection),
+          detail ? renderLifecycle(detail, projection!) : renderQueuedLifecycle(request),
+          renderCurrentStagePanel(request, detail, projection),
+          detail ? renderStageBackendDetails(detail, projection!) : renderQueuedBackendDetails(request),
         ],
       }),
       el('aside', {
         class: 'workspace-side',
-        children: [renderRunsPanel(), renderApprovalPanel(detail, projection.pendingGate), renderEvidencePanel(detail), renderAgentStreamPanel()],
+        children: [
+          renderTaskNextActionPanel(request, detail, projection),
+          renderRunnerControlPanel(),
+          detail ? renderEvidencePanel(detail) : renderRequestDebugPanel(request),
+          detail ? renderAgentStreamPanel() : null,
+        ],
       }),
     ],
   });
@@ -682,6 +745,65 @@ function renderWorkbenchOverviewPanel(): HTMLElement {
   });
 }
 
+function renderTaskListPanel(): HTMLElement {
+  const latestRequests = [...data.requests].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const latestRuns = data.runs.slice(0, 8);
+  return el('section', {
+    class: 'panel',
+    children: [
+      panelHeader('任务总览', '工作台只做全局导航；点击某个任务进入完整工作流详情页。'),
+      latestRequests.length
+        ? el('div', {
+            class: 'task-list',
+            children: latestRequests.slice(0, 12).map(renderTaskListItem),
+          })
+        : el('p', { class: 'muted', text: '暂无任务请求。' }),
+      latestRuns.length
+        ? el('details', {
+            class: 'raw-details',
+            children: [
+              el('summary', { text: `最近 Workflow Run (${latestRuns.length})` }),
+              el('div', { class: 'run-list', children: latestRuns.map(renderRunListItem) }),
+            ],
+          })
+        : null,
+    ],
+  });
+}
+
+function renderTaskListItem(request: WorkflowRequestDto): HTMLElement {
+  const open = button('查看工作流', 'button secondary small');
+  open.onclick = () => setHash('task', request.id);
+  return el('article', {
+    class: 'task-list-item',
+    children: [
+      el('div', {
+        children: [
+          el('strong', { text: request.title }),
+          el('small', { text: `${projectName(request.projectId)} · ${request.type} · Source ${request.branch}` }),
+        ],
+      }),
+      pill(request.status),
+      open,
+    ],
+  });
+}
+
+function renderRunListItem(run: WorkflowRunDto): HTMLElement {
+  const request = data.requests.find((candidate) => candidate.workflowRunId === run.id);
+  const item = el('button', {
+    class: `run-item ${run.id === activeRunId ? 'active' : ''}`,
+    attrs: { type: 'button' },
+    children: [
+      el('strong', { text: run.title }),
+      el('span', { text: `${projectName(run.projectId)} · ${STAGE_LABELS[run.currentStage]}` }),
+      pill(run.status),
+    ],
+  });
+  item.onclick = () => (request ? setHash('task', request.id) : setHash('workbench', run.id));
+  return item;
+}
+
 function renderOverviewBucket(title: string, runs: WorkflowRunDto[], kind: StatusKind): HTMLElement {
   return el('article', {
     class: 'overview-card',
@@ -692,7 +814,8 @@ function renderOverviewBucket(title: string, runs: WorkflowRunDto[], kind: Statu
             class: 'stack',
             children: runs.slice(0, 3).map((run) => {
               const open = button(shortId(run.id), 'button ghost small');
-              open.onclick = () => setHash('workbench', run.id);
+              const request = data.requests.find((candidate) => candidate.workflowRunId === run.id);
+              open.onclick = () => (request ? setHash('task', request.id) : setHash('workbench', run.id));
               return el('div', {
                 class: 'mini-row',
                 children: [el('span', { text: run.title }), open],
@@ -732,6 +855,330 @@ function renderRequestBucket(requests: Array<{ title: string; status: string }>)
         : el('p', { class: 'muted compact', text: '队列为空。' }),
     ],
   });
+}
+
+function renderTaskHero(
+  request: WorkflowRequestDto,
+  detail: RunDetail | null,
+  projection: ReturnType<typeof buildRunProjection> | null,
+): HTMLElement {
+  const status = detail?.run.status ?? request.status;
+  const current = detail ? STAGE_LABELS[detail.run.currentStage] : request.status === 'pending' ? '等待本地 Runner 自动认领' : 'Runner 已认领，正在准备运行';
+  return el('section', {
+    class: 'hero-card task-hero',
+    children: [
+      el('div', {
+        class: 'hero-copy',
+        children: [
+          el('div', {
+            class: 'run-meta-line',
+            children: [
+              pill(status),
+              el('span', { text: shortId(request.id) }),
+              detail ? el('span', { text: `Run ${shortId(detail.run.id)}` }) : null,
+              el('span', { text: fmtTime(request.createdAt) }),
+            ],
+          }),
+          el('h2', { text: request.title }),
+          el('p', {
+            text: detail
+              ? `当前阶段：${current} · Source Branch：${detail.run.sourceBranch ?? request.branch} · 工作分支：${detail.run.branch}`
+              : `当前阶段：${current} · Source Branch：${request.branch}`,
+          }),
+        ],
+      }),
+      el('div', {
+        class: 'metric-grid',
+        children: [
+          metric('Project', projectName(request.projectId), request.type, 'info'),
+          metric('Source Branch', request.branch, '本次任务基础分支', 'muted'),
+          metric('Current', current, detail?.run.workspacePath ?? '尚未准备 worktree', detail ? statusKind(detail.run.status) : statusKind(request.status)),
+          metric('Evidence', projection ? `${projection.summary.gatesPassed}/${detail?.gates.length ?? 0} gates` : '尚未开始', projection ? `${projection.summary.commands} commands` : '等待 Runner', projection?.summary.gatesFailed ? 'bad' : 'muted'),
+        ],
+      }),
+    ],
+  });
+}
+
+function renderQueuedLifecycle(request: WorkflowRequestDto): HTMLElement {
+  const queuedDone = request.status !== 'pending';
+  const runnerActive = request.status === 'claimed';
+  const states: Array<{ label: string; state: 'done' | 'active' | 'waiting' | 'failed'; help: string }> = [
+    { label: 'Queued', state: queuedDone ? 'done' : request.status === 'pending' ? 'active' : 'waiting', help: '任务已进入队列' },
+    { label: 'Runner Ready', state: runnerActive ? 'active' : 'waiting', help: '等待本地 Runner 认领并创建 run' },
+    ...STAGES.slice(1).map((stage) => ({ label: STAGE_LABELS[stage], state: 'waiting' as const, help: '等待进入该阶段' })),
+  ];
+  return el('section', {
+    class: 'panel',
+    children: [
+      panelHeader('完整流程', '任务会自动推进；只有人工确认点会暂停。'),
+      el('div', {
+        class: 'stage-board',
+        children: states.map((stage, index) =>
+          el('article', {
+            class: `stage-card ${stage.state}`,
+            children: [
+              el('span', { class: 'stage-index', text: String(index + 1).padStart(2, '0') }),
+              el('strong', { text: stage.label }),
+              el('small', { text: stage.help }),
+              el('span', { class: `stage-state ${stage.state}`, text: stage.state }),
+            ],
+          }),
+        ),
+      }),
+    ],
+  });
+}
+
+function renderCurrentStagePanel(
+  request: WorkflowRequestDto,
+  detail: RunDetail | null,
+  projection: ReturnType<typeof buildRunProjection> | null,
+): HTMLElement {
+  if (!detail || !projection) {
+    return el('section', {
+      class: 'panel current-stage-panel',
+      children: [
+        panelHeader('当前阶段', request.status === 'pending' ? '等待 Runner 自动开始' : 'Runner 已认领，正在创建 Workflow Run'),
+        el('p', {
+          text:
+            request.status === 'pending'
+              ? '页面已经尝试启动本地 Runner；Runner 启动后会自动认领这个任务。'
+              : 'Runner 正在准备执行环境，稍后这里会切换到 Requirement / Design / Implementation 等阶段。',
+        }),
+        renderRequestDebugPanel(request),
+      ],
+    });
+  }
+
+  const stage = detail.run.currentStage;
+  const pendingGate = projection.pendingGate;
+  if (pendingGate) {
+    return el('section', {
+      class: 'current-stage-panel',
+      children: [
+        el('div', {
+          class: 'panel checkpoint',
+          children: [
+            panelHeader('当前需要你确认', `${STAGE_LABELS[stage]} 暂停在 ${pendingGate}`),
+            el('p', { text: '请先查看下面当前阶段产物和右侧确认入口，再决定批准或打回。' }),
+          ],
+        }),
+        currentStageContent(detail, stage),
+      ],
+    });
+  }
+
+  const panel = currentStageContent(detail, stage);
+  return el('section', {
+    class: 'current-stage-panel',
+    children: [panel],
+  });
+}
+
+function currentStageContent(detail: RunDetail, stage: Stage): HTMLElement {
+  if (stage === 'requirement') return renderRequirementPanel(detail);
+  if (stage === 'design') return renderDesignPanel(detail);
+  if (stage === 'implementation') return renderImplementationPanel(detail);
+  if (stage === 'build_test') return renderBuildTestPanel(detail);
+  if (stage === 'review') return renderAcceptancePanel(detail);
+  if (stage === 'knowledge') return renderKnowledgeSuggestionsPanel(detail);
+  if (stage === 'completion') return renderCompletionSnapshotPanel(detail);
+  return renderContextSnapshotPanel(detail);
+}
+
+function renderContextSnapshotPanel(detail: RunDetail): HTMLElement {
+  return el('article', {
+    class: 'panel doc-panel',
+    children: [
+      panelHeader('当前阶段', `${STAGE_LABELS[detail.run.currentStage]} 正在准备上下文和执行环境`),
+      field('Workspace', detail.run.workspacePath ?? '尚未准备'),
+      field('Source Branch', detail.run.sourceBranch ?? '—'),
+      renderRawFallback(detail, detail.run.currentStage === 'context_pack' ? 'context_pack' : 'project_profile'),
+    ],
+  });
+}
+
+function renderCompletionSnapshotPanel(detail: RunDetail): HTMLElement {
+  const report = parsedCompletionReport(detail);
+  return el('article', {
+    class: 'panel doc-panel structured-panel',
+    children: [
+      panelHeader('Completion Report', '交付报告正在生成或已经可查看'),
+      report.summary.length ? renderTextList('摘要', report.summary) : el('p', { class: 'muted', text: '等待报告摘要。' }),
+      renderRawFallback(detail, 'completion_report'),
+    ],
+  });
+}
+
+function renderTaskNextActionPanel(
+  request: WorkflowRequestDto,
+  detail: RunDetail | null,
+  projection: ReturnType<typeof buildRunProjection> | null,
+): HTMLElement {
+  if (!detail || !projection) {
+    const start = button(runnerStartInFlight ? '正在启动…' : '启动本地 Runner', 'button primary');
+    start.disabled = runnerStartInFlight || Boolean(data.runnerControl?.running);
+    start.onclick = () => void ensureRunnerStarted();
+    return el('section', {
+      class: 'panel side-panel checkpoint',
+      children: [
+        panelHeader('下一步', request.status === 'pending' ? '等待本地 Runner 自动认领' : 'Runner 正在准备运行'),
+        el('p', {
+          text: data.runnerControl?.running
+            ? 'API 已经托管本地 Runner，任务会自动从队列进入执行。'
+            : '如果自动启动失败，可以点击按钮重试，或临时使用命令行兜底。',
+        }),
+        el('div', { class: 'button-row', children: [start] }),
+        data.runnerControl?.running ? null : el('code', { class: 'command-chip', text: 'bun run runner -- watch' }),
+      ],
+    });
+  }
+  if (projection.pendingGate) return renderApprovalPanel(detail, projection.pendingGate);
+  return el('section', {
+    class: 'panel side-panel',
+    children: [
+      panelHeader('下一步', '系统会自动推进到下一个阶段'),
+      el('p', { text: `当前正在 ${STAGE_LABELS[detail.run.currentStage]}。如果遇到 Requirement / Design / Sensitive Change / Acceptance / Knowledge 确认点，页面会在这里显示操作按钮。` }),
+      detail.approvals.length
+        ? el('div', { class: 'stack', children: detail.approvals.map(renderApprovalRow) })
+        : el('p', { class: 'muted compact', text: '当前无需人工确认。' }),
+    ],
+  });
+}
+
+function renderRunnerControlPanel(): HTMLElement {
+  const control = data.runnerControl;
+  const latest = control?.latestHeartbeat ?? latestRunner();
+  const start = button(runnerStartInFlight ? '正在启动…' : control?.running ? 'Runner 已自动运行' : '启动 Runner', control?.running ? 'button secondary small' : 'button primary small');
+  start.disabled = runnerStartInFlight || Boolean(control?.running);
+  start.onclick = () => void ensureRunnerStarted();
+  return el('section', {
+    class: 'panel side-panel runner-control-panel',
+    children: [
+      panelHeader('本地 Runner', 'UI 会自动托管 runner watch；命令行只作为兜底。'),
+      field('Control', control?.running ? el('span', { children: [pill('running', 'good'), document.createTextNode(` pid=${control.pid ?? '—'}`)] }) : pill('stopped', 'warn')),
+      field('Heartbeat', latest ? `${latest.status} · ${fmtTime(latest.lastSeenAt)}` : '尚未收到'),
+      control?.lastExit ? field('Last Exit', `code=${control.lastExit.code ?? 'null'} signal=${control.lastExit.signal ?? 'null'} · ${fmtTime(control.lastExit.at)}`) : null,
+      el('div', { class: 'button-row', children: [start] }),
+      control?.recentLogs?.length
+        ? el('details', {
+            class: 'raw-details',
+            children: [
+              el('summary', { text: `Runner 控制日志 (${control.recentLogs.length})` }),
+              el('pre', { class: 'doc-preview code', text: control.recentLogs.slice(-30).join('\n') }),
+            ],
+          })
+        : el('p', { class: 'muted compact', text: '暂无 Runner 控制日志。' }),
+    ],
+  });
+}
+
+function renderRequestDebugPanel(request: WorkflowRequestDto): HTMLElement {
+  return el('details', {
+    class: 'raw-details',
+    children: [
+      el('summary', { text: '查看 Workflow Request 后端细节' }),
+      field('Request ID', el('code', { text: request.id })),
+      field('Project', projectName(request.projectId)),
+      field('Status', pill(request.status)),
+      field('Claimed By', request.claimedBy ?? '—'),
+      field('Workflow Run', request.workflowRunId ? el('code', { text: request.workflowRunId }) : '尚未创建'),
+      field('Error', request.error ?? '—'),
+    ],
+  });
+}
+
+function renderQueuedBackendDetails(request: WorkflowRequestDto): HTMLElement {
+  return el('section', {
+    class: 'panel',
+    children: [
+      panelHeader('后端细节', '队列阶段可见的信息'),
+      renderRequestDebugPanel(request),
+      data.runnerControl
+        ? el('details', {
+            class: 'raw-details',
+            children: [
+              el('summary', { text: '查看 Runner Control 状态' }),
+              el('pre', { class: 'doc-preview code', text: previewText(JSON.stringify(data.runnerControl, null, 2)) }),
+            ],
+          })
+        : null,
+    ],
+  });
+}
+
+function renderStageBackendDetails(
+  detail: RunDetail,
+  projection: ReturnType<typeof buildRunProjection>,
+): HTMLElement {
+  return el('section', {
+    class: 'panel',
+    children: [
+      panelHeader('每一步后端细节', '默认摘要；展开后查看 Step、Agent、Gate、Command、Artifact、Audit。'),
+      el('div', {
+        class: 'stage-detail-list',
+        children: projection.stages.map((stage) => renderStageBackendDetail(detail, stage)),
+      }),
+    ],
+  });
+}
+
+function renderStageBackendDetail(detail: RunDetail, stage: ReturnType<typeof buildRunProjection>['stages'][number]): HTMLElement {
+  const step = detail.steps.find((candidate) => candidate.stage === stage.id);
+  const gates = detail.gates.filter((gate) => gate.gateId === stage.gateId || gate.stepRunId === step?.id);
+  const commands = detail.commands.filter((command) => command.stepRunId === step?.id || command.stage === stage.id);
+  const artifacts = detail.artifacts.filter((artifact) => artifact.stepRunId === step?.id || artifactForStage(artifact, stage.id));
+  const tasks = detail.agentTasks.filter((task) => task.stepRunId === step?.id || agentTaskForStage(task.kind, stage.id));
+  const audit = detail.audit.filter((item) => auditForStage(item, stage.id));
+  return el('details', {
+    class: `stage-detail ${stage.state}`,
+    children: [
+      el('summary', {
+        children: [
+          el('strong', { text: stage.label }),
+          pill(stage.state, stage.state === 'done' ? 'good' : stage.state === 'failed' ? 'bad' : stage.state === 'blocked' ? 'warn' : stage.state === 'active' ? 'info' : 'muted'),
+          el('span', { class: 'muted', text: `${gates.length} gates · ${commands.length} commands · ${artifacts.length} artifacts` }),
+        ],
+      }),
+      step ? field('Step', `${step.name} · ${step.status}`) : field('Step', '尚未进入'),
+      gates.length ? renderDetails('Gate Runs', gates.map(renderGateRow)) : null,
+      tasks.length ? renderDetails('Agent Tasks', tasks.map((task) => renderAgentTaskRow(task, detail))) : null,
+      commands.length ? renderDetails('Command Runs', commands.map(renderCommandRow)) : null,
+      artifacts.length ? renderDetails('Artifacts', artifacts.map(renderArtifactRow)) : null,
+      audit.length ? renderDetails('Audit', audit.map(renderAuditRow)) : null,
+    ],
+  });
+}
+
+function artifactForStage(artifact: ArtifactDto, stage: Stage): boolean {
+  const map: Partial<Record<Stage, string[]>> = {
+    context_pack: ['context_pack', 'project_profile'],
+    requirement: ['requirement_draft'],
+    design: ['design_doc', 'traceability'],
+    implementation: ['diff'],
+    build_test: ['surefire_report', 'failsafe_report', 'command_log'],
+    review: ['other'],
+    completion: ['completion_report'],
+    knowledge: ['knowledge_candidate'],
+  };
+  return (map[stage] ?? []).includes(artifact.kind);
+}
+
+function agentTaskForStage(kind: string, stage: Stage): boolean {
+  const map: Partial<Record<Stage, string[]>> = {
+    context_pack: ['context_pack'],
+    requirement: ['requirement_draft'],
+    design: ['design_draft'],
+    implementation: ['implementation'],
+    review: ['review'],
+  };
+  return (map[stage] ?? []).includes(kind);
+}
+
+function auditForStage(item: RunDetail['audit'][number], stage: Stage): boolean {
+  const text = `${item.kind} ${JSON.stringify(item.payload ?? {})}`;
+  return text.includes(stage) || (stage === 'context_pack' && text.includes('project_profile'));
 }
 
 function renderRunHero(detail: RunDetail, projection: ReturnType<typeof buildRunProjection>): HTMLElement {
@@ -889,6 +1336,13 @@ function parsedKnowledge(detail: RunDetail): KnowledgeSuggestion[] {
   return parseKnowledgeArtifact(
     markdownArtifactText(detail, 'knowledge_candidate'),
     structuredArtifactText(detail, 'knowledge_candidate'),
+  );
+}
+
+function parsedCompletionReport(detail: RunDetail) {
+  return parseCompletionReportArtifact(
+    markdownArtifactText(detail, 'completion_report'),
+    structuredArtifactText(detail, 'completion_report'),
   );
 }
 
@@ -1191,19 +1645,7 @@ function renderRunsPanel(): HTMLElement {
       panelHeader('Runs', '最新工作流'),
       el('div', {
         class: 'run-list',
-        children: data.runs.slice(0, 12).map((run) => {
-          const item = el('button', {
-            class: `run-item ${run.id === activeRunId ? 'active' : ''}`,
-            attrs: { type: 'button' },
-            children: [
-              el('strong', { text: run.title }),
-              el('span', { text: `${projectName(run.projectId)} · ${STAGE_LABELS[run.currentStage]}` }),
-              pill(run.status),
-            ],
-          });
-          item.onclick = () => setHash('workbench', run.id);
-          return item;
-        }),
+        children: data.runs.slice(0, 12).map(renderRunListItem),
       }),
     ],
   });
@@ -1333,6 +1775,16 @@ function renderAgentTaskRow(task: RunDetail['agentTasks'][number], detail: RunDe
     children: [
       el('span', { children: [pill(result?.status ?? 'pending'), document.createTextNode(` ${task.backend}:${task.kind}`)] }),
       result?.summary ? el('small', { text: result.summary }) : null,
+    ],
+  });
+}
+
+function renderAuditRow(item: RunDetail['audit'][number]): HTMLElement {
+  return el('div', {
+    class: 'evidence-row',
+    children: [
+      el('span', { children: [pill('audit', 'muted'), document.createTextNode(` ${item.kind}`)] }),
+      el('small', { text: fmtTime(item.at) }),
     ],
   });
 }
@@ -1803,6 +2255,34 @@ async function refreshProjectBranches(projectId: string, onUpdated?: () => void)
   }
 }
 
+async function ensureRunnerStarted(): Promise<void> {
+  if (runnerStartInFlight) return;
+  runnerStartInFlight = true;
+  render();
+  try {
+    data.runnerControl = await api<RunnerControlStatusDto>('/runner/control/start', { method: 'POST' });
+    lastError = null;
+    await loadData({ render: false, keepDetail: true });
+  } catch (err) {
+    lastError =
+      err instanceof Error
+        ? `${err.message}。可以临时在命令行执行 bun run runner -- watch 作为兜底。`
+        : String(err);
+  } finally {
+    runnerStartInFlight = false;
+    render();
+  }
+}
+
+function maybeAutoStartRunnerForActiveTask(): void {
+  const request = activeTaskRequest();
+  if (!request || !['pending', 'claimed'].includes(request.status)) return;
+  if (data.runnerControl?.running || runnerStartInFlight) return;
+  if (runnerAutoStartAttemptedForRequest.has(request.id)) return;
+  runnerAutoStartAttemptedForRequest.add(request.id);
+  void ensureRunnerStarted();
+}
+
 function editProject(project: ProjectDto): void {
   const sourceKind = project.sourceKind ?? 'local';
   projectSourceForm.editingProjectId = project.id;
@@ -2060,9 +2540,13 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
     });
     form.reset();
     await loadData({ render: false });
+    activeTaskRequestId = request.id;
+    activeRunId = request.workflowRunId;
     lastError = null;
-    activePage = 'workbench';
-    window.location.hash = 'workbench';
+    activePage = 'task';
+    window.location.hash = `task/${encodeURIComponent(request.id)}`;
+    runnerAutoStartAttemptedForRequest.add(request.id);
+    void ensureRunnerStarted();
     render();
     console.log('[web] workflow request created', request.id);
   } catch (err) {
@@ -2091,7 +2575,8 @@ function renderReportsPage(): HTMLElement {
 
 function renderReportRow(run: WorkflowRunDto): HTMLElement {
   const open = button('Open', 'button secondary small');
-  open.onclick = () => setHash('workbench', run.id);
+  const request = data.requests.find((candidate) => candidate.workflowRunId === run.id);
+  open.onclick = () => (request ? setHash('task', request.id) : setHash('workbench', run.id));
   const viewReport = button('Report', 'button secondary small');
   viewReport.onclick = () => {
     activeRunId = run.id;
@@ -2470,13 +2955,18 @@ function attachStream(runId: string): void {
 
 window.addEventListener('hashchange', async () => {
   parseHash();
-  if (activeRunId) await loadRunDetail(activeRunId, false);
+  await loadData({ render: false, keepDetail: false });
+  const task = activeTaskRequest();
+  if (task?.workflowRunId) await loadRunDetail(task.workflowRunId, false);
+  else if (activeRunId && activePage !== 'task') await loadRunDetail(activeRunId, false);
   render();
+  maybeAutoStartRunnerForActiveTask();
 });
 window.addEventListener('beforeunload', detachStream);
 
 parseHash();
 await loadData({ render: true });
+maybeAutoStartRunnerForActiveTask();
 setInterval(() => {
   if (activePage === 'new-task' || activePage === 'projects') {
     void loadData({ render: false, keepDetail: true });
@@ -2484,4 +2974,5 @@ setInterval(() => {
   }
   void loadData({ render: true, keepDetail: true });
   if (activeRunId) void loadRunDetail(activeRunId, true);
+  maybeAutoStartRunnerForActiveTask();
 }, 3000);

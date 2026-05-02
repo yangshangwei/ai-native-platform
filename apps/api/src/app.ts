@@ -7,6 +7,7 @@ import { approvals } from './routes/approvals';
 import { runners } from './routes/runners';
 import { artifacts } from './routes/artifacts';
 import { commandRuns } from './routes/command-runs';
+import { runnerControl } from './routes/runner-control';
 import { store } from './store/store';
 
 export const app = new Hono();
@@ -32,5 +33,6 @@ app.route('/workflow-runs', workflowRuns);
 app.route('/artifacts', artifacts);
 app.route('/command-runs', commandRuns);
 app.route('/runner/events', runnerEvents);
+app.route('/runner/control', runnerControl);
 app.route('/runners', runners);
 app.route('/approvals', approvals);

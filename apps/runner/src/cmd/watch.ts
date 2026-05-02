@@ -67,6 +67,7 @@ export async function cmdWatch(opts: WatchOpts = {}): Promise<void> {
           project: request.projectId,
           title: request.title,
           sourceBranch: request.branch,
+          workflowRequestId: request.id,
           cleanup: !opts.keepWorktree,
           setExitCode: false,
         }),

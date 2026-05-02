@@ -56,6 +56,17 @@ test('workflow request routes create, list, claim, and complete runner work', as
     claimedBy: 'runner@routes',
   });
 
+  const runStartedRes = await app.request(`/workflow-requests/${created.id}/run-started`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ workflowRunId: 'run_live_from_route' }),
+  });
+  expect(runStartedRes.status).toBe(200);
+  expect((await runStartedRes.json()) as { status: string; workflowRunId: string }).toMatchObject({
+    status: 'claimed',
+    workflowRunId: 'run_live_from_route',
+  });
+
   const duplicateClaim = await app.request(`/workflow-requests/${created.id}/claim`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -66,12 +77,12 @@ test('workflow request routes create, list, claim, and complete runner work', as
   const completeRes = await app.request(`/workflow-requests/${created.id}/complete`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ workflowRunId: 'run_from_route', ok: true }),
+    body: JSON.stringify({ ok: true }),
   });
   expect(completeRes.status).toBe(200);
   expect((await completeRes.json()) as { status: string; workflowRunId: string }).toMatchObject({
     status: 'completed',
-    workflowRunId: 'run_from_route',
+    workflowRunId: 'run_live_from_route',
   });
 });
 

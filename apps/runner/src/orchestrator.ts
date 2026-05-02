@@ -24,6 +24,7 @@ export interface OrchestrateOpts {
   project: string;
   title: string;
   sourceBranch?: string;
+  workflowRequestId?: string;
   /** Default true — auto-clean worktree at the end. */
   cleanup?: boolean;
   /** Default true for CLI mode; watch mode keeps the daemon alive on failed jobs. */
@@ -60,6 +61,12 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     sourceBranch: opts.sourceBranch ?? project.defaultBranch,
   });
   console.log(`[runner] workflow-run ${run.id} created`);
+  if (opts.workflowRequestId) {
+    await api.workflowRequestRunStarted({
+      requestId: opts.workflowRequestId,
+      workflowRunId: run.id,
+    });
+  }
 
   const env = new TrustedLocalWorktreeEnvironment(project);
   const workspace = await env.prepare(run);

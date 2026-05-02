@@ -5,6 +5,7 @@ import {
   claimWorkflowRequest,
   completeWorkflowRequest,
   createWorkflowRequest,
+  markWorkflowRequestRunStarted,
 } from '../workflow-engine';
 
 export const workflowRequests = new Hono();
@@ -24,6 +25,12 @@ workflowRequests.get('/', (c) => {
   }
   const items = status ? store.workflowRequests.byStatus(status) : store.workflowRequests.values();
   return c.json({ items });
+});
+
+workflowRequests.get('/:id', (c) => {
+  const request = store.workflowRequests.get(c.req.param('id'));
+  if (!request) return c.json({ error: 'not found' }, 404);
+  return c.json(request);
 });
 
 workflowRequests.post('/', async (c) => {
@@ -62,6 +69,23 @@ workflowRequests.post('/:id/claim', async (c) => {
     return c.json({ error: 'request is not pending', request: current }, 409);
   }
   return c.json(claimed);
+});
+
+workflowRequests.post('/:id/run-started', async (c) => {
+  const requestId = c.req.param('id');
+  const body = (await c.req.json()) as { workflowRunId?: string };
+  if (!body.workflowRunId?.trim()) return c.json({ error: 'workflowRunId required' }, 400);
+  try {
+    return c.json(
+      markWorkflowRequestRunStarted({
+        requestId,
+        workflowRunId: body.workflowRunId.trim(),
+      }),
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return c.json({ error: message }, message.includes('not found') ? 404 : 409);
+  }
 });
 
 workflowRequests.post('/:id/complete', async (c) => {

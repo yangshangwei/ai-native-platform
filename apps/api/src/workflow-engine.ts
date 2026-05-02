@@ -125,6 +125,22 @@ export function claimWorkflowRequest(params: {
   return request;
 }
 
+export function markWorkflowRequestRunStarted(params: {
+  requestId: string;
+  workflowRunId: WorkflowRunId;
+}): WorkflowRequest {
+  const request = store.workflowRequests.get(params.requestId);
+  if (!request) throw new Error(`workflow request not found: ${params.requestId}`);
+  if (request.status !== 'claimed') throw new Error(`workflow request is not claimed: ${params.requestId}`);
+  request.workflowRunId = params.workflowRunId;
+  request.updatedAt = nowIso();
+  store.workflowRequests.set(request.id, request);
+  audit(params.workflowRunId, 'workflow_request.run_started', {
+    requestId: request.id,
+  });
+  return request;
+}
+
 export function completeWorkflowRequest(params: {
   requestId: string;
   workflowRunId: WorkflowRunId | null;
@@ -134,7 +150,7 @@ export function completeWorkflowRequest(params: {
   const request = store.workflowRequests.get(params.requestId);
   if (!request) throw new Error(`workflow request not found: ${params.requestId}`);
   request.status = params.ok ? 'completed' : 'failed';
-  request.workflowRunId = params.workflowRunId;
+  request.workflowRunId = params.workflowRunId ?? request.workflowRunId;
   request.error = params.error;
   request.updatedAt = nowIso();
   store.workflowRequests.set(request.id, request);

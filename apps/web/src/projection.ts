@@ -46,7 +46,10 @@ export interface WorkflowRunDto {
 
 export interface CommandRunDto {
   id: string;
+  stepRunId?: string | null;
   command: string;
+  cwd?: string;
+  stage?: string;
   status: string;
   exitCode: number | null;
   durationMs: number | null;
@@ -58,6 +61,7 @@ export interface CommandRunDto {
 export interface GateRunDto {
   id: string;
   gateId: string;
+  stepRunId?: string | null;
   status: 'pass' | 'warn' | 'fail';
   decidedAt: string;
   ruleResults: Array<{ ruleId: string; status: string; message: string }>;
@@ -66,6 +70,7 @@ export interface GateRunDto {
 export interface ArtifactDto {
   id: string;
   kind: string;
+  stepRunId?: string | null;
   uri: string;
   contentType: string;
   createdAt: string;
@@ -112,7 +117,7 @@ export interface TestRunDto {
 
 export interface RunDetail {
   run: WorkflowRunDto;
-  steps: Array<{ id: string; stage: Stage; name: string; status: string }>;
+  steps: Array<{ id: string; stage: Stage; name: string; status: string; startedAt?: string | null; completedAt?: string | null }>;
   commands: CommandRunDto[];
   gates: GateRunDto[];
   artifacts: ArtifactDto[];
@@ -120,9 +125,9 @@ export interface RunDetail {
   tests: TestRunDto[];
   approvals: ApprovalDto[];
   actions: WorkflowActionDto[];
-  agentTasks: Array<{ id: string; kind: string; backend: string }>;
-  agentResults: Array<{ id: string; taskId: string; status: string; summary?: string }>;
-  audit: Array<{ id: string; kind: string; at: string }>;
+  agentTasks: Array<{ id: string; stepRunId?: string | null; kind: string; backend: string; createdAt?: string }>;
+  agentResults: Array<{ id: string; taskId: string; status: string; summary?: string; completedAt?: string }>;
+  audit: Array<{ id: string; workflowRunId?: string | null; kind: string; payload?: Record<string, unknown>; at: string }>;
 }
 
 export interface StageProjection {

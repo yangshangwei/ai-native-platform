@@ -96,6 +96,13 @@ export const api = {
       },
     ),
 
+  workflowRequestRunStarted: (params: { requestId: string; workflowRunId: string }) =>
+    request<WorkflowRequest>(
+      'POST',
+      `/workflow-requests/${encodeURIComponent(params.requestId)}/run-started`,
+      { workflowRunId: params.workflowRunId },
+    ),
+
   getWorkflowRun: (id: string) =>
     request<{
       run: WorkflowRun;
