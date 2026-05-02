@@ -12,6 +12,7 @@ import {
   type StepRunId,
   type EvidenceRef,
 } from '@ainp/shared';
+import { readFileSync } from 'node:fs';
 import { store } from './store/store';
 
 /**
@@ -200,6 +201,34 @@ export function runTestGate(params: {
 
 // ---- Light-weight rule-based gates ----------------------------------------
 
+function readArtifactText(a: Artifact | null): string {
+  if (!a?.uri.startsWith('file://')) return '';
+  try {
+    return readFileSync(a.uri.slice('file://'.length), 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+function artifactEvidence(a: Artifact | null, claim: string): EvidenceRef[] {
+  return a ? [{ artifactId: a.id, claim }] : [];
+}
+
+function textRule(params: {
+  ruleId: string;
+  ok: boolean;
+  pass: string;
+  fail: string;
+  evidenceRefs: EvidenceRef[];
+}): RuleResult {
+  return {
+    ruleId: params.ruleId,
+    status: params.ok ? 'pass' : 'fail',
+    message: params.ok ? params.pass : params.fail,
+    evidenceRefs: params.evidenceRefs,
+  };
+}
+
 export function runArtifactPresenceGate(params: {
   workflowRunId: WorkflowRunId;
   stepRunId: StepRunId | null;
@@ -221,6 +250,172 @@ export function runArtifactPresenceGate(params: {
     },
   ];
   return record(params.workflowRunId, params.stepRunId, params.gateId, results);
+}
+
+export function runRequirementGate(params: {
+  workflowRunId: WorkflowRunId;
+  stepRunId: StepRunId | null;
+  artifact: Artifact | null;
+}): GateRun {
+  const text = readArtifactText(params.artifact);
+  const evidence = artifactEvidence(params.artifact, 'requirement draft markdown');
+  const hasArtifact = Boolean(params.artifact);
+  const hasReqId = /\bREQ-\d{3}\b/i.test(text);
+  const hasAcceptance = /\bAC-\d{3}\b/i.test(text) && /acceptance criteria|验收标准/i.test(text);
+  const hasScope = /goals?|目标|non-goals?|非目标|scope|范围/i.test(text);
+  const hasContextEvidence =
+    /context pack|context evidence|relevant code|evidence refs|`src\//i.test(text);
+
+  const results: RuleResult[] = [
+    {
+      ruleId: 'requirement.draft_present',
+      status: hasArtifact ? 'pass' : 'fail',
+      message: hasArtifact
+        ? `requirement_draft artifact present (${params.artifact!.id})`
+        : 'requirement_draft artifact missing',
+      evidenceRefs: evidence,
+    },
+    textRule({
+      ruleId: 'requirement.ids_present',
+      ok: hasReqId,
+      pass: 'requirement IDs present',
+      fail: 'missing REQ-### requirement IDs',
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'requirement.acceptance_criteria_present',
+      ok: hasAcceptance,
+      pass: 'acceptance criteria IDs present',
+      fail: 'missing AC-### acceptance criteria section',
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'requirement.scope_present',
+      ok: hasScope,
+      pass: 'scope/goals/non-goals present',
+      fail: 'missing scope, goals, or non-goals',
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'requirement.context_evidence_present',
+      ok: hasContextEvidence,
+      pass: 'context evidence referenced',
+      fail: 'missing Context Pack / evidence references',
+      evidenceRefs: evidence,
+    }),
+  ];
+
+  return record(params.workflowRunId, params.stepRunId, 'requirement_gate', results);
+}
+
+export function runDesignGate(params: {
+  workflowRunId: WorkflowRunId;
+  stepRunId: StepRunId | null;
+  artifact: Artifact | null;
+}): GateRun {
+  const text = readArtifactText(params.artifact);
+  const evidence = artifactEvidence(params.artifact, 'design markdown');
+  const hasArtifact = Boolean(params.artifact);
+  const hasCoverage =
+    /requirement coverage|coverage matrix|需求覆盖/i.test(text) ||
+    /\bREQ-\d{3}\b[\s\S]{0,200}\bD-\d{3}\b/i.test(text);
+  const hasTestStrategy = /test strategy|测试策略|\bAC-\d{3}\b[\s\S]{0,200}(test|mvn|测试)/i.test(text);
+  const hasRisk = /risks?|风险/i.test(text);
+  const hasContextGrounding =
+    /context evidence|context pack|existing implementation|现有工程|`src\//i.test(text);
+
+  const results: RuleResult[] = [
+    {
+      ruleId: 'design.doc_present',
+      status: hasArtifact ? 'pass' : 'fail',
+      message: hasArtifact
+        ? `design_doc artifact present (${params.artifact!.id})`
+        : 'design_doc artifact missing',
+      evidenceRefs: evidence,
+    },
+    textRule({
+      ruleId: 'design.requirement_coverage_present',
+      ok: hasCoverage,
+      pass: 'requirement coverage matrix present',
+      fail: 'missing requirement coverage matrix',
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'design.test_strategy_present',
+      ok: hasTestStrategy,
+      pass: 'test strategy present',
+      fail: 'missing test strategy tied to acceptance criteria',
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'design.risks_present',
+      ok: hasRisk,
+      pass: 'risks recorded',
+      fail: 'missing risks section',
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'design.context_grounding_present',
+      ok: hasContextGrounding,
+      pass: 'design cites existing context evidence',
+      fail: 'missing existing-context grounding',
+      evidenceRefs: evidence,
+    }),
+  ];
+
+  return record(params.workflowRunId, params.stepRunId, 'design_gate', results);
+}
+
+export function runAcceptanceTraceabilityGate(params: {
+  workflowRunId: WorkflowRunId;
+  stepRunId: StepRunId | null;
+}): GateRun {
+  const requirement = store.artifacts.byKind(params.workflowRunId, 'requirement_draft').at(-1) ?? null;
+  const design = store.artifacts.byKind(params.workflowRunId, 'design_doc').at(-1) ?? null;
+  const diff = store.artifacts.byKind(params.workflowRunId, 'diff').at(-1) ?? null;
+  const review = store.artifacts.byKind(params.workflowRunId, 'other').at(-1) ?? null;
+  const testGate = store.gateRuns.latestForGate(params.workflowRunId, 'test_gate');
+
+  const results: RuleResult[] = [
+    textRule({
+      ruleId: 'acceptance.requirement_present',
+      ok: Boolean(requirement),
+      pass: 'requirement evidence present',
+      fail: 'missing requirement artifact',
+      evidenceRefs: artifactEvidence(requirement, 'approved requirement candidate'),
+    }),
+    textRule({
+      ruleId: 'acceptance.design_present',
+      ok: Boolean(design),
+      pass: 'design evidence present',
+      fail: 'missing design artifact',
+      evidenceRefs: artifactEvidence(design, 'approved design candidate'),
+    }),
+    textRule({
+      ruleId: 'acceptance.diff_present',
+      ok: Boolean(diff),
+      pass: 'diff evidence present',
+      fail: 'missing implementation diff',
+      evidenceRefs: artifactEvidence(diff, 'implementation diff'),
+    }),
+    textRule({
+      ruleId: 'acceptance.review_present',
+      ok: Boolean(review),
+      pass: 'review evidence present',
+      fail: 'missing review artifact',
+      evidenceRefs: artifactEvidence(review, 'review artifact'),
+    }),
+    {
+      ruleId: 'acceptance.test_gate_passed',
+      status: testGate?.status === 'pass' ? 'pass' : 'fail',
+      message: testGate
+        ? `latest test_gate=${testGate.status}`
+        : 'missing test_gate before acceptance',
+      evidenceRefs: testGate?.evidenceRefs ?? [],
+    },
+  ];
+
+  return record(params.workflowRunId, params.stepRunId, 'acceptance_gate', results);
 }
 
 export function runDiffScopeGate(params: {

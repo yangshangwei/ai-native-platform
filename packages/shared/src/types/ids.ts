@@ -2,6 +2,7 @@ export type Iso8601 = string;
 
 export type ProjectId = string;
 export type WorkflowRunId = string;
+export type WorkflowRequestId = string;
 export type StepRunId = string;
 export type ArtifactId = string;
 export type GateRunId = string;

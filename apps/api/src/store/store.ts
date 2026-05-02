@@ -1,5 +1,6 @@
 import type {
   Project,
+  WorkflowRequest,
   WorkflowRun,
   StepRun,
   CommandRun,
@@ -9,6 +10,7 @@ import type {
   TestRun,
   AgentTask,
   AgentResult,
+  AgentStreamEvent,
 } from '@ainp/shared';
 import { db } from './db';
 
@@ -186,6 +188,80 @@ const workflowRuns: MapLike<WorkflowRun> & {
         .prepare('SELECT * FROM workflow_runs WHERE project_id = ? ORDER BY created_at ASC')
         .all(projectId) as WorkflowRunRow[]
     ).map(rowToWorkflowRun);
+  },
+};
+
+// ---- workflow_requests -------------------------------------------------------
+
+interface WorkflowRequestRow {
+  id: string;
+  project_id: string;
+  type: string;
+  title: string;
+  branch: string;
+  status: string;
+  claimed_by: string | null;
+  workflow_run_id: string | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function rowToWorkflowRequest(r: WorkflowRequestRow): WorkflowRequest {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    type: r.type as WorkflowRequest['type'],
+    title: r.title,
+    branch: r.branch,
+    status: r.status as WorkflowRequest['status'],
+    claimedBy: r.claimed_by,
+    workflowRunId: r.workflow_run_id,
+    error: r.error,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+const workflowRequests = {
+  set(_id: string, req: WorkflowRequest): void {
+    upsertRow('workflow_requests', {
+      id: req.id,
+      project_id: req.projectId,
+      type: req.type,
+      title: req.title,
+      branch: req.branch,
+      status: req.status,
+      claimed_by: req.claimedBy,
+      workflow_run_id: req.workflowRunId,
+      error: req.error,
+      created_at: req.createdAt,
+      updated_at: req.updatedAt,
+    });
+  },
+  get(id: string): WorkflowRequest | undefined {
+    const r = db.prepare('SELECT * FROM workflow_requests WHERE id = ?').get(id) as
+      | WorkflowRequestRow
+      | null;
+    return r ? rowToWorkflowRequest(r) : undefined;
+  },
+  values(): WorkflowRequest[] {
+    return (
+      db.prepare('SELECT * FROM workflow_requests ORDER BY created_at ASC').all() as WorkflowRequestRow[]
+    ).map(rowToWorkflowRequest);
+  },
+  byStatus(status: WorkflowRequest['status']): WorkflowRequest[] {
+    return (
+      db
+        .prepare('SELECT * FROM workflow_requests WHERE status = ? ORDER BY created_at ASC')
+        .all(status) as WorkflowRequestRow[]
+    ).map(rowToWorkflowRequest);
+  },
+  pending(): WorkflowRequest[] {
+    return this.byStatus('pending');
+  },
+  get size(): number {
+    return countRows('workflow_requests');
   },
 };
 
@@ -691,9 +767,138 @@ const agentResults = {
       | null;
     return r ? rowToAgentResult(r) : undefined;
   },
+  byWorkflow(workflowRunId: string): AgentResult[] {
+    return (
+      db
+        .prepare(
+          `SELECT ar.*
+             FROM agent_results ar
+             JOIN agent_tasks at ON at.id = ar.task_id
+            WHERE at.workflow_run_id = ?
+            ORDER BY ar.started_at ASC`,
+        )
+        .all(workflowRunId) as AgentResultRow[]
+    ).map(rowToAgentResult);
+  },
 };
 
-// ---- approvals + audit_log + runners --------------------------------------
+// ---- agent stream events ---------------------------------------------------
+
+interface AgentEventRow {
+  id: string;
+  workflow_run_id: string;
+  step_run_id: string | null;
+  agent_kind: string;
+  sequence: number;
+  type: string;
+  payload_json: string;
+  text: string | null;
+  ts: string;
+}
+
+function rowToAgentEvent(r: AgentEventRow): AgentStreamEvent {
+  return {
+    id: r.id,
+    workflowRunId: r.workflow_run_id,
+    stepRunId: r.step_run_id,
+    agentKind: r.agent_kind as AgentStreamEvent['agentKind'],
+    sequence: r.sequence,
+    type: r.type as AgentStreamEvent['type'],
+    payload: JSON.parse(r.payload_json) as Record<string, unknown>,
+    text: r.text,
+    ts: r.ts,
+  };
+}
+
+const agentEvents = {
+  insert(e: AgentStreamEvent): void {
+    insertRow('agent_events', {
+      id: e.id,
+      workflow_run_id: e.workflowRunId,
+      step_run_id: e.stepRunId,
+      agent_kind: e.agentKind,
+      sequence: e.sequence,
+      type: e.type,
+      payload_json: JSON.stringify(e.payload),
+      text: e.text,
+      ts: e.ts,
+    });
+  },
+  byWorkflow(workflowRunId: string, sinceSeq = -1): AgentStreamEvent[] {
+    return (
+      db
+        .prepare(
+          'SELECT * FROM agent_events WHERE workflow_run_id = ? AND sequence > ? ORDER BY sequence ASC',
+        )
+        .all(workflowRunId, sinceSeq) as AgentEventRow[]
+    ).map(rowToAgentEvent);
+  },
+  nextSequence(workflowRunId: string): number {
+    const r = db
+      .prepare('SELECT COALESCE(MAX(sequence), -1) AS m FROM agent_events WHERE workflow_run_id = ?')
+      .get(workflowRunId) as { m: number };
+    return r.m + 1;
+  },
+};
+
+// ---- workflow actions + approvals + audit_log + runners -------------------
+
+export interface WorkflowAction {
+  id: string;
+  workflowRunId: string;
+  kind: string;
+  targetId: string | null;
+  action: string;
+  actor: string;
+  payload: Record<string, unknown>;
+  createdAt: string;
+}
+
+interface WorkflowActionRow {
+  id: string;
+  workflow_run_id: string;
+  kind: string;
+  target_id: string | null;
+  action: string;
+  actor: string;
+  payload_json: string;
+  created_at: string;
+}
+
+function rowToWorkflowAction(r: WorkflowActionRow): WorkflowAction {
+  return {
+    id: r.id,
+    workflowRunId: r.workflow_run_id,
+    kind: r.kind,
+    targetId: r.target_id,
+    action: r.action,
+    actor: r.actor,
+    payload: JSON.parse(r.payload_json) as Record<string, unknown>,
+    createdAt: r.created_at,
+  };
+}
+
+const workflowActions = {
+  insert(action: WorkflowAction): void {
+    insertRow('workflow_actions', {
+      id: action.id,
+      workflow_run_id: action.workflowRunId,
+      kind: action.kind,
+      target_id: action.targetId,
+      action: action.action,
+      actor: action.actor,
+      payload_json: JSON.stringify(action.payload),
+      created_at: action.createdAt,
+    });
+  },
+  byWorkflow(workflowRunId: string): WorkflowAction[] {
+    return (
+      db
+        .prepare('SELECT * FROM workflow_actions WHERE workflow_run_id = ? ORDER BY created_at ASC')
+        .all(workflowRunId) as WorkflowActionRow[]
+    ).map(rowToWorkflowAction);
+  },
+};
 
 export interface Approval {
   id: string;
@@ -863,8 +1068,9 @@ const runners = {
 // ---- public surface --------------------------------------------------------
 
 export const store = {
-  projects,
-  workflowRuns,
+	  projects,
+	  workflowRequests,
+	  workflowRuns,
   stepRuns,
   commandRuns,
   gateRuns,
@@ -873,6 +1079,8 @@ export const store = {
   testRuns,
   agentTasks,
   agentResults,
+  agentEvents,
+  workflowActions,
   approvals,
   auditLog,
   runners,

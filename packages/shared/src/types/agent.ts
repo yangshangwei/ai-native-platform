@@ -10,6 +10,7 @@ import type {
 export type AgentBackendKind = 'native' | 'codex' | 'claude_code';
 
 export type AgentTaskKind =
+  | 'context_pack'
   | 'requirement_draft'
   | 'design_draft'
   | 'implementation'

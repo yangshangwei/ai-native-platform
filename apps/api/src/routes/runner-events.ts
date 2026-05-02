@@ -1,5 +1,13 @@
 import { Hono } from 'hono';
-import type { CommandRun, WorkflowStage, ArtifactKind, GateRun } from '@ainp/shared';
+import type {
+  CommandRun,
+  WorkflowStage,
+  ArtifactKind,
+  GateRun,
+  AgentStreamEventInput,
+  AgentBackendKind,
+  AgentTaskKind,
+} from '@ainp/shared';
 import {
   finishStep,
   recordCommandRun,
@@ -11,12 +19,17 @@ import {
   recordMavenBuild,
   createArtifact,
   awaitHuman,
+  recordAgentEvent,
+  recordAgentTask,
+  recordAgentResult,
   type MavenBuildEvent,
 } from '../workflow-engine';
 import {
-  runArtifactPresenceGate,
   runDiffScopeGate,
   runSensitiveChangeGate,
+  runRequirementGate,
+  runDesignGate,
+  runAcceptanceTraceabilityGate,
 } from '../gate-engine';
 import { store } from '../store/store';
 
@@ -92,6 +105,62 @@ runnerEvents.post('/heartbeat', async (c) => {
   return c.json({ ok: true, runner });
 });
 
+/**
+ * Live agent stream ingest — runner POSTs each parsed CC stream-json line
+ * (or backend-meta) here. Body accepts a single event or a `events` array
+ * for batched submission.
+ */
+runnerEvents.post('/agent-stream', async (c) => {
+  const body = (await c.req.json()) as AgentStreamEventInput | { events: AgentStreamEventInput[] };
+  const inputs = Array.isArray((body as { events?: unknown }).events)
+    ? (body as { events: AgentStreamEventInput[] }).events
+    : [body as AgentStreamEventInput];
+  const stored = inputs.map((i) => recordAgentEvent(i));
+  return c.json({ ok: true, count: stored.length, events: stored });
+});
+
+runnerEvents.post('/agent-task-started', async (c) => {
+  const body = (await c.req.json()) as {
+    workflowRunId: string;
+    stepRunId: string | null;
+    kind: AgentTaskKind;
+    backend: AgentBackendKind;
+    prompt: string;
+    inputArtifactIds?: string[];
+  };
+  if (!body.workflowRunId || !body.kind || !body.backend) {
+    return c.json({ error: 'workflowRunId, kind, backend required' }, 400);
+  }
+  const task = recordAgentTask({
+    workflowRunId: body.workflowRunId,
+    stepRunId: body.stepRunId ?? null,
+    kind: body.kind,
+    backend: body.backend,
+    prompt: body.prompt ?? '',
+    inputArtifactIds: body.inputArtifactIds ?? [],
+  });
+  return c.json({ ok: true, task }, 201);
+});
+
+runnerEvents.post('/agent-task-finished', async (c) => {
+  const body = (await c.req.json()) as {
+    taskId: string;
+    status: 'success' | 'failed' | 'cancelled';
+    summary: string;
+    outputArtifactIds?: string[];
+  };
+  if (!body.taskId || !body.status) {
+    return c.json({ error: 'taskId, status required' }, 400);
+  }
+  const result = recordAgentResult({
+    taskId: body.taskId,
+    status: body.status,
+    summary: body.summary ?? '',
+    outputArtifactIds: body.outputArtifactIds ?? [],
+  });
+  return c.json({ ok: true, result }, 201);
+});
+
 runnerEvents.post('/maven-build', async (c) => {
   const body = (await c.req.json()) as MavenBuildEvent;
   const result = recordMavenBuild(body);
@@ -130,26 +199,20 @@ runnerEvents.post('/run-gate', async (c) => {
   let gate: GateRun;
   switch (body.gateId) {
     case 'requirement_gate': {
-      const a = store.artifacts.byKind(body.workflowRunId, 'requirement_draft').at(-1) ?? null;
-      gate = runArtifactPresenceGate({
+      const a = latestMarkdownArtifact(body.workflowRunId, 'requirement_draft');
+      gate = runRequirementGate({
         workflowRunId: body.workflowRunId,
         stepRunId: body.stepRunId,
-        gateId: 'requirement_gate',
         artifact: a,
-        ruleId: 'requirement.draft_present',
-        description: 'requirement_draft artifact',
       });
       break;
     }
     case 'design_gate': {
-      const a = store.artifacts.byKind(body.workflowRunId, 'design_doc').at(-1) ?? null;
-      gate = runArtifactPresenceGate({
+      const a = latestMarkdownArtifact(body.workflowRunId, 'design_doc');
+      gate = runDesignGate({
         workflowRunId: body.workflowRunId,
         stepRunId: body.stepRunId,
-        gateId: 'design_gate',
         artifact: a,
-        ruleId: 'design.doc_present',
-        description: 'design_doc artifact',
       });
       break;
     }
@@ -174,6 +237,13 @@ runnerEvents.post('/run-gate', async (c) => {
       });
       break;
     }
+    case 'acceptance_gate': {
+      gate = runAcceptanceTraceabilityGate({
+        workflowRunId: body.workflowRunId,
+        stepRunId: body.stepRunId,
+      });
+      break;
+    }
     default:
       return c.json(
         { error: `gate ${body.gateId} not supported via /run-gate (manual gates use /approvals)` },
@@ -182,3 +252,18 @@ runnerEvents.post('/run-gate', async (c) => {
   }
   return c.json({ ok: true, gate });
 });
+
+function latestMarkdownArtifact(workflowRunId: string, kind: ArtifactKind) {
+  const artifacts = store.artifacts.byKind(workflowRunId, kind);
+  return (
+    artifacts
+      .filter(
+        (artifact) =>
+          artifact.contentType.includes('markdown') ||
+          (typeof artifact.metadata.output === 'string' && artifact.metadata.output.endsWith('.md')),
+      )
+      .at(-1) ??
+    artifacts.at(-1) ??
+    null
+  );
+}

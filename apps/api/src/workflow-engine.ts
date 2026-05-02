@@ -4,6 +4,13 @@ import {
   slugify,
   type Artifact,
   type ArtifactKind,
+  type AgentBackendKind,
+  type AgentResult,
+  type AgentStreamEvent,
+  type AgentStreamEventInput,
+  type AgentTask,
+  type AgentTaskKind,
+  type ArtifactId,
   type BuildRun,
   type CommandRun,
   type CommandRunId,
@@ -13,17 +20,25 @@ import {
   type StepRunId,
   type TestRun,
   type WorkflowRun,
+  type WorkflowRequest,
   type WorkflowRunId,
   type WorkflowStage,
   type WorkflowRunType,
   type WorkflowRunStatus,
 } from '@ainp/shared';
-import { store, type Approval, type AuditEntry, type RunnerRecord } from './store/store';
+import {
+  store,
+  type Approval,
+  type AuditEntry,
+  type RunnerRecord,
+  type WorkflowAction,
+} from './store/store';
 import {
   runCompileGate,
   runTestGate,
   runManualGate,
 } from './gate-engine';
+import { publish as publishAgentEvent } from './agent-stream-bus';
 
 /**
  * Workflow Engine — sole state writer.
@@ -57,6 +72,76 @@ export function createWorkflowRun(params: {
   store.workflowRuns.set(id, run);
   audit(id, 'workflow_run.created', { type: run.type, title: run.title });
   return run;
+}
+
+// ---- Workflow request queue --------------------------------------------------
+
+export function createWorkflowRequest(params: {
+  projectId: ProjectId;
+  type: WorkflowRunType;
+  title: string;
+  branch: string;
+}): WorkflowRequest {
+  const now = nowIso();
+  const request: WorkflowRequest = {
+    id: newId('wreq'),
+    projectId: params.projectId,
+    type: params.type,
+    title: params.title,
+    branch: params.branch,
+    status: 'pending',
+    claimedBy: null,
+    workflowRunId: null,
+    error: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  store.workflowRequests.set(request.id, request);
+  audit(null, 'workflow_request.created', {
+    requestId: request.id,
+    projectId: request.projectId,
+    type: request.type,
+    title: request.title,
+  });
+  return request;
+}
+
+export function claimWorkflowRequest(params: {
+  requestId: string;
+  runnerId: string;
+}): WorkflowRequest | null {
+  const request = store.workflowRequests.get(params.requestId);
+  if (!request || request.status !== 'pending') return null;
+  request.status = 'claimed';
+  request.claimedBy = params.runnerId;
+  request.updatedAt = nowIso();
+  store.workflowRequests.set(request.id, request);
+  audit(null, 'workflow_request.claimed', {
+    requestId: request.id,
+    runnerId: params.runnerId,
+  });
+  return request;
+}
+
+export function completeWorkflowRequest(params: {
+  requestId: string;
+  workflowRunId: WorkflowRunId | null;
+  ok: boolean;
+  error: string | null;
+}): WorkflowRequest {
+  const request = store.workflowRequests.get(params.requestId);
+  if (!request) throw new Error(`workflow request not found: ${params.requestId}`);
+  request.status = params.ok ? 'completed' : 'failed';
+  request.workflowRunId = params.workflowRunId;
+  request.error = params.error;
+  request.updatedAt = nowIso();
+  store.workflowRequests.set(request.id, request);
+  audit(params.workflowRunId, 'workflow_request.completed', {
+    requestId: request.id,
+    ok: params.ok,
+    error: params.error,
+  });
+  return request;
 }
 
 export function transitionStage(
@@ -143,6 +228,100 @@ export function completeWorkflowRun(workflowRunId: string, ok: boolean): Workflo
 
 export function awaitHuman(workflowRunId: string, stage: WorkflowStage): WorkflowRun {
   return transitionStage(workflowRunId, stage, 'awaiting_human');
+}
+
+// ---- Workflow actions -----------------------------------------------------
+
+export function recordWorkflowAction(input: {
+  workflowRunId: WorkflowRunId;
+  kind: string;
+  targetId?: string | null;
+  action: string;
+  actor: string;
+  payload?: Record<string, unknown>;
+}): WorkflowAction {
+  if (!store.workflowRuns.has(input.workflowRunId)) {
+    throw new Error(`workflow run not found: ${input.workflowRunId}`);
+  }
+  const action: WorkflowAction = {
+    id: newId('wact'),
+    workflowRunId: input.workflowRunId,
+    kind: input.kind,
+    targetId: input.targetId ?? null,
+    action: input.action,
+    actor: input.actor,
+    payload: input.payload ?? {},
+    createdAt: nowIso(),
+  };
+  store.workflowActions.insert(action);
+  audit(input.workflowRunId, 'workflow_action.recorded', {
+    actionId: action.id,
+    kind: action.kind,
+    targetId: action.targetId,
+    action: action.action,
+    actor: action.actor,
+  });
+  return action;
+}
+
+export function recordRequirementAction(input: {
+  workflowRunId: WorkflowRunId;
+  targetId: string;
+  action: string;
+  actor: string;
+  payload?: Record<string, unknown>;
+}): WorkflowAction {
+  return recordWorkflowAction({
+    workflowRunId: input.workflowRunId,
+    kind: 'requirement_item_action',
+    targetId: input.targetId,
+    action: input.action,
+    actor: input.actor,
+    payload: input.payload,
+  });
+}
+
+export function recordKnowledgeAction(input: {
+  workflowRunId: WorkflowRunId;
+  targetId: string;
+  action: 'accepted' | 'edited' | 'ignored' | string;
+  actor: string;
+  payload?: Record<string, unknown>;
+}): WorkflowAction {
+  return recordWorkflowAction({
+    workflowRunId: input.workflowRunId,
+    kind: 'knowledge_suggestion_action',
+    targetId: input.targetId,
+    action: input.action,
+    actor: input.actor,
+    payload: input.payload,
+  });
+}
+
+export function recordAcceptanceDecision(input: {
+  workflowRunId: WorkflowRunId;
+  decision: string;
+  actor: string;
+  comment?: string | null;
+  payload?: Record<string, unknown>;
+}): { action: WorkflowAction; approval: Approval } {
+  const action = recordWorkflowAction({
+    workflowRunId: input.workflowRunId,
+    kind: 'acceptance_decision',
+    targetId: 'acceptance_gate',
+    action: input.decision,
+    actor: input.actor,
+    payload: { ...(input.payload ?? {}), comment: input.comment ?? null },
+  });
+  const approved = input.decision === 'accept_risk' || input.decision === 'approve';
+  const { approval } = recordApproval({
+    workflowRunId: input.workflowRunId,
+    gateId: 'acceptance_gate',
+    approved,
+    actor: input.actor,
+    comment: input.comment ?? `acceptance decision: ${input.decision}`,
+  });
+  return { action, approval };
 }
 
 // ---- Artifacts -------------------------------------------------------------
@@ -350,6 +529,20 @@ export function recordApproval(input: ApprovalInput): {
   approval: Approval;
   gate: GateRun;
 } {
+  const existing = store.approvals.latestForGate(input.workflowRunId, input.gateId);
+  if (existing?.decision === (input.approved ? 'approved' : 'rejected')) {
+    const existingGate = existing.gateRunId ? store.gateRuns.get(existing.gateRunId) : undefined;
+    if (existingGate) {
+      audit(input.workflowRunId, 'approval.idempotent_replay', {
+        gateId: input.gateId,
+        decision: existing.decision,
+        actor: input.actor,
+        existingApprovalId: existing.id,
+      });
+      return { approval: existing, gate: existingGate };
+    }
+  }
+
   const gate = runManualGate({
     workflowRunId: input.workflowRunId,
     stepRunId: input.stepRunId ?? null,
@@ -378,6 +571,63 @@ export function recordApproval(input: ApprovalInput): {
   return { approval, gate };
 }
 
+// ---- Agent task/result audit -------------------------------------------------
+
+export function recordAgentTask(input: {
+  workflowRunId: WorkflowRunId;
+  stepRunId: StepRunId | null;
+  kind: AgentTaskKind;
+  backend: AgentBackendKind;
+  prompt: string;
+  inputArtifactIds: ArtifactId[];
+}): AgentTask {
+  const task: AgentTask = {
+    id: newId('agt'),
+    workflowRunId: input.workflowRunId,
+    stepRunId: input.stepRunId,
+    kind: input.kind,
+    backend: input.backend,
+    prompt: input.prompt,
+    inputArtifactIds: input.inputArtifactIds,
+    createdAt: nowIso(),
+  };
+  store.agentTasks.insert(task);
+  audit(input.workflowRunId, 'agent_task.recorded', {
+    taskId: task.id,
+    kind: task.kind,
+    backend: task.backend,
+    stepRunId: task.stepRunId,
+  });
+  return task;
+}
+
+export function recordAgentResult(input: {
+  taskId: string;
+  status: AgentResult['status'];
+  summary: string;
+  outputArtifactIds: ArtifactId[];
+}): AgentResult {
+  const task = store.agentTasks.get(input.taskId);
+  if (!task) throw new Error(`agent task not found: ${input.taskId}`);
+  const result: AgentResult = {
+    id: newId('agr'),
+    taskId: input.taskId,
+    status: input.status,
+    summary: input.summary,
+    outputArtifactIds: input.outputArtifactIds,
+    startedAt: task.createdAt,
+    completedAt: nowIso(),
+  };
+  store.agentResults.insert(result);
+  audit(task.workflowRunId, 'agent_result.recorded', {
+    taskId: task.id,
+    resultId: result.id,
+    status: result.status,
+    outputArtifactIds: result.outputArtifactIds,
+  });
+  return result;
+}
+
 // ---- Audit -----------------------------------------------------------------
 
 export function audit(
@@ -394,4 +644,31 @@ export function audit(
   };
   store.auditLog.insert(e);
   return e;
+}
+
+// ---- Agent stream events ---------------------------------------------------
+
+/**
+ * Append-only ingest for streaming events (Claude Code stream-json, partial
+ * messages, tool use blocks, results). Persisted to SQLite + published to
+ * in-process bus for SSE subscribers.
+ *
+ * Sole writer for `agent_events`: keeps sequence assignment monotonic per
+ * workflow run.
+ */
+export function recordAgentEvent(input: AgentStreamEventInput): AgentStreamEvent {
+  const event: AgentStreamEvent = {
+    id: newId('aev'),
+    workflowRunId: input.workflowRunId,
+    stepRunId: input.stepRunId,
+    agentKind: input.agentKind,
+    sequence: store.agentEvents.nextSequence(input.workflowRunId),
+    type: input.type,
+    payload: input.payload,
+    text: input.text,
+    ts: nowIso(),
+  };
+  store.agentEvents.insert(event);
+  publishAgentEvent(event);
+  return event;
 }

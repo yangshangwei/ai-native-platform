@@ -1,4 +1,4 @@
-import type { Iso8601, ProjectId, WorkflowRunId, StepRunId } from './ids';
+import type { Iso8601, ProjectId, WorkflowRunId, WorkflowRequestId, StepRunId } from './ids';
 
 export type WorkflowStage =
   | 'init'
@@ -34,6 +34,22 @@ export interface WorkflowRun {
   /** Path to the worktree workspace, set after Runner prepares it. */
   workspacePath: string | null;
   title: string;
+  createdAt: Iso8601;
+  updatedAt: Iso8601;
+}
+
+export type WorkflowRequestStatus = 'pending' | 'claimed' | 'completed' | 'failed' | 'cancelled';
+
+export interface WorkflowRequest {
+  id: WorkflowRequestId;
+  projectId: ProjectId;
+  type: WorkflowRunType;
+  title: string;
+  branch: string;
+  status: WorkflowRequestStatus;
+  claimedBy: string | null;
+  workflowRunId: WorkflowRunId | null;
+  error: string | null;
   createdAt: Iso8601;
   updatedAt: Iso8601;
 }

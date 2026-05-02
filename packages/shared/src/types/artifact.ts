@@ -5,6 +5,7 @@ export type ArtifactKind =
   | 'context_pack'
   | 'requirement_draft'
   | 'design_doc'
+  | 'traceability'
   | 'diff'
   | 'command_log'
   | 'surefire_report'

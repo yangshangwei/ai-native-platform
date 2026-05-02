@@ -7,15 +7,22 @@ import { createArtifact, audit } from './workflow-engine';
 
 const REPORTS_DIR = process.env.AINP_REPORTS_DIR ?? join(homedir(), '.ai-native', 'reports');
 
+export interface GeneratedArtifactWithSidecar {
+  artifact: Artifact;
+  sidecar: Artifact;
+}
+
 /**
  * Completion Report — server-side assembly. Pulls every persisted record for
- * the run and renders a markdown summary. The same data is exposed as JSON in
- * `metadata.json` so the UI can render without re-querying.
+ * the run and renders a markdown summary. The same data is exposed as a JSON
+ * sidecar artifact so the UI can render without markdown parsing.
  *
  * IMPORTANT: this is the audit/source-of-truth handoff, not a sales doc.
  * Every claim must cite an evidence row.
  */
-export async function generateCompletionReport(workflowRunId: string): Promise<Artifact> {
+export async function generateCompletionReport(
+  workflowRunId: string,
+): Promise<GeneratedArtifactWithSidecar> {
   const run = store.workflowRuns.get(workflowRunId);
   if (!run) throw new Error(`workflow run not found: ${workflowRunId}`);
 
@@ -37,6 +44,52 @@ export async function generateCompletionReport(workflowRunId: string): Promise<A
   const gateRow = (g: (typeof gates)[number]): string =>
     `| ${g.gateId} | ${g.status} | ${g.ruleResults.map((r) => `${r.ruleId}=${r.status}`).join('; ')} |`;
 
+  const stages = [
+    'requirement',
+    'design',
+    'implementation',
+    'build_test',
+    'review',
+    'completion',
+    'knowledge',
+  ];
+  const stageTimeline = stages.map(stageRow).join('\n');
+  const gatesBody = gates.length === 0 ? `| (none) | | |` : gates.map(gateRow).join('\n');
+  const buildBody =
+    builds.length === 0
+      ? '_No Maven builds recorded._'
+      : builds
+          .map((b) => {
+            const ts = store.testRuns.byBuild(b.id);
+            const counts = ts
+              .map(
+                (t) =>
+                  `${t.framework}: total=${t.total} passed=${t.passed} failed=${t.failed} errors=${t.errors} skipped=${t.skipped}`,
+              )
+              .join('\n');
+            return `- BuildRun \`${b.id}\` status=${b.status} jdk=${b.jdkVersion} cmd=\`${b.mavenCommand}\`\n${counts ? counts.split('\n').map((l) => `  - ${l}`).join('\n') : ''}`;
+          })
+          .join('\n');
+  const commandsBody =
+    commands.length === 0
+      ? '_no commands_'
+      : commands
+          .map(
+            (c) =>
+              `- \`${c.command}\` -> ${c.status} exit=${c.exitCode} (${c.durationMs}ms) stdout=${c.stdoutRef}`,
+          )
+          .join('\n');
+  const artifactsBody =
+    artifacts.length === 0
+      ? '_no artifacts_'
+      : artifacts.map((a) => `- ${a.kind}: \`${a.uri}\``).join('\n');
+  const approvalsBody =
+    approvals.length === 0
+      ? '_no approvals_'
+      : approvals
+          .map((a) => `- ${a.gateId}: ${a.decision} by ${a.actor}${a.comment ? ` — ${a.comment}` : ''}`)
+          .join('\n');
+
   const md = [
     `# Completion Report`,
     ``,
@@ -51,65 +104,29 @@ export async function generateCompletionReport(workflowRunId: string): Promise<A
     ``,
     `| Stage | Status | At |`,
     `|---|---|---|`,
-    [
-      'requirement',
-      'design',
-      'implementation',
-      'build_test',
-      'review',
-      'completion',
-      'knowledge',
-    ]
-      .map(stageRow)
-      .join('\n'),
+    stageTimeline,
     ``,
     `## Gates`,
     ``,
     `| Gate | Status | Rules |`,
     `|---|---|---|`,
-    gates.length === 0 ? `| (none) | | |` : gates.map(gateRow).join('\n'),
+    gatesBody,
     ``,
     `## Build & Tests`,
     ``,
-    builds.length === 0
-      ? '_No Maven builds recorded._'
-      : builds
-          .map((b) => {
-            const ts = store.testRuns.byBuild(b.id);
-            const counts = ts
-              .map(
-                (t) =>
-                  `${t.framework}: total=${t.total} passed=${t.passed} failed=${t.failed} errors=${t.errors} skipped=${t.skipped}`,
-              )
-              .join('\n');
-            return `- BuildRun \`${b.id}\` status=${b.status} jdk=${b.jdkVersion} cmd=\`${b.mavenCommand}\`\n${counts ? counts.split('\n').map((l) => `  - ${l}`).join('\n') : ''}`;
-          })
-          .join('\n'),
+    buildBody,
     ``,
     `## Commands (${commands.length})`,
     ``,
-    commands.length === 0
-      ? '_no commands_'
-      : commands
-          .map(
-            (c) =>
-              `- \`${c.command}\` -> ${c.status} exit=${c.exitCode} (${c.durationMs}ms) stdout=${c.stdoutRef}`,
-          )
-          .join('\n'),
+    commandsBody,
     ``,
     `## Artifacts (${artifacts.length})`,
     ``,
-    artifacts.length === 0
-      ? '_no artifacts_'
-      : artifacts.map((a) => `- ${a.kind}: \`${a.uri}\``).join('\n'),
+    artifactsBody,
     ``,
     `## Approvals (${approvals.length})`,
     ``,
-    approvals.length === 0
-      ? '_no approvals_'
-      : approvals
-          .map((a) => `- ${a.gateId}: ${a.decision} by ${a.actor}${a.comment ? ` — ${a.comment}` : ''}`)
-          .join('\n'),
+    approvalsBody,
     ``,
     `_Generated by ainp-api at ${new Date().toISOString()}._`,
   ].join('\n');
@@ -119,17 +136,65 @@ export async function generateCompletionReport(workflowRunId: string): Promise<A
   const reportId = newId('art');
   const path = join(outDir, `${reportId}.md`);
   await writeFile(path, md, 'utf8');
-  audit(workflowRunId, 'completion_report.generated', { path });
+  const generatedAt = new Date().toISOString();
+  const json = {
+    schemaVersion: 'ainp.completion_report.v1',
+    title: 'Completion Report',
+    workflowRunId: run.id,
+    run: {
+      id: run.id,
+      title: run.title,
+      project: project?.name ?? run.projectId,
+      branch: run.branch,
+      workspace: run.workspacePath,
+      status: run.status,
+    },
+    summary: [
+      `Workflow Run: ${run.id}`,
+      `Title: ${run.title}`,
+      `Project: ${project?.name ?? run.projectId}`,
+      `Status: ${run.status}`,
+    ],
+    sections: [
+      { title: 'Stage timeline', body: stageTimeline },
+      { title: 'Gates', body: gatesBody },
+      { title: 'Build & Tests', body: buildBody },
+      { title: `Commands (${commands.length})`, body: commandsBody },
+      { title: `Artifacts (${artifacts.length})`, body: artifactsBody },
+      { title: `Approvals (${approvals.length})`, body: approvalsBody },
+    ],
+    generatedAt,
+  };
+  const jsonText = `${JSON.stringify(json, null, 2)}\n`;
+  const jsonId = newId('art');
+  const jsonPath = join(outDir, `${jsonId}.json`);
+  await writeFile(jsonPath, jsonText, 'utf8');
+  audit(workflowRunId, 'completion_report.generated', { path, sidecarPath: jsonPath });
 
-  return createArtifact({
+  const artifact = createArtifact({
     workflowRunId,
     stepRunId: null,
     kind: 'completion_report',
     uri: `file://${path}`,
     size: Buffer.byteLength(md, 'utf8'),
     contentType: 'text/markdown',
-    metadata: { generatedAt: new Date().toISOString() },
+    metadata: { generatedAt, output: 'completion_report.md' },
   });
+  const sidecar = createArtifact({
+    workflowRunId,
+    stepRunId: null,
+    kind: 'completion_report',
+    uri: `file://${jsonPath}`,
+    size: Buffer.byteLength(jsonText, 'utf8'),
+    contentType: 'application/json',
+    metadata: {
+      generatedAt,
+      output: 'completion_report.json',
+      structured: true,
+      schemaVersion: 'ainp.completion_report.v1',
+    },
+  });
+  return { artifact, sidecar };
 }
 
 /**
@@ -137,7 +202,9 @@ export async function generateCompletionReport(workflowRunId: string): Promise<A
  * candidate; only the human Knowledge Gate promotes it into long-term
  * memory.
  */
-export async function generateKnowledgeCandidate(workflowRunId: string): Promise<Artifact> {
+export async function generateKnowledgeCandidate(
+  workflowRunId: string,
+): Promise<GeneratedArtifactWithSidecar> {
   const run = store.workflowRuns.get(workflowRunId);
   if (!run) throw new Error(`workflow run not found: ${workflowRunId}`);
 
@@ -161,6 +228,23 @@ export async function generateKnowledgeCandidate(workflowRunId: string): Promise
           .join('\n');
 
   const diffArtifact = store.artifacts.byKind(workflowRunId, 'diff').at(-1) ?? null;
+  const suggestions = [
+    {
+      kind: 'Pattern' as const,
+      text: 'The Trusted Local Worktree mode is sufficient for low-risk Java edits.',
+      evidence: `workflowRun=${run.id}`,
+    },
+    {
+      kind: 'Decision' as const,
+      text: 'Compile/Test gates should rely on real `mvn` exit codes, not agent self-reports.',
+      evidence: builds.length ? `buildRuns=${builds.map((b) => b.id).join(',')}` : `workflowRun=${run.id}`,
+    },
+    {
+      kind: 'Pitfall' as const,
+      text: 'Diff scope can be enforced cheaply with prefix matches; sensitive paths still need a human.',
+      evidence: diffArtifact?.uri ?? `workflowRun=${run.id}`,
+    },
+  ];
 
   const md = [
     `# Knowledge Candidate`,
@@ -182,9 +266,7 @@ export async function generateKnowledgeCandidate(workflowRunId: string): Promise
     testSummary,
     ``,
     `## Reusable lessons`,
-    `- The Trusted Local Worktree mode is sufficient for low-risk Java edits.`,
-    `- Compile/Test gates blocked on real \`mvn\` exit code, not on agent self-reports.`,
-    `- Diff scope can be enforced cheaply with prefix matches; sensitive paths still need a human.`,
+    ...suggestions.map((item) => `- ${item.kind}: ${item.text} Evidence: ${item.evidence}`),
     ``,
     `## Provenance`,
     `Generated from artifacts, command runs, and gate runs persisted on this`,
@@ -198,15 +280,49 @@ export async function generateKnowledgeCandidate(workflowRunId: string): Promise
   const id = newId('art');
   const path = join(outDir, `${id}.md`);
   await writeFile(path, md, 'utf8');
-  audit(workflowRunId, 'knowledge_candidate.generated', { path });
+  const generatedAt = new Date().toISOString();
+  const json = {
+    schemaVersion: 'ainp.knowledge_candidate.v1',
+    workflowRunId: run.id,
+    title: 'Knowledge Candidate',
+    status: 'candidate',
+    suggestions,
+    provenance: {
+      runId: run.id,
+      title: run.title,
+      diffArtifactUri: diffArtifact?.uri ?? null,
+      buildRunIds: builds.map((b) => b.id),
+    },
+    generatedAt,
+  };
+  const jsonText = `${JSON.stringify(json, null, 2)}\n`;
+  const jsonId = newId('art');
+  const jsonPath = join(outDir, `${jsonId}.json`);
+  await writeFile(jsonPath, jsonText, 'utf8');
+  audit(workflowRunId, 'knowledge_candidate.generated', { path, sidecarPath: jsonPath });
 
-  return createArtifact({
+  const artifact = createArtifact({
     workflowRunId,
     stepRunId: null,
     kind: 'knowledge_candidate',
     uri: `file://${path}`,
     size: Buffer.byteLength(md, 'utf8'),
     contentType: 'text/markdown',
-    metadata: { generatedAt: new Date().toISOString() },
+    metadata: { generatedAt, output: 'knowledge_candidate.md' },
   });
+  const sidecar = createArtifact({
+    workflowRunId,
+    stepRunId: null,
+    kind: 'knowledge_candidate',
+    uri: `file://${jsonPath}`,
+    size: Buffer.byteLength(jsonText, 'utf8'),
+    contentType: 'application/json',
+    metadata: {
+      generatedAt,
+      output: 'knowledge_candidate.json',
+      structured: true,
+      schemaVersion: 'ainp.knowledge_candidate.v1',
+    },
+  });
+  return { artifact, sidecar };
 }

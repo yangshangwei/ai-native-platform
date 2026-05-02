@@ -38,7 +38,21 @@ const MIGRATIONS: string[] = [
      created_at TEXT NOT NULL,
      updated_at TEXT NOT NULL
    )`,
-  `CREATE INDEX IF NOT EXISTS idx_workflow_runs_project ON workflow_runs(project_id)`,
+	  `CREATE INDEX IF NOT EXISTS idx_workflow_runs_project ON workflow_runs(project_id)`,
+	  `CREATE TABLE IF NOT EXISTS workflow_requests (
+	     id TEXT PRIMARY KEY,
+	     project_id TEXT NOT NULL,
+	     type TEXT NOT NULL,
+	     title TEXT NOT NULL,
+	     branch TEXT NOT NULL,
+	     status TEXT NOT NULL,
+	     claimed_by TEXT,
+	     workflow_run_id TEXT,
+	     error TEXT,
+	     created_at TEXT NOT NULL,
+	     updated_at TEXT NOT NULL
+	   )`,
+	  `CREATE INDEX IF NOT EXISTS idx_workflow_requests_status ON workflow_requests(status, created_at)`,
   `CREATE TABLE IF NOT EXISTS step_runs (
      id TEXT PRIMARY KEY,
      workflow_run_id TEXT NOT NULL,
@@ -152,6 +166,17 @@ const MIGRATIONS: string[] = [
      decided_at TEXT NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_approvals_workflow ON approvals(workflow_run_id)`,
+  `CREATE TABLE IF NOT EXISTS workflow_actions (
+     id TEXT PRIMARY KEY,
+     workflow_run_id TEXT NOT NULL,
+     kind TEXT NOT NULL,
+     target_id TEXT,
+     action TEXT NOT NULL,
+     actor TEXT NOT NULL,
+     payload_json TEXT NOT NULL,
+     created_at TEXT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_workflow_actions_workflow ON workflow_actions(workflow_run_id, created_at)`,
   `CREATE TABLE IF NOT EXISTS audit_log (
      id TEXT PRIMARY KEY,
      workflow_run_id TEXT,
@@ -170,6 +195,18 @@ const MIGRATIONS: string[] = [
      last_seen_at TEXT NOT NULL,
      status TEXT NOT NULL
    )`,
+  `CREATE TABLE IF NOT EXISTS agent_events (
+     id TEXT PRIMARY KEY,
+     workflow_run_id TEXT NOT NULL,
+     step_run_id TEXT,
+     agent_kind TEXT NOT NULL,
+     sequence INTEGER NOT NULL,
+     type TEXT NOT NULL,
+     payload_json TEXT NOT NULL,
+     text TEXT,
+     ts TEXT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_agent_events_workflow ON agent_events(workflow_run_id, sequence)`,
 ];
 
 for (const sql of MIGRATIONS) runSql(sql);
