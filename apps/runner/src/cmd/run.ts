@@ -43,7 +43,7 @@ export async function cmdRun(opts: RunOpts): Promise<void> {
   const run = await api.createWorkflowRun({ projectName: project.name, title });
   console.log(`[runner] workflow-run ${run.id} for project ${project.name} created`);
 
-  const env = new TrustedLocalWorktreeEnvironment({ id: project.id, localPath: project.localPath });
+  const env = new TrustedLocalWorktreeEnvironment(project);
   const workspace = await env.prepare(run);
   console.log(`[runner] worktree ready at ${workspace.path} (branch ${workspace.branch})`);
   await api.workspacePrepared({ workflowRunId: run.id, workspacePath: workspace.path });

@@ -188,6 +188,8 @@
       .build-card, .project-card, .runner-card, .report-row, .approval-row, .evidence-row {
         border: 1px solid var(--line); border-radius: 14px; padding: 12px; background: #fbfdff;
       }
+      .project-card { cursor: pointer; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
+      .project-card:hover, .project-card.active { border-color: var(--primary-2); background: #eff6ff; transform: translateY(-1px); }
       .build-card div, .project-card div:first-child, .runner-card div:first-child, .report-row { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
       .field-row { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 10px; padding: 6px 0; }
       .field-label { color: var(--muted); }

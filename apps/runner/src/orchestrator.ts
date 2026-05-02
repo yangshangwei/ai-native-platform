@@ -59,7 +59,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
   });
   console.log(`[runner] workflow-run ${run.id} created`);
 
-  const env = new TrustedLocalWorktreeEnvironment({ id: project.id, localPath: project.localPath });
+  const env = new TrustedLocalWorktreeEnvironment(project);
   const workspace = await env.prepare(run);
   await api.workspacePrepared({ workflowRunId: run.id, workspacePath: workspace.path });
   console.log(`[runner] workspace at ${workspace.path}`);

@@ -73,10 +73,7 @@ async function main(): Promise<void> {
   console.log('');
 
   // Prepare worktree
-  const env = new TrustedLocalWorktreeEnvironment({
-    id: project.id,
-    localPath: project.localPath,
-  });
+  const env = new TrustedLocalWorktreeEnvironment(project);
   const workspace = await env.prepare(run);
   await api.workspacePrepared({ workflowRunId: run.id, workspacePath: workspace.path });
   console.log(`[smoke] workspace ${workspace.path}`);

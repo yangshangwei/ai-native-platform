@@ -64,6 +64,11 @@ interface ProjectRow {
   id: string;
   name: string;
   local_path: string;
+  source_kind: string | null;
+  source_url: string | null;
+  source_auth_kind: string | null;
+  source_username: string | null;
+  source_credential: string | null;
   language: string;
   build_tool: string;
   default_branch: string;
@@ -75,6 +80,11 @@ function rowToProject(r: ProjectRow): Project {
     id: r.id,
     name: r.name,
     localPath: r.local_path,
+    sourceKind: (r.source_kind ?? 'local') as Project['sourceKind'],
+    sourceUrl: r.source_url ?? null,
+    sourceAuthKind: (r.source_auth_kind ?? 'none') as Project['sourceAuthKind'],
+    sourceUsername: r.source_username ?? null,
+    sourceCredential: r.source_credential ?? null,
     language: r.language as Project['language'],
     buildTool: r.build_tool as Project['buildTool'],
     defaultBranch: r.default_branch,
@@ -90,6 +100,11 @@ const projects: MapLike<Project> & {
       id: p.id,
       name: p.name,
       local_path: p.localPath,
+      source_kind: p.sourceKind ?? 'local',
+      source_url: p.sourceUrl ?? null,
+      source_auth_kind: p.sourceAuthKind ?? 'none',
+      source_username: p.sourceUsername ?? null,
+      source_credential: p.sourceCredential ?? null,
       language: p.language,
       build_tool: p.buildTool,
       default_branch: p.defaultBranch,

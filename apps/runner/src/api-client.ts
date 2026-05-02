@@ -29,10 +29,18 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 export const api = {
   health: () => request<{ ok: boolean }>('GET', '/health'),
 
-  registerProject: (params: { name: string; localPath: string }) =>
-    request<Project>('POST', '/projects', params),
+  registerProject: (params: {
+    name: string;
+    localPath?: string;
+    sourceKind?: Project['sourceKind'];
+    sourceUrl?: string;
+    sourceAuthKind?: Project['sourceAuthKind'];
+    sourceUsername?: string;
+    sourceCredential?: string;
+    defaultBranch?: string;
+  }) => request<Project>('POST', '/projects', params),
 
-  getProject: (idOrName: string) => request<Project>('GET', `/projects/${idOrName}`),
+  getProject: (idOrName: string) => request<Project>('GET', `/projects/${encodeURIComponent(idOrName)}?includeSecret=1`),
 
   createWorkflowRun: (params: {
     projectName: string;

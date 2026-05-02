@@ -30,10 +30,69 @@ interface ProjectDto {
   id: string;
   name: string;
   localPath: string;
+  sourceKind?: ProjectSourceKind;
+  sourceUrl?: string | null;
+  sourceAuthKind?: ProjectSourceAuthKind;
+  sourceUsername?: string | null;
+  hasSourceCredential?: boolean;
   language: string;
   buildTool: string;
   defaultBranch: string;
   registeredAt: string;
+}
+
+
+type ProjectSourceKind = 'local' | 'github' | 'gitee' | 'git' | 'gitlab';
+type ProjectSourceAuthKind = 'none' | 'ssh' | 'token' | 'basic';
+
+interface SourceDetectSuccess {
+  ok: true;
+  sourceKind: ProjectSourceKind;
+  sourceUrl: string | null;
+  localPath: string | null;
+  projectName: string;
+  defaultBranch: string;
+  branches: string[];
+  metadata: Record<string, string>;
+}
+
+interface SourceDetectFailure {
+  ok: false;
+  error: string;
+}
+
+type SourceDetectResult = SourceDetectSuccess | SourceDetectFailure;
+
+
+interface LocalDirectoryItem {
+  name: string;
+  path: string;
+}
+
+interface LocalDirectoryList {
+  path: string;
+  parent: string;
+  directories: LocalDirectoryItem[];
+}
+
+interface LocalDirectoryPickerState {
+  open: boolean;
+  loading: boolean;
+  error: string | null;
+  listing: LocalDirectoryList | null;
+}
+
+interface ProjectSourceFormState {
+  editingProjectId: string | null;
+  sourceKind: ProjectSourceKind;
+  name: string;
+  sourceValue: string;
+  sourceAuthKind: ProjectSourceAuthKind;
+  sourceUsername: string;
+  sourceCredential: string;
+  defaultBranch: string;
+  detectResult: SourceDetectResult | null;
+  detecting: boolean;
 }
 
 interface RunnerDto {
@@ -107,6 +166,28 @@ const knowledgeDecisions = new Map<string, 'accepted' | 'ignored' | 'edited'>();
 const knowledgeEdits = new Map<string, string>();
 const approvalInFlight = new Set<string>();
 const approvalLastSubmittedAt = new Map<string, number>();
+
+
+const localDirectoryPicker: LocalDirectoryPickerState = {
+  open: false,
+  loading: false,
+  error: null,
+  listing: null,
+};
+
+const projectSourceForm: ProjectSourceFormState = {
+  editingProjectId: null,
+  sourceKind: 'github',
+  name: '',
+  sourceValue: '',
+  sourceAuthKind: 'none',
+  sourceUsername: '',
+  sourceCredential: '',
+  defaultBranch: 'main',
+  detectResult: null,
+  detecting: false,
+};
+
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, init);
@@ -354,7 +435,7 @@ function renderShell(): HTMLElement {
 function renderSidebar(): HTMLElement {
   const navItems: Array<{ page: Page; label: string; help: string; path: string }> = [
     { page: 'workbench', label: '工作台', help: '生命周期与人工确认', path: 'M4 6h16M4 12h10M4 18h16' },
-    { page: 'projects', label: '项目接入', help: '注册本地仓库', path: 'M3 7h18M6 7v12h12V7M9 7V5h6v2' },
+    { page: 'projects', label: '项目接入', help: '注册本地/远端 Git', path: 'M3 7h18M6 7v12h12V7M9 7V5h6v2' },
     { page: 'new-task', label: '新建任务', help: '进入 runner 队列', path: 'M12 5v14M5 12h14' },
     { page: 'reports', label: '报告', help: '交付证据汇总', path: 'M7 3h7l5 5v13H7zM14 3v6h6' },
     { page: 'knowledge', label: '知识库', help: '候选与沉淀', path: 'M4 19V5a2 2 0 012-2h12v16H6a2 2 0 01-2-2zM8 7h8M8 11h8M8 15h5' },
@@ -1229,15 +1310,34 @@ function renderAgentStreamPanel(): HTMLElement {
 
 function renderProjectsPage(): HTMLElement {
   const form = el('form', { class: 'form-card' });
+  const sourceSelect = el('select', { attrs: { name: 'sourceKind' } });
+  for (const option of projectSourceOptions()) {
+    const node = el('option', { text: option.label, attrs: { value: option.value } });
+    if (option.value === projectSourceForm.sourceKind) node.setAttribute('selected', 'selected');
+    sourceSelect.appendChild(node);
+  }
+  sourceSelect.onchange = () => {
+    setProjectSourceKind(sourceSelect.value as ProjectSourceKind);
+    render();
+  };
+
+  const isEditing = Boolean(projectSourceForm.editingProjectId);
   form.append(
-    panelHeader('接入本地项目', '使用本机 Git 仓库；runner 会为每次执行创建独立 worktree。'),
-    labeledInput('Project Name', 'name', 'java-sample'),
-    labeledInput('Local Path', 'localPath', './examples/java-maven-sample'),
-    labeledInput('Default Branch', 'defaultBranch', 'main'),
+    panelHeader(isEditing ? '编辑项目' : '接入项目', isEditing ? '右侧已接入项目点击后会回填到这里；修改连接信息后建议重新检测，再保存。' : '先选择接入类型；按类型填写连接信息；点击检测拉取项目名、分支和元数据；确认无误后接入。'),
+    el('label', { class: 'input-block', children: [el('span', { text: 'Source Type' }), sourceSelect] }),
+    ...renderProjectSourceDynamicFields(),
+    renderProjectDetectPanel(),
   );
-  const submit = el('button', { class: 'button primary', text: 'Register Project', attrs: { type: 'submit' } });
-  form.appendChild(submit);
-  form.onsubmit = (event) => void submitProject(event, form);
+
+  const detect = el('button', { class: 'button secondary', text: projectSourceForm.detecting ? '检测中…' : '检测', attrs: { type: 'button' } });
+  detect.disabled = projectSourceForm.detecting;
+  detect.onclick = () => void detectProjectSource();
+  const submit = el('button', { class: 'button primary', text: isEditing ? '保存修改' : '接入这个项目', attrs: { type: 'submit' } });
+  submit.disabled = !projectSourceForm.detectResult?.ok || projectSourceForm.detecting;
+  const cancelEdit = isEditing ? el('button', { class: 'button ghost', text: '取消编辑', attrs: { type: 'button' } }) : null;
+  if (cancelEdit) cancelEdit.onclick = () => { resetProjectSourceForm(); render(); };
+  form.appendChild(el('div', { class: 'button-row', children: [detect, submit, cancelEdit] }));
+  form.onsubmit = (event) => void submitProject(event);
 
   return el('section', {
     class: 'page-grid two-col',
@@ -1246,7 +1346,7 @@ function renderProjectsPage(): HTMLElement {
       el('section', {
         class: 'panel',
         children: [
-          panelHeader('已接入项目', 'Project / Branch / Local Path'),
+          panelHeader('已接入项目', '点击项目卡片可回填到左侧编辑。'),
           data.projects.length
             ? el('div', { class: 'stack', children: data.projects.map(renderProjectCard) })
             : el('p', { class: 'muted', text: '暂无项目。' }),
@@ -1258,6 +1358,278 @@ function renderProjectsPage(): HTMLElement {
   });
 }
 
+function projectSourceOptions(): Array<{ value: ProjectSourceKind; label: string }> {
+  return [
+    { value: 'github', label: 'GitHub 项目' },
+    { value: 'gitee', label: 'Gitee 项目' },
+    { value: 'local', label: '本地项目' },
+    { value: 'gitlab', label: '私有 GitLab 项目' },
+  ];
+}
+
+function setProjectSourceKind(sourceKind: ProjectSourceKind): void {
+  projectSourceForm.sourceKind = sourceKind;
+  projectSourceForm.sourceAuthKind = defaultAuthKind(sourceKind);
+  projectSourceForm.sourceUsername = '';
+  projectSourceForm.sourceCredential = '';
+  projectSourceForm.detectResult = null;
+}
+
+function defaultAuthKind(sourceKind: ProjectSourceKind): ProjectSourceAuthKind {
+  if (sourceKind === 'gitlab') return 'ssh';
+  return 'none';
+}
+
+function renderProjectSourceDynamicFields(): HTMLElement[] {
+  const sourceKind = projectSourceForm.sourceKind;
+  const fields: HTMLElement[] = [
+    controlledInput('Project Name', 'name', '检测通过后自动填充，也可手动修改', projectSourceForm.name, (v) => {
+      projectSourceForm.name = v;
+    }),
+  ];
+
+  if (sourceKind === 'local') {
+    fields.push(
+      renderLocalPathPickerField(),
+      el('p', { class: 'muted compact', text: '本地项目不需要 Token；检测会确认该路径是 Git 仓库并读取本地分支。' }),
+    );
+    if (localDirectoryPicker.open) fields.push(renderLocalDirectoryPicker());
+    fields.push(renderBranchControl());
+    return fields;
+  }
+
+  fields.push(
+    controlledInput(sourceUrlLabel(sourceKind), 'sourceValue', sourceUrlPlaceholder(sourceKind), projectSourceForm.sourceValue, (v) => {
+      projectSourceForm.sourceValue = v;
+      projectSourceForm.detectResult = null;
+    }),
+    renderAuthFields(sourceKind),
+    renderBranchControl(),
+  );
+  return fields;
+}
+
+function renderLocalPathPickerField(): HTMLElement {
+  const input = el('input', {
+    attrs: {
+      name: 'sourceValue',
+      placeholder: './examples/java-maven-sample',
+      value: projectSourceForm.sourceValue,
+    },
+  });
+  input.oninput = () => {
+    projectSourceForm.sourceValue = input.value;
+    projectSourceForm.detectResult = null;
+  };
+  const browse = el('button', { class: 'button secondary', text: '选择文件夹', attrs: { type: 'button' } });
+  browse.onclick = () => void openLocalDirectoryPicker();
+  return el('label', {
+    class: 'input-block',
+    children: [
+      el('span', { text: 'Local Path' }),
+      el('div', { class: 'button-row', children: [input, browse] }),
+    ],
+  });
+}
+
+function renderLocalDirectoryPicker(): HTMLElement {
+  const listing = localDirectoryPicker.listing;
+  const rows: HTMLElement[] = [];
+  if (localDirectoryPicker.loading) rows.push(el('p', { class: 'muted compact', text: '正在读取本地文件夹…' }));
+  if (localDirectoryPicker.error) rows.push(el('p', { class: 'notice-inline warn', text: localDirectoryPicker.error }));
+  if (listing) {
+    const chooseCurrent = el('button', { class: 'button primary small', text: '选择当前文件夹', attrs: { type: 'button' } });
+    chooseCurrent.onclick = () => chooseLocalDirectory(listing.path);
+    const parent = el('button', { class: 'button secondary small', text: '上一级', attrs: { type: 'button' } });
+    parent.onclick = () => void loadLocalDirectories(listing.parent);
+    rows.push(
+      field('当前路径', el('code', { text: listing.path })),
+      el('div', { class: 'button-row', children: [chooseCurrent, parent] }),
+    );
+    rows.push(
+      el('div', {
+        class: 'stack',
+        children: listing.directories.length
+          ? listing.directories.map((dir) => {
+              const btn = el('button', { class: 'run-item', attrs: { type: 'button' }, children: [el('strong', { text: dir.name }), el('span', { text: dir.path })] });
+              btn.onclick = () => void loadLocalDirectories(dir.path);
+              return btn;
+            })
+          : [el('p', { class: 'muted compact', text: '当前目录下没有可选子文件夹。' })],
+      }),
+    );
+  }
+  const close = el('button', { class: 'button ghost', text: '关闭选择器', attrs: { type: 'button' } });
+  close.onclick = () => {
+    localDirectoryPicker.open = false;
+    render();
+  };
+  rows.push(close);
+  return el('article', {
+    class: 'runner-card',
+    children: [panelHeader('选择本地文件夹', '浏览 API/runner 所在机器上的目录，选中后会填入 Local Path。'), ...rows],
+  });
+}
+
+async function openLocalDirectoryPicker(): Promise<void> {
+  localDirectoryPicker.open = true;
+  await loadLocalDirectories(projectSourceForm.sourceValue.trim());
+}
+
+async function loadLocalDirectories(path: string): Promise<void> {
+  localDirectoryPicker.loading = true;
+  localDirectoryPicker.error = null;
+  render();
+  try {
+    const query = path ? `?path=${encodeURIComponent(path)}` : '';
+    localDirectoryPicker.listing = await api<LocalDirectoryList>(`/projects/local-directories${query}`);
+  } catch (err) {
+    localDirectoryPicker.error = err instanceof Error ? err.message : String(err);
+  } finally {
+    localDirectoryPicker.loading = false;
+    render();
+  }
+}
+
+function chooseLocalDirectory(path: string): void {
+  projectSourceForm.sourceValue = path;
+  projectSourceForm.detectResult = null;
+  localDirectoryPicker.open = false;
+  render();
+}
+
+function sourceUrlLabel(sourceKind: ProjectSourceKind): string {
+  if (sourceKind === 'github') return 'GitHub Repository';
+  if (sourceKind === 'gitee') return 'Gitee Repository';
+  if (sourceKind === 'gitlab') return 'GitLab Repository URL';
+  return 'Repository URL';
+}
+
+function sourceUrlPlaceholder(sourceKind: ProjectSourceKind): string {
+  if (sourceKind === 'github') return 'owner/repo 或 https://github.com/owner/repo.git';
+  if (sourceKind === 'gitee') return 'owner/repo 或 https://gitee.com/owner/repo.git';
+  if (sourceKind === 'gitlab') return 'git@gitlab.company.com:group/repo.git 或 HTTPS URL';
+  return 'https://git.example.com/group/repo.git';
+}
+
+function renderAuthFields(sourceKind: ProjectSourceKind): HTMLElement {
+  const authSelect = el('select', { attrs: { name: 'sourceAuthKind' } });
+  for (const option of authOptions(sourceKind)) {
+    const node = el('option', { text: option.label, attrs: { value: option.value } });
+    if (option.value === projectSourceForm.sourceAuthKind) node.setAttribute('selected', 'selected');
+    authSelect.appendChild(node);
+  }
+  authSelect.onchange = () => {
+    projectSourceForm.sourceAuthKind = authSelect.value as ProjectSourceAuthKind;
+    projectSourceForm.sourceCredential = '';
+    projectSourceForm.detectResult = null;
+    render();
+  };
+
+  const children: Array<Node | null> = [
+    el('label', { class: 'input-block', children: [el('span', { text: 'Authentication' }), authSelect] }),
+  ];
+
+  if (projectSourceForm.sourceAuthKind === 'token') {
+    children.push(
+      controlledInput('Token', 'sourceCredential', 'Personal Access Token / Access Token', projectSourceForm.sourceCredential, (v) => {
+        projectSourceForm.sourceCredential = v;
+        projectSourceForm.detectResult = null;
+      }, 'password'),
+    );
+  }
+  if (projectSourceForm.sourceAuthKind === 'basic') {
+    children.push(
+      controlledInput('Username', 'sourceUsername', '用于 HTTPS Basic Auth 的用户名', projectSourceForm.sourceUsername, (v) => {
+        projectSourceForm.sourceUsername = v;
+        projectSourceForm.detectResult = null;
+      }),
+      controlledInput('Password', 'sourceCredential', '密码或应用专用密码', projectSourceForm.sourceCredential, (v) => {
+        projectSourceForm.sourceCredential = v;
+        projectSourceForm.detectResult = null;
+      }, 'password'),
+    );
+  }
+
+  children.push(el('p', { class: 'muted compact', text: authHint(sourceKind, projectSourceForm.sourceAuthKind) }));
+  return el('div', { class: 'stack', children });
+}
+
+function authOptions(sourceKind: ProjectSourceKind): Array<{ value: ProjectSourceAuthKind; label: string }> {
+  if (sourceKind === 'github') {
+    return [
+      { value: 'none', label: '公开仓库 / 已配置 Git 凭据' },
+      { value: 'token', label: 'Personal Access Token' },
+    ];
+  }
+  if (sourceKind === 'gitee') {
+    return [
+      { value: 'none', label: '公开仓库 / 已配置 Git 凭据' },
+      { value: 'token', label: 'Access Token' },
+      { value: 'basic', label: '用户名 + 密码' },
+    ];
+  }
+  return [
+    { value: 'ssh', label: 'SSH Key（runner 已配置）' },
+    { value: 'token', label: 'Access Token' },
+    { value: 'basic', label: '用户名 + 密码' },
+    { value: 'none', label: '公开仓库 / 已配置 Git 凭据' },
+  ];
+}
+
+function authHint(sourceKind: ProjectSourceKind, authKind: ProjectSourceAuthKind): string {
+  if (authKind === 'ssh') return 'SSH 方式不会保存密码；runner 需要能通过本机 SSH key 访问该仓库。';
+  if (authKind === 'token') return projectSourceForm.editingProjectId ? `${sourceKindLabel(sourceKind)} Token 不会回显；留空保存会保留原 Token，若要重新检测私有仓库请重新输入。` : `${sourceKindLabel(sourceKind)} Token 会用于检测，并以 runner-only 方式保存供后续 clone/fetch 使用；列表页不会回显明文。`;
+  if (authKind === 'basic') return projectSourceForm.editingProjectId ? '密码不会回显；留空保存会保留原密码，若要重新检测私有仓库请重新输入。' : '用户名和密码会用于 HTTPS 检测，并以 runner-only 方式保存；列表页不会回显密码。';
+  return '不填写凭据时，检测和后续拉取依赖公开仓库或 runner 机器已有 Git credential helper。';
+}
+
+function sourceKindLabel(sourceKind: ProjectSourceKind): string {
+  return projectSourceOptions().find((o) => o.value === sourceKind)?.label ?? sourceKind;
+}
+
+function renderBranchControl(): HTMLElement {
+  const result = projectSourceForm.detectResult;
+  if (result?.ok && result.branches.length) {
+    const select = el('select', { attrs: { name: 'defaultBranch' } });
+    for (const branch of result.branches) {
+      const node = el('option', { text: branch, attrs: { value: branch } });
+      if (branch === projectSourceForm.defaultBranch) node.setAttribute('selected', 'selected');
+      select.appendChild(node);
+    }
+    select.onchange = () => {
+      projectSourceForm.defaultBranch = select.value;
+    };
+    return el('label', { class: 'input-block', children: [el('span', { text: 'Default Branch' }), select] });
+  }
+  return controlledInput('Default Branch', 'defaultBranch', 'main', projectSourceForm.defaultBranch, (v) => {
+    projectSourceForm.defaultBranch = v || 'main';
+  });
+}
+
+function renderProjectDetectPanel(): HTMLElement {
+  const result = projectSourceForm.detectResult;
+  if (projectSourceForm.detecting) {
+    return el('article', { class: 'runner-card', children: [field('检测状态', '正在连接远端并读取分支…')] });
+  }
+  if (!result) {
+    return el('article', { class: 'runner-card', children: [field('检测状态', '尚未检测'), field('下一步', '点击“检测”拉取项目名称、分支列表和元数据。')] });
+  }
+  if (!result.ok) {
+    return el('article', { class: 'runner-card', children: [field('检测状态', pill('failed', 'bad')), field('错误', result.error)] });
+  }
+  return el('article', {
+    class: 'runner-card',
+    children: [
+      field('检测状态', pill('passed', 'good')),
+      field('项目名', result.projectName),
+      field('默认分支', result.defaultBranch),
+      field('分支列表', result.branches.join(', ') || '—'),
+      field('元数据', Object.entries(result.metadata).map(([k, v]) => `${k}=${v}`).join(' · ') || '—'),
+    ],
+  });
+}
+
 function renderProjectProfilePreview(): HTMLElement {
   const detail = data.activeDetail;
   const profile = detail ? latestArtifactOfKind(detail.artifacts, 'project_profile') : null;
@@ -1265,10 +1637,11 @@ function renderProjectProfilePreview(): HTMLElement {
   return el('details', {
     class: 'raw-details',
     children: [
-      el('summary', { text: 'Project Profile 预览' }),
+      el('summary', { text: '最近运行的 Project Profile 预览' }),
+      el('p', { class: 'muted compact', text: '说明：这里展示的是当前工作台选中 workflow run 的 project_profile 产物，不是右侧点击选中的项目配置；只有跑过 workflow 才会生成。' }),
       text
         ? el('pre', { class: 'doc-preview', text: previewText(text) })
-        : el('p', { class: 'muted compact', text: '运行一次 workflow 后会生成 project_profile。' }),
+        : el('p', { class: 'muted compact', text: '当前没有可预览的 project_profile。' }),
     ],
   });
 }
@@ -1288,42 +1661,157 @@ function renderToolchainReadiness(): HTMLElement {
 }
 
 function renderProjectCard(project: ProjectDto): HTMLElement {
-  return el('article', {
-    class: 'project-card',
+  const sourceKind = project.sourceKind ?? 'local';
+  const card = el('article', {
+    class: `project-card ${projectSourceForm.editingProjectId === project.id ? 'active' : ''}`,
+    attrs: { role: 'button', tabindex: '0', title: '点击回填到左侧编辑' },
     children: [
-      el('div', { children: [el('strong', { text: project.name }), pill(project.buildTool, 'muted')] }),
+      el('div', { children: [el('strong', { text: project.name }), pill(sourceKindLabel(sourceKind), 'muted')] }),
       field('Branch', project.defaultBranch),
-      field('Path', el('code', { text: project.localPath })),
+      field('Auth', authSummary(project)),
+      field(sourceKind === 'local' ? 'Path' : 'Repo URL', el('code', { text: project.sourceUrl ?? project.localPath })),
+      sourceKind !== 'local' ? field('Managed', el('code', { text: project.localPath })) : null,
+      el('small', { class: 'muted', text: '点击编辑此项目' }),
     ],
   });
+  card.onclick = () => editProject(project);
+  card.onkeydown = (event) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      editProject(project);
+    }
+  };
+  return card;
+}
+
+function editProject(project: ProjectDto): void {
+  const sourceKind = project.sourceKind ?? 'local';
+  projectSourceForm.editingProjectId = project.id;
+  projectSourceForm.sourceKind = sourceKind;
+  projectSourceForm.name = project.name;
+  projectSourceForm.sourceValue = sourceKind === 'local' ? project.localPath : project.sourceUrl ?? '';
+  projectSourceForm.sourceAuthKind = project.sourceAuthKind ?? 'none';
+  projectSourceForm.sourceUsername = project.sourceUsername ?? '';
+  projectSourceForm.sourceCredential = '';
+  projectSourceForm.defaultBranch = project.defaultBranch || 'main';
+  projectSourceForm.detectResult = {
+    ok: true,
+    sourceKind,
+    sourceUrl: sourceKind === 'local' ? null : project.sourceUrl ?? null,
+    localPath: sourceKind === 'local' ? project.localPath : null,
+    projectName: project.name,
+    defaultBranch: project.defaultBranch || 'main',
+    branches: [project.defaultBranch || 'main'],
+    metadata: { source: 'registered-project', action: 'edit-prefill' },
+  };
+  projectSourceForm.detecting = false;
+  localDirectoryPicker.open = false;
+  lastError = null;
+  render();
+}
+
+function authSummary(project: ProjectDto): string {
+  const authKind = project.sourceAuthKind ?? 'none';
+  if (authKind === 'none') return '无 / Git credential helper';
+  if (authKind === 'ssh') return 'SSH Key';
+  if (authKind === 'token') return project.hasSourceCredential ? 'Token 已保存' : 'Token 未保存';
+  return project.hasSourceCredential ? `用户名密码（${project.sourceUsername ?? 'user'}）` : '用户名密码未保存';
 }
 
 function labeledInput(label: string, name: string, placeholder: string): HTMLElement {
-  return el('label', {
-    class: 'input-block',
-    children: [el('span', { text: label }), el('input', { attrs: { name, placeholder } })],
-  });
+  return controlledInput(label, name, placeholder, '', () => undefined);
 }
 
-async function submitProject(event: SubmitEvent, form: HTMLFormElement): Promise<void> {
-  event.preventDefault();
-  const fd = new FormData(form);
+function controlledInput(
+  label: string,
+  name: string,
+  placeholder: string,
+  value: string,
+  onInput: (value: string) => void,
+  type = 'text',
+): HTMLElement {
+  const input = el('input', { attrs: { name, placeholder, value, type } });
+  input.oninput = () => onInput(input.value);
+  return el('label', { class: 'input-block', children: [el('span', { text: label }), input] });
+}
+
+function projectSourcePayload(): Record<string, string> {
+  const base: Record<string, string> = {
+    sourceKind: projectSourceForm.sourceKind,
+    defaultBranch: projectSourceForm.defaultBranch || 'main',
+  };
+  if (projectSourceForm.sourceKind === 'local') {
+    return { ...base, localPath: projectSourceForm.sourceValue };
+  }
+  return {
+    ...base,
+    sourceUrl: projectSourceForm.sourceValue,
+    sourceAuthKind: projectSourceForm.sourceAuthKind,
+    ...(projectSourceForm.sourceUsername ? { sourceUsername: projectSourceForm.sourceUsername } : {}),
+    ...(projectSourceForm.sourceCredential ? { sourceCredential: projectSourceForm.sourceCredential } : {}),
+  };
+}
+
+async function detectProjectSource(): Promise<void> {
+  projectSourceForm.detecting = true;
+  projectSourceForm.detectResult = null;
+  render();
   try {
-    await api<ProjectDto>('/projects', {
+    const result = await api<SourceDetectResult>('/projects/detect-source', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(projectSourcePayload()),
+    });
+    projectSourceForm.detectResult = result;
+    if (result.ok) {
+      projectSourceForm.name = projectSourceForm.name.trim() || result.projectName;
+      projectSourceForm.defaultBranch = result.defaultBranch || projectSourceForm.defaultBranch || 'main';
+      lastError = null;
+    }
+  } catch (err) {
+    projectSourceForm.detectResult = { ok: false, error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    projectSourceForm.detecting = false;
+    render();
+  }
+}
+
+async function submitProject(event: SubmitEvent): Promise<void> {
+  event.preventDefault();
+  if (!projectSourceForm.detectResult?.ok) {
+    lastError = '请先检测项目源，确认无误后再接入。';
+    render();
+    return;
+  }
+  try {
+    const editingProjectId = projectSourceForm.editingProjectId;
+    await api<ProjectDto>(editingProjectId ? `/projects/${encodeURIComponent(editingProjectId)}` : '/projects', {
+      method: editingProjectId ? 'PUT' : 'POST',
+      headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        name: String(fd.get('name') ?? '').trim(),
-        localPath: String(fd.get('localPath') ?? '').trim(),
-        defaultBranch: String(fd.get('defaultBranch') ?? 'main').trim() || 'main',
+        name: (projectSourceForm.name || projectSourceForm.detectResult.projectName).trim(),
+        ...projectSourcePayload(),
       }),
     });
-    form.reset();
+    resetProjectSourceForm();
     await loadData({ render: true });
   } catch (err) {
     lastError = err instanceof Error ? err.message : String(err);
     render();
   }
+}
+
+function resetProjectSourceForm(): void {
+  projectSourceForm.editingProjectId = null;
+  projectSourceForm.sourceKind = 'github';
+  projectSourceForm.name = '';
+  projectSourceForm.sourceValue = '';
+  projectSourceForm.sourceAuthKind = 'none';
+  projectSourceForm.sourceUsername = '';
+  projectSourceForm.sourceCredential = '';
+  projectSourceForm.defaultBranch = 'main';
+  projectSourceForm.detectResult = null;
+  projectSourceForm.detecting = false;
 }
 
 function renderNewTaskPage(): HTMLElement {

@@ -20,6 +20,11 @@ const MIGRATIONS: string[] = [
      id TEXT PRIMARY KEY,
      name TEXT UNIQUE NOT NULL,
      local_path TEXT NOT NULL,
+     source_kind TEXT NOT NULL DEFAULT 'local',
+     source_url TEXT,
+     source_auth_kind TEXT NOT NULL DEFAULT 'none',
+     source_username TEXT,
+     source_credential TEXT,
      language TEXT NOT NULL,
      build_tool TEXT NOT NULL,
      default_branch TEXT NOT NULL,
@@ -209,4 +214,26 @@ const MIGRATIONS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_agent_events_workflow ON agent_events(workflow_run_id, sequence)`,
 ];
 
+
 for (const sql of MIGRATIONS) runSql(sql);
+
+function columnNames(table: string): Set<string> {
+  return new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name));
+}
+
+const projectColumns = columnNames('projects');
+if (!projectColumns.has('source_kind')) {
+  runSql(`ALTER TABLE projects ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'local'`);
+}
+if (!projectColumns.has('source_url')) {
+  runSql(`ALTER TABLE projects ADD COLUMN source_url TEXT`);
+}
+if (!projectColumns.has('source_auth_kind')) {
+  runSql(`ALTER TABLE projects ADD COLUMN source_auth_kind TEXT NOT NULL DEFAULT 'none'`);
+}
+if (!projectColumns.has('source_username')) {
+  runSql(`ALTER TABLE projects ADD COLUMN source_username TEXT`);
+}
+if (!projectColumns.has('source_credential')) {
+  runSql(`ALTER TABLE projects ADD COLUMN source_credential TEXT`);
+}

@@ -56,7 +56,7 @@ async function main(): Promise<void> {
   console.log(`[smoke-codex] workflow run ${run.id}`);
   console.log(`curl -N ${API_BASE}/workflow-runs/${run.id}/agent-stream`);
 
-  const env = new TrustedLocalWorktreeEnvironment({ id: project.id, localPath: project.localPath });
+  const env = new TrustedLocalWorktreeEnvironment(project);
   const workspace = await env.prepare(run);
   await api.workspacePrepared({ workflowRunId: run.id, workspacePath: workspace.path });
 

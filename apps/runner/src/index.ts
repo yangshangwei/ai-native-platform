@@ -32,6 +32,7 @@ Usage:
   ainp-runner health
   ainp-runner doctor
   ainp-runner register --path <path> --name <name>
+  ainp-runner register --url <git-url> --source <github|gitee|git|gitlab> --name <name> [--branch <branch>]
   ainp-runner run --project <name> --command "<whitelisted command>" [--title <t>] [--keep-worktree]
   ainp-runner orchestrate --project <name> --title "<task>" [--keep-worktree]
   ainp-runner watch [--once] [--poll-ms <ms>] [--keep-worktree]
@@ -39,6 +40,7 @@ Usage:
 Examples:
   ainp-runner doctor
   ainp-runner register --path ./examples/java-maven-sample --name java-sample
+  ainp-runner register --url git@gitlab.internal.example.com:platform/app.git --source gitlab --name platform-app
   ainp-runner run --project java-sample --command "mvn -B test" --title "smoke mvn test"
   ainp-runner orchestrate --project java-sample --title "add a no-op marker comment"
   ainp-runner watch --once
@@ -62,10 +64,26 @@ async function main(): Promise<void> {
       return;
     }
     case 'register': {
-      const path = String(flags.path ?? '');
+      const path = typeof flags.path === 'string' ? flags.path : undefined;
+      const sourceUrl = typeof flags.url === 'string' ? flags.url : undefined;
+      const sourceKind = typeof flags.source === 'string' ? flags.source : undefined;
+      const defaultBranch = typeof flags.branch === 'string' ? flags.branch : undefined;
+      const sourceAuthKind = typeof flags.auth === 'string' ? flags.auth : undefined;
+      const sourceUsername = typeof flags.username === 'string' ? flags.username : undefined;
+      const sourceCredential = typeof flags.token === 'string' ? flags.token : typeof flags.password === 'string' ? flags.password : undefined;
       const name = String(flags.name ?? '');
-      if (!path || !name) usage();
-      await cmdRegister({ path, name });
+      if (!name || (!path && !sourceUrl)) usage();
+      if (sourceKind && !['local', 'github', 'gitee', 'git', 'gitlab'].includes(sourceKind)) usage();
+      await cmdRegister({
+        path,
+        name,
+        sourceUrl,
+        sourceKind: sourceKind as Parameters<typeof cmdRegister>[0]['sourceKind'],
+        defaultBranch,
+        sourceAuthKind: sourceAuthKind as Parameters<typeof cmdRegister>[0]['sourceAuthKind'],
+        sourceUsername,
+        sourceCredential,
+      });
       return;
     }
     case 'run': {
