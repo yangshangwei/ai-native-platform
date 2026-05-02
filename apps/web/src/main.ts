@@ -201,6 +201,7 @@ let runnerStartInFlight = false;
 let lastError: string | null = null;
 const artifactContent = new Map<string, ArtifactContentDto | null>();
 const commandLogs = new Map<string, CommandLogsDto | null>();
+const detailsOpenState = new Map<string, boolean>();
 const knowledgeDecisions = new Map<string, 'accepted' | 'ignored' | 'edited'>();
 const knowledgeEdits = new Map<string, string>();
 const approvalInFlight = new Set<string>();
@@ -501,8 +502,42 @@ async function ensureArtifactContent(artifactId: string): Promise<void> {
 function render(): void {
   const root = document.getElementById('app');
   if (!root) return;
+  captureDetailsOpenState(root);
   clear(root);
   root.appendChild(renderShell());
+  restoreDetailsOpenState(root);
+}
+
+function captureDetailsOpenState(root: HTMLElement): void {
+  root.querySelectorAll('details').forEach((details) => {
+    detailsOpenState.set(detailsStateKey(details), details.open);
+  });
+}
+
+function restoreDetailsOpenState(root: HTMLElement): void {
+  root.querySelectorAll('details').forEach((details) => {
+    const key = detailsStateKey(details);
+    if (detailsOpenState.has(key)) details.open = detailsOpenState.get(key) ?? false;
+    details.ontoggle = () => {
+      detailsOpenState.set(key, details.open);
+    };
+  });
+}
+
+function detailsStateKey(details: HTMLDetailsElement): string {
+  const path: string[] = [];
+  let current: HTMLElement | null = details;
+  while (current) {
+    if (current instanceof HTMLDetailsElement) path.push(detailsSummaryKey(current));
+    current = current.parentElement;
+  }
+  return [window.location.hash || activePage, ...path.reverse()].join(' > ');
+}
+
+function detailsSummaryKey(details: HTMLDetailsElement): string {
+  const summary = details.querySelector(':scope > summary');
+  const primary = summary?.querySelector('strong')?.textContent ?? summary?.textContent ?? details.className;
+  return primary.replace(/\s*\(\d+\)/g, '').replace(/\s+/g, ' ').trim();
 }
 
 function renderShell(): HTMLElement {
