@@ -12,6 +12,29 @@
 - `2026-05-01-ai-native-platform-handoff.md`
   - 面向新仓库开发的交接文档，覆盖 MVP 定位、架构、模块、Local Runner/worktree、Skill/Gate、UI、开发里程碑、构建测试和第一天任务。
 
+## 0.2 用户使用指南
+
+- `user/requirement-workflow.md`
+  - 面向终端用户解释需求录入前准备、开始执行的基本条件，以及录入后从 Workflow Request 到 Report / Knowledge 的端到端 Pipeline。
+
+## 0.3 一条需求的通俗日程表
+
+这个项目的初衷不是做一个“把任务丢给 AI 然后等奇迹发生”的黑盒，而是做一个 **AI 参与的软件交付工作台**：用户接入项目、提出需求，平台用 Runner、worktree、Agent、Gate 和人工确认，把一次改动变成能追踪、能验收、能复盘的交付过程。
+
+下面的日程表不是严格按钟点执行，而是帮助新用户理解“一条需求从想法到交付”大概会怎样流动。
+
+| 时间段 | 用户要做什么 | 平台 / Runner 在做什么 | 交付物 |
+|---|---|---|---|
+| 准备阶段 | 接入项目，选择 GitHub / Gitee / 本地项目 / 私有 GitLab，检测分支和默认分支。 | 保存 Project 配置、源地址、默认 Source Branch、可选分支列表和 runner 本地路径。 | 可复用的 Project 配置。 |
+| 任务开始 | 在“新建任务”里选择 Project、任务类型和 Source Branch，写清楚目标、验收标准和约束。 | 创建 Workflow Request，等待本地 runner watch 认领。 | 一条排队中的任务请求。 |
+| 任务认领 | 不需要手动建分支，只要确认 runner 在线。 | Runner 按选定 Source Branch 准备独立 Git worktree，并创建本次任务分支。 | 可隔离执行的 worktree。 |
+| 需求澄清 | 在工作台阅读 Requirement Draft，确认它是否理解了业务目标。 | Agent 结合项目上下文生成需求草稿，Requirement Gate 检查 ID、AC、范围和证据。 | 可验收需求与 AC。 |
+| 方案确认 | 阅读 Design，确认影响范围、测试策略和风险。 | Agent 生成设计说明和追踪矩阵，Design Gate 检查需求覆盖和工程依据。 | 可执行设计方案。 |
+| 自动开发 | 关注工作台状态，必要时处理敏感改动确认。 | Agent 在 worktree 中改代码，平台记录 diff，并跑 Diff Scope / Sensitive Change Gate。 | 真实代码 diff。 |
+| 编译测试 | 查看 Build/Test 结果，不靠 AI 口头承诺。 | Runner 在本机执行 Maven compile/test，记录 CommandRun、BuildRun、TestRun 和 GateRun。 | 真实命令证据。 |
+| 验收交付 | 按 AC 和证据做人工验收，接受或打回。 | Acceptance Gate 汇总 Requirement → Design → Diff → Test → Review 证据链。 | 验收结论。 |
+| 收尾复盘 | 查看 Completion Report，处理 Knowledge Candidate。 | 平台生成报告和可复用经验候选，确认后写入知识库供下次 Context Pack 使用。 | 交付报告与项目知识。 |
+
 ## 1. 推荐阅读顺序
 
 ### 1.1 先理解 CodeStable 与 skill 机制
@@ -111,6 +134,8 @@
 ## 2. 业务流程主线
 
 ```text
+用户使用入口：项目接入 → 新建任务 → 工作台 Pipeline → 报告 / 知识库
+  ↓
 项目接入 / 初始化
   ↓
 Context Pack：工程背景、已有实现、历史决策、历史 bug
