@@ -32,6 +32,7 @@ import {
   runAcceptanceTraceabilityGate,
 } from '../gate-engine';
 import { store } from '../store/store';
+import { assertReadableFileUri } from '../artifact-content';
 
 /**
  * Runner-driven event ingress. The Runner is NOT a state writer — it tells
@@ -177,16 +178,21 @@ runnerEvents.post('/artifact', async (c) => {
     contentType: string;
     metadata?: Record<string, unknown>;
   };
-  const a = createArtifact({
-    workflowRunId: body.workflowRunId,
-    stepRunId: body.stepRunId,
-    kind: body.kind,
-    uri: body.uri,
-    size: body.size,
-    contentType: body.contentType,
-    metadata: body.metadata ?? {},
-  });
-  return c.json({ ok: true, artifact: a });
+  try {
+    if (body.uri.startsWith('file://')) assertReadableFileUri(body.uri);
+    const a = createArtifact({
+      workflowRunId: body.workflowRunId,
+      stepRunId: body.stepRunId,
+      kind: body.kind,
+      uri: body.uri,
+      size: body.size,
+      contentType: body.contentType,
+      metadata: body.metadata ?? {},
+    });
+    return c.json({ ok: true, artifact: a });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
 });
 
 runnerEvents.post('/run-gate', async (c) => {

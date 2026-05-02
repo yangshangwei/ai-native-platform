@@ -43,3 +43,19 @@ test('rejects non-file artifacts for content reads', () => {
 
   expect(() => readArtifactContent(artifact)).toThrow(/Only file artifacts/);
 });
+
+test('rejects file artifacts outside allowed local roots', () => {
+  const artifact: Artifact = {
+    id: 'art_forbidden',
+    kind: 'other',
+    uri: 'file:///etc/hosts',
+    workflowRunId: 'run_content',
+    stepRunId: null,
+    size: 1,
+    contentType: 'text/plain',
+    createdAt: new Date().toISOString(),
+    metadata: {},
+  };
+
+  expect(() => readArtifactContent(artifact)).toThrow(/outside the allowed local artifact roots/);
+});

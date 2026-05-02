@@ -12,8 +12,8 @@ import {
   type StepRunId,
   type EvidenceRef,
 } from '@ainp/shared';
-import { readFileSync } from 'node:fs';
 import { store } from './store/store';
+import { readFileUriText } from './artifact-content';
 
 /**
  * Gate Engine — the only thing that decides Gate pass/warn/fail.
@@ -204,7 +204,7 @@ export function runTestGate(params: {
 function readArtifactText(a: Artifact | null): string {
   if (!a?.uri.startsWith('file://')) return '';
   try {
-    return readFileSync(a.uri.slice('file://'.length), 'utf8');
+    return readFileUriText(a.uri);
   } catch {
     return '';
   }

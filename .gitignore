@@ -30,3 +30,4 @@ logs/
 .playwright-mcp/
 .omx/
 .gstack/
+.claude/worktrees/
