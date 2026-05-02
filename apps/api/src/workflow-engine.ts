@@ -237,10 +237,12 @@ export function completeWorkflowRun(workflowRunId: string, ok: boolean): Workflo
   const run = store.workflowRuns.get(workflowRunId);
   if (!run) throw new Error(`workflow run not found: ${workflowRunId}`);
   run.status = ok ? 'passed' : 'failed';
-  run.currentStage = 'completion';
+  if (ok) {
+    run.currentStage = 'completion';
+  }
   run.updatedAt = nowIso();
   store.workflowRuns.set(run.id, run);
-  audit(workflowRunId, 'workflow_run.completed', { ok });
+  audit(workflowRunId, 'workflow_run.completed', { ok, stage: run.currentStage });
   return run;
 }
 

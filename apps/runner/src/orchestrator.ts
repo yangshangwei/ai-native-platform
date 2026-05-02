@@ -584,15 +584,39 @@ async function collectReports(
 async function awaitApproval(
   workflowRunId: string,
   gateId: GateRun['gateId'],
-  timeoutMs = 5 * 60 * 1000,
 ): Promise<boolean> {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    const decision = await api.findApproval(workflowRunId, gateId);
+  return waitForApprovalDecision({
+    workflowRunId,
+    gateId,
+    findApproval: api.findApproval,
+    sleep: (ms) => new Promise((res) => setTimeout(res, ms)),
+    timeoutMs: approvalTimeoutMsFromEnv(),
+  });
+}
+
+export async function waitForApprovalDecision(params: {
+  workflowRunId: string;
+  gateId: GateRun['gateId'];
+  findApproval(workflowRunId: string, gateId: GateRun['gateId']): Promise<'approved' | 'rejected' | null>;
+  sleep(ms: number): Promise<void>;
+  timeoutMs?: number | null;
+  pollMs?: number;
+}): Promise<boolean> {
+  const startedAt = Date.now();
+  const pollMs = params.pollMs ?? 500;
+  while (params.timeoutMs == null || Date.now() - startedAt < params.timeoutMs) {
+    const decision = await params.findApproval(params.workflowRunId, params.gateId);
     if (decision) return decision === 'approved';
-    await new Promise((res) => setTimeout(res, 500));
+    await params.sleep(pollMs);
   }
-  throw new Error(`approval timeout for ${gateId} on ${workflowRunId}`);
+  throw new Error(`approval timeout for ${params.gateId} on ${params.workflowRunId}`);
+}
+
+function approvalTimeoutMsFromEnv(): number | null {
+  const raw = process.env.AINP_APPROVAL_TIMEOUT_MS;
+  if (!raw) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
 }
 
 export interface SensitiveChangeCheckpointDeps {

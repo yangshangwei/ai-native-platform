@@ -12,16 +12,38 @@ export const STAGES = [
 
 export type Stage = (typeof STAGES)[number];
 
+export const USER_VISIBLE_STAGES = [
+  'requirement',
+  'design',
+  'implementation',
+  'build_test',
+  'review',
+  'completion',
+  'knowledge',
+] as const satisfies readonly Stage[];
+
 export const STAGE_LABELS: Record<Stage, string> = {
-  init: 'Intake',
-  context_pack: 'Context Pack',
-  requirement: 'Requirement',
-  design: 'Design',
-  implementation: 'Implementation',
-  build_test: 'Build & Test',
-  review: 'Acceptance',
-  completion: 'Report',
-  knowledge: 'Knowledge',
+  init: '任务受理',
+  context_pack: '上下文准备',
+  requirement: '需求分析',
+  design: '方案设计',
+  implementation: '代码实现',
+  build_test: '构建测试',
+  review: '验收确认',
+  completion: '交付报告',
+  knowledge: '知识沉淀',
+};
+
+export const STAGE_HELP: Record<Stage, string> = {
+  init: '系统创建任务请求与 Workflow Run 记录，不调用 Agent，也不会产生业务产物。',
+  context_pack: 'Runner 自动扫描项目资料、复用项目画像和历史知识，生成给后续 Agent 使用的上下文包。',
+  requirement: '把用户输入整理成目标、范围、验收标准和待确认问题；通过后等待人工确认。',
+  design: '把已确认需求转成实现方案、影响范围、风险和测试策略；通过后等待人工确认。',
+  implementation: '在 worktree 中按方案改代码并收集 diff；敏感变更可能需要人工确认。',
+  build_test: '执行真实本地命令，例如 Maven compile/test，并解析测试报告。',
+  review: '汇总验收清单、测试证据和风险，等待用户验收。',
+  completion: '生成交付报告，汇总阶段、Gate、命令、产物和审批证据。',
+  knowledge: '抽取可复用经验，用户确认后沉淀到项目知识库。',
 };
 
 export const STAGE_TO_GATE: Partial<Record<Stage, string>> = {
@@ -138,6 +160,7 @@ export interface StageProjection {
 }
 
 export interface RunProjection {
+  currentStage: Stage;
   pendingGate: string | null;
   stages: StageProjection[];
   summary: {
@@ -164,29 +187,30 @@ export function latestArtifactOfKind<T extends Pick<ArtifactDto, 'kind' | 'creat
 }
 
 export function buildRunProjection(detail: RunDetail): RunProjection {
-  const currentIndex = STAGES.indexOf(detail.run.currentStage);
+  const effectiveCurrentStage = effectiveStageForProjection(detail);
+  const currentIndex = STAGES.indexOf(effectiveCurrentStage);
   const pendingGate =
     detail.run.status === 'awaiting_human'
-      ? (STAGE_TO_GATE[detail.run.currentStage] ?? null)
+      ? (STAGE_TO_GATE[effectiveCurrentStage] ?? null)
       : null;
 
-  const stages = STAGES.map<StageProjection>((stage, index) => {
+  const stages = STAGES.map<StageProjection>((stage) => {
     const step = detail.steps.find((s) => s.stage === stage);
     const gateId = STAGE_TO_GATE[stage] ?? null;
-    const gate = gateId ? [...detail.gates].reverse().find((g) => g.gateId === gateId) : null;
-    const isCurrent = stage === detail.run.currentStage;
+    const gate = gateId ? ([...detail.gates].reverse().find((g) => g.gateId === gateId) ?? null) : null;
+    const isCurrent = stage === effectiveCurrentStage;
     let state: StageProjection['state'] = 'waiting';
 
     if (step?.status === 'failed' || gate?.status === 'fail') {
+      state = 'failed';
+    } else if (isCurrent && detail.run.status === 'failed') {
       state = 'failed';
     } else if (pendingGate && isCurrent) {
       state = 'blocked';
     } else if (isCurrent && detail.run.status === 'running') {
       state = 'active';
-    } else if (step?.status === 'passed' || gate?.status === 'pass' || index < currentIndex) {
+    } else if (stageHasDoneEvidence(detail, stage, step, gate, currentIndex)) {
       state = 'done';
-    } else if (isCurrent && detail.run.status === 'failed') {
-      state = 'failed';
     }
 
     return {
@@ -198,6 +222,7 @@ export function buildRunProjection(detail: RunDetail): RunProjection {
   });
 
   return {
+    currentStage: effectiveCurrentStage,
     pendingGate,
     stages,
     summary: {
@@ -210,6 +235,74 @@ export function buildRunProjection(detail: RunDetail): RunProjection {
       buildStatus: detail.builds.at(-1)?.status ?? 'not_started',
     },
   };
+}
+
+function effectiveStageForProjection(detail: RunDetail): Stage {
+  const completionHasEvidence = stageHasAnyEvidence(detail, 'completion');
+  if (detail.run.status === 'failed' && detail.run.currentStage === 'completion' && !completionHasEvidence) {
+    return lastTransitionStage(detail) ?? lastStepStage(detail) ?? detail.run.currentStage;
+  }
+  return detail.run.currentStage;
+}
+
+function lastTransitionStage(detail: RunDetail): Stage | null {
+  for (const item of [...detail.audit].reverse()) {
+    if (item.kind !== 'workflow_run.stage_transition') continue;
+    const stage = item.payload?.stage;
+    if (isStage(stage)) return stage;
+  }
+  return null;
+}
+
+function lastStepStage(detail: RunDetail): Stage | null {
+  const step = [...detail.steps]
+    .filter((candidate) => Boolean(candidate.startedAt || candidate.completedAt))
+    .sort((a, b) => (a.completedAt ?? a.startedAt ?? '').localeCompare(b.completedAt ?? b.startedAt ?? ''))
+    .at(-1);
+  return step?.stage ?? null;
+}
+
+function isStage(value: unknown): value is Stage {
+  return typeof value === 'string' && (STAGES as readonly string[]).includes(value);
+}
+
+function stageHasDoneEvidence(
+  detail: RunDetail,
+  stage: Stage,
+  step: RunDetail['steps'][number] | undefined,
+  gate: GateRunDto | null,
+  currentIndex: number,
+): boolean {
+  if (step?.status === 'passed' || gate?.status === 'pass') return true;
+  if (stage === 'init') return currentIndex > STAGES.indexOf('init') || detail.run.status === 'passed';
+  if (stage === 'completion') return latestArtifactOfKind(detail.artifacts, 'completion_report') !== null;
+  if (stage === 'knowledge') {
+    return latestArtifactOfKind(detail.artifacts, 'knowledge_candidate') !== null &&
+      detail.approvals.some((approval) => approval.gateId === 'knowledge_gate' && approval.decision === 'approved');
+  }
+  return false;
+}
+
+function stageHasAnyEvidence(detail: RunDetail, stage: Stage): boolean {
+  if (detail.steps.some((step) => step.stage === stage)) return true;
+  if (detail.gates.some((gate) => gate.gateId === STAGE_TO_GATE[stage])) return true;
+  if (detail.artifacts.some((artifact) => artifactForStageProjection(artifact.kind, stage))) return true;
+  return detail.audit.some(
+    (item) => item.kind === 'workflow_run.stage_transition' && item.payload?.stage === stage,
+  );
+}
+
+function artifactForStageProjection(kind: string, stage: Stage): boolean {
+  const map: Partial<Record<Stage, string[]>> = {
+    context_pack: ['context_pack', 'project_profile'],
+    requirement: ['requirement_draft'],
+    design: ['design_doc', 'traceability'],
+    implementation: ['diff'],
+    build_test: ['surefire_report', 'failsafe_report', 'command_log'],
+    completion: ['completion_report'],
+    knowledge: ['knowledge_candidate'],
+  };
+  return (map[stage] ?? []).includes(kind);
 }
 
 // ---- Structured document parsing -----------------------------------------

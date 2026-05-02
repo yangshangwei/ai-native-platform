@@ -70,3 +70,25 @@ test('records AgentTask and AgentResult audit rows for a backend invocation', ()
     outputArtifactIds: ['art_output'],
   });
 });
+
+
+test('completeWorkflowRun preserves the failed stage instead of jumping to completion', () => {
+  const run = workflow.createWorkflowRun({
+    projectId: 'proj_failed_stage',
+    type: 'feature',
+    title: 'needs approval',
+    sourceBranch: 'main',
+  });
+  const step = workflow.startStep({
+    workflowRunId: run.id,
+    stage: 'requirement',
+    name: 'requirement',
+  });
+  workflow.finishStep(step.id, 'passed');
+  workflow.awaitHuman(run.id, 'requirement');
+
+  const completed = workflow.completeWorkflowRun(run.id, false);
+
+  expect(completed.status).toBe('failed');
+  expect(completed.currentStage).toBe('requirement');
+});

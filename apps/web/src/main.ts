@@ -1,6 +1,8 @@
 import {
+  STAGE_HELP,
   STAGE_LABELS,
   STAGES,
+  USER_VISIBLE_STAGES,
   STAGE_TO_GATE,
   buildAcceptanceChecklist,
   buildRunProjection,
@@ -898,7 +900,7 @@ function renderTaskHero(
   projection: ReturnType<typeof buildRunProjection> | null,
 ): HTMLElement {
   const status = detail?.run.status ?? request.status;
-  const current = detail ? STAGE_LABELS[detail.run.currentStage] : request.status === 'pending' ? '等待本地 Runner 自动认领' : 'Runner 已认领，正在准备运行';
+  const current = detail && projection ? STAGE_LABELS[projection.currentStage] : request.status === 'pending' ? '等待本地 Runner 自动认领' : 'Runner 已认领，正在准备运行';
   return el('section', {
     class: 'hero-card task-hero',
     children: [
@@ -939,14 +941,14 @@ function renderQueuedLifecycle(request: WorkflowRequestDto): HTMLElement {
   const queuedDone = request.status !== 'pending';
   const runnerActive = request.status === 'claimed';
   const states: Array<{ label: string; state: 'done' | 'active' | 'waiting' | 'failed'; help: string }> = [
-    { label: 'Queued', state: queuedDone ? 'done' : request.status === 'pending' ? 'active' : 'waiting', help: '任务已进入队列' },
-    { label: 'Runner Ready', state: runnerActive ? 'active' : 'waiting', help: '等待本地 Runner 认领并创建 run' },
-    ...STAGES.slice(1).map((stage) => ({ label: STAGE_LABELS[stage], state: 'waiting' as const, help: '等待进入该阶段' })),
+    { label: '任务入队', state: queuedDone ? 'done' : request.status === 'pending' ? 'active' : 'waiting', help: '任务已创建，等待自动执行' },
+    { label: 'Runner 自动开始', state: runnerActive ? 'active' : 'waiting', help: '等待本地 Runner 认领并创建运行' },
+    ...USER_VISIBLE_STAGES.map((stage) => ({ label: STAGE_LABELS[stage], state: 'waiting' as const, help: '等待进入该阶段' })),
   ];
   return el('section', {
     class: 'panel',
     children: [
-      panelHeader('完整流程', '任务会自动推进；只有人工确认点会暂停。'),
+      panelHeader('完整流程', '用户主流程从需求分析开始；系统准备阶段只放在后端细节里。'),
       el('div', {
         class: 'stage-board',
         children: states.map((stage, index) =>
@@ -986,7 +988,7 @@ function renderCurrentStagePanel(
     });
   }
 
-  const stage = detail.run.currentStage;
+  const stage = projection.currentStage;
   const pendingGate = projection.pendingGate;
   if (pendingGate) {
     return el('section', {
@@ -1039,7 +1041,7 @@ function renderCompletionSnapshotPanel(detail: RunDetail): HTMLElement {
   return el('article', {
     class: 'panel doc-panel structured-panel',
     children: [
-      panelHeader('Completion Report', '交付报告正在生成或已经可查看'),
+      panelHeader('交付报告', '交付报告正在生成或已经可查看'),
       report.summary.length ? renderTextList('摘要', report.summary) : el('p', { class: 'muted', text: '等待报告摘要。' }),
       renderRawFallback(detail, 'completion_report'),
     ],
@@ -1069,12 +1071,12 @@ function renderTaskNextActionPanel(
       ],
     });
   }
-  if (projection.pendingGate) return renderApprovalPanel(detail, projection.pendingGate);
+  if (projection.pendingGate) return renderApprovalPanel(detail, projection.pendingGate, projection.currentStage);
   return el('section', {
     class: 'panel side-panel',
     children: [
       panelHeader('下一步', '系统会自动推进到下一个阶段'),
-      el('p', { text: `当前正在 ${STAGE_LABELS[detail.run.currentStage]}。如果遇到 Requirement / Design / Sensitive Change / Acceptance / Knowledge 确认点，页面会在这里显示操作按钮。` }),
+      el('p', { text: `当前正在 ${STAGE_LABELS[projection.currentStage]}。如果遇到 Requirement / Design / Sensitive Change / Acceptance / Knowledge 确认点，页面会在这里显示操作按钮。` }),
       detail.approvals.length
         ? el('div', { class: 'stack', children: detail.approvals.map(renderApprovalRow) })
         : el('p', { class: 'muted compact', text: '当前无需人工确认。' }),
@@ -1150,7 +1152,7 @@ function renderStageBackendDetails(
   return el('section', {
     class: 'panel',
     children: [
-      panelHeader('每一步后端细节', '默认摘要；展开后查看 Step、Agent、Gate、Command、Artifact、Audit。'),
+      panelHeader('系统准备 + 阶段后端细节', '任务受理/上下文准备是自动技术准备；需求分析之后才是用户主流程。展开后查看 Step、Agent、Gate、Command、Artifact、Audit。'),
       el('div', {
         class: 'stage-detail-list',
         children: projection.stages.map((stage) => renderStageBackendDetail(detail, stage)),
@@ -1176,7 +1178,8 @@ function renderStageBackendDetail(detail: RunDetail, stage: ReturnType<typeof bu
           el('span', { class: 'muted', text: `${gates.length} gates · ${commands.length} commands · ${artifacts.length} artifacts` }),
         ],
       }),
-      step ? field('Step', `${step.name} · ${step.status}`) : field('Step', '尚未进入'),
+      field('说明', STAGE_HELP[stage.id]),
+      step ? field('Step', `${step.name} · ${step.status}`) : field('Step', stage.id === 'init' ? 'Workflow Run 已创建；该阶段没有独立 StepRun' : '尚未进入'),
       gates.length ? renderDetails('Gate Runs', gates.map(renderGateRow)) : null,
       tasks.length ? renderDetails('Agent Tasks', tasks.map((task) => renderAgentTaskRow(task, detail))) : null,
       commands.length ? renderDetails('Command Runs', commands.map(renderCommandRow)) : null,
@@ -1213,7 +1216,9 @@ function agentTaskForStage(kind: string, stage: Stage): boolean {
 
 function auditForStage(item: RunDetail['audit'][number], stage: Stage): boolean {
   const text = `${item.kind} ${JSON.stringify(item.payload ?? {})}`;
-  return text.includes(stage) || (stage === 'context_pack' && text.includes('project_profile'));
+  return text.includes(stage) ||
+    (stage === 'init' && item.kind === 'workflow_run.created') ||
+    (stage === 'context_pack' && text.includes('project_profile'));
 }
 
 function renderRunHero(detail: RunDetail, projection: ReturnType<typeof buildRunProjection>): HTMLElement {
@@ -1248,15 +1253,16 @@ function renderLifecycle(detail: RunDetail, projection: ReturnType<typeof buildR
   return el('section', {
     class: 'panel',
     children: [
-      panelHeader('Lifecycle Board', '从需求到知识沉淀的端到端闭环'),
+      panelHeader('完整生命周期', '从需求分析到知识沉淀的端到端闭环'),
       el('div', {
         class: 'stage-board',
-        children: projection.stages.map((stage) => {
+        children: USER_VISIBLE_STAGES.map((stageId, index) => {
+          const stage = projection.stages.find((candidate) => candidate.id === stageId)!;
           const step = detail.steps.find((s) => s.stage === stage.id);
           return el('article', {
             class: `stage-card ${stage.state}`,
             children: [
-              el('span', { class: 'stage-index', text: String(STAGES.indexOf(stage.id) + 1).padStart(2, '0') }),
+              el('span', { class: 'stage-index', text: String(index + 1).padStart(2, '0') }),
               el('strong', { text: stage.label }),
               el('small', { text: step?.name ?? stage.gateId ?? '等待进入' }),
               el('span', { class: `stage-state ${stage.state}`, text: stage.state }),
@@ -1387,7 +1393,7 @@ function renderRequirementPanel(detail: RunDetail): HTMLElement {
   return el('article', {
     class: 'panel doc-panel structured-panel',
     children: [
-      panelHeader('Requirement', '目标、验收标准、非目标、待确认问题'),
+      panelHeader('需求分析', '目标、验收标准、非目标、待确认问题'),
       renderTextList('目标', req.goals),
       renderAcList(req.acceptanceCriteria, detail),
       renderTextList('非目标', req.nonGoals),
@@ -1404,7 +1410,7 @@ function renderDesignPanel(detail: RunDetail): HTMLElement {
   return el('article', {
     class: 'panel doc-panel structured-panel',
     children: [
-      panelHeader('Design', '需求覆盖矩阵、测试策略、风险'),
+      panelHeader('方案设计', '需求覆盖矩阵、测试策略、风险'),
       design.coverage.length ? renderCoverageTable(design.coverage) : el('p', { class: 'muted', text: '等待需求覆盖矩阵。' }),
       renderTextList('测试策略', design.testStrategy),
       renderTextList('风险', design.risks),
@@ -1524,7 +1530,7 @@ function renderImplementationPanel(detail: RunDetail): HTMLElement {
   return el('article', {
     class: 'panel doc-panel',
     children: [
-      panelHeader('Implementation', '当前动作、修改文件、Diff Gate / Sensitive Gate'),
+      panelHeader('代码实现', '当前动作、修改文件、Diff Gate / Sensitive Gate'),
       implStep ? field('Step', el('span', { children: [pill(implStep.status), document.createTextNode(` ${implStep.name}`)] })) : el('p', { class: 'muted', text: '等待实现阶段。' }),
       renderGateChips(detail.gates.filter((g) => ['diff_scope_gate', 'sensitive_change_gate'].includes(g.gateId))),
       renderTextList('修改文件', changedFiles),
@@ -1550,7 +1556,7 @@ function renderBuildTestPanel(detail: RunDetail): HTMLElement {
   return el('article', {
     class: 'panel doc-panel',
     children: [
-      panelHeader('Build & Test', '本机 JDK/Maven 真实命令与报告'),
+      panelHeader('构建测试', '本机 JDK/Maven 真实命令与报告'),
       detail.builds.length === 0
         ? el('p', { class: 'muted', text: '等待 build_test 阶段。' })
         : el('div', {
@@ -1639,7 +1645,7 @@ function renderAcceptancePanel(detail: RunDetail): HTMLElement {
   return el('article', {
     class: 'panel doc-panel structured-panel',
     children: [
-      panelHeader('Acceptance Checklist', 'AC 覆盖、测试证据与风险确认'),
+      panelHeader('验收确认', 'AC 覆盖、测试证据与风险确认'),
       checklist.length
         ? el('div', {
             class: 'acceptance-list',
@@ -1665,7 +1671,7 @@ function renderKnowledgeSuggestionsPanel(detail: RunDetail): HTMLElement {
   return el('article', {
     class: 'panel doc-panel structured-panel',
     children: [
-      panelHeader('Knowledge Suggestions', '候选经验，人工接受后才入库'),
+      panelHeader('知识沉淀候选', '候选经验，人工接受后才入库'),
       suggestions.length
         ? el('div', { class: 'stack', children: suggestions.map((suggestion, index) => renderKnowledgeSuggestion(suggestion, index, detail)) })
         : el('p', { class: 'muted', text: '暂无 Knowledge 候选。' }),
@@ -1686,7 +1692,7 @@ function renderRunsPanel(): HTMLElement {
   });
 }
 
-function renderApprovalPanel(detail: RunDetail, pendingGate: string | null): HTMLElement {
+function renderApprovalPanel(detail: RunDetail, pendingGate: string | null, currentStage: Stage = detail.run.currentStage): HTMLElement {
   const sensitiveWarn = [...detail.gates]
     .reverse()
     .find((g) => g.gateId === 'sensitive_change_gate' && g.status === 'warn');
@@ -1711,7 +1717,7 @@ function renderApprovalPanel(detail: RunDetail, pendingGate: string | null): HTM
     return el('section', {
       class: 'panel side-panel',
       children: [
-        panelHeader('Human Checkpoint', '人工确认点'),
+        panelHeader('人工确认点', '当前确认历史'),
         detail.approvals.length
           ? el('div', { class: 'stack', children: detail.approvals.map(renderApprovalRow) })
           : el('p', { class: 'muted', text: '当前无需人工确认。' }),
@@ -1737,7 +1743,7 @@ function renderApprovalPanel(detail: RunDetail, pendingGate: string | null): HTM
   return el('section', {
     class: 'panel side-panel checkpoint',
     children: [
-      panelHeader('Awaiting Human', `${STAGE_LABELS[detail.run.currentStage]} 暂停在 ${pendingGate}`),
+      panelHeader('等待人工确认', `${STAGE_LABELS[currentStage]} 暂停在 ${pendingGate}`),
       el('p', { text: isAcceptance ? '请逐项检查 AC checklist；若证据不足但可接受，需显式接受风险。' : '请先检查需求/设计/构建证据，再批准进入下一阶段。' }),
       el('div', { class: 'button-row', children: [approveBtn, rejectBtn] }),
     ],
