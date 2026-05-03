@@ -365,12 +365,12 @@ export function runDesignGate(params: {
   // cs-feat-design (Phase A.5): explicit DSN id, 现状/变化 two-段式,
   // 挂载点 count in 3-5, 推进策略 section.
   const hasDsnId = /^design_id:\s*DSN-\d{3}/m.test(text);
-  const hasCurrentStateSection = /##\s*现状/i.test(text);
-  const hasChangesSection = /##\s*变化/i.test(text);
-  const hasRolloutSection = /##\s*推进策略/i.test(text);
-  const mountSectionMatch = text.match(/##\s*挂载点[\s\S]*?(?=\n##\s|\n*$)/i);
+  const hasCurrentStateSection = /##\s*(\d+\.\s*)?现状/i.test(text);
+  const hasChangesSection = /##\s*(\d+\.\s*)?变化/i.test(text);
+  const hasRolloutSection = /##\s*(\d+\.\s*)?推进策略/i.test(text);
+  const mountSectionMatch = text.match(/##\s*(\d+\.\s*)?挂载点[\s\S]*?(?=\n##\s|\n*$)/i);
   const mountBulletCount = mountSectionMatch
-    ? (mountSectionMatch[0].match(/^\s*-\s+\S/gm) ?? []).length
+    ? (mountSectionMatch[0].match(/^\s*\d+\.\s+\S|\n\s*-\s+\S/gm) ?? []).length
     : 0;
   const mountInRange = mountBulletCount >= 3 && mountBulletCount <= 5;
 
