@@ -1,0 +1,23 @@
+{"file": ".trellis/tasks/05-04-fix-requirement-analysis-stage-design-impl-gaps/prd.md", "reason": "Single source of truth for the 6 gap fixes (P0-1/P0-2/P0-3/P1-4/P1-5/P1-7) and the 3 ADR-lite decisions (Q1/Q2/Q3=A); all PRs consume this."}
+{"file": "docs/2026-05-03-requirements-phase-adaptation-plan.md", "reason": "Original Phase A/B plan defining the cs-req injection, Coordinator architecture, and immutable constraints (Workflow Engine sole writer / e2e must pass / Coordinator never bypasses gates)."}
+{"file": "docs/user/requirement-workflow.md", "reason": "User-facing requirement workflow spec — PR4 must update its flow diagram + add the awaiting_clarification chapter without contradicting the rest."}
+{"file": ".trellis/spec/runtime-config-layer.md", "reason": "Coordinator already reads keywords/threshold/system_prompt via getConfig(); PR3 must extend the LLM fallback selection through the same layer rather than hard-coding."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Cross-package thinking-guide index; tells sub-agents which guide applies to a layer."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "PR1+PR2+PR3 all cross the api↔web↔runner boundary; this guide governs how the firstMessage payload, status enum, and triage projectId flow without breaking layer contracts."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "PR3 must reuse existing buildAgentBackendCliSpawn / resolveAgentBackendCliCandidates / claudeCliAvailable patterns when adding the codex fallback channel — no parallel spawn helpers."}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API layer entry index — PR1 must conform to its routing/store/store-method conventions when extending POST /workflow-requests."}
+{"file": ".trellis/spec/api/backend/directory-structure.md", "reason": "Where to add atomic-write helpers and which test directory hosts the new vitest cases."}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "Atomic insert (request + first message) must follow store transaction conventions; no ad-hoc db.prepare outside store/."}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "Status whitelist rejection (PATCH workflow-requests/:id/status) must use the project's standard 4xx error shape — not bespoke text."}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "Vitest coverage expectations for new route paths."}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "Runner layer entry index — PR3 lives here; covers cmd/watch and agents/coordinator conventions."}
+{"file": ".trellis/spec/runner/backend/agent-backend-runtime.md", "reason": "Defines the cross-platform CLI spawn contract (claude/codex/Windows shim). PR3's codex fallback path MUST reuse it instead of inventing a new spawn helper."}
+{"file": ".trellis/spec/runner/backend/error-handling.md", "reason": "Coordinator pause_for_human is the standard error-degradation pattern; new codex-channel failures must follow it."}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "Vitest expectations for coordinator triage tests covering 3 backend-availability combinations."}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Web frontend layer index — PR2 lives here; submitWorkflowRequest, dual-badge rendering."}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "How to add the user-tag-vs-coordinator-tag dual badge consistent with existing pill / panelHeader components."}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Coordinator chat state already uses Map<requestId, state>; PR2 must extend coordinatorChats / preflight cache without new state silos."}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "WorkflowRequestDto type extensions for firstMessage echo / coordinator decision must keep strict typing — no any leaks."}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "ensureProjectAgentBackendReady / preflight already lives in the form path; PR2 should not regress its single-flight semantics."}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "Shared types layer index — WorkflowRequestStatus, MessageRole, CoordinatorAction all live here; PR1 must keep them exported correctly."}
+{"file": ".trellis/spec/shared/backend/agent-backend-contract.md", "reason": "Cross-package contract for agent backend kinds (claude_code / codex); PR3 must respect this when picking fallback CLI by project preference."}

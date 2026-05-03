@@ -1,0 +1,18 @@
+{"file": ".trellis/tasks/05-04-fix-requirement-analysis-stage-design-impl-gaps/prd.md", "reason": "Acceptance Criteria + Definition of Done — verifier checks every AC-1..AC-7 against actual code/test/docs state."}
+{"file": "docs/2026-05-03-requirements-phase-adaptation-plan.md", "reason": "Plan's immutable constraints section; verifier ensures e2e still passes, Workflow Engine remains sole state writer, Coordinator never directly creates Runs."}
+{"file": "docs/user/requirement-workflow.md", "reason": "Verifier confirms the flow diagram now shows Coordinator stage and the new awaiting_clarification chapter is consistent with the implementation."}
+{"file": ".trellis/spec/runtime-config-layer.md", "reason": "Verifies new LLM fallback knobs (if any) registered correctly in defaults.ts and surface through getConfig()."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer payload contract verification: firstMessage round-trip api→db→runner; status enum visible to web/api/shared."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Verifier checks PR3's codex channel reuses agent-backend-runtime helpers; no duplicate spawn code paths."}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "Spec conformance checks for the extended POST /workflow-requests + PATCH status routes."}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "Verifier confirms request + first-message insert is in a single store call (atomic), not two separate db.prepare calls in the route handler."}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "Verifies 400/409 responses for invalid status transitions follow the standard error shape."}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "Vitest coverage threshold for new routes."}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "Conformance for the runner's new triage projectId plumbing + LLM fallback selection."}
+{"file": ".trellis/spec/runner/backend/agent-backend-runtime.md", "reason": "Verifies codex one-shot uses buildAgentBackendCliSpawn / resolveAgentBackendCliCandidates exactly like the claude path."}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "Coordinator fallback unit tests cover three CLI-availability combinations (claude only / codex only / both)."}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Frontend conformance for single-call submit + dual-badge."}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "Verifier confirms the dual badge reuses existing pill / panel components."}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Verifies coordinatorChats Map is updated atomically after the merged POST, no orphan polling loops."}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "Verifier checks no any/as in the new firstMessage / coordinator-decision wiring."}
+{"file": ".trellis/spec/shared/backend/agent-backend-contract.md", "reason": "Verifies project.agentBackend → coordinator backend choice mapping respects the shared contract."}
