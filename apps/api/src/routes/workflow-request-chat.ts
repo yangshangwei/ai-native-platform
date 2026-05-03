@@ -26,6 +26,27 @@ const ALLOWED_STATUSES: readonly WorkflowRequestStatus[] = [
   'cancelled',
 ];
 
+/**
+ * State-machine whitelist for `PATCH /workflow-requests/:id/status`.
+ *
+ * Same-state writes (e.g. `pending → pending`) are accepted as no-ops and
+ * return the existing record unchanged. Terminal states (completed / failed
+ * / cancelled) refuse any outward transition; rewinding from a terminal
+ * status requires creating a new request, not flipping the old one.
+ *
+ * Note: this whitelist governs client-driven (web/runner) transitions.
+ * The Workflow Engine (`workflow-engine.ts`) still owns programmatic
+ * lifecycle moves (`pending → claimed`, etc.) via dedicated functions.
+ */
+const ALLOWED_TRANSITIONS: Record<WorkflowRequestStatus, readonly WorkflowRequestStatus[]> = {
+  pending: ['awaiting_clarification', 'claimed', 'cancelled'],
+  awaiting_clarification: ['pending', 'cancelled'],
+  claimed: ['completed', 'failed', 'cancelled'],
+  completed: [],
+  failed: [],
+  cancelled: [],
+};
+
 workflowRequestChat.post('/workflow-requests/:id/messages', async (c) => {
   const id = c.req.param('id');
   const request = store.workflowRequests.get(id);
@@ -72,7 +93,23 @@ workflowRequestChat.patch('/workflow-requests/:id/status', async (c) => {
   if (!body.status || !ALLOWED_STATUSES.includes(body.status)) {
     return c.json({ error: `status must be one of ${ALLOWED_STATUSES.join(', ')}` }, 400);
   }
-  const updated = store.workflowRequests.updateStatus(id, body.status);
+  const current = store.workflowRequests.get(id);
+  if (!current) return c.json({ error: 'workflow request not found' }, 404);
+
+  const next = body.status;
+  // Same-state writes are no-ops — return the unchanged row instead of
+  // creating an audit-noisy redundant write.
+  if (current.status === next) return c.json(current);
+
+  const allowed = ALLOWED_TRANSITIONS[current.status];
+  if (!allowed.includes(next)) {
+    return c.json(
+      { error: `illegal status transition: ${current.status} -> ${next}` },
+      409,
+    );
+  }
+
+  const updated = store.workflowRequests.updateStatus(id, next);
   if (!updated) return c.json({ error: 'workflow request not found' }, 404);
   return c.json(updated);
 });

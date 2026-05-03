@@ -159,3 +159,100 @@ test('artifact content routes return latest local artifact text for UI drill-dow
     text: expect.stringContaining('AC-LATEST'),
   });
 });
+
+// ---- PR1: atomic create + firstMessage (PRD §P0-2 / P0-3) ----------------
+
+/**
+ * The bun:sqlite db module is a per-process singleton, so all test files in
+ * this directory share the same DB. Sibling tests assert `pending()` length,
+ * so each PR1 test below MUST flip its created request to a terminal status
+ * before exiting to avoid cross-file pollution.
+ */
+function markCompleted(requestId: string): void {
+  const current = storeMod.store.workflowRequests.get(requestId);
+  if (current) storeMod.store.workflowRequests.set(requestId, { ...current, status: 'completed' });
+}
+
+test('POST /workflow-requests with firstMessage atomically inserts request + message', async () => {
+  const project = seedProject(`first-message-${Date.now()}`);
+
+  const res = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      title: 'add export button to report page',
+      type: 'feature',
+      firstMessage: { role: 'user', content: 'add export button to report page' },
+    }),
+  });
+  expect(res.status).toBe(201);
+  const created = (await res.json()) as { id: string; status: string };
+  expect(created.status).toBe('pending');
+
+  const msgRes = await app.request(`/workflow-requests/${created.id}/messages`);
+  expect(msgRes.status).toBe(200);
+  const body = (await msgRes.json()) as {
+    messages: Array<{ role: string; content: string }>;
+    status: string;
+  };
+  expect(body.messages).toHaveLength(1);
+  expect(body.messages[0]).toMatchObject({
+    role: 'user',
+    content: 'add export button to report page',
+  });
+  expect(body.status).toBe('pending');
+  markCompleted(created.id);
+});
+
+test('POST /workflow-requests without firstMessage stays backward compatible (no message inserted)', async () => {
+  const project = seedProject(`no-first-message-${Date.now()}`);
+
+  const res = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectName: project.name, title: 'legacy CLI register path' }),
+  });
+  expect(res.status).toBe(201);
+  const created = (await res.json()) as { id: string };
+
+  const msgRes = await app.request(`/workflow-requests/${created.id}/messages`);
+  expect(msgRes.status).toBe(200);
+  const body = (await msgRes.json()) as { messages: unknown[] };
+  expect(body.messages).toEqual([]);
+  markCompleted(created.id);
+});
+
+test('POST /workflow-requests rejects empty firstMessage.content with 400 and creates nothing', async () => {
+  const project = seedProject(`bad-first-message-${Date.now()}`);
+  const beforeCount = storeMod.store.workflowRequests.values().length;
+
+  const res = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      title: 'bad payload',
+      firstMessage: { role: 'user', content: '   ' },
+    }),
+  });
+  expect(res.status).toBe(400);
+
+  const afterCount = storeMod.store.workflowRequests.values().length;
+  // Atomicity: no request was created when firstMessage validation failed.
+  expect(afterCount).toBe(beforeCount);
+});
+
+test('POST /workflow-requests rejects firstMessage with unknown role', async () => {
+  const project = seedProject(`bad-role-${Date.now()}`);
+  const res = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      title: 'bad role',
+      firstMessage: { role: 'system', content: 'hi' },
+    }),
+  });
+  expect(res.status).toBe(400);
+});

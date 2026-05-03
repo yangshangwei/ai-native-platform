@@ -15,7 +15,9 @@ import {
   type CommandRun,
   type CommandRunId,
   type GateRun,
+  type MessageRole,
   type ProjectId,
+  type RequestMessage,
   type StepRun,
   type StepRunId,
   type TestRun,
@@ -33,6 +35,7 @@ import {
   type RunnerRecord,
   type WorkflowAction,
 } from './store/store';
+import { db } from './store/db';
 import {
   runCompileGate,
   runTestGate,
@@ -83,6 +86,13 @@ export function createWorkflowRequest(params: {
   type: WorkflowRunType;
   title: string;
   branch: string;
+  /**
+   * Optional first user message that should be persisted alongside the
+   * request in the same transaction. When supplied the request and message
+   * appear together (or neither) so the runner watch loop never races
+   * between request creation and the initial chat turn (PRD P0-2 / P0-3).
+   */
+  firstMessage?: { role: MessageRole; content: string };
 }): WorkflowRequest {
   const now = nowIso();
   const request: WorkflowRequest = {
@@ -98,12 +108,29 @@ export function createWorkflowRequest(params: {
     createdAt: now,
     updatedAt: now,
   };
-  store.workflowRequests.set(request.id, request);
+  if (params.firstMessage) {
+    const message: RequestMessage = {
+      id: newId('msg'),
+      workflowRequestId: request.id,
+      role: params.firstMessage.role,
+      content: params.firstMessage.content,
+      coordinatorDecisionId: null,
+      createdAt: now,
+    };
+    const txn = db.transaction(() => {
+      store.workflowRequests.set(request.id, request);
+      store.requestMessages.insert(message);
+    });
+    txn();
+  } else {
+    store.workflowRequests.set(request.id, request);
+  }
   audit(null, 'workflow_request.created', {
     requestId: request.id,
     projectId: request.projectId,
     type: request.type,
     title: request.title,
+    firstMessage: params.firstMessage ? params.firstMessage.role : null,
   });
   return request;
 }

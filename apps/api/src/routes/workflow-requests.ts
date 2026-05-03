@@ -1,5 +1,10 @@
 import { Hono } from 'hono';
-import type { Project, WorkflowRequestStatus, WorkflowRunType } from '@ainp/shared';
+import type {
+  MessageRole,
+  Project,
+  WorkflowRequestStatus,
+  WorkflowRunType,
+} from '@ainp/shared';
 import { store } from '../store/store';
 import {
   claimWorkflowRequest,
@@ -18,6 +23,8 @@ const STATUSES: readonly WorkflowRequestStatus[] = [
   'failed',
   'cancelled',
 ];
+
+const ALLOWED_FIRST_MESSAGE_ROLES: readonly MessageRole[] = ['user', 'coordinator'];
 
 workflowRequests.get('/', (c) => {
   const status = c.req.query('status') as WorkflowRequestStatus | undefined;
@@ -41,6 +48,7 @@ workflowRequests.post('/', async (c) => {
     type?: WorkflowRunType;
     title?: string;
     branch?: string;
+    firstMessage?: { role?: MessageRole; content?: string };
   };
 
   let project = body.projectId ? store.projects.get(body.projectId) : undefined;
@@ -51,11 +59,30 @@ workflowRequests.post('/', async (c) => {
   if (backendError) return c.json({ error: backendError, needsAgentBackendSetup: true }, 400);
   if (!body.title?.trim()) return c.json({ error: 'title required' }, 400);
 
+  // Validate firstMessage BEFORE any DB write so the atomicity contract holds:
+  // bad firstMessage MUST NOT leave a request behind without its message.
+  let firstMessage: { role: MessageRole; content: string } | undefined;
+  if (body.firstMessage !== undefined) {
+    const role = body.firstMessage.role;
+    const content = body.firstMessage.content;
+    if (!role || !ALLOWED_FIRST_MESSAGE_ROLES.includes(role)) {
+      return c.json(
+        { error: `firstMessage.role must be one of ${ALLOWED_FIRST_MESSAGE_ROLES.join(', ')}` },
+        400,
+      );
+    }
+    if (typeof content !== 'string' || content.trim().length === 0) {
+      return c.json({ error: 'firstMessage.content required' }, 400);
+    }
+    firstMessage = { role, content };
+  }
+
   const request = createWorkflowRequest({
     projectId: project.id,
     type: body.type ?? 'feature',
     title: body.title.trim(),
     branch: body.branch?.trim() || project.defaultBranch,
+    firstMessage,
   });
   return c.json(request, 201);
 });

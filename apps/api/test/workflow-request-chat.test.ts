@@ -124,6 +124,9 @@ describe('GET /workflow-requests/:id/messages', () => {
 describe('PATCH /workflow-requests/:id/status', () => {
   test('flips status to awaiting_clarification', async () => {
     const req = await seedRequest();
+    // seedRequest seeds with status=completed; flip to pending so the
+    // whitelist allows the transition under test.
+    store.workflowRequests.set(req.id, { ...req, status: 'pending' });
     const res = await app.request(`/workflow-requests/${req.id}/status`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
@@ -142,6 +145,75 @@ describe('PATCH /workflow-requests/:id/status', () => {
       body: JSON.stringify({ status: 'rebooted' }),
     });
     expect(res.status).toBe(400);
+  });
+
+  // ---- PR1: state-machine whitelist (PRD §P1-7) -------------------------
+
+  test('rejects illegal completed → pending transition with 409', async () => {
+    const req = await seedRequest(); // seedRequest seeds with status=completed
+    const res = await app.request(`/workflow-requests/${req.id}/status`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'pending' }),
+    });
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain('illegal status transition');
+    expect(body.error).toContain('completed -> pending');
+  });
+
+  test('rejects illegal cancelled → pending transition with 409', async () => {
+    const req = await seedRequest();
+    store.workflowRequests.set(req.id, { ...req, status: 'cancelled' });
+    const res = await app.request(`/workflow-requests/${req.id}/status`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'pending' }),
+    });
+    expect(res.status).toBe(409);
+  });
+
+  test('accepts pending → awaiting_clarification then awaiting_clarification → pending', async () => {
+    const req = await seedRequest();
+    store.workflowRequests.set(req.id, { ...req, status: 'pending' });
+    const r1 = await app.request(`/workflow-requests/${req.id}/status`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'awaiting_clarification' }),
+    });
+    expect(r1.status).toBe(200);
+    const r2 = await app.request(`/workflow-requests/${req.id}/status`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'pending' }),
+    });
+    expect(r2.status).toBe(200);
+    expect(((await r2.json()) as { status: string }).status).toBe('pending');
+    // Park in cancelled so the row doesn't pollute a sibling test file's
+    // pending() count (the bun:sqlite module is process-shared).
+    store.workflowRequests.set(req.id, { ...req, status: 'cancelled' });
+  });
+
+  test('same-state PATCH is a no-op (returns 200 with unchanged row)', async () => {
+    const req = await seedRequest();
+    store.workflowRequests.set(req.id, { ...req, status: 'pending' });
+    const res = await app.request(`/workflow-requests/${req.id}/status`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'pending' }),
+    });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { status: string }).status).toBe('pending');
+    store.workflowRequests.set(req.id, { ...req, status: 'cancelled' });
+  });
+
+  test('returns 404 when request does not exist', async () => {
+    const res = await app.request('/workflow-requests/wfreq_unknown_42/status', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'cancelled' }),
+    });
+    expect(res.status).toBe(404);
   });
 });
 
