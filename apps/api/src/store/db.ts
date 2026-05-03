@@ -216,6 +216,29 @@ const MIGRATIONS: string[] = [
      ts TEXT NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_agent_events_workflow ON agent_events(workflow_run_id, sequence)`,
+  // Phase B: Coordinator triage decisions and conversational intake messages.
+  // workflow_request_id may reference a request whose status is one of:
+  //   pending | awaiting_clarification | claimed | completed | failed | cancelled
+  `CREATE TABLE IF NOT EXISTS coordinator_decisions (
+     id TEXT PRIMARY KEY,
+     workflow_request_id TEXT NOT NULL,
+     workflow_run_id TEXT,
+     source TEXT NOT NULL,
+     decision_json TEXT NOT NULL,
+     confidence REAL NOT NULL,
+     rules_fired_json TEXT NOT NULL,
+     decided_at TEXT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_coord_decisions_request ON coordinator_decisions(workflow_request_id, decided_at)`,
+  `CREATE TABLE IF NOT EXISTS workflow_request_messages (
+     id TEXT PRIMARY KEY,
+     workflow_request_id TEXT NOT NULL,
+     role TEXT NOT NULL,
+     content TEXT NOT NULL,
+     coordinator_decision_id TEXT,
+     created_at TEXT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_request_messages_request ON workflow_request_messages(workflow_request_id, created_at)`,
 ];
 
 

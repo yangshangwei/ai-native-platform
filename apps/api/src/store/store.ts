@@ -11,6 +11,8 @@ import type {
   AgentTask,
   AgentResult,
   AgentStreamEvent,
+  CoordinatorDecision,
+  RequestMessage,
 } from '@ainp/shared';
 import { db } from './db';
 
@@ -1107,6 +1109,91 @@ const runners = {
   },
 };
 
+// ---- coordinator_decisions + workflow_request_messages (Phase B) ----------
+
+const coordinatorDecisions = {
+  insert(d: CoordinatorDecision): void {
+    insertRow('coordinator_decisions', {
+      id: d.id,
+      workflow_request_id: d.workflowRequestId,
+      workflow_run_id: d.workflowRunId,
+      source: d.source,
+      decision_json: JSON.stringify(d.decision),
+      confidence: d.confidence,
+      rules_fired_json: JSON.stringify(d.rulesFired),
+      decided_at: d.decidedAt,
+    });
+  },
+  latestForRequest(workflowRequestId: string): CoordinatorDecision | null {
+    const row = db
+      .prepare(
+        `SELECT * FROM coordinator_decisions
+         WHERE workflow_request_id = ?
+         ORDER BY decided_at DESC LIMIT 1`,
+      )
+      .get(workflowRequestId) as
+      | {
+          id: string;
+          workflow_request_id: string;
+          workflow_run_id: string | null;
+          source: string;
+          decision_json: string;
+          confidence: number;
+          rules_fired_json: string;
+          decided_at: string;
+        }
+      | undefined;
+    if (!row) return null;
+    return {
+      id: row.id,
+      workflowRequestId: row.workflow_request_id,
+      workflowRunId: row.workflow_run_id,
+      source: row.source as CoordinatorDecision['source'],
+      decision: JSON.parse(row.decision_json) as CoordinatorDecision['decision'],
+      confidence: row.confidence,
+      rulesFired: JSON.parse(row.rules_fired_json) as string[],
+      decidedAt: row.decided_at,
+    };
+  },
+};
+
+const requestMessages = {
+  insert(m: RequestMessage): void {
+    insertRow('workflow_request_messages', {
+      id: m.id,
+      workflow_request_id: m.workflowRequestId,
+      role: m.role,
+      content: m.content,
+      coordinator_decision_id: m.coordinatorDecisionId,
+      created_at: m.createdAt,
+    });
+  },
+  listForRequest(workflowRequestId: string): RequestMessage[] {
+    const rows = db
+      .prepare(
+        `SELECT * FROM workflow_request_messages
+         WHERE workflow_request_id = ?
+         ORDER BY created_at ASC`,
+      )
+      .all(workflowRequestId) as Array<{
+      id: string;
+      workflow_request_id: string;
+      role: string;
+      content: string;
+      coordinator_decision_id: string | null;
+      created_at: string;
+    }>;
+    return rows.map((r) => ({
+      id: r.id,
+      workflowRequestId: r.workflow_request_id,
+      role: r.role as RequestMessage['role'],
+      content: r.content,
+      coordinatorDecisionId: r.coordinator_decision_id,
+      createdAt: r.created_at,
+    }));
+  },
+};
+
 // ---- public surface --------------------------------------------------------
 
 export const store = {
@@ -1126,6 +1213,8 @@ export const store = {
   approvals,
   auditLog,
   runners,
+  coordinatorDecisions,
+  requestMessages,
   // Back-compat helpers used by older routes:
   projectByName: (name: string) => projects.findByName(name),
   workflowRunsByProject: (projectId: string) => workflowRuns.byProject(projectId),
