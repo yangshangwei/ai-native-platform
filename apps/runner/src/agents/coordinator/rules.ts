@@ -1,7 +1,16 @@
 import type { CoordinatorAction } from '@ainp/shared';
+import { applyTemplate } from '@ainp/shared';
+import { getConfig } from '../../config-client';
 
 /**
  * Rule-based first-pass classifier for Coordinator triage.
+ *
+ * (PR2) Keyword dictionaries, the large-scope regex, the confidence
+ * weights, and the fallback question strings are now read from the
+ * runtime config layer via `getConfig()`. When no override is present,
+ * `getConfig` falls back to the byte-for-byte defaults transcribed in
+ * `packages/shared/src/config/defaults.ts`. Behaviour is unchanged in
+ * the absence of overrides.
  *
  * Mirrors cs-brainstorm's three cases (case 1 / 2 / 3) plus a bugfix track:
  *
@@ -24,84 +33,32 @@ export interface ClassifyInput {
 
 export interface ClassifyOutput {
   decision: CoordinatorAction;
-  /** 0..1; ≥0.65 means rules are confident enough that the LLM fallback is skipped. */
+  /** 0..1; ≥ threshold means rules are confident enough that the LLM fallback is skipped. */
   confidence: number;
   rulesFired: string[];
 }
 
-const BUG_KEYWORDS = [
-  'bug',
-  '错误',
-  '异常',
-  '报错',
-  '崩溃',
-  '失败',
-  'crash',
-  'error',
-  '弹出空白',
-  '无法',
-  '不能',
-  '不工作',
-  '不对',
-  '应该',
-  '预期',
-  '实际',
-];
-
-const FEATURE_KEYWORDS = [
-  '增加',
-  '新增',
-  '加一个',
-  '加个',
-  '添加',
-  '实现',
-  '做一个',
-  '支持',
-  'add',
-  'implement',
-  'support',
-  '希望',
-  '验收标准',
-  'acceptance',
-];
-
-// Keywords that signal "this is a multi-feature initiative, not a single feature."
-const LARGE_SCOPE_KEYWORDS = [
-  '完整的',
-  '一整套',
-  '一套',
-  '整个',
-  'sso',
-  '权限系统',
-  '通知系统',
-  '用户系统',
-  '认证体系',
-  '审计体系',
-  // bare "X 系统" pattern is handled separately as a regex.
-];
-
-const MULTI_NOUN_SYSTEM_RE = /(\S+?\s*系统|\S+?\s*体系)/;
-
-function countMatches(text: string, keywords: string[]): { count: number; hits: string[] } {
+function countMatches(
+  text: string,
+  keywords: readonly string[],
+): { count: number; hits: string[] } {
   const lower = text.toLowerCase();
   const hits = keywords.filter((kw) => lower.includes(kw.toLowerCase()));
   return { count: hits.length, hits };
 }
 
-export function classifyByRules(input: ClassifyInput): ClassifyOutput {
+export async function classifyByRules(input: ClassifyInput): Promise<ClassifyOutput> {
   const text = input.userRequest.trim();
   const rulesFired: string[] = [];
 
   // Rule 1: very short → can't triage
   if (text.length < 6) {
     rulesFired.push('rule.too_short');
+    const questions = await getConfig('coordinator.fallback.too_short_questions');
     return {
       decision: {
         action: 'pause_for_human',
-        questions: [
-          '能再描述一下吗？这是哪个场景下出现的？例如"在哪儿"、"做了什么"、"看到什么"。',
-          '主要是修复现有问题，还是新增能力？',
-        ],
+        questions: [...questions],
         reason: 'request too short to triage',
       },
       confidence: 0.85,
@@ -109,22 +66,27 @@ export function classifyByRules(input: ClassifyInput): ClassifyOutput {
     };
   }
 
-  const bug = countMatches(text, BUG_KEYWORDS);
-  const feature = countMatches(text, FEATURE_KEYWORDS);
-  const largeScope = countMatches(text, LARGE_SCOPE_KEYWORDS);
-  const systemPattern = MULTI_NOUN_SYSTEM_RE.test(text);
+  const bugKeywords = await getConfig('coordinator.bug_keywords');
+  const featureKeywords = await getConfig('coordinator.feature_keywords');
+  const largeScopeKeywords = await getConfig('coordinator.large_scope_keywords');
+  const largeScopeRegexSrc = await getConfig('coordinator.large_scope_regex');
+  const largeScopeRegex = new RegExp(largeScopeRegexSrc);
+
+  const bug = countMatches(text, bugKeywords);
+  const feature = countMatches(text, featureKeywords);
+  const largeScope = countMatches(text, largeScopeKeywords);
+  const systemPattern = largeScopeRegex.test(text);
 
   // Rule 2: large-scope signals → pause for decomposition
   if ((largeScope.count >= 1 || systemPattern) && text.length > 8) {
     rulesFired.push('rule.large_scope_detected');
-    const trigger = largeScope.hits[0] ?? text.match(MULTI_NOUN_SYSTEM_RE)?.[0] ?? 'system';
+    const trigger = largeScope.hits[0] ?? text.match(largeScopeRegex)?.[0] ?? 'system';
+    const template = await getConfig('coordinator.fallback.large_scope_template');
+    const followup = await getConfig('coordinator.fallback.large_scope_followup');
     return {
       decision: {
         action: 'pause_for_human',
-        questions: [
-          `这听起来是个比较大的需求（涉及"${trigger}"）。能不能先列出 2-3 个最优先的子能力？`,
-          '有没有一个最小闭环可以先做出来端到端跑通？',
-        ],
+        questions: [applyTemplate(template, { trigger }), followup],
         reason: `large scope detected: ${trigger}; decompose first`,
       },
       confidence: 0.75,

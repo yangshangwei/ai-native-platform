@@ -2,6 +2,10 @@
  * LLM-backed Coordinator triage. Used by the parent agent when the
  * rule-based classifier confidence is below threshold.
  *
+ * (PR2) The system prompt, one-shot timeout, and all five fallback
+ * question strings are now read from the runtime config layer via
+ * `getConfig()`. When no override is present, behaviour is unchanged.
+ *
  * Calls the local `claude` CLI in stream-json mode as a one-shot, parses
  * the final assistant text as a CoordinatorAction. On any failure (CLI
  * unavailable, parse error, empty output) returns a pause_for_human
@@ -15,18 +19,38 @@ import {
   resolveAgentBackendCliCandidates,
   type CoordinatorAction,
 } from '@ainp/shared';
-import { COORDINATOR_SYSTEM_PROMPT, buildUserPrompt } from './prompt';
+import { buildUserPrompt } from './prompt';
 import { claudeCliAvailable } from '../claude-code';
+import { getConfig } from '../../config-client';
 import type { ClassifyInput, ClassifyOutput } from './rules';
 
-const ONESHOT_TIMEOUT_MS = 30_000;
+interface FallbackQuestions {
+  unavailable: string;
+  invocationFailed: string;
+  empty: string;
+  invalidJson: string;
+  unknownAction: string;
+}
+
+async function loadFallbackQuestions(): Promise<FallbackQuestions> {
+  const [unavailable, invocationFailed, empty, invalidJson, unknownAction] = await Promise.all([
+    getConfig('coordinator.fallback.llm_unavailable'),
+    getConfig('coordinator.fallback.llm_invocation_failed'),
+    getConfig('coordinator.fallback.llm_empty'),
+    getConfig('coordinator.fallback.llm_invalid_json'),
+    getConfig('coordinator.fallback.llm_unknown_action'),
+  ]);
+  return { unavailable, invocationFailed, empty, invalidJson, unknownAction };
+}
 
 export async function classifyByLlm(input: ClassifyInput): Promise<ClassifyOutput> {
+  const fallback = await loadFallbackQuestions();
+
   if (!(await claudeCliAvailable())) {
     return {
       decision: {
         action: 'pause_for_human',
-        questions: ['LLM 后端暂不可用，能否补充 1-2 句具体场景？'],
+        questions: [fallback.unavailable],
         reason: 'no LLM backend available',
       },
       confidence: 0.5,
@@ -34,15 +58,18 @@ export async function classifyByLlm(input: ClassifyInput): Promise<ClassifyOutpu
     };
   }
 
+  const systemPrompt = await getConfig('coordinator.system_prompt');
+  const timeoutMs = await getConfig('runner.coordinator.oneshot_timeout_ms');
   const userPrompt = buildUserPrompt(input.userRequest, input.messageHistory);
+
   let raw = '';
   try {
-    raw = await runClaudeOneShot(COORDINATOR_SYSTEM_PROMPT, userPrompt);
+    raw = await runClaudeOneShot(systemPrompt, userPrompt, timeoutMs);
   } catch (err) {
     return {
       decision: {
         action: 'pause_for_human',
-        questions: ['LLM 调用失败，能否补充更多上下文？'],
+        questions: [fallback.invocationFailed],
         reason: `claude CLI invocation failed: ${(err as Error).message}`,
       },
       confidence: 0.5,
@@ -51,13 +78,13 @@ export async function classifyByLlm(input: ClassifyInput): Promise<ClassifyOutpu
   }
 
   return {
-    decision: parseDecision(raw),
+    decision: parseDecision(raw, fallback),
     confidence: 0.7,
     rulesFired: ['llm.classified'],
   };
 }
 
-function runClaudeOneShot(system: string, user: string): Promise<string> {
+function runClaudeOneShot(system: string, user: string, timeoutMs: number): Promise<string> {
   const args = [
     '--print',
     '--output-format',
@@ -71,10 +98,10 @@ function runClaudeOneShot(system: string, user: string): Promise<string> {
     user,
   ];
 
-  return runFirstClaudeCandidate(args);
+  return runFirstClaudeCandidate(args, timeoutMs);
 }
 
-async function runFirstClaudeCandidate(args: string[]): Promise<string> {
+async function runFirstClaudeCandidate(args: string[], timeoutMs: number): Promise<string> {
   const candidates = resolveAgentBackendCliCandidates('claude_code', {
     env: process.env,
     platform: process.platform,
@@ -82,7 +109,7 @@ async function runFirstClaudeCandidate(args: string[]): Promise<string> {
   let lastError: Error | null = null;
   for (const candidate of candidates) {
     try {
-      return await spawnClaudeCandidate(candidate, args);
+      return await spawnClaudeCandidate(candidate, args, timeoutMs);
     } catch (err) {
       lastError = err as Error;
     }
@@ -90,7 +117,7 @@ async function runFirstClaudeCandidate(args: string[]): Promise<string> {
   throw lastError ?? new Error('no Claude Code CLI candidates resolved');
 }
 
-function spawnClaudeCandidate(bin: string, args: string[]): Promise<string> {
+function spawnClaudeCandidate(bin: string, args: string[], timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
     const invocation = buildAgentBackendCliSpawn(bin, args, {
       env: process.env,
@@ -108,7 +135,7 @@ function spawnClaudeCandidate(bin: string, args: string[]): Promise<string> {
     timer = setTimeout(() => {
       child.kill('SIGTERM');
       reject(new Error('claude one-shot timed out'));
-    }, ONESHOT_TIMEOUT_MS);
+    }, timeoutMs);
     child.stdout.on('data', (d: Buffer) => {
       out += d.toString('utf8');
     });
@@ -169,12 +196,12 @@ interface RawDecision {
   questions?: unknown;
 }
 
-function parseDecision(raw: string): CoordinatorAction {
+function parseDecision(raw: string, fallback: FallbackQuestions): CoordinatorAction {
   const finalText = extractFinalAssistantText(raw);
   if (!finalText) {
     return {
       action: 'pause_for_human',
-      questions: ['LLM 返回为空，能换种说法描述吗？'],
+      questions: [fallback.empty],
       reason: 'empty LLM output',
     };
   }
@@ -190,7 +217,7 @@ function parseDecision(raw: string): CoordinatorAction {
   } catch {
     return {
       action: 'pause_for_human',
-      questions: ['LLM 返回不是合法 JSON，能否再描述一下？'],
+      questions: [fallback.invalidJson],
       reason: `failed to parse LLM JSON: ${cleaned.slice(0, 100)}`,
     };
   }
@@ -222,7 +249,7 @@ function parseDecision(raw: string): CoordinatorAction {
 
   return {
     action: 'pause_for_human',
-    questions: ['LLM 返回的 action 不在已知集合，能再描述一次吗？'],
+    questions: [fallback.unknownAction],
     reason: `unknown action: ${String(obj.action)}`,
   };
 }

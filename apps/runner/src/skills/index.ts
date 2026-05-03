@@ -1,4 +1,5 @@
-import type { SkillSpec, ProjectAgentBackendKind } from '@ainp/shared';
+import type { SkillSpec, ProjectAgentBackendKind, ConfigKey } from '@ainp/shared';
+import { getConfig } from '../config-client';
 
 /**
  * Canonical SkillSpecs shipped with the runner. The platform owns these;
@@ -210,8 +211,22 @@ export const SKILLS: SkillSpec[] = [
   },
 ];
 
-export function findSkillForStage(
+/**
+ * Look up the SkillSpec for a stage, with the live `instructions` field
+ * overridden from the runtime config layer when an override is present.
+ *
+ * (PR2) Previously a synchronous lookup against the SKILLS const. Now
+ * async because instructions can be live-edited from the UI; structural
+ * fields (id / inputs / outputs / requiredGates / toolPolicy /
+ * compatibleBackends) remain hard-coded contracts and are NOT exposed
+ * for editing.
+ */
+export async function findSkillForStage(
   stage: SkillSpec['stage'],
-): SkillSpec | undefined {
-  return SKILLS.find((s) => s.stage === stage);
+): Promise<SkillSpec | undefined> {
+  const base = SKILLS.find((s) => s.stage === stage);
+  if (!base) return undefined;
+  const overrideKey = `${base.id}.instructions` as ConfigKey;
+  const instructions = await getConfig(overrideKey);
+  return { ...base, instructions };
 }

@@ -93,7 +93,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
 
     // 3. implementation — writes files into the workspace, captures diff
     {
-      const skill = mustSkill('implementation');
+      const skill = await mustSkill('implementation');
       const { step } = await api.stepStarted({
         workflowRunId: run.id,
         stage: 'implementation',
@@ -356,7 +356,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     }
 
     // c. run the Context Pack skill.
-    const skill = findSkillForStage('context_pack');
+    const skill = await findSkillForStage('context_pack');
     if (!skill) throw new Error('no skill for stage context_pack');
 	      const agent = await invokeSkill(skill, {
 	        workflowRunId: run.id,
@@ -394,7 +394,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     extra: { skipKindOverride?: 'other' } = {},
   ): Promise<void> {
     void extra;
-    const skill = mustSkill(stage);
+    const skill = await mustSkill(stage);
     const { step } = await api.stepStarted({
       workflowRunId: run.id,
       stage,
@@ -503,8 +503,8 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
 	  }
 	}
 
-function mustSkill(stage: 'requirement' | 'design' | 'implementation' | 'review') {
-  const s = findSkillForStage(stage);
+async function mustSkill(stage: 'requirement' | 'design' | 'implementation' | 'review') {
+  const s = await findSkillForStage(stage);
   if (!s) throw new Error(`no skill for stage ${stage}`);
   return s;
 }

@@ -3,6 +3,7 @@ import { api } from '../api-client';
 import { sendHeartbeat } from '../heartbeat';
 import { cmdOrchestrate } from '../orchestrator';
 import { triageRequest } from '../agents/coordinator';
+import { getConfig } from '../config-client';
 
 type PendingRequest = Pick<WorkflowRequest, 'id' | 'projectId' | 'title' | 'branch'>;
 type ClaimedRequest = Pick<WorkflowRequest, 'id' | 'projectId' | 'title' | 'branch'>;
@@ -124,7 +125,7 @@ export async function defaultTriage(req: PendingRequest): Promise<TriageOutcome>
 
 export async function cmdWatch(opts: WatchOpts = {}): Promise<void> {
   const { runnerId } = await sendHeartbeat();
-  const pollMs = opts.pollMs ?? 2_000;
+  const pollMs = opts.pollMs ?? (await getConfig('runner.watch.poll_ms'));
   console.log(`[runner] watch started as ${runnerId} (poll=${pollMs}ms)`);
 
   do {

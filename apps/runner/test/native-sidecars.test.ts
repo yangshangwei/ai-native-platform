@@ -2,14 +2,30 @@ import { mkdtempSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NativeBackend } from '../src/agents/native';
 import { findSkillForStage } from '../src/skills';
+import { invalidateConfigCache } from '../src/config-client';
+
+const realFetch = globalThis.fetch;
+
+beforeAll(() => {
+  invalidateConfigCache();
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ overrides: {} }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    })) as typeof fetch;
+});
+
+afterAll(() => {
+  globalThis.fetch = realFetch;
+});
 
 describe('NativeBackend structured sidecars', () => {
   it('emits requirement markdown plus a versioned JSON sidecar', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ainp-native-sidecar-'));
-    const skill = findSkillForStage('requirement')!;
+    const skill = (await findSkillForStage('requirement'))!;
     const result = await new NativeBackend().run(skill, {
       workflowRunId: 'run_sidecar_req',
       stepRunId: 'step_req',
@@ -33,7 +49,7 @@ describe('NativeBackend structured sidecars', () => {
 
   it('emits design and traceability JSON sidecars', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'ainp-native-sidecar-design-'));
-    const skill = findSkillForStage('design')!;
+    const skill = (await findSkillForStage('design'))!;
     const result = await new NativeBackend().run(skill, {
       workflowRunId: 'run_sidecar_design',
       stepRunId: 'step_design',

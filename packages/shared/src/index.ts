@@ -21,3 +21,4 @@ export * from './utils/agent-backend-preflight';
 
 export * from './config/registry';
 export * from './config/defaults';
+export * from './config/template';
