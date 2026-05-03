@@ -304,6 +304,13 @@ const workflowRequests = {
   pending(): WorkflowRequest[] {
     return this.byStatus('pending');
   },
+  updateStatus(id: string, status: WorkflowRequest['status']): WorkflowRequest | undefined {
+    const current = this.get(id);
+    if (!current) return undefined;
+    const next: WorkflowRequest = { ...current, status, updatedAt: new Date().toISOString() };
+    this.set(id, next);
+    return next;
+  },
   get size(): number {
     return countRows('workflow_requests');
   },

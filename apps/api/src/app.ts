@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { projects } from './routes/projects';
 import { workflowRuns } from './routes/workflow-runs';
 import { workflowRequests } from './routes/workflow-requests';
+import { workflowRequestChat } from './routes/workflow-request-chat';
 import { runnerEvents } from './routes/runner-events';
 import { approvals } from './routes/approvals';
 import { runners } from './routes/runners';
@@ -36,3 +37,8 @@ app.route('/runner/events', runnerEvents);
 app.route('/runner/control', runnerControl);
 app.route('/runners', runners);
 app.route('/approvals', approvals);
+// Coordinator chat thread + decision persistence (Phase B). Mounted at root
+// because its routes already include the full /workflow-requests/:id/messages
+// path so they sit alongside the existing workflow-requests endpoints without
+// route shadowing.
+app.route('/', workflowRequestChat);

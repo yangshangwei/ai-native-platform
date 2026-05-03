@@ -12,6 +12,7 @@ export const workflowRequests = new Hono();
 
 const STATUSES: readonly WorkflowRequestStatus[] = [
   'pending',
+  'awaiting_clarification',
   'claimed',
   'completed',
   'failed',

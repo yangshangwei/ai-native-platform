@@ -40,7 +40,13 @@ export interface WorkflowRun {
   updatedAt: Iso8601;
 }
 
-export type WorkflowRequestStatus = 'pending' | 'claimed' | 'completed' | 'failed' | 'cancelled';
+export type WorkflowRequestStatus =
+  | 'pending'
+  | 'awaiting_clarification'
+  | 'claimed'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
 
 export interface WorkflowRequest {
   id: WorkflowRequestId;
