@@ -362,6 +362,17 @@ export function runDesignGate(params: {
   const hasRisk = /risks?|风险/i.test(text);
   const hasContextGrounding =
     /context evidence|context pack|existing implementation|现有工程|`src\//i.test(text);
+  // cs-feat-design (Phase A.5): explicit DSN id, 现状/变化 two-段式,
+  // 挂载点 count in 3-5, 推进策略 section.
+  const hasDsnId = /^design_id:\s*DSN-\d{3}/m.test(text);
+  const hasCurrentStateSection = /##\s*现状/i.test(text);
+  const hasChangesSection = /##\s*变化/i.test(text);
+  const hasRolloutSection = /##\s*推进策略/i.test(text);
+  const mountSectionMatch = text.match(/##\s*挂载点[\s\S]*?(?=\n##\s|\n*$)/i);
+  const mountBulletCount = mountSectionMatch
+    ? (mountSectionMatch[0].match(/^\s*-\s+\S/gm) ?? []).length
+    : 0;
+  const mountInRange = mountBulletCount >= 3 && mountBulletCount <= 5;
 
   const results: RuleResult[] = [
     {
@@ -398,6 +409,41 @@ export function runDesignGate(params: {
       ok: hasContextGrounding,
       pass: 'design cites existing context evidence',
       fail: 'missing existing-context grounding',
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'design.dsn_id_present',
+      ok: hasDsnId,
+      pass: 'DSN-### design id present in frontmatter',
+      fail: 'missing `design_id: DSN-###` line in frontmatter',
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'design.current_state_section_present',
+      ok: hasCurrentStateSection,
+      pass: '现状 section present',
+      fail: 'missing 现状 (Current State) section',
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'design.changes_section_present',
+      ok: hasChangesSection,
+      pass: '变化 section present',
+      fail: 'missing 变化 (Changes) section',
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'design.mount_points_count_in_range',
+      ok: mountInRange,
+      pass: `${mountBulletCount} mount-point bullets`,
+      fail: `挂载点 should have 3-5 bullets, got ${mountBulletCount}`,
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'design.rollout_section_present',
+      ok: hasRolloutSection,
+      pass: '推进策略 section present',
+      fail: 'missing 推进策略 (Roll-out) section',
       evidenceRefs: evidence,
     }),
   ];

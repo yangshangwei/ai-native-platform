@@ -297,39 +297,50 @@ ${contextPackExcerpt(ctx)}`;
 }
 
 function renderDesign(ctx: AgentTaskContext): string {
-  return `# Design
+  return `---
+doc_type: design
+design_id: DSN-001
+related_req: REQ-001
+status: draft
+---
 
-Run: \`${ctx.workflowRunId}\`
-Title: ${ctx.title}
+# DSN-001: ${ctx.title}
 
-## Requirement Coverage Matrix
-| Requirement | Design item | Acceptance criteria | Verification |
-|---|---|---|---|
-| REQ-001 | D-001: low-risk source-only implementation in \`Calculator.java\` | AC-001, AC-002, AC-003, AC-004 | Compile/Test gates + Diff Scope/Sensitive gates |
+对应需求：REQ-001（AC-001 ~ AC-004）
 
-## Approach
-D-001: Add a non-functional marker comment to \`Calculator.java\` and rebuild. The
-existing JUnit tests must continue to pass. Used as a smoke for the gate +
-build pipeline.
+## 现状
+\`src/main/java/sample/Calculator.java\` 现存类是 \`final\`、构造私有。已有方法 \`add(int,int)\` 与 \`multiply(int,int)\` 都是静态、纯函数式。\`src/test/java/sample/CalculatorTest.java\` 用 JUnit 4 覆盖加法和乘法各一条用例。Maven 配置在 \`pom.xml\`，目标 Java 1.8。
 
-## Files touched
-- \`src/main/java/sample/Calculator.java\`
+## 变化
+**名词层（types/data）**：不引入新类；只在 \`Calculator\` 上加入新静态方法。新方法签名样例：
 
-## Test Strategy
-- AC-001: Run \`mvn -B -DskipTests compile\` and require \`compile_gate=pass\`.
-- AC-002: Run \`mvn -B test\`, parse Surefire XML, and require \`test_gate=pass\`.
-- AC-003: Capture \`git diff --name-only\` and require \`diff_scope_gate=pass\`.
-- AC-004: Record approval rows for requirement, design, acceptance, and knowledge gates.
+\`\`\`
+public static int divide(int a, int b)
+\`\`\`
 
-## Risks
-- None expected; comment-only edit.
+**编排层（control flow）**：从一个用例点（runner orchestrate）经现有 9 阶段流水线推进，本次变化仅落在 implementation + build_test 两阶段，其它阶段产出物保持现状。
 
-## Reversibility
-- Single-line revert.
+## 挂载点
+- \`src/main/java/sample/Calculator.java\` 新增源代码（implementation 阶段产出）
+- \`mvn -B -DskipTests compile\` + \`mvn -B test\` 跑通（build_test 阶段验证）
+- \`acceptance_gate\` 收齐 Requirement → Design → Diff → Test 证据链
+
+## 推进策略
+1. implementation 阶段在 \`src/main/java/sample/Calculator.java\` 增加新内容
+2. build_test 阶段跑 \`mvn compile\` 和 \`mvn test\`，要求 exit=0
+3. review + acceptance 收口
+
+## 验收契约
+- AC-001: \`mvn -B -DskipTests compile\` exit=0 → \`compile_gate=pass\`
+- AC-002: \`mvn -B test\` exit=0 + Surefire 解析 → \`test_gate=pass\`
+- AC-003: \`git diff --name-only\` 仅在允许前缀内 → \`diff_scope_gate=pass\`
+- AC-004: requirement / design / acceptance / knowledge 四个人工 gate 都有 approval 行
+- 风险：低；mitigation owner: design-stage NativeBackend 自身（模板产物，可复现）
+- 测试策略：以上 4 条 AC 全部由真实 mvn 命令 + Surefire XML + DB 审计行验证
 
 ## Context Evidence
-- Existing implementation path: \`src/main/java/sample/Calculator.java\`
-- Context Pack excerpt below grounds the scope in the current project.
+- 现有实现路径：\`src/main/java/sample/Calculator.java\`
+- Context Pack 节选见下方，证明范围限定在当前项目
 
 ${contextPackExcerpt(ctx)}`;
 }
