@@ -384,4 +384,24 @@ export async function getConfig<K extends keyof typeof CONFIG_REGISTRY>(
 - Open implementation questions（不阻塞 Q1，但 Q1 答完要回答）：
   - watch poll 周期里加 config fetch 还是单独 poll？
   - SkillSpec 这种"嵌套对象 + 数组"在 v2 引入时，CONFIG_REGISTRY 的结构能否平滑扩展？还是要换成 JSON Schema？
-  - audit log 是否要持久化到文件 (mirror to `.omc/audit/config-*.jsonl`) 以便事后追溯？
+  - ✅ RESOLVED → audit log 持久化到 `.omc/audit/config-YYYY-MM-DD.jsonl`，SQLite-as-truth + jsonl mirror（fail-open）；详见 PR4 设计 D-PR4.1（`docs/superpowers/specs/2026-05-04-pr4-settings-polish-design.md`）
+
+## PR4 Follow-up Design (2026-05-04)
+
+PR3 已交付 Settings → Runtime Config UI。PR4 是该 UI 的精修 + 兑现 PRD 末尾 audit log 持久化的 open question。完整 design 见：
+
+> `docs/superpowers/specs/2026-05-04-pr4-settings-polish-design.md`
+
+PR4 包含 4 项决策：
+
+- **D-PR4.1** · `config_audit` 镜像到 `.omc/audit/config-YYYY-MM-DD.jsonl`（SQLite-as-truth + 同步 append，fail-open）
+- **D-PR4.2** · 抽 `apps/web/src/settings-projection.ts` 纯函数 → `apps/web/test/settings-projection.test.ts` vitest 覆盖（registry 分组 / override 应用 / dirty 状态 / audit 关联）
+- **D-PR4.3** · CSS adornment-only：追加 `.settings-tabs / .settings-row / .settings-row__meta / .settings-row__dirty / .settings-textarea / .settings-array` 6 个具名 class 到 `apps/web/index.html`，复用现有 token，~0.6KB
+- **D-PR4.4** · trellis-check 补审 PR1/PR2 → 登记为 F1 followup（不在 PR4 实施范围）
+
+### Followups
+
+- **F1** · trellis-check 补审 PR1/PR2
+  - 触发条件：sub-agent 服务恢复
+  - 命令：`/trellis:check pr1` 和 `/trellis:check pr2`
+  - 产出：写入本任务目录新文件 `pr-followup-check.jsonl`（与 in-flight `check.jsonl` 区分）

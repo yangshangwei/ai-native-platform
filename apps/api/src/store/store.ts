@@ -15,6 +15,8 @@ import type {
   RequestMessage,
 } from '@ainp/shared';
 import { isProjectAgentBackendKind } from '@ainp/shared';
+import { appendFileSync, mkdirSync } from 'node:fs';
+import * as path from 'node:path';
 import { db } from './db';
 
 /**
@@ -1289,6 +1291,25 @@ function rowToConfigAudit(r: ConfigAuditRow): ConfigAuditEntry {
   };
 }
 
+/**
+ * Append a config_audit entry to a UTC-day-rotated jsonl mirror under
+ * `.omc/audit/`. SQLite remains the single source of truth — this mirror
+ * exists purely for grep-friendly post-hoc forensics. Failures are
+ * console.warn'd and swallowed (fail-open per PRD §D5 + PR4 §D-PR4.1).
+ */
+function mirrorConfigAuditEntry(entry: ConfigAuditEntry): void {
+  try {
+    const day = entry.changedAt.slice(0, 10); // 'YYYY-MM-DD' from ISO UTC string
+    const dir = path.resolve(process.cwd(), '.omc', 'audit');
+    const file = path.join(dir, `config-${day}.jsonl`);
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(file, `${JSON.stringify(entry)}\n`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn('[config-audit] mirror failed:', msg);
+  }
+}
+
 const configAudit = {
   insert(e: ConfigAuditEntry): void {
     insertRow('config_audit', {
@@ -1299,6 +1320,7 @@ const configAudit = {
       changed_at: e.changedAt,
       changed_by: e.changedBy,
     });
+    mirrorConfigAuditEntry(e);
   },
   listByKey(key: string, limit = 20): ConfigAuditEntry[] {
     return (

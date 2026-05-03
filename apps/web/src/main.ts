@@ -24,6 +24,7 @@ import {
   type Stage,
   type WorkflowRunDto,
 } from './projection';
+import { buildSettingsViewModel } from './settings-projection';
 
 const API_BASE = '/api';
 
@@ -3772,20 +3773,16 @@ function renderConfigSection(): HTMLElement {
     });
   }
 
-  const tabs: Array<{ id: ConfigCategory; label: string; help: string }> = [
-    { id: 'coordinator', label: 'Coordinator', help: '关键词字典 / 阈值 / 系统 prompt / 兜底 questions' },
-    { id: 'skill_prompts', label: 'Skill Prompts', help: '5 个阶段的方法论 prompt' },
-    { id: 'runtime', label: 'Runtime', help: 'timeout / poll / 缓存 TTL' },
-  ];
-
-  const categoryKeys = settingsConfig.registry.keys.filter((k) => {
-    const entry = settingsConfig.registry?.entries[k];
-    return entry?.category === settingsConfig.activeTab;
+  const vm = buildSettingsViewModel({
+    registry: settingsConfig.registry,
+    overrides: settingsConfig.overrides,
+    drafts: settingsConfig.drafts,
+    audits: settingsConfig.audits,
   });
 
   const tabBar = el('div', {
     class: 'config-tabs',
-    children: tabs.map((t) => {
+    children: vm.tabs.map((t) => {
       const btn = button(
         t.label,
         settingsConfig.activeTab === t.id ? 'tab-button active' : 'tab-button',
@@ -3796,12 +3793,17 @@ function renderConfigSection(): HTMLElement {
     }),
   });
 
+  const activeTabVm = vm.tabs.find((t) => t.id === settingsConfig.activeTab);
+  const categoryKeys = activeTabVm ? activeTabVm.rows.map((r) => r.key) : [];
+
   const errorBanner = settingsConfig.error
     ? el('div', { class: 'error-banner', text: settingsConfig.error })
     : null;
 
+  const summarySubtitle = `默认 ⊕ DB override → runner ≤2s 生效 (${vm.summary.totalKeys} keys · ${vm.summary.overrideCount} override · ${vm.summary.dirtyCount} 未保存)`;
+
   const sectionChildren: Array<Node | null> = [
-    panelHeader('运行时配置', '默认 ⊕ DB override → runner ≤2s 生效 (24 keys)'),
+    panelHeader('运行时配置', summarySubtitle),
     errorBanner,
     tabBar,
     el('div', {
