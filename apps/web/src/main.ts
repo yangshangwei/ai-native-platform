@@ -811,6 +811,7 @@ function renderTaskDetailPage(): HTMLElement {
 
   const detail = request.workflowRunId && data.activeDetail?.run.id === request.workflowRunId ? data.activeDetail : null;
   const projection = detail ? buildRunProjection(detail) : null;
+  const coordinatorPanel = !detail ? renderCoordinatorChatPanel(request.id) : null;
   return el('section', {
     class: 'task-detail-grid',
     children: [
@@ -818,6 +819,7 @@ function renderTaskDetailPage(): HTMLElement {
         class: 'workspace-main',
         children: [
           renderTaskHero(request, detail, projection),
+          coordinatorPanel,
           detail ? renderLifecycle(detail, projection!) : renderQueuedLifecycle(request),
           renderCurrentStagePanel(request, detail, projection),
           detail ? renderStageBackendDetails(detail, projection!) : renderQueuedBackendDetails(request),
@@ -2699,6 +2701,7 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
   const fd = new FormData(form);
   const projectId = String(fd.get('projectId') ?? '');
   const project = data.projects.find((p) => p.id === projectId);
+  const title = String(fd.get('title') ?? '').trim();
   try {
     const request = await api<WorkflowRequestDto>('/workflow-requests', {
       method: 'POST',
@@ -2706,10 +2709,23 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
       body: JSON.stringify({
         projectId,
         type: String(fd.get('type') ?? 'feature'),
-        title: String(fd.get('title') ?? '').trim(),
+        title,
         branch: String(fd.get('branch') ?? '').trim() || project?.defaultBranch,
       }),
     });
+    // Phase B: also post the title as the first user-side chat message so the
+    // Coordinator's triage sees a coherent thread (not just a bare request title).
+    if (title.length > 0) {
+      try {
+        await api(`/workflow-requests/${encodeURIComponent(request.id)}/messages`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ role: 'user', content: title }),
+        });
+      } catch {
+        /* non-fatal: thread is best-effort */
+      }
+    }
     form.reset();
     await loadData({ render: false });
     activeTaskRequestId = request.id;
@@ -2719,12 +2735,139 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
     window.location.hash = `task/${encodeURIComponent(request.id)}`;
     runnerAutoStartAttemptedForRequest.add(request.id);
     void ensureRunnerStarted();
+    void loadCoordinatorChat(request.id);
     render();
     console.log('[web] workflow request created', request.id);
   } catch (err) {
     lastError = err instanceof Error ? err.message : String(err);
     render();
   }
+}
+
+// ---- Coordinator conversational intake (Phase B) -------------------------
+
+interface CoordinatorChatMessage {
+  id: string;
+  role: 'user' | 'coordinator';
+  content: string;
+  createdAt: string;
+}
+
+interface CoordinatorChatState {
+  messages: CoordinatorChatMessage[];
+  decision: {
+    decision:
+      | { action: 'proceed'; routeCase: string; runType: string; reason: string }
+      | { action: 'pause_for_human'; questions: string[]; reason: string }
+      | { action: 'abort'; reason: string };
+    confidence: number;
+    source: string;
+  } | null;
+  status: string;
+}
+
+const coordinatorChats = new Map<string, CoordinatorChatState>();
+const coordinatorPolling = new Set<string>();
+
+async function loadCoordinatorChat(requestId: string): Promise<void> {
+  try {
+    const state = await api<CoordinatorChatState>(
+      `/workflow-requests/${encodeURIComponent(requestId)}/messages`,
+    );
+    coordinatorChats.set(requestId, state);
+    if (activeTaskRequestId === requestId) render();
+    // While the request is still pending or awaiting clarification, keep polling
+    // so the UI surfaces the Coordinator's questions as soon as they land.
+    if (
+      (state.status === 'pending' || state.status === 'awaiting_clarification') &&
+      !coordinatorPolling.has(requestId)
+    ) {
+      coordinatorPolling.add(requestId);
+      setTimeout(() => {
+        coordinatorPolling.delete(requestId);
+        void loadCoordinatorChat(requestId);
+      }, 1500);
+    }
+  } catch {
+    /* network or 404; just stop polling */
+  }
+}
+
+async function sendCoordinatorReply(requestId: string, textArea: HTMLTextAreaElement): Promise<void> {
+  const content = textArea.value.trim();
+  if (!content) return;
+  textArea.disabled = true;
+  try {
+    await api(`/workflow-requests/${encodeURIComponent(requestId)}/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ role: 'user', content }),
+    });
+    // Bounce status back to pending so the runner re-triages with the new turn.
+    await api(`/workflow-requests/${encodeURIComponent(requestId)}/status`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'pending' }),
+    });
+    textArea.value = '';
+    await loadCoordinatorChat(requestId);
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+    render();
+  } finally {
+    textArea.disabled = false;
+  }
+}
+
+function renderCoordinatorChatPanel(requestId: string): HTMLElement | null {
+  const state = coordinatorChats.get(requestId);
+  if (!state) {
+    void loadCoordinatorChat(requestId);
+    return null;
+  }
+  if (state.messages.length === 0 && !state.decision) return null;
+
+  const thread = state.messages.map((m) =>
+    el('div', {
+      class: `chat-message chat-message-${m.role}`,
+      children: [
+        el('span', { class: 'chat-role', text: m.role === 'user' ? '你' : 'Coordinator' }),
+        el('p', { text: m.content }),
+      ],
+    }),
+  );
+
+  const replyArea = state.status === 'awaiting_clarification' ? el('textarea', {
+    class: 'chat-input',
+    attrs: { rows: '2', placeholder: '回复 Coordinator…' },
+  }) as HTMLTextAreaElement : null;
+
+  const sendBtn = replyArea ? button('发送', 'button primary small') : null;
+  if (sendBtn && replyArea) sendBtn.onclick = () => void sendCoordinatorReply(requestId, replyArea);
+
+  const decisionLine = state.decision
+    ? el('div', {
+        class: 'chat-decision',
+        text:
+          state.decision.decision.action === 'proceed'
+            ? `已分诊 → ${state.decision.decision.routeCase} (${state.decision.source}, ${state.decision.confidence.toFixed(2)})`
+            : state.decision.decision.action === 'pause_for_human'
+              ? `等待你回复 (${state.decision.decision.questions.length} 个问题)`
+              : `已取消：${state.decision.decision.reason}`,
+      })
+    : null;
+
+  return el('section', {
+    class: 'panel coordinator-chat',
+    children: [
+      panelHeader('Coordinator 对话', '需求开始执行前的分诊'),
+      decisionLine,
+      el('div', { class: 'chat-thread', children: thread }),
+      replyArea && sendBtn
+        ? el('div', { class: 'chat-composer', children: [replyArea, sendBtn] })
+        : null,
+    ],
+  });
 }
 
 function renderReportsPage(): HTMLElement {
