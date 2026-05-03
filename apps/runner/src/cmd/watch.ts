@@ -2,7 +2,7 @@ import type { CoordinatorDecision, WorkflowRequest, WorkflowRunType } from '@ain
 import { api } from '../api-client';
 import { sendHeartbeat } from '../heartbeat';
 import { cmdOrchestrate } from '../orchestrator';
-import { triageRequest } from '../agents/coordinator';
+import { triageRequest, type LlmBackendKind } from '../agents/coordinator';
 import { getConfig } from '../config-client';
 
 type PendingRequest = Pick<WorkflowRequest, 'id' | 'projectId' | 'title' | 'branch'>;
@@ -77,6 +77,11 @@ export async function processNextWorkflowRequest(
  * Default triage implementation used by the watch daemon. Pulls chat history,
  * runs the Coordinator, persists the decision, and (on pause) posts each
  * question to the chat thread + flips request status to awaiting_clarification.
+ *
+ * (PR3, PRD §P0-1) Reads the project's configured `agentBackend` and
+ * forwards it as `preferredBackend` so the Coordinator's LLM fallback runs
+ * the user's chosen CLI first. Failure to resolve the project is non-fatal
+ * — triage proceeds without a preference (legacy claude-first behaviour).
  */
 export async function defaultTriage(req: PendingRequest): Promise<TriageOutcome> {
   const { messages } = await api.listRequestMessages(req.id);
@@ -87,10 +92,21 @@ export async function defaultTriage(req: PendingRequest): Promise<TriageOutcome>
     ? (messages.filter((m) => m.role === 'user').at(-1)?.content ?? req.title)
     : req.title;
 
+  let preferredBackend: LlmBackendKind | undefined;
+  try {
+    const project = await api.getProject(req.projectId);
+    if (project.agentBackend === 'claude_code' || project.agentBackend === 'codex') {
+      preferredBackend = project.agentBackend;
+    }
+  } catch {
+    // Project lookup is best-effort; continue triage without a preference.
+  }
+
   const decision = await triageRequest({
     workflowRequestId: req.id,
     userRequest,
     messageHistory: messages.map((m) => ({ role: m.role, content: m.content })),
+    preferredBackend,
   });
 
   await api.persistCoordinatorDecision(decision);

@@ -3,16 +3,26 @@
  * rule-based classifier confidence is below threshold.
  *
  * (PR2) The system prompt, one-shot timeout, and all five fallback
- * question strings are now read from the runtime config layer via
- * `getConfig()`. When no override is present, behaviour is unchanged.
+ * question strings come from the runtime config layer via `getConfig()`.
+ * Default values are byte-for-byte transcribed in
+ * `packages/shared/src/config/defaults.ts`.
  *
- * Calls the local `claude` CLI in stream-json mode as a one-shot, parses
- * the final assistant text as a CoordinatorAction. On any failure (CLI
- * unavailable, parse error, empty output) returns a pause_for_human
- * decision so the user gets asked instead of getting silently mis-routed.
+ * (PR3, PRD §P0-1) Both Claude Code and Codex CLIs are now first-class
+ * fallback channels. The active project's `agentBackend` selects which
+ * one runs first; the other is automatic fallback when the preferred
+ * CLI is unavailable. When neither CLI is available the call degrades
+ * to `pause_for_human` so the user gets asked instead of silently
+ * mis-routed.
+ *
+ * The CLI invocations are injectable via `classifyByLlm({ ..., deps })`
+ * so unit tests can exercise the selection-strategy logic without
+ * spawning real `claude` or `codex` processes.
  */
 
 import { spawn } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   buildAgentBackendCliSpawn,
   maskSecrets,
@@ -21,8 +31,16 @@ import {
 } from '@ainp/shared';
 import { buildUserPrompt } from './prompt';
 import { claudeCliAvailable } from '../claude-code';
+import { codexCliAvailable } from '../codex';
 import { getConfig } from '../../config-client';
 import type { ClassifyInput, ClassifyOutput } from './rules';
+
+/**
+ * Backends that can answer the Coordinator's one-shot triage prompt.
+ * `native` is excluded — it produces deterministic stub output, not an LLM
+ * judgment, so it has no business in this fallback.
+ */
+export type LlmBackendKind = 'claude_code' | 'codex';
 
 interface FallbackQuestions {
   unavailable: string;
@@ -43,10 +61,65 @@ async function loadFallbackQuestions(): Promise<FallbackQuestions> {
   return { unavailable, invocationFailed, empty, invalidJson, unknownAction };
 }
 
-export async function classifyByLlm(input: ClassifyInput): Promise<ClassifyOutput> {
-  const fallback = await loadFallbackQuestions();
+export interface LlmFallbackDeps {
+  /** Returns true when the requested CLI is available and runnable. */
+  checkAvailability(backend: LlmBackendKind): Promise<boolean>;
+  /** Run one-shot prompt against the chosen CLI; returns the assistant text. */
+  runOneShot(
+    backend: LlmBackendKind,
+    system: string,
+    user: string,
+    timeoutMs: number,
+  ): Promise<string>;
+}
 
-  if (!(await claudeCliAvailable())) {
+export interface ClassifyByLlmOptions {
+  /** Project's agentBackend; when set the matching CLI is tried first. */
+  preferredBackend?: LlmBackendKind;
+  /** Override for tests; defaults to the real spawn-based implementations. */
+  deps?: LlmFallbackDeps;
+}
+
+const DEFAULT_DEPS: LlmFallbackDeps = {
+  checkAvailability: async (backend) => {
+    if (backend === 'codex') return codexCliAvailable();
+    return claudeCliAvailable();
+  },
+  runOneShot: (backend, system, user, timeoutMs) => {
+    if (backend === 'codex') return runCodexOneShot(system, user, timeoutMs);
+    return runClaudeOneShot(system, user, timeoutMs);
+  },
+};
+
+/**
+ * Order in which to try LLM backends, given the project's preference.
+ *
+ *   preferred = 'codex'        → ['codex', 'claude_code']
+ *   preferred = 'claude_code'  → ['claude_code', 'codex']
+ *   preferred = undefined      → ['claude_code', 'codex']  (legacy default)
+ */
+function selectionOrder(preferredBackend: LlmBackendKind | undefined): LlmBackendKind[] {
+  if (preferredBackend === 'codex') return ['codex', 'claude_code'];
+  if (preferredBackend === 'claude_code') return ['claude_code', 'codex'];
+  return ['claude_code', 'codex'];
+}
+
+export async function classifyByLlm(
+  input: ClassifyInput,
+  opts: ClassifyByLlmOptions = {},
+): Promise<ClassifyOutput> {
+  const fallback = await loadFallbackQuestions();
+  const deps = opts.deps ?? DEFAULT_DEPS;
+  const order = selectionOrder(opts.preferredBackend);
+
+  let chosen: LlmBackendKind | null = null;
+  for (const candidate of order) {
+    if (await deps.checkAvailability(candidate)) {
+      chosen = candidate;
+      break;
+    }
+  }
+  if (!chosen) {
     return {
       decision: {
         action: 'pause_for_human',
@@ -64,13 +137,13 @@ export async function classifyByLlm(input: ClassifyInput): Promise<ClassifyOutpu
 
   let raw = '';
   try {
-    raw = await runClaudeOneShot(systemPrompt, userPrompt, timeoutMs);
+    raw = await deps.runOneShot(chosen, systemPrompt, userPrompt, timeoutMs);
   } catch (err) {
     return {
       decision: {
         action: 'pause_for_human',
         questions: [fallback.invocationFailed],
-        reason: `claude CLI invocation failed: ${(err as Error).message}`,
+        reason: `${chosen} CLI invocation failed: ${(err as Error).message}`,
       },
       confidence: 0.5,
       rulesFired: ['llm.invocation_failed'],
@@ -78,11 +151,13 @@ export async function classifyByLlm(input: ClassifyInput): Promise<ClassifyOutpu
   }
 
   return {
-    decision: parseDecision(raw, fallback),
+    decision: parseDecision(raw, chosen, fallback),
     confidence: 0.7,
-    rulesFired: ['llm.classified'],
+    rulesFired: [`llm.classified.${chosen}`],
   };
 }
+
+// ---- Claude Code one-shot (existing behaviour, preserved) -----------------
 
 function runClaudeOneShot(system: string, user: string, timeoutMs: number): Promise<string> {
   const args = [
@@ -97,34 +172,91 @@ function runClaudeOneShot(system: string, user: string, timeoutMs: number): Prom
     system,
     user,
   ];
-
-  return runFirstClaudeCandidate(args, timeoutMs);
+  return runFirstCandidate('claude_code', args, timeoutMs);
 }
 
-async function runFirstClaudeCandidate(args: string[], timeoutMs: number): Promise<string> {
-  const candidates = resolveAgentBackendCliCandidates('claude_code', {
+// ---- Codex one-shot (PR3 new) ---------------------------------------------
+
+/**
+ * Run codex non-interactively. Codex `exec` reads the user prompt from
+ * stdin and writes the final assistant message to a sidecar file when
+ * `--output-last-message` is supplied — that's a cleaner contract than
+ * tailing the JSON event stream because the file always contains the
+ * final assistant text and only the final assistant text. This mirrors
+ * how `apps/runner/src/agents/codex.ts` already invokes the CLI for
+ * production runs (see `--output-last-message` usage there).
+ */
+async function runCodexOneShot(system: string, user: string, timeoutMs: number): Promise<string> {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'ainp-coord-codex-'));
+  const lastMessagePath = join(tmpDir, 'codex-last-message.txt');
+  const args = [
+    'exec',
+    '--json',
+    '--ephemeral',
+    '--skip-git-repo-check',
+    '--sandbox',
+    'read-only',
+    '--output-last-message',
+    lastMessagePath,
+    '-',
+  ];
+  const stdin = `${system}\n\n${user}\n`;
+  try {
+    await runFirstCandidate('codex', args, timeoutMs, { stdin });
+    try {
+      return readFileSync(lastMessagePath, 'utf8');
+    } catch {
+      return '';
+    }
+  } finally {
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* best-effort cleanup */
+    }
+  }
+}
+
+// ---- Spawn helper (shared) ------------------------------------------------
+
+interface SpawnOpts {
+  stdin?: string;
+}
+
+async function runFirstCandidate(
+  backend: LlmBackendKind,
+  args: string[],
+  timeoutMs: number,
+  spawnOpts: SpawnOpts = {},
+): Promise<string> {
+  const candidates = resolveAgentBackendCliCandidates(backend, {
     env: process.env,
     platform: process.platform,
   });
   let lastError: Error | null = null;
   for (const candidate of candidates) {
     try {
-      return await spawnClaudeCandidate(candidate, args, timeoutMs);
+      return await spawnCandidate(candidate, args, timeoutMs, spawnOpts);
     } catch (err) {
       lastError = err as Error;
     }
   }
-  throw lastError ?? new Error('no Claude Code CLI candidates resolved');
+  throw lastError ?? new Error(`no ${backend} CLI candidates resolved`);
 }
 
-function spawnClaudeCandidate(bin: string, args: string[], timeoutMs: number): Promise<string> {
+function spawnCandidate(
+  bin: string,
+  args: string[],
+  timeoutMs: number,
+  spawnOpts: SpawnOpts,
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const invocation = buildAgentBackendCliSpawn(bin, args, {
       env: process.env,
       platform: process.platform,
     });
     const child = spawn(invocation.command, invocation.args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [spawnOpts.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       env: { ...process.env },
       shell: invocation.shell,
       windowsHide: invocation.windowsHide,
@@ -134,12 +266,12 @@ function spawnClaudeCandidate(bin: string, args: string[], timeoutMs: number): P
     let timer: ReturnType<typeof setTimeout> | null = null;
     timer = setTimeout(() => {
       child.kill('SIGTERM');
-      reject(new Error('claude one-shot timed out'));
+      reject(new Error(`${bin} one-shot timed out`));
     }, timeoutMs);
-    child.stdout.on('data', (d: Buffer) => {
+    child.stdout?.on('data', (d: Buffer) => {
       out += d.toString('utf8');
     });
-    child.stderr.on('data', (d: Buffer) => {
+    child.stderr?.on('data', (d: Buffer) => {
       errOut += d.toString('utf8');
     });
     child.on('error', (err) => {
@@ -149,16 +281,28 @@ function spawnClaudeCandidate(bin: string, args: string[], timeoutMs: number): P
     child.on('close', (code) => {
       if (timer) clearTimeout(timer);
       if (code !== 0) {
-        reject(new Error(`claude one-shot exited ${code ?? 'unknown'}: ${compactCliError(errOut || out)}`));
+        reject(
+          new Error(
+            `${bin} one-shot exited ${code ?? 'unknown'}: ${compactCliError(errOut || out)}`,
+          ),
+        );
         return;
       }
       resolve(out);
     });
+    if (spawnOpts.stdin && child.stdin) {
+      child.stdin.write(spawnOpts.stdin);
+      child.stdin.end();
+    }
   });
 }
 
 function compactCliError(value: string): string {
-  const masked = maskSecrets(value).split('\n').map((line) => line.trim()).filter(Boolean).join('\n');
+  const masked = maskSecrets(value)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n');
   if (!masked) return 'no output';
   return masked.length <= 500 ? masked : `${masked.slice(0, 499)}…`;
 }
@@ -196,8 +340,14 @@ interface RawDecision {
   questions?: unknown;
 }
 
-function parseDecision(raw: string, fallback: FallbackQuestions): CoordinatorAction {
-  const finalText = extractFinalAssistantText(raw);
+function parseDecision(
+  raw: string,
+  source: LlmBackendKind,
+  fallback: FallbackQuestions,
+): CoordinatorAction {
+  // Claude returns a stream-json line set; Codex `--output-last-message`
+  // returns the final text directly. Use the right extractor per source.
+  const finalText = source === 'claude_code' ? extractFinalAssistantText(raw) : raw.trim();
   if (!finalText) {
     return {
       action: 'pause_for_human',
@@ -206,10 +356,7 @@ function parseDecision(raw: string, fallback: FallbackQuestions): CoordinatorAct
     };
   }
 
-  const cleaned = finalText
-    .replace(/```(?:json)?\n?/g, '')
-    .replace(/```/g, '')
-    .trim();
+  const cleaned = finalText.replace(/```(?:json)?\n?/g, '').replace(/```/g, '').trim();
 
   let obj: RawDecision;
   try {
