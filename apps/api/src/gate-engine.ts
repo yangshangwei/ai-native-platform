@@ -265,6 +265,17 @@ export function runRequirementGate(params: {
   const hasScope = /goals?|目标|non-goals?|非目标|scope|范围/i.test(text);
   const hasContextEvidence =
     /context pack|context evidence|relevant code|evidence refs|`src\//i.test(text);
+  // cs-req checks (Phase A): pitch frontmatter, four-section structure,
+  // ≥2 specific user stories, and a substantive 边界 section.
+  const hasPitch = /^pitch:\s*\S+/m.test(text);
+  const hasFourSections =
+    /##\s*用户故事/i.test(text) &&
+    /##\s*为什么需要/i.test(text) &&
+    /##\s*怎么解决/i.test(text) &&
+    /##\s*边界/i.test(text);
+  const userStoryBullets = (text.match(/^-\s+作为/gm) ?? []).length;
+  const hasUserStoriesMin2 = userStoryBullets >= 2;
+  const hasBoundary = /##\s*边界[\s\S]{20,}/i.test(text);
 
   const results: RuleResult[] = [
     {
@@ -301,6 +312,34 @@ export function runRequirementGate(params: {
       ok: hasContextEvidence,
       pass: 'context evidence referenced',
       fail: 'missing Context Pack / evidence references',
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'requirement.pitch_present',
+      ok: hasPitch,
+      pass: 'pitch frontmatter present',
+      fail: 'missing `pitch: ...` line in frontmatter',
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'requirement.four_sections_present',
+      ok: hasFourSections,
+      pass: 'four cs-req sections (用户故事/为什么需要/怎么解决/边界) present',
+      fail: 'missing one or more cs-req sections',
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'requirement.user_stories_min_2',
+      ok: hasUserStoriesMin2,
+      pass: `${userStoryBullets} user-story bullets`,
+      fail: `need ≥2 "作为 ..." bullets, got ${userStoryBullets}`,
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'requirement.boundary_present',
+      ok: hasBoundary,
+      pass: '边界 section has substantive content',
+      fail: '边界 section missing or empty',
       evidenceRefs: evidence,
     }),
   ];
