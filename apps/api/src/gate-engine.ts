@@ -356,8 +356,8 @@ export function runDesignGate(params: {
   const evidence = artifactEvidence(params.artifact, 'design markdown');
   const hasArtifact = Boolean(params.artifact);
   const hasCoverage =
-    /requirement coverage|coverage matrix|需求覆盖/i.test(text) ||
-    /\bREQ-\d{3}\b[\s\S]{0,200}\bD-\d{3}\b/i.test(text);
+    /requirement coverage|coverage matrix|需求覆盖|对应需求/i.test(text) ||
+    /\bREQ-\d{3}\b[\s\S]{0,200}\b(?:D-\d{3}|DSN-\d{3}|AC-\d{3})\b/i.test(text);
   const hasTestStrategy = /test strategy|测试策略|\bAC-\d{3}\b[\s\S]{0,200}(test|mvn|测试)/i.test(text);
   const hasRisk = /risks?|风险/i.test(text);
   const hasContextGrounding =
