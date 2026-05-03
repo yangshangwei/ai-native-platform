@@ -2,7 +2,7 @@ import { join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
-import type { AgentTaskKind, ArtifactKind, GateRun, SkillSpec } from '@ainp/shared';
+import type { AgentTaskKind, ArtifactKind, GateRun, SkillSpec, WorkflowRunType } from '@ainp/shared';
 import { api } from './api-client';
 import { runWhitelistedCommand } from './command-runner';
 import { TrustedLocalWorktreeEnvironment } from './worktree';
@@ -25,6 +25,8 @@ export interface OrchestrateOpts {
   title: string;
   sourceBranch?: string;
   workflowRequestId?: string;
+  /** Coordinator-decided run type. Defaults to 'feature' if omitted. */
+  runType?: WorkflowRunType;
   /** Default true — auto-clean worktree at the end. */
   cleanup?: boolean;
   /** Default true for CLI mode; watch mode keeps the daemon alive on failed jobs. */
@@ -57,7 +59,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
   const run = await api.createWorkflowRun({
     projectName: project.name,
     title: opts.title,
-    type: 'feature',
+    type: opts.runType ?? 'feature',
     sourceBranch: opts.sourceBranch ?? project.defaultBranch,
   });
   console.log(`[runner] workflow-run ${run.id} created`);

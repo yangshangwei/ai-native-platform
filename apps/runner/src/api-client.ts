@@ -2,6 +2,7 @@ import type {
   CommandRun,
   WorkflowRun,
   WorkflowRequest,
+  WorkflowRequestStatus,
   WorkflowStage,
   Project,
   GateRun,
@@ -10,6 +11,8 @@ import type {
   AgentStreamEventInput,
   AgentBackendKind,
   AgentTaskKind,
+  CoordinatorDecision,
+  RequestMessage,
 } from '@ainp/shared';
 import { API_BASE } from './config';
 
@@ -278,4 +281,39 @@ export const api = {
   /** Push a single agent stream event so the API can persist + broadcast it. */
   postAgentEvent: (input: AgentStreamEventInput) =>
     request('POST', '/runner/events/agent-stream', input),
+
+  // ---- Coordinator chat thread (Phase B) ----------------------------------
+
+  listRequestMessages: (requestId: string) =>
+    request<{
+      messages: RequestMessage[];
+      decision: CoordinatorDecision | null;
+      status: WorkflowRequestStatus;
+    }>('GET', `/workflow-requests/${encodeURIComponent(requestId)}/messages`),
+
+  postRequestMessage: (params: {
+    requestId: string;
+    role: 'user' | 'coordinator';
+    content: string;
+    coordinatorDecisionId?: string | null;
+  }) =>
+    request<RequestMessage>(
+      'POST',
+      `/workflow-requests/${encodeURIComponent(params.requestId)}/messages`,
+      {
+        role: params.role,
+        content: params.content,
+        coordinatorDecisionId: params.coordinatorDecisionId ?? null,
+      },
+    ),
+
+  setRequestStatus: (params: { requestId: string; status: WorkflowRequestStatus }) =>
+    request<WorkflowRequest>(
+      'PATCH',
+      `/workflow-requests/${encodeURIComponent(params.requestId)}/status`,
+      { status: params.status },
+    ),
+
+  persistCoordinatorDecision: (decision: CoordinatorDecision) =>
+    request<CoordinatorDecision>('POST', '/coordinator-decisions', decision),
 };

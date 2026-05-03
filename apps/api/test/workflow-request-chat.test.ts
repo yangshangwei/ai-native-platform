@@ -30,7 +30,10 @@ async function seedRequest(): Promise<WorkflowRequest> {
     type: 'feature',
     title: 'sample request',
     branch: 'main',
-    status: 'pending',
+    // Use 'completed' so these test seeds don't pollute pending() in other
+    // test files that share the same Bun-test process and DB module instance.
+    // Tests below don't depend on initial status.
+    status: 'completed',
     claimedBy: null,
     workflowRunId: null,
     error: null,
@@ -114,7 +117,7 @@ describe('GET /workflow-requests/:id/messages', () => {
     };
     expect(body.messages.map((m) => m.content)).toEqual(['first', 'second']);
     expect(body.decision).toBeNull();
-    expect(body.status).toBe('pending');
+    expect(body.status).toBe('completed');
   });
 });
 
