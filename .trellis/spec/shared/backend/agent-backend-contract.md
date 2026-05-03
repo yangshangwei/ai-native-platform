@@ -41,9 +41,11 @@
     executable extension is expanded with `.cmd`, `.exe`, `.bat`, then the exact
     value so `AINP_CLAUDE_BIN=C:\Tools\claude` can still find
     `C:\Tools\claude.cmd`.
-  - `.cmd` / `.bat` shims must be invoked through safe spawn argument vectors
-    (for example `cmd.exe` with `['/d', '/s', '/c', shim, ...args]`), not by
-    concatenating a shell command string.
+  - `.cmd` / `.bat` shims must be invoked with `shell: false` through safe
+    spawn argument vectors: executable `cmd.exe` and argv
+    `['/d', '/s', '/c', 'call', shim, ...args]`, equivalent to
+    `cmd.exe /d /s /c call <shim> ...`. Do not omit `call`, and do not
+    concatenate a shell command string.
   - The binary candidate that passed preflight must be passed into the runtime
     backend instance so detection and execution do not diverge.
 

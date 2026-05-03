@@ -55,7 +55,7 @@ describe('agent backend CLI resolution', () => {
     expect(invocation).toEqual({
       bin: 'codex.cmd',
       command: 'C:\\Windows\\System32\\cmd.exe',
-      args: ['/d', '/s', '/c', 'codex.cmd', 'exec', '--json', '-'],
+      args: ['/d', '/s', '/c', 'call', 'codex.cmd', 'exec', '--json', '-'],
       shell: false,
       windowsHide: true,
     });
@@ -78,6 +78,7 @@ describe('agent backend CLI resolution', () => {
         '/d',
         '/s',
         '/c',
+        'call',
         'C:\\Program Files\\Claude\\claude.bat',
         '--add-dir',
         'C:\\Work Trees\\project',

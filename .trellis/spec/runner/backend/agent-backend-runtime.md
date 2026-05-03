@@ -29,8 +29,11 @@
     bare name) so npm/Bun-installed `claude.cmd` / `codex.cmd` and native
     `.exe` installs work.
   - `AINP_CLAUDE_BIN` / `AINP_CODEX_BIN` are resolved through the same candidate
-    expansion; overrides ending in `.cmd` / `.bat` are invoked via `cmd.exe`
-    argument vectors, never a hand-built shell string.
+    expansion; overrides ending in `.cmd` / `.bat` are invoked with
+    `shell: false` via executable `cmd.exe` and argv
+    `['/d', '/s', '/c', 'call', shim, ...args]`, equivalent to
+    `cmd.exe /d /s /c call <shim> ...`. Never omit `call`, and never build a
+    shell command string.
   - `selectAgentBackend()` must pass `preflight.bin` into `new ClaudeCodeBackend`
     / `new CodexBackend`; direct backend construction must also use the same
     resolver so runtime calls do not fall back to hard-coded bare commands.
@@ -44,6 +47,9 @@
 - Preflight not runnable -> throw composed error including `status`, raw error, and remediation hint.
 - Windows shim resolution mismatch (preflight succeeds on `*.cmd` but runtime
   spawns bare `claude` / `codex`) -> forbidden; this is a contract violation.
+- Windows `.cmd` / `.bat` shim invoked without `call`, with `shell: true`, or
+  through a concatenated command string -> forbidden; use the exact argv
+  contract above.
 - Claude Code `auth status` false -> `needs_login`; invalid JSON/failure -> concise not-ready error.
 - Codex `login status` logged out or failed auth -> `needs_login`; unrecognized login-status output -> `not_runnable` with masked, compact diagnostics.
 - CLI stderr line during runtime -> emit `stderr` event and keep consuming unless process exits non-zero.

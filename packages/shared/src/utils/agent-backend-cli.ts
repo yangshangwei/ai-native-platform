@@ -83,7 +83,7 @@ export function buildAgentBackendCliSpawn(
     return {
       bin: normalizedBin,
       command: opts.comSpec ?? opts.env?.ComSpec ?? opts.env?.COMSPEC ?? 'cmd.exe',
-      args: ['/d', '/s', '/c', normalizedBin, ...args],
+      args: ['/d', '/s', '/c', 'call', normalizedBin, ...args],
       shell: false,
       windowsHide: true,
     };
