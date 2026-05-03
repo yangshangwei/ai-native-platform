@@ -256,28 +256,33 @@ function buildTraceabilitySidecar(ctx: AgentTaskContext) {
 }
 
 function renderRequirement(ctx: AgentTaskContext): string {
-  return `# Requirement Draft
+  return `---
+doc_type: requirement
+pitch: ${ctx.title} —— 把这次需求落成可验收、可追溯的一次交付
+status: draft
+REQ-001: ${ctx.workflowRunId}
+---
 
-Run: \`${ctx.workflowRunId}\`
-Title: ${ctx.title}
+# ${ctx.title}
 
-## Requirement IDs
-- REQ-001: Deliver the requested change within the existing Java/Maven sample while preserving the current build and tests.
+## 用户故事
+- 作为提需求的用户，我希望平台按 "${ctx.title}" 落地，而不是把需求扔进黑盒
+- 作为下游验收人，我希望看到结构化产物和证据链，而不是只读 LLM 自述完成
 
-## User Request
-${ctx.title}
+## 为什么需要
+当前 "${ctx.title}" 在该项目中尚未实现或与现状不一致。把它做成一次完整的 9 阶段流水线交付，可以保留每个阶段的 artifact 给后续验收和审计追溯，比起把任务整段丢给 AI 然后等结果，过程的每一步都是可观察的。
 
-## Goals
-- REQ-001 supports the user request: "${ctx.title}".
+## 怎么解决
+平台沿着既有 9 阶段流水线推进这次需求：从 Context Pack 拉取工程背景，经过 design / implementation，最终通过本地真实 mvn compile/test 与 acceptance gate 验收，结果落进 Completion Report 与 Knowledge Candidate。
 
-## Non-goals
-- No public API changes; no dependency upgrades.
-
-## Acceptance criteria
-- AC-001: \`mvn -B -DskipTests compile\` passes inside the worktree.
-- AC-002: \`mvn -B test\` passes inside the worktree and Surefire reports are parsed.
-- AC-003: Diff stays inside the allowed source paths.
-- AC-004: Required gates pass and human approvals are recorded.
+## 边界
+- AC-001 验收标准: \`mvn -B -DskipTests compile\` 在 worktree 内通过
+- AC-002 验收标准: \`mvn -B test\` 在 worktree 内通过且 Surefire 报告被解析
+- AC-003 验收标准: diff 只动允许的源路径
+- AC-004 验收标准: 必需的 gate 全部通过、人工审批均落库
+- goals: 让本次需求可验收可追溯
+- non-goals: 不改公共 API，不升级依赖
+- 前置：runner 在线、JDK/Maven/Git 可用
 
 ## Traceability seed
 | Requirement | Acceptance Criteria | Context Evidence |
