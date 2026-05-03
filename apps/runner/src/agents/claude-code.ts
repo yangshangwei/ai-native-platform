@@ -261,9 +261,23 @@ function buildPrompts(
   const systemPrompt = sysLines.join('\n');
 
   const userLines: string[] = [];
-  userLines.push('USER REQUEST:');
-  userLines.push(ctx.title);
-  userLines.push('');
+  if (args.mode === 'produce_file' && args.targetPath && args.outputName) {
+    userLines.push(
+      `STAGE ROLE: ${skill.stage} (DOCUMENT-ONLY)`,
+      `Your job in this stage is to PRODUCE A MARKDOWN DOCUMENT at ${args.targetPath}.`,
+      'You are NOT implementing the request. You are NOT writing code. You are NOT modifying any existing source file.',
+      `The ONLY file you may write is ${args.targetPath}. Do not create or modify any other file.`,
+      'The user intent below describes what the FINISHED system should do — your task is to capture it as a requirement, not to build it.',
+      '',
+      'USER INTENT:',
+      ctx.title,
+      '',
+    );
+  } else {
+    userLines.push('USER REQUEST:');
+    userLines.push(ctx.title);
+    userLines.push('');
+  }
 
   for (const [name, value] of Object.entries(ctx.inputs)) {
     if (name === 'user_request') continue;
