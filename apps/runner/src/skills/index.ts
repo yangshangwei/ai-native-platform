@@ -227,6 +227,8 @@ export async function findSkillForStage(
   const base = SKILLS.find((s) => s.stage === stage);
   if (!base) return undefined;
   const overrideKey = `${base.id}.instructions` as ConfigKey;
-  const instructions = await getConfig(overrideKey);
+  // All `*.instructions` keys are typed as `string` in the registry, but
+  // RegistryDefault<K> widens to the union; cast to string for the SkillSpec.
+  const instructions = (await getConfig(overrideKey)) as string;
   return { ...base, instructions };
 }

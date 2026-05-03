@@ -3404,11 +3404,429 @@ function renderKnowledgePage(): HTMLElement {
   });
 }
 
+// ---- Runtime Config Layer (PR3 settings page) ----------------------------
+
+interface ConfigEntryDto {
+  type: 'number' | 'string' | 'string_array';
+  default: number | string | readonly string[];
+  description: string;
+  category: 'coordinator' | 'skill_prompts' | 'runtime';
+  min?: number;
+  max?: number;
+  multiline?: boolean;
+  source: string;
+}
+
+interface ConfigOverrideDto {
+  key: string;
+  scope: string;
+  valueJson: string;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
+interface ConfigAuditDto {
+  id: string;
+  key: string;
+  oldValueJson: string | null;
+  newValueJson: string | null;
+  changedAt: string;
+  changedBy: string | null;
+}
+
+type ConfigCategory = 'coordinator' | 'skill_prompts' | 'runtime';
+
+interface SettingsConfigState {
+  activeTab: ConfigCategory;
+  loading: boolean;
+  error: string | null;
+  registry: { keys: string[]; entries: Record<string, ConfigEntryDto> } | null;
+  overrides: Record<string, ConfigOverrideDto>;
+  drafts: Map<string, string>;
+  saving: Set<string>;
+  expandedHistory: Set<string>;
+  audits: Map<string, ConfigAuditDto[]>;
+  loadedOnce: boolean;
+}
+
+const settingsConfig: SettingsConfigState = {
+  activeTab: 'coordinator',
+  loading: false,
+  error: null,
+  registry: null,
+  overrides: {},
+  drafts: new Map(),
+  saving: new Set(),
+  expandedHistory: new Set(),
+  audits: new Map(),
+  loadedOnce: false,
+};
+
+async function loadSettingsConfig(): Promise<void> {
+  if (settingsConfig.loading) return;
+  settingsConfig.loading = true;
+  settingsConfig.error = null;
+  try {
+    const [reg, ov] = await Promise.all([
+      api<{ keys: string[]; entries: Record<string, ConfigEntryDto> }>('/config/registry'),
+      api<{ overrides: Record<string, ConfigOverrideDto> }>('/config/overrides'),
+    ]);
+    settingsConfig.registry = reg;
+    settingsConfig.overrides = ov.overrides ?? {};
+    settingsConfig.loadedOnce = true;
+  } catch (err) {
+    settingsConfig.error = err instanceof Error ? err.message : String(err);
+  } finally {
+    settingsConfig.loading = false;
+    render();
+  }
+}
+
+function setSettingsConfigTab(tab: ConfigCategory): void {
+  settingsConfig.activeTab = tab;
+  render();
+}
+
+function formatConfigValueForEditor(value: unknown, type: ConfigEntryDto['type']): string {
+  if (type === 'string_array') {
+    return Array.isArray(value) ? value.join('\n') : '';
+  }
+  if (type === 'number' || type === 'string') {
+    return value === null || value === undefined ? '' : String(value);
+  }
+  return JSON.stringify(value);
+}
+
+function parseConfigEditorValue(raw: string, type: ConfigEntryDto['type']): unknown {
+  if (type === 'string_array') {
+    return raw
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+  }
+  if (type === 'number') {
+    return Number(raw);
+  }
+  return raw;
+}
+
+function effectiveValueAsEditorString(
+  entry: ConfigEntryDto,
+  override: ConfigOverrideDto | undefined,
+): string {
+  if (override) {
+    try {
+      return formatConfigValueForEditor(JSON.parse(override.valueJson), entry.type);
+    } catch {
+      return override.valueJson;
+    }
+  }
+  return formatConfigValueForEditor(entry.default, entry.type);
+}
+
+function copyConfigDefaultToDraft(key: string): void {
+  if (!settingsConfig.registry) return;
+  const entry = settingsConfig.registry.entries[key];
+  if (!entry) return;
+  settingsConfig.drafts.set(key, formatConfigValueForEditor(entry.default, entry.type));
+  render();
+}
+
+async function saveConfigOverride(key: string): Promise<void> {
+  if (!settingsConfig.registry) return;
+  const entry = settingsConfig.registry.entries[key];
+  if (!entry) return;
+  if (settingsConfig.saving.has(key)) return;
+  const raw = settingsConfig.drafts.get(key);
+  if (raw === undefined) return;
+  const value = parseConfigEditorValue(raw, entry.type);
+  if (entry.type === 'number' && (typeof value !== 'number' || !Number.isFinite(value))) {
+    settingsConfig.error = `${key}: 不是合法数字`;
+    render();
+    return;
+  }
+  settingsConfig.saving.add(key);
+  settingsConfig.error = null;
+  render();
+  try {
+    await api(`/config/overrides/${encodeURIComponent(key)}`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ value, updatedBy: 'web' }),
+    });
+    settingsConfig.drafts.delete(key);
+    settingsConfig.audits.delete(key);
+    await loadSettingsConfig();
+  } catch (err) {
+    settingsConfig.error = err instanceof Error ? err.message : String(err);
+  } finally {
+    settingsConfig.saving.delete(key);
+    render();
+  }
+}
+
+async function resetConfigOverride(key: string): Promise<void> {
+  if (settingsConfig.saving.has(key)) return;
+  settingsConfig.saving.add(key);
+  settingsConfig.error = null;
+  render();
+  try {
+    await api(`/config/overrides/${encodeURIComponent(key)}?actor=web`, {
+      method: 'DELETE',
+    });
+    settingsConfig.drafts.delete(key);
+    settingsConfig.audits.delete(key);
+    await loadSettingsConfig();
+  } catch (err) {
+    settingsConfig.error = err instanceof Error ? err.message : String(err);
+  } finally {
+    settingsConfig.saving.delete(key);
+    render();
+  }
+}
+
+async function toggleConfigHistory(key: string): Promise<void> {
+  if (settingsConfig.expandedHistory.has(key)) {
+    settingsConfig.expandedHistory.delete(key);
+    render();
+    return;
+  }
+  settingsConfig.expandedHistory.add(key);
+  if (!settingsConfig.audits.has(key)) {
+    try {
+      const r = await api<{ items: ConfigAuditDto[] }>(
+        `/config/audit?key=${encodeURIComponent(key)}&limit=20`,
+      );
+      settingsConfig.audits.set(key, r.items ?? []);
+    } catch {
+      settingsConfig.audits.set(key, []);
+    }
+  }
+  render();
+}
+
+function configTruncate(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
+}
+
+function renderConfigEditor(
+  key: string,
+  entry: ConfigEntryDto,
+  value: string,
+): HTMLElement {
+  if (entry.type === 'number') {
+    const input = el('input', {
+      class: 'config-input',
+      attrs: { type: 'number', step: 'any' },
+    }) as unknown as HTMLInputElement;
+    input.value = value;
+    if (entry.min !== undefined) input.min = String(entry.min);
+    if (entry.max !== undefined) input.max = String(entry.max);
+    input.oninput = () => {
+      settingsConfig.drafts.set(key, input.value);
+    };
+    return input;
+  }
+  if (entry.type === 'string' && !entry.multiline) {
+    const input = el('input', {
+      class: 'config-input',
+      attrs: { type: 'text' },
+    }) as unknown as HTMLInputElement;
+    input.value = value;
+    input.oninput = () => {
+      settingsConfig.drafts.set(key, input.value);
+    };
+    return input;
+  }
+  // multiline string OR string_array → autosize textarea
+  const ta = el('textarea', {
+    class: 'config-textarea',
+    attrs: { rows: '4' },
+  }) as unknown as HTMLTextAreaElement;
+  ta.value = value;
+  const autosize = (): void => {
+    ta.style.height = 'auto';
+    ta.style.height = `${Math.min(ta.scrollHeight + 2, 600)}px`;
+  };
+  ta.oninput = () => {
+    settingsConfig.drafts.set(key, ta.value);
+    autosize();
+  };
+  setTimeout(autosize, 0);
+  return ta;
+}
+
+function renderConfigHistoryPanel(key: string): HTMLElement {
+  const audits = settingsConfig.audits.get(key) ?? [];
+  if (audits.length === 0) {
+    return el('div', {
+      class: 'config-history',
+      children: [el('p', { class: 'muted', text: '没有历史记录。' })],
+    });
+  }
+  return el('div', {
+    class: 'config-history',
+    children: audits.map((a) =>
+      el('div', {
+        class: 'config-history-row',
+        children: [
+          el('span', { class: 'config-history-time', text: fmtTime(a.changedAt) }),
+          el('span', { class: 'config-history-actor', text: a.changedBy ?? '—' }),
+          el('span', {
+            class: 'config-history-old',
+            text: `old: ${configTruncate(a.oldValueJson ?? '(none)', 80)}`,
+          }),
+          el('span', {
+            class: 'config-history-new',
+            text: `new: ${a.newValueJson === null ? '(reset)' : configTruncate(a.newValueJson, 80)}`,
+          }),
+        ],
+      }),
+    ),
+  });
+}
+
+function renderConfigRow(key: string): HTMLElement {
+  if (!settingsConfig.registry) return el('div', {});
+  const entry = settingsConfig.registry.entries[key];
+  if (!entry) return el('div', {});
+  const override = settingsConfig.overrides[key];
+  const isOverridden = !!override;
+  const draft = settingsConfig.drafts.get(key);
+  const dirty = draft !== undefined;
+  const saving = settingsConfig.saving.has(key);
+  const editorValue = draft ?? effectiveValueAsEditorString(entry, override);
+  const expandedHistory = settingsConfig.expandedHistory.has(key);
+
+  const editor = renderConfigEditor(key, entry, editorValue);
+
+  const saveBtn = button(saving ? '保存中…' : '保存', 'button primary');
+  saveBtn.disabled = !dirty || saving;
+  saveBtn.onclick = () => void saveConfigOverride(key);
+
+  const resetBtn = button('重置为默认', 'button secondary');
+  resetBtn.disabled = !isOverridden || saving;
+  resetBtn.onclick = () => void resetConfigOverride(key);
+
+  const copyBtn = button('复制默认值', 'button secondary');
+  copyBtn.onclick = () => copyConfigDefaultToDraft(key);
+
+  const historyBtn = button(expandedHistory ? '收起历史' : '历史', 'button secondary');
+  historyBtn.onclick = () => void toggleConfigHistory(key);
+
+  const metaParts: string[] = [entry.type];
+  if (entry.multiline) metaParts.push('multiline');
+  if (entry.min !== undefined) metaParts.push(`min=${entry.min}`);
+  if (entry.max !== undefined) metaParts.push(`max=${entry.max}`);
+
+  const children: Array<Node | null | false | undefined> = [
+    el('header', {
+      class: 'config-row-header',
+      children: [
+        el('strong', { class: 'config-key', text: key }),
+        pill(isOverridden ? 'overridden' : 'default'),
+        el('span', { class: 'config-meta', text: metaParts.join(' · ') }),
+      ],
+    }),
+    el('p', { class: 'muted config-description', text: entry.description }),
+    el('p', { class: 'muted config-source', text: `default 来源: ${entry.source}` }),
+    editor,
+    el('div', {
+      class: 'config-actions',
+      children: [saveBtn, resetBtn, copyBtn, historyBtn],
+    }),
+  ];
+
+  if (expandedHistory) children.push(renderConfigHistoryPanel(key));
+
+  return el('article', {
+    class: `config-row${isOverridden ? ' overridden' : ''}${dirty ? ' dirty' : ''}`,
+    children,
+  });
+}
+
+function renderConfigSection(): HTMLElement {
+  if (!settingsConfig.registry) {
+    if (settingsConfig.loading) {
+      return el('section', {
+        class: 'panel',
+        children: [
+          panelHeader('运行时配置', '加载中…'),
+          el('p', { class: 'muted', text: '正在拉取 /config/registry 与 /config/overrides…' }),
+        ],
+      });
+    }
+    if (settingsConfig.error) {
+      return el('section', {
+        class: 'panel',
+        children: [
+          panelHeader('运行时配置', '加载失败'),
+          el('p', { class: 'error', text: settingsConfig.error }),
+        ],
+      });
+    }
+    return el('section', {
+      class: 'panel',
+      children: [panelHeader('运行时配置', '准备加载…')],
+    });
+  }
+
+  const tabs: Array<{ id: ConfigCategory; label: string; help: string }> = [
+    { id: 'coordinator', label: 'Coordinator', help: '关键词字典 / 阈值 / 系统 prompt / 兜底 questions' },
+    { id: 'skill_prompts', label: 'Skill Prompts', help: '5 个阶段的方法论 prompt' },
+    { id: 'runtime', label: 'Runtime', help: 'timeout / poll / 缓存 TTL' },
+  ];
+
+  const categoryKeys = settingsConfig.registry.keys.filter((k) => {
+    const entry = settingsConfig.registry?.entries[k];
+    return entry?.category === settingsConfig.activeTab;
+  });
+
+  const tabBar = el('div', {
+    class: 'config-tabs',
+    children: tabs.map((t) => {
+      const btn = button(
+        t.label,
+        settingsConfig.activeTab === t.id ? 'tab-button active' : 'tab-button',
+      );
+      btn.title = t.help;
+      btn.onclick = () => setSettingsConfigTab(t.id);
+      return btn;
+    }),
+  });
+
+  const errorBanner = settingsConfig.error
+    ? el('div', { class: 'error-banner', text: settingsConfig.error })
+    : null;
+
+  const sectionChildren: Array<Node | null> = [
+    panelHeader('运行时配置', '默认 ⊕ DB override → runner ≤2s 生效 (24 keys)'),
+    errorBanner,
+    tabBar,
+    el('div', {
+      class: 'config-list',
+      children: categoryKeys.length === 0
+        ? [el('p', { class: 'muted', text: '该分类下暂无配置项。' })]
+        : categoryKeys.map(renderConfigRow),
+    }),
+  ];
+
+  return el('section', {
+    class: 'panel',
+    children: sectionChildren.filter((c): c is Node => Boolean(c)),
+  });
+}
+
 function renderSettingsPage(): HTMLElement {
+  if (!settingsConfig.loadedOnce && !settingsConfig.loading && !settingsConfig.error) {
+    void loadSettingsConfig();
+  }
   const backend = agentBackendLabel();
   const project = selectedProject();
   const backendStatus = agentBackendStatusForProject(project);
-  return el('section', {
+
+  const decisionsAndRunner = el('section', {
     class: 'page-grid two-col',
     children: [
       el('section', {
@@ -3445,6 +3863,11 @@ function renderSettingsPage(): HTMLElement {
         ],
       }),
     ],
+  });
+
+  return el('section', {
+    class: 'stack',
+    children: [decisionsAndRunner, renderConfigSection()],
   });
 }
 
