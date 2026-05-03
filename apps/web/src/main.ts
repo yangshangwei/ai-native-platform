@@ -2796,6 +2796,7 @@ async function loadCoordinatorChat(requestId: string): Promise<void> {
 async function sendCoordinatorReply(requestId: string, textArea: HTMLTextAreaElement): Promise<void> {
   const content = textArea.value.trim();
   if (!content) return;
+  const wasDisabled = textArea.disabled;
   textArea.disabled = true;
   try {
     await api(`/workflow-requests/${encodeURIComponent(requestId)}/messages`, {
@@ -2814,8 +2815,10 @@ async function sendCoordinatorReply(requestId: string, textArea: HTMLTextAreaEle
   } catch (err) {
     lastError = err instanceof Error ? err.message : String(err);
     render();
-  } finally {
-    textArea.disabled = false;
+    // Only restore disabled state if the textarea is still in the DOM
+    if (document.body.contains(textArea)) {
+      textArea.disabled = wasDisabled;
+    }
   }
 }
 
@@ -2839,8 +2842,11 @@ function renderCoordinatorChatPanel(requestId: string): HTMLElement | null {
 
   const replyArea = state.status === 'awaiting_clarification' ? el('textarea', {
     class: 'chat-input',
-    attrs: { rows: '2', placeholder: '回复 Coordinator…' },
+    attrs: { rows: '2', placeholder: '回复 Coordinator…', disabled: 'false' },
   }) as HTMLTextAreaElement : null;
+
+  // Explicitly enable the textarea after creation to override any stale disabled state
+  if (replyArea) replyArea.disabled = false;
 
   const sendBtn = replyArea ? button('发送', 'button primary small') : null;
   if (sendBtn && replyArea) sendBtn.onclick = () => void sendCoordinatorReply(requestId, replyArea);
