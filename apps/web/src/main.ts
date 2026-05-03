@@ -139,7 +139,7 @@ interface WorkflowRequestDto {
   type: 'feature' | 'bugfix' | 'smoke';
   title: string;
   branch: string;
-  status: 'pending' | 'claimed' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'awaiting_clarification' | 'claimed' | 'completed' | 'failed' | 'cancelled';
   claimedBy: string | null;
   workflowRunId: string | null;
   error: string | null;
@@ -304,7 +304,7 @@ function shortId(id: string): string {
 function statusKind(status: string): StatusKind {
   if (['passed', 'pass', 'success', 'approved', 'online', 'completed'].includes(status)) return 'good';
   if (['failed', 'fail', 'rejected', 'offline', 'cancelled'].includes(status)) return 'bad';
-  if (['warn', 'stale', 'awaiting_human'].includes(status)) return 'warn';
+  if (['warn', 'stale', 'awaiting_human', 'awaiting_clarification'].includes(status)) return 'warn';
   if (['running', 'pending', 'claimed'].includes(status)) return 'info';
   return 'muted';
 }
@@ -513,11 +513,18 @@ function render(): void {
   captureDetailsOpenState(root);
   captureViewportScrollPosition();
   captureScrollPositionState(root);
-  clear(root);
-  root.appendChild(renderShell());
-  restoreDetailsOpenState(root);
-  restoreScrollPositionState(root);
-  restoreViewportScrollPosition();
+  captureCoordinatorReplyComposerState(root);
+  isReplacingAppRootForRender = true;
+  try {
+    clear(root);
+    root.appendChild(renderShell());
+    restoreDetailsOpenState(root);
+    restoreScrollPositionState(root);
+    restoreViewportScrollPosition();
+    restoreCoordinatorReplyComposerFocus(root);
+  } finally {
+    isReplacingAppRootForRender = false;
+  }
 }
 
 function captureDetailsOpenState(root: HTMLElement): void {
@@ -811,7 +818,8 @@ function renderTaskDetailPage(): HTMLElement {
 
   const detail = request.workflowRunId && data.activeDetail?.run.id === request.workflowRunId ? data.activeDetail : null;
   const projection = detail ? buildRunProjection(detail) : null;
-  const coordinatorPanel = !detail ? renderCoordinatorChatPanel(request.id) : null;
+  if (detail) clearCoordinatorReplyComposerState(request.id);
+  const coordinatorPanel = !detail ? renderCoordinatorChatPanel(request) : null;
   return el('section', {
     class: 'task-detail-grid',
     children: [
@@ -2768,6 +2776,70 @@ interface CoordinatorChatState {
 
 const coordinatorChats = new Map<string, CoordinatorChatState>();
 const coordinatorPolling = new Set<string>();
+const coordinatorReplyDrafts = new Map<string, string>();
+const COORDINATOR_REPLY_SELECTOR = 'textarea[data-coordinator-reply-request-id]';
+
+let coordinatorReplyFocus: {
+  requestId: string;
+  selectionStart: number;
+  selectionEnd: number;
+  selectionDirection: 'forward' | 'backward' | 'none';
+} | null = null;
+let isReplacingAppRootForRender = false;
+
+function captureCoordinatorReplyComposerState(root: HTMLElement): void {
+  const replyArea = root.querySelector<HTMLTextAreaElement>(COORDINATOR_REPLY_SELECTOR);
+  if (!replyArea) {
+    coordinatorReplyFocus = null;
+    return;
+  }
+  const requestId = replyArea.dataset.coordinatorReplyRequestId;
+  if (!requestId) {
+    coordinatorReplyFocus = null;
+    return;
+  }
+  setCoordinatorReplyDraft(requestId, replyArea.value);
+  if (document.activeElement === replyArea) {
+    coordinatorReplyFocus = {
+      requestId,
+      selectionStart: replyArea.selectionStart,
+      selectionEnd: replyArea.selectionEnd,
+      selectionDirection: normalizeSelectionDirection(replyArea.selectionDirection),
+    };
+  } else if (coordinatorReplyFocus?.requestId === requestId) {
+    coordinatorReplyFocus = null;
+  }
+}
+
+function restoreCoordinatorReplyComposerFocus(root: HTMLElement): void {
+  if (!coordinatorReplyFocus) return;
+  const focus = coordinatorReplyFocus;
+  const replyArea = Array.from(root.querySelectorAll<HTMLTextAreaElement>(COORDINATOR_REPLY_SELECTOR))
+    .find((candidate) => candidate.dataset.coordinatorReplyRequestId === focus.requestId);
+  if (!replyArea) {
+    coordinatorReplyFocus = null;
+    return;
+  }
+  replyArea.focus({ preventScroll: true });
+  const selectionStart = Math.min(focus.selectionStart, replyArea.value.length);
+  const selectionEnd = Math.min(focus.selectionEnd, replyArea.value.length);
+  replyArea.setSelectionRange(selectionStart, selectionEnd, focus.selectionDirection);
+  coordinatorReplyFocus = null;
+}
+
+function setCoordinatorReplyDraft(requestId: string, value: string): void {
+  if (value.length > 0) coordinatorReplyDrafts.set(requestId, value);
+  else coordinatorReplyDrafts.delete(requestId);
+}
+
+function clearCoordinatorReplyComposerState(requestId: string): void {
+  coordinatorReplyDrafts.delete(requestId);
+  if (coordinatorReplyFocus?.requestId === requestId) coordinatorReplyFocus = null;
+}
+
+function normalizeSelectionDirection(direction: string | null): 'forward' | 'backward' | 'none' {
+  return direction === 'forward' || direction === 'backward' ? direction : 'none';
+}
 
 async function loadCoordinatorChat(requestId: string): Promise<void> {
   try {
@@ -2775,6 +2847,7 @@ async function loadCoordinatorChat(requestId: string): Promise<void> {
       `/workflow-requests/${encodeURIComponent(requestId)}/messages`,
     );
     coordinatorChats.set(requestId, state);
+    if (state.status !== 'awaiting_clarification') clearCoordinatorReplyComposerState(requestId);
     if (activeTaskRequestId === requestId) render();
     // While the request is still pending or awaiting clarification, keep polling
     // so the UI surfaces the Coordinator's questions as soon as they land.
@@ -2810,6 +2883,7 @@ async function sendCoordinatorReply(requestId: string, textArea: HTMLTextAreaEle
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ status: 'pending' }),
     });
+    clearCoordinatorReplyComposerState(requestId);
     textArea.value = '';
     await loadCoordinatorChat(requestId);
   } catch (err) {
@@ -2822,12 +2896,15 @@ async function sendCoordinatorReply(requestId: string, textArea: HTMLTextAreaEle
   }
 }
 
-function renderCoordinatorChatPanel(requestId: string): HTMLElement | null {
+function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLElement | null {
+  const requestId = request.id;
   const state = coordinatorChats.get(requestId);
   if (!state) {
     void loadCoordinatorChat(requestId);
     return null;
   }
+  const canReply = request.status === 'awaiting_clarification' && state.status === 'awaiting_clarification';
+  if (!canReply) clearCoordinatorReplyComposerState(requestId);
   if (state.messages.length === 0 && !state.decision) return null;
 
   const thread = state.messages.map((m) =>
@@ -2840,13 +2917,21 @@ function renderCoordinatorChatPanel(requestId: string): HTMLElement | null {
     }),
   );
 
-  const replyArea = state.status === 'awaiting_clarification' ? el('textarea', {
+  const replyArea = canReply ? el('textarea', {
     class: 'chat-input',
-    attrs: { rows: '2', placeholder: '回复 Coordinator…', disabled: 'false' },
+    attrs: { rows: '2', placeholder: '回复 Coordinator…', 'data-coordinator-reply-request-id': requestId },
   }) as HTMLTextAreaElement : null;
 
-  // Explicitly enable the textarea after creation to override any stale disabled state
-  if (replyArea) replyArea.disabled = false;
+  if (replyArea) {
+    replyArea.value = coordinatorReplyDrafts.get(requestId) ?? '';
+    replyArea.oninput = () => setCoordinatorReplyDraft(requestId, replyArea.value);
+    replyArea.onblur = () => {
+      setCoordinatorReplyDraft(requestId, replyArea.value);
+      if (!isReplacingAppRootForRender && coordinatorReplyFocus?.requestId === requestId) {
+        coordinatorReplyFocus = null;
+      }
+    };
+  }
 
   const sendBtn = replyArea ? button('发送', 'button primary small') : null;
   if (sendBtn && replyArea) sendBtn.onclick = () => void sendCoordinatorReply(requestId, replyArea);
