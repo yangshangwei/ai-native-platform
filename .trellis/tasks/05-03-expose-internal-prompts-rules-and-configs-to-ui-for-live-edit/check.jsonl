@@ -1,0 +1,10 @@
+{"file": ".trellis/tasks/05-03-expose-internal-prompts-rules-and-configs-to-ui-for-live-edit/prd.md", "reason": "Source of truth for AC1-AC13 + DoD checklist + 27-key Registry coverage; check sub-agent verifies implementation against this"}
+{"file": ".trellis/spec/guides/index.md", "reason": "Cross-layer + code-reuse guides — verifier checks consistency across runner/api/web/shared"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "Verify CONFIG_REGISTRY type shape, exported names, and shared-package conventions"}
+{"file": ".trellis/spec/shared/frontend/index.md", "reason": "Verify registry consumption pattern in web matches frontend type-safety rules"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "Verify new /config routes follow Hono + SQLite store conventions; migration registered correctly"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "API quality bar: route tests, error handling, validation echo"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "Verify getConfig() + cache + fail-open semantics; verify all hardcoded sites in coordinator/skills are migrated"}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "Runner quality bar: async-safe call sites, no regressions in watch/orchestrator paths"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Verify new #settings route uses existing el() helper, follows main.ts panel rendering style"}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "Web quality bar: bundle-size impact, AC9 LF/textarea fidelity, AC13 deep-link routing"}

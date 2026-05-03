@@ -1,0 +1,7 @@
+{"file": ".trellis/tasks/05-03-expose-internal-prompts-rules-and-configs-to-ui-for-live-edit/prd.md", "reason": "Task PRD with D1-D7 decisions, 27-key Config Registry v1, AC1-AC13, and DoD"}
+{"file": ".trellis/spec/guides/index.md", "reason": "Cross-layer + code-reuse thinking guides — change touches runner/api/web/shared so cross-cutting reasoning matters"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "CONFIG_REGISTRY ships in @ainp/shared and is consumed by all three apps; backend type rules govern its TS shape"}
+{"file": ".trellis/spec/shared/frontend/index.md", "reason": "Web imports the registry for tab rendering + widget dispatch; frontend type rules govern that surface"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "New /config routes (registry/overrides/audit) live in apps/api; SQLite migration + Hono route conventions apply"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "getConfig() + 1.5s cache + stale-while-revalidate live in runner; coordinator/skill spec call sites are migrated to async config reads"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "New #settings route + 3-tab settings UI + textarea/array editor widgets live in apps/web/src/main.ts"}

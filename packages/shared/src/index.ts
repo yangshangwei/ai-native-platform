@@ -15,3 +15,9 @@ export * from './types/request-message';
 export * from './utils/id';
 export * from './utils/whitelist';
 export * from './utils/surefire';
+export * from './utils/redaction';
+export * from './utils/agent-backend-cli';
+export * from './utils/agent-backend-preflight';
+
+export * from './config/registry';
+export * from './config/defaults';

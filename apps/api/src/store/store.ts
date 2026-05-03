@@ -14,6 +14,7 @@ import type {
   CoordinatorDecision,
   RequestMessage,
 } from '@ainp/shared';
+import { isProjectAgentBackendKind } from '@ainp/shared';
 import { db } from './db';
 
 /**
@@ -84,6 +85,7 @@ interface ProjectRow {
   source_credential: string | null;
   status: string | null;
   archived_at: string | null;
+  agent_backend: string | null;
   language: string;
   build_tool: string;
   default_branch: string;
@@ -103,6 +105,7 @@ function rowToProject(r: ProjectRow): Project {
     sourceCredential: r.source_credential ?? null,
     status: (r.status ?? 'active') as Project['status'],
     archivedAt: r.archived_at ?? null,
+    agentBackend: isProjectAgentBackendKind(r.agent_backend) ? r.agent_backend : null,
     language: r.language as Project['language'],
     buildTool: r.build_tool as Project['buildTool'],
     defaultBranch: r.default_branch,
@@ -127,6 +130,7 @@ const projects: MapLike<Project> & {
       source_credential: p.sourceCredential ?? null,
       status: p.status ?? 'active',
       archived_at: p.archivedAt ?? null,
+      agent_backend: p.agentBackend ?? null,
       language: p.language,
       build_tool: p.buildTool,
       default_branch: p.defaultBranch,
@@ -1201,6 +1205,119 @@ const requestMessages = {
   },
 };
 
+// ---- config_overrides + config_audit (PR1: runtime config layer) ----------
+
+export interface ConfigOverride {
+  key: string;
+  scope: string;
+  valueJson: string;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
+interface ConfigOverrideRow {
+  key: string;
+  scope: string;
+  value_json: string;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+function rowToConfigOverride(r: ConfigOverrideRow): ConfigOverride {
+  return {
+    key: r.key,
+    scope: r.scope,
+    valueJson: r.value_json,
+    updatedAt: r.updated_at,
+    updatedBy: r.updated_by,
+  };
+}
+
+const configOverrides = {
+  get(key: string): ConfigOverride | undefined {
+    const r = db.prepare('SELECT * FROM config_overrides WHERE key = ?').get(key) as
+      | ConfigOverrideRow
+      | null;
+    return r ? rowToConfigOverride(r) : undefined;
+  },
+  getAll(): Record<string, ConfigOverride> {
+    const rows = db.prepare('SELECT * FROM config_overrides ORDER BY key ASC').all() as ConfigOverrideRow[];
+    const out: Record<string, ConfigOverride> = {};
+    for (const r of rows) out[r.key] = rowToConfigOverride(r);
+    return out;
+  },
+  set(o: ConfigOverride): void {
+    upsertRow('config_overrides', {
+      key: o.key,
+      scope: o.scope,
+      value_json: o.valueJson,
+      updated_at: o.updatedAt,
+      updated_by: o.updatedBy,
+    });
+  },
+  delete(key: string): void {
+    db.prepare('DELETE FROM config_overrides WHERE key = ?').run(key);
+  },
+};
+
+export interface ConfigAuditEntry {
+  id: string;
+  key: string;
+  oldValueJson: string | null;
+  newValueJson: string | null;
+  changedAt: string;
+  changedBy: string | null;
+}
+
+interface ConfigAuditRow {
+  id: string;
+  key: string;
+  old_value_json: string | null;
+  new_value_json: string | null;
+  changed_at: string;
+  changed_by: string | null;
+}
+
+function rowToConfigAudit(r: ConfigAuditRow): ConfigAuditEntry {
+  return {
+    id: r.id,
+    key: r.key,
+    oldValueJson: r.old_value_json,
+    newValueJson: r.new_value_json,
+    changedAt: r.changed_at,
+    changedBy: r.changed_by,
+  };
+}
+
+const configAudit = {
+  insert(e: ConfigAuditEntry): void {
+    insertRow('config_audit', {
+      id: e.id,
+      key: e.key,
+      old_value_json: e.oldValueJson,
+      new_value_json: e.newValueJson,
+      changed_at: e.changedAt,
+      changed_by: e.changedBy,
+    });
+  },
+  listByKey(key: string, limit = 20): ConfigAuditEntry[] {
+    return (
+      db
+        .prepare(
+          'SELECT * FROM config_audit WHERE key = ? ORDER BY changed_at DESC LIMIT ?',
+        )
+        .all(key, limit) as ConfigAuditRow[]
+    ).map(rowToConfigAudit);
+  },
+  listAll(limit = 20): ConfigAuditEntry[] {
+    return (
+      db
+        .prepare('SELECT * FROM config_audit ORDER BY changed_at DESC LIMIT ?')
+        .all(limit) as ConfigAuditRow[]
+    ).map(rowToConfigAudit);
+  },
+};
+
 // ---- public surface --------------------------------------------------------
 
 export const store = {
@@ -1222,6 +1339,8 @@ export const store = {
   runners,
   coordinatorDecisions,
   requestMessages,
+  configOverrides,
+  configAudit,
   // Back-compat helpers used by older routes:
   projectByName: (name: string) => projects.findByName(name),
   workflowRunsByProject: (projectId: string) => workflowRuns.byProject(projectId),

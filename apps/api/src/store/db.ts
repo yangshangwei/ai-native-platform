@@ -27,6 +27,7 @@ const MIGRATIONS: string[] = [
      source_credential TEXT,
      status TEXT NOT NULL DEFAULT 'active',
      archived_at TEXT,
+     agent_backend TEXT,
      language TEXT NOT NULL,
      build_tool TEXT NOT NULL,
      default_branch TEXT NOT NULL,
@@ -239,6 +240,23 @@ const MIGRATIONS: string[] = [
      created_at TEXT NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_request_messages_request ON workflow_request_messages(workflow_request_id, created_at)`,
+  // PR1 (runtime config layer): scoped overrides + audit log for the in-UI config editor.
+  `CREATE TABLE IF NOT EXISTS config_overrides (
+     key TEXT PRIMARY KEY,
+     scope TEXT NOT NULL DEFAULT 'global',
+     value_json TEXT NOT NULL,
+     updated_at TEXT NOT NULL,
+     updated_by TEXT
+   )`,
+  `CREATE TABLE IF NOT EXISTS config_audit (
+     id TEXT PRIMARY KEY,
+     key TEXT NOT NULL,
+     old_value_json TEXT,
+     new_value_json TEXT,
+     changed_at TEXT NOT NULL,
+     changed_by TEXT
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_config_audit_key ON config_audit(key, changed_at)`,
 ];
 
 
@@ -257,6 +275,9 @@ if (!projectColumns.has('source_url')) {
 }
 if (!projectColumns.has('source_auth_kind')) {
   runSql(`ALTER TABLE projects ADD COLUMN source_auth_kind TEXT NOT NULL DEFAULT 'none'`);
+}
+if (!projectColumns.has('agent_backend')) {
+  runSql(`ALTER TABLE projects ADD COLUMN agent_backend TEXT`);
 }
 if (!projectColumns.has('source_username')) {
   runSql(`ALTER TABLE projects ADD COLUMN source_username TEXT`);
