@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, expect, test } from 'vitest';
@@ -103,12 +103,210 @@ test('registers a local git project with backward-compatible localPath', async (
   expect(await res.json()).toMatchObject({
     name: 'local-sample',
     sourceKind: 'local',
+    agentBackend: null,
     sourceAuthKind: 'none',
     localPath: '/repos/local-sample',
     sourceUrl: null,
     hasSourceCredential: false,
     defaultBranch: 'main',
   });
+});
+
+test('stores project-level real agent backend and rejects unsupported backend values', async () => {
+  const created = await app.request('/projects', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: `backend-project-${Date.now()}`,
+      localPath: '/repos/backend-project',
+      defaultBranch: 'main',
+      agentBackend: 'claude_code',
+    }),
+  });
+  expect(created.status).toBe(201);
+  const project = (await created.json()) as { id: string; agentBackend: string };
+  expect(project.agentBackend).toBe('claude_code');
+
+  const updated = await app.request(`/projects/${project.id}/agent-backend`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ agentBackend: 'codex' }),
+  });
+  expect(updated.status).toBe(200);
+  expect(await updated.json()).toMatchObject({ agentBackend: 'codex' });
+
+  const bad = await app.request(`/projects/${project.id}/agent-backend`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ agentBackend: 'native' }),
+  });
+  expect(bad.status).toBe(400);
+  expect(await bad.json()).toMatchObject({ error: expect.stringContaining('claude_code') });
+});
+
+test('does not expose legacy persisted backend values as user-selectable project backends', async () => {
+  const { store } = await import('../src/store/store');
+  const id = `proj_legacy_backend_${Date.now()}`;
+  store.projects.set(id, {
+    id,
+    name: `legacy-backend-${Date.now()}`,
+    localPath: '/repos/legacy-backend',
+    agentBackend: 'native' as never,
+    language: 'java',
+    buildTool: 'maven',
+    defaultBranch: 'main',
+    registeredAt: new Date().toISOString(),
+  });
+
+  const res = await app.request(`/projects/${id}`);
+
+  expect(res.status).toBe(200);
+  expect(await res.json()).toMatchObject({ id, agentBackend: null });
+});
+
+test('preflights Codex backend through version and login status', async () => {
+  const previous = process.env.AINP_CODEX_BIN;
+  process.env.AINP_CODEX_BIN = fakeCodexBin({ loginStatus: 'logged_in' });
+  try {
+    const res = await app.request('/projects/agent-backend/preflight', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agentBackend: 'codex' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      backend: 'codex',
+      installed: true,
+      runnable: true,
+      authenticated: true,
+      version: 'codex 9.9.9',
+      status: 'connected',
+    });
+  } finally {
+    if (previous === undefined) delete process.env.AINP_CODEX_BIN;
+    else process.env.AINP_CODEX_BIN = previous;
+  }
+});
+
+test('reports Codex logged-out login status as needs_login without secret dumps', async () => {
+  const previous = process.env.AINP_CODEX_BIN;
+  process.env.AINP_CODEX_BIN = fakeCodexBin({ loginStatus: 'logged_out' });
+  try {
+    const res = await app.request('/projects/agent-backend/preflight', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agentBackend: 'codex' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { status: string; error: string; remediationHint: string };
+    expect(body.status).toBe('needs_login');
+    expect(body.error).toContain('not logged in');
+    expect(body.remediationHint).toContain('login');
+    expect(body.error.length).toBeLessThan(700);
+    expect(body.error).not.toContain('sk-test-codex-secret');
+  } finally {
+    if (previous === undefined) delete process.env.AINP_CODEX_BIN;
+    else process.env.AINP_CODEX_BIN = previous;
+  }
+});
+
+test('reports invalid Codex login status output as not_runnable with compact masked output', async () => {
+  const previous = process.env.AINP_CODEX_BIN;
+  process.env.AINP_CODEX_BIN = fakeCodexBin({ loginStatus: 'invalid' });
+  try {
+    const res = await app.request('/projects/agent-backend/preflight', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agentBackend: 'codex' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { status: string; error: string; remediationHint: string };
+    expect(body.status).toBe('not_runnable');
+    expect(body.error).toContain('not recognized');
+    expect(body.error).toContain('sk-[redacted]');
+    expect(body.error.length).toBeLessThan(700);
+    expect(body.remediationHint).toContain('login status');
+    expect(body.error).not.toContain('sk-test-codex-secret');
+  } finally {
+    if (previous === undefined) delete process.env.AINP_CODEX_BIN;
+    else process.env.AINP_CODEX_BIN = previous;
+  }
+});
+
+test('preflights Claude Code backend through version and auth status JSON', async () => {
+  const previous = process.env.AINP_CLAUDE_BIN;
+  process.env.AINP_CLAUDE_BIN = fakeClaudeAuthBin({ loggedIn: true });
+  try {
+    const res = await app.request('/projects/agent-backend/preflight', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agentBackend: 'claude_code' }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      backend: 'claude_code',
+      installed: true,
+      runnable: true,
+      authenticated: true,
+      version: 'claude 2.1.117',
+      status: 'connected',
+    });
+  } finally {
+    if (previous === undefined) delete process.env.AINP_CLAUDE_BIN;
+    else process.env.AINP_CLAUDE_BIN = previous;
+  }
+});
+
+test('reports Claude Code auth status loggedOut as needs_login without prompt dumps', async () => {
+  const previous = process.env.AINP_CLAUDE_BIN;
+  process.env.AINP_CLAUDE_BIN = fakeClaudeAuthBin({ loggedIn: false });
+  try {
+    const res = await app.request('/projects/agent-backend/preflight', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agentBackend: 'claude_code' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { status: string; error: string; remediationHint: string };
+    expect(body.status).toBe('needs_login');
+    expect(body.error).toContain('loggedIn=false');
+    expect(body.remediationHint).toContain('login');
+    expect(body.error.length).toBeLessThan(700);
+    expect(body.error).not.toContain('plugins');
+    expect(body.error).not.toContain('/Users/artisan');
+    expect(body.error).not.toContain('AINP_PREFLIGHT_OK');
+  } finally {
+    if (previous === undefined) delete process.env.AINP_CLAUDE_BIN;
+    else process.env.AINP_CLAUDE_BIN = previous;
+  }
+});
+
+test('reports invalid Claude Code auth status JSON as not_runnable with compact output', async () => {
+  const previous = process.env.AINP_CLAUDE_BIN;
+  process.env.AINP_CLAUDE_BIN = fakeClaudeInvalidAuthStatusBin();
+  try {
+    const res = await app.request('/projects/agent-backend/preflight', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agentBackend: 'claude_code' }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { status: string; error: string; remediationHint: string };
+    expect(body.status).toBe('not_runnable');
+    expect(body.error).toContain('invalid_json');
+    expect(body.error.length).toBeLessThan(700);
+    expect(body.remediationHint).toContain('auth status');
+    expect(body.error).not.toContain('AINP_PREFLIGHT_OK');
+  } finally {
+    if (previous === undefined) delete process.env.AINP_CLAUDE_BIN;
+    else process.env.AINP_CLAUDE_BIN = previous;
+  }
 });
 
 test('stores and refreshes source branch options for a registered project', async () => {
@@ -293,10 +491,65 @@ async function registerLocalProject(name: string): Promise<{ id: string; name: s
   const res = await app.request('/projects', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name, localPath: `/tmp/${name}`, defaultBranch: 'main' }),
+    body: JSON.stringify({ name, localPath: `/tmp/${name}`, defaultBranch: 'main', agentBackend: 'codex' }),
   });
   expect(res.status).toBe(201);
   return (await res.json()) as { id: string; name: string };
+}
+
+function fakeCodexBin(opts: { loginStatus: 'logged_in' | 'logged_out' | 'invalid' }): string {
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-project-route-fake-codex-'));
+  const bin = join(dir, 'codex');
+  const loginLine = opts.loginStatus === 'logged_in'
+    ? 'Logged in using an API key - sk-test-codex-secret'
+    : opts.loginStatus === 'logged_out'
+      ? 'Not logged in'
+      : 'Codex status unknown: sk-test-codex-secret';
+  writeFileSync(bin, [
+    '#!/bin/sh',
+    'if [ "$1" = "--version" ]; then echo "codex 9.9.9"; exit 0; fi',
+    `if [ "$1" = "login" ] && [ "$2" = "status" ]; then printf '%s\\n' '${loginLine}'; exit 0; fi`,
+    'echo "unexpected args: $@" >&2',
+    'exit 2',
+    '',
+  ].join('\n'), 'utf8');
+  chmodSync(bin, 0o755);
+  return bin;
+}
+
+function fakeClaudeAuthBin(opts: { loggedIn: boolean }): string {
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-project-route-fake-claude-'));
+  const bin = join(dir, 'claude');
+  const authPayload = JSON.stringify({
+    loggedIn: opts.loggedIn,
+    authMethod: opts.loggedIn ? 'oauth_token' : null,
+    apiProvider: opts.loggedIn ? 'firstParty' : null,
+  });
+  writeFileSync(bin, [
+    '#!/bin/sh',
+    'if [ "$1" = "--version" ]; then echo "claude 2.1.117"; exit 0; fi',
+    `if [ "$1" = "auth" ] && [ "$2" = "status" ]; then printf '%s\\n' '${authPayload}'; exit 0; fi`,
+    'echo "unexpected args: $@" >&2',
+    'exit 9',
+    '',
+  ].join('\n'), 'utf8');
+  chmodSync(bin, 0o755);
+  return bin;
+}
+
+function fakeClaudeInvalidAuthStatusBin(): string {
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-project-route-fake-claude-invalid-auth-'));
+  const bin = join(dir, 'claude');
+  writeFileSync(bin, [
+    '#!/bin/sh',
+    'if [ "$1" = "--version" ]; then echo "claude 2.1.117"; exit 0; fi',
+    'if [ "$1" = "auth" ] && [ "$2" = "status" ]; then echo "not json"; exit 0; fi',
+    'echo "unexpected args: $@" >&2',
+    'exit 9',
+    '',
+  ].join('\n'), 'utf8');
+  chmodSync(bin, 0o755);
+  return bin;
 }
 
 test('hard deletes a project only when it has no linked workflow history', async () => {

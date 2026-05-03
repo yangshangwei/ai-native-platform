@@ -31,8 +31,8 @@ function usage(): never {
 Usage:
   ainp-runner health
   ainp-runner doctor
-  ainp-runner register --path <path> --name <name>
-  ainp-runner register --url <git-url> --source <github|gitee|git|gitlab> --name <name> [--branch <branch>]
+  ainp-runner register --path <path> --name <name> [--agent-backend <claude_code|codex>]
+  ainp-runner register --url <git-url> --source <github|gitee|git|gitlab> --name <name> [--branch <branch>] [--agent-backend <claude_code|codex>]
   ainp-runner run --project <name> --command "<whitelisted command>" [--title <t>] [--keep-worktree]
   ainp-runner orchestrate --project <name> --title "<task>" [--keep-worktree]
   ainp-runner watch [--once] [--poll-ms <ms>] [--keep-worktree]
@@ -71,9 +71,11 @@ async function main(): Promise<void> {
       const sourceAuthKind = typeof flags.auth === 'string' ? flags.auth : undefined;
       const sourceUsername = typeof flags.username === 'string' ? flags.username : undefined;
       const sourceCredential = typeof flags.token === 'string' ? flags.token : typeof flags.password === 'string' ? flags.password : undefined;
+      const agentBackend = typeof flags['agent-backend'] === 'string' ? flags['agent-backend'] : undefined;
       const name = String(flags.name ?? '');
       if (!name || (!path && !sourceUrl)) usage();
       if (sourceKind && !['local', 'github', 'gitee', 'git', 'gitlab'].includes(sourceKind)) usage();
+      if (agentBackend && !['claude_code', 'codex'].includes(agentBackend)) usage();
       await cmdRegister({
         path,
         name,
@@ -83,6 +85,7 @@ async function main(): Promise<void> {
         sourceAuthKind: sourceAuthKind as Parameters<typeof cmdRegister>[0]['sourceAuthKind'],
         sourceUsername,
         sourceCredential,
+        agentBackend: agentBackend as Parameters<typeof cmdRegister>[0]['agentBackend'],
       });
       return;
     }

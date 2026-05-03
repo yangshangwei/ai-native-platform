@@ -1,0 +1,6 @@
+{"file":".trellis/spec/guides/index.md","reason":"Check cross-layer consistency and reuse concerns across shared/API/runner/web changes."}
+{"file":".trellis/spec/shared/backend/index.md","reason":"Verify shared backend/project type contract changes are consistent."}
+{"file":".trellis/spec/shared/frontend/index.md","reason":"Verify frontend-facing shared contracts stay coherent."}
+{"file":".trellis/spec/api/backend/index.md","reason":"Verify API persistence, validation, routes, and streaming behavior against backend guidelines."}
+{"file":".trellis/spec/runner/backend/index.md","reason":"Verify runner backend selection/preflight/fail-fast/logging behavior."}
+{"file":".trellis/spec/web/frontend/index.md","reason":"Verify UI/UX implementation, state handling, and stream display against frontend guidelines."}

@@ -31,3 +31,4 @@ logs/
 .omx/
 .gstack/
 .claude/worktrees/
+/CodeStable/

@@ -5,7 +5,7 @@ component: requirement-workflow
 status: current
 summary: 用户录入需求前需要准备什么，以及需求录入后如何按 Pipeline 完成交付闭环。
 tags: [workflow, requirement, runner, gate]
-last_reviewed: 2026-05-02
+last_reviewed: 2026-05-03
 ---
 
 # 需求工作流用户指南
@@ -39,7 +39,7 @@ last_reviewed: 2026-05-02
 在“项目接入”页登记本地 Git 仓库，或使用 CLI：
 
 ```bash
-bun run runner -- register --path ./examples/java-maven-sample --name java-sample
+bun run runner -- register --path ./examples/java-maven-sample --name java-sample --agent-backend codex
 ```
 
 项目至少需要提供：
@@ -193,11 +193,11 @@ Requirement → Design → Diff → Test Gate → Review → Approval
 
 当前 Web UI 已按这个流程组织：
 
-- **项目接入**：注册本地仓库，查看 Runner / JDK / Maven / Git 状态。
+- **项目接入**：注册本地仓库，选择项目级 Agent Backend（Claude Code 或 Codex），查看 Runner / JDK / Maven / Git 状态。
 - **新建任务**：创建 Workflow Request，进入 Runner Queue。
 - **工作台**：Lifecycle Board 展示每个阶段是 waiting、active、blocked、done 还是 failed。
 - **Human Checkpoint**：集中处理 Requirement、Design、Sensitive Change、Acceptance、Knowledge 审批。
-- **证据面板**：查看 Gate、Command、Artifact、AgentTask、Audit。
+- **证据面板**：查看 Gate、Command、Artifact、AgentTask、Audit，以及 Claude Code / Codex 的实时流式执行日志。
 - **报告**：查看 Completion Report。
 - **知识库**：处理 Knowledge Candidate。
 
@@ -206,7 +206,8 @@ Requirement → Design → Diff → Test Gate → Review → Approval
 - 当前主流程是本地 Java/Maven 项目优先；其它语言和构建工具还不是完整 MVP 主线。
 - Runner 使用本地 trusted worktree，不提供沙箱级隔离。
 - Workflow 模板、SkillSpec、Hook 目前多数仍是代码内固定配置，还不是完整 UI 化配置系统。
-- `NativeBackend` 是默认可复现基线；`codex` / `claude_code` 后端可选，但需要本机 CLI 可用。
+- Agent Backend 必须是真实本机 CLI：`claude_code`（Claude Code）或 `codex`（Codex）。项目未配置 backend 或 CLI preflight 未通过时，任务不会入队/执行。
+- CLI 兼容：macOS/Linux 默认使用 `claude` / `codex`；Windows 会尝试 `claude.cmd` / `codex.cmd`、`.exe` 等 Node/npm/Bun shim。若 CLI 不在 PATH 上，可用 `AINP_CLAUDE_BIN` / `AINP_CODEX_BIN` 指定；预检和真实执行共用同一解析结果。
 - Tool Policy 当前主要用于提示和审计，不作为强制沙箱策略。
 
 ## 快速路径
@@ -216,7 +217,7 @@ bun install
 bun run dev:api
 bun run dev:web
 bun run runner -- doctor
-bun run runner -- register --path ./examples/java-maven-sample --name java-sample
+bun run runner -- register --path ./examples/java-maven-sample --name java-sample --agent-backend codex
 bun run runner -- watch
 ```
 
@@ -226,4 +227,4 @@ bun run runner -- watch
 http://127.0.0.1:5173/
 ```
 
-进入“新建任务”，填写需求，回到“工作台”观察 Pipeline，并在人工确认点审批。
+进入“项目接入”确认 Claude Code/Codex 连接状态，再进入“新建任务”填写需求，回到“工作台”观察 Pipeline 和实时执行日志，并在人工确认点审批。

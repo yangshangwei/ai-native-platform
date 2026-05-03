@@ -3,8 +3,17 @@ import { spawn } from 'node:child_process';
 import { readdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { newId, nowIso, type Project, type ProjectSourceAuthKind, type ProjectSourceKind } from '@ainp/shared';
+import {
+  isProjectAgentBackendKind,
+  newId,
+  nowIso,
+  type Project,
+  type ProjectAgentBackendKind,
+  type ProjectSourceAuthKind,
+  type ProjectSourceKind,
+} from '@ainp/shared';
 import { store } from '../store/store';
+import { preflightAgentBackend } from '../agent-backend-preflight';
 
 export const projects = new Hono();
 
@@ -18,6 +27,7 @@ interface RegisterProjectBody {
   sourceAuthKind?: string;
   sourceUsername?: string;
   sourceCredential?: string;
+  agentBackend?: string | null;
   language?: Project['language'];
   buildTool?: Project['buildTool'];
   defaultBranch?: string;
@@ -32,6 +42,11 @@ interface DetectSourceBody {
   sourceAuthKind?: string;
   sourceUsername?: string;
   sourceCredential?: string;
+}
+
+interface AgentBackendBody {
+  agentBackend?: string | null;
+  backend?: string | null;
 }
 
 interface PublicProject extends Omit<Project, 'sourceCredential'> {
@@ -93,6 +108,13 @@ projects.post('/detect-source', async (c) => {
   return c.json(result, 200);
 });
 
+projects.post('/agent-backend/preflight', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as AgentBackendBody;
+  const normalized = normalizeAgentBackend(body.agentBackend ?? body.backend ?? null);
+  if ('error' in normalized) return c.json({ error: normalized.error }, 400);
+  return c.json(await preflightAgentBackend(normalized.backend));
+});
+
 projects.post('/', async (c) => {
   const body = (await c.req.json()) as RegisterProjectBody;
   const normalized = normalizeRegisterBody(body);
@@ -111,6 +133,7 @@ projects.post('/', async (c) => {
     sourceAuthKind: normalized.sourceAuthKind,
     sourceUsername: normalized.sourceUsername,
     sourceCredential: normalized.sourceCredential,
+    agentBackend: normalized.agentBackend,
     language: body.language ?? 'java',
     buildTool: body.buildTool ?? 'maven',
     defaultBranch: normalized.defaultBranch,
@@ -174,6 +197,27 @@ projects.get('/:id/branches', async (c) => {
   } satisfies BranchList);
 });
 
+projects.post('/:id/agent-backend/preflight', async (c) => {
+  const project = projectByIdOrName(c.req.param('id'));
+  if (!project) return c.json({ error: 'not found' }, 404);
+  const body = (await c.req.json().catch(() => ({}))) as AgentBackendBody;
+  const normalized = normalizeAgentBackend(body.agentBackend ?? body.backend ?? project.agentBackend ?? null);
+  if ('error' in normalized) return c.json({ error: normalized.error }, 400);
+  return c.json(await preflightAgentBackend(normalized.backend));
+});
+
+projects.put('/:id/agent-backend', async (c) => {
+  const project = projectByIdOrName(c.req.param('id'));
+  if (!project) return c.json({ error: 'not found' }, 404);
+  const body = (await c.req.json()) as AgentBackendBody;
+  const normalized = normalizeAgentBackend(body.agentBackend ?? body.backend ?? null);
+  if ('error' in normalized) return c.json({ error: normalized.error }, 400);
+  if (!normalized.backend) return c.json({ error: 'agentBackend must be Claude Code or Codex' }, 400);
+  const updated: Project = { ...project, agentBackend: normalized.backend };
+  store.projects.set(updated.id, updated);
+  return c.json(publicProject(updated));
+});
+
 projects.put('/:id', async (c) => {
   const id = c.req.param('id');
   const existing = store.projects.get(id) ?? store.projectByName(id);
@@ -195,6 +239,7 @@ projects.put('/:id', async (c) => {
     localPath: body.localPath ?? existing.localPath,
     sourceAuthKind: incomingAuthKind,
     sourceCredential: retainedCredential ?? undefined,
+    agentBackend: body.agentBackend ?? existing.agentBackend ?? null,
     defaultBranch: body.defaultBranch ?? existing.defaultBranch,
   });
   if ('error' in normalized) return c.json({ error: normalized.error }, 400);
@@ -215,6 +260,7 @@ projects.put('/:id', async (c) => {
     sourceAuthKind: normalized.sourceAuthKind,
     sourceUsername: normalized.sourceUsername,
     sourceCredential: shouldKeepCredential ? existingCredential : normalized.sourceCredential,
+    agentBackend: normalized.agentBackend ?? existing.agentBackend ?? null,
     language: body.language ?? existing.language,
     buildTool: body.buildTool ?? existing.buildTool,
     defaultBranch: normalized.defaultBranch,
@@ -310,6 +356,7 @@ function normalizeRegisterBody(body: RegisterProjectBody):
       sourceAuthKind: ProjectSourceAuthKind;
       sourceUsername: string | null;
       sourceCredential: string | null;
+      agentBackend: ProjectAgentBackendKind | null;
       defaultBranch: string;
       sourceBranches: string[];
     }
@@ -321,6 +368,8 @@ function normalizeRegisterBody(body: RegisterProjectBody):
 
   const sourceAuthKind = normalizeAuthKind(sourceKind, body.sourceAuthKind);
   if (!isSourceAuthKind(sourceAuthKind)) return { error: 'sourceAuthKind must be one of none, ssh, token, basic' };
+  const agentBackend = normalizeAgentBackend(body.agentBackend ?? null);
+  if ('error' in agentBackend) return { error: agentBackend.error };
   const defaultBranch = body.defaultBranch?.trim() || 'main';
   const sourceBranches = normalizeSourceBranches(body.sourceBranches ?? body.branches, defaultBranch);
 
@@ -334,6 +383,7 @@ function normalizeRegisterBody(body: RegisterProjectBody):
       sourceAuthKind: 'none',
       sourceUsername: null,
       sourceCredential: null,
+      agentBackend: agentBackend.backend,
       defaultBranch,
       sourceBranches,
     };
@@ -352,9 +402,19 @@ function normalizeRegisterBody(body: RegisterProjectBody):
     sourceAuthKind,
     sourceUsername: body.sourceUsername?.trim() || null,
     sourceCredential: body.sourceCredential?.trim() || null,
+    agentBackend: agentBackend.backend,
     defaultBranch,
     sourceBranches,
   };
+}
+
+function normalizeAgentBackend(value: string | null | undefined):
+  | { backend: ProjectAgentBackendKind | null }
+  | { error: string } {
+  if (value === null || value === undefined || value === '') return { backend: null };
+  const normalized = String(value).trim().toLowerCase();
+  if (isProjectAgentBackendKind(normalized)) return { backend: normalized };
+  return { error: 'agentBackend must be one of claude_code, codex' };
 }
 
 async function detectRegisteredProjectBranches(project: Project): Promise<
@@ -419,6 +479,7 @@ function publicProject(project: Project): PublicProject {
     archivedAt: rest.archivedAt ?? null,
     sourceAuthKind: rest.sourceAuthKind ?? 'none',
     sourceUsername: rest.sourceUsername ?? null,
+    agentBackend: rest.agentBackend ?? null,
     hasSourceCredential: Boolean(sourceCredential),
   };
 }

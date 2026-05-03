@@ -19,7 +19,16 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import type { SkillSpec, AgentStreamEventInput, AgentBackendKind } from '@ainp/shared';
+import {
+  agentBackendCliArgs,
+  buildAgentBackendCliSpawn,
+  buildResolvedAgentBackendCliSpawn,
+  maskSecrets,
+  resolveAgentBackendCliCandidates,
+  type SkillSpec,
+  type AgentStreamEventInput,
+  type AgentBackendKind,
+} from '@ainp/shared';
 import { sh } from '../sh';
 import { api } from '../api-client';
 import { parseStreamLine } from './claude-code-parser';
@@ -139,7 +148,6 @@ export class ClaudeCodeBackend implements AgentBackend {
     ctx: AgentTaskContext,
     skill: SkillSpec,
   ): Promise<{ exitCode: number }> {
-    const bin = this.opts.bin ?? process.env.AINP_CLAUDE_BIN ?? 'claude';
     const allowedTools = computeAllowedTools(skill);
     const disallowedTools = ['WebFetch', 'WebSearch'];
     const args = [
@@ -147,7 +155,6 @@ export class ClaudeCodeBackend implements AgentBackend {
       '--output-format', 'stream-json',
       '--verbose',
       '--include-partial-messages',
-      '--bare',
       '--no-session-persistence',
       '--permission-mode', this.opts.permissionMode ?? 'acceptEdits',
       '--max-budget-usd', String(this.opts.maxBudgetUsd ?? DEFAULT_BUDGET_USD),
@@ -158,6 +165,12 @@ export class ClaudeCodeBackend implements AgentBackend {
       '--append-system-prompt', systemPrompt,
       userPrompt,
     ];
+    const invocation = buildResolvedAgentBackendCliSpawn('claude_code', args, {
+      bin: this.opts.bin,
+      env: process.env,
+      platform: process.platform,
+    });
+    const bin = invocation.bin;
 
     await emitMeta(ctx, 'started', {
       bin,
@@ -167,10 +180,12 @@ export class ClaudeCodeBackend implements AgentBackend {
       disallowedTools,
     });
 
-    const child = spawn(bin, args, {
+    const child = spawn(invocation.command, invocation.args, {
       cwd: ctx.workspacePath,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env },
+      shell: invocation.shell,
+      windowsHide: invocation.windowsHide,
     });
 
     const timeoutMs = this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -187,8 +202,9 @@ export class ClaudeCodeBackend implements AgentBackend {
     });
 
     const stderrDone = consumeLines(child.stderr, async (line) => {
-      process.stderr.write(`[claude:stderr] ${line}\n`);
-      await emit(ctx, { type: 'stderr', payload: { line }, text: line });
+      const safeLine = maskSecrets(line);
+      process.stderr.write(`[claude:stderr] ${safeLine}\n`);
+      await emit(ctx, { type: 'stderr', payload: { line: safeLine }, text: safeLine });
     });
 
     const exitCode: number = await new Promise((resolve) => {
@@ -349,7 +365,7 @@ async function emit(
     });
   } catch (err) {
     // API push failure must not stop streaming. The local console still gets it.
-    process.stderr.write(`[claude-code] postAgentEvent failed: ${(err as Error).message}\n`);
+    process.stderr.write(`[claude-code] postAgentEvent failed: ${maskSecrets((err as Error).message)}\n`);
   }
 }
 
@@ -365,12 +381,31 @@ async function emitMeta(
 
 // ---- availability check --------------------------------------------------
 
-/** Returns true when `claude --version` exits 0 within ~3s. Used by the orchestrator
- *  to decide whether to construct ClaudeCodeBackend or fall back to NativeBackend. */
+/** Returns true when `claude --version` exits 0 within ~3s. */
 export async function claudeCliAvailable(bin?: string): Promise<boolean> {
-  const cmd = bin ?? process.env.AINP_CLAUDE_BIN ?? 'claude';
+  const candidates = resolveAgentBackendCliCandidates('claude_code', {
+    bin,
+    env: process.env,
+    platform: process.platform,
+  });
+
+  for (const candidate of candidates) {
+    if (await exitsZero(candidate, agentBackendCliArgs('claude_code', 'version'))) return true;
+  }
+  return false;
+}
+
+function exitsZero(bin: string, args: string[]): Promise<boolean> {
   return new Promise((resolve) => {
-    const child = spawn(cmd, ['--version'], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const invocation = buildAgentBackendCliSpawn(bin, args, {
+      env: process.env,
+      platform: process.platform,
+    });
+    const child = spawn(invocation.command, invocation.args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: invocation.shell,
+      windowsHide: invocation.windowsHide,
+    });
     const timer = setTimeout(() => {
       child.kill('SIGKILL');
       resolve(false);

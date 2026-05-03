@@ -7,9 +7,8 @@ import type { SkillSpec } from '@ainp/shared';
 /**
  * AgentBackend interface — runtime contract.
  *
- * MVP ships only `NativeBackend` which produces deterministic, run-metadata-
- * derived markdown so the lifecycle can be exercised end-to-end without an
- * LLM. The same interface accepts a Codex or Claude Code backend later.
+ * Production orchestration uses Claude Code or Codex. `NativeBackend` remains
+ * only as a deterministic fixture for legacy parser/sidecar tests.
  */
 export interface AgentTaskContext {
   workflowRunId: string;

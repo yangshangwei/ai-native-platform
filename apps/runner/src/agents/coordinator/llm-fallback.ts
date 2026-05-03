@@ -9,7 +9,12 @@
  */
 
 import { spawn } from 'node:child_process';
-import type { CoordinatorAction } from '@ainp/shared';
+import {
+  buildAgentBackendCliSpawn,
+  maskSecrets,
+  resolveAgentBackendCliCandidates,
+  type CoordinatorAction,
+} from '@ainp/shared';
 import { COORDINATOR_SYSTEM_PROMPT, buildUserPrompt } from './prompt';
 import { claudeCliAvailable } from '../claude-code';
 import type { ClassifyInput, ClassifyOutput } from './rules';
@@ -53,14 +58,12 @@ export async function classifyByLlm(input: ClassifyInput): Promise<ClassifyOutpu
 }
 
 function runClaudeOneShot(system: string, user: string): Promise<string> {
-  const bin = process.env.AINP_CLAUDE_BIN ?? 'claude';
   const args = [
     '--print',
     '--output-format',
     'stream-json',
     '--verbose',
     '--no-session-persistence',
-    '--bare',
     '--permission-mode',
     'default',
     '--append-system-prompt',
@@ -68,9 +71,39 @@ function runClaudeOneShot(system: string, user: string): Promise<string> {
     user,
   ];
 
+  return runFirstClaudeCandidate(args);
+}
+
+async function runFirstClaudeCandidate(args: string[]): Promise<string> {
+  const candidates = resolveAgentBackendCliCandidates('claude_code', {
+    env: process.env,
+    platform: process.platform,
+  });
+  let lastError: Error | null = null;
+  for (const candidate of candidates) {
+    try {
+      return await spawnClaudeCandidate(candidate, args);
+    } catch (err) {
+      lastError = err as Error;
+    }
+  }
+  throw lastError ?? new Error('no Claude Code CLI candidates resolved');
+}
+
+function spawnClaudeCandidate(bin: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const invocation = buildAgentBackendCliSpawn(bin, args, {
+      env: process.env,
+      platform: process.platform,
+    });
+    const child = spawn(invocation.command, invocation.args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env },
+      shell: invocation.shell,
+      windowsHide: invocation.windowsHide,
+    });
     let out = '';
+    let errOut = '';
     let timer: ReturnType<typeof setTimeout> | null = null;
     timer = setTimeout(() => {
       child.kill('SIGTERM');
@@ -79,15 +112,28 @@ function runClaudeOneShot(system: string, user: string): Promise<string> {
     child.stdout.on('data', (d: Buffer) => {
       out += d.toString('utf8');
     });
+    child.stderr.on('data', (d: Buffer) => {
+      errOut += d.toString('utf8');
+    });
     child.on('error', (err) => {
       if (timer) clearTimeout(timer);
       reject(err);
     });
-    child.on('close', () => {
+    child.on('close', (code) => {
       if (timer) clearTimeout(timer);
+      if (code !== 0) {
+        reject(new Error(`claude one-shot exited ${code ?? 'unknown'}: ${compactCliError(errOut || out)}`));
+        return;
+      }
       resolve(out);
     });
   });
+}
+
+function compactCliError(value: string): string {
+  const masked = maskSecrets(value).split('\n').map((line) => line.trim()).filter(Boolean).join('\n');
+  if (!masked) return 'no output';
+  return masked.length <= 500 ? masked : `${masked.slice(0, 499)}…`;
 }
 
 interface AssistantContentBlock {

@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { existsSync } from 'node:fs';
-import type { ProjectSourceAuthKind, ProjectSourceKind } from '@ainp/shared';
+import type { ProjectAgentBackendKind, ProjectSourceAuthKind, ProjectSourceKind } from '@ainp/shared';
 import { api } from '../api-client';
 import { sh } from '../sh';
 
@@ -13,6 +13,7 @@ export async function cmdRegister(opts: {
   sourceAuthKind?: ProjectSourceAuthKind;
   sourceUsername?: string;
   sourceCredential?: string;
+  agentBackend?: ProjectAgentBackendKind;
 }): Promise<void> {
   const sourceKind = opts.sourceKind ?? (opts.sourceUrl ? 'git' : 'local');
 
@@ -31,6 +32,7 @@ export async function cmdRegister(opts: {
       name: opts.name,
       localPath,
       sourceKind,
+      agentBackend: opts.agentBackend,
       defaultBranch: opts.defaultBranch,
     });
     console.log(`[runner] registered project ${project.name} (${project.id}) [local] -> ${project.localPath}`);
@@ -45,6 +47,7 @@ export async function cmdRegister(opts: {
     sourceAuthKind: opts.sourceAuthKind,
     sourceUsername: opts.sourceUsername,
     sourceCredential: opts.sourceCredential,
+    agentBackend: opts.agentBackend,
     defaultBranch: opts.defaultBranch,
   });
   console.log(`[runner] registered project ${project.name} (${project.id}) [${sourceKind}] -> ${project.sourceUrl}`);

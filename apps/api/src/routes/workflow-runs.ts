@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import type { AgentStreamEvent, WorkflowRunType } from '@ainp/shared';
+import type { AgentStreamEvent, Project, WorkflowRunType } from '@ainp/shared';
 import { store } from '../store/store';
 import {
   createWorkflowRun,
@@ -40,16 +40,26 @@ workflowRuns.post('/', async (c) => {
     return c.json({ error: `project ${projectId} not registered` }, 404);
   }
   if ((project.status ?? 'active') === 'archived') return c.json({ error: 'project is archived' }, 400);
+  const runType = body.type ?? 'smoke';
+  const backendError = runType === 'smoke' ? null : projectAgentBackendError(project);
+  if (backendError) return c.json({ error: backendError, needsAgentBackendSetup: true }, 400);
   if (!body.title) return c.json({ error: 'title required' }, 400);
 
   const run = createWorkflowRun({
     projectId,
-    type: body.type ?? 'smoke',
+    type: runType,
     title: body.title,
     sourceBranch: body.sourceBranch?.trim() || project.defaultBranch,
   });
   return c.json(run, 201);
 });
+
+function projectAgentBackendError(project: Project): string | null {
+  if (!project.agentBackend) {
+    return 'Agent Backend is not configured for this project. Choose Claude Code or Codex before creating a workflow run.';
+  }
+  return null;
+}
 
 workflowRuns.get('/:id', (c) => {
   const id = c.req.param('id');
@@ -194,18 +204,7 @@ workflowRuns.get('/:id/agent-stream', (c) => {
       });
     };
 
-    // Send a `ready` ping so the client knows the connection is live before
-    // any history events arrive.
-    await stream.writeSSE({ event: 'ready', data: JSON.stringify({ sinceSeq }) });
-
     let lastSeq = Number.isFinite(sinceSeq) ? sinceSeq : -1;
-    const history = store.agentEvents.byWorkflow(id, lastSeq);
-    for (const ev of history) {
-      await writeEvent(ev);
-      lastSeq = ev.sequence;
-      if (aborted) return;
-    }
-
     const queue: AgentStreamEvent[] = [];
     let resolveNext: (() => void) | null = null;
     const unsubscribe = subscribe(id, (ev) => {
@@ -219,6 +218,18 @@ workflowRuns.get('/:id/agent-stream', (c) => {
     });
 
     try {
+      // Subscribe before replaying history so events inserted between the
+      // history query and live-tail setup cannot disappear during reconnects.
+      await stream.writeSSE({ event: 'ready', data: JSON.stringify({ sinceSeq }) });
+
+      const history = store.agentEvents.byWorkflow(id, lastSeq);
+      for (const ev of history) {
+        if (ev.sequence <= lastSeq) continue;
+        await writeEvent(ev);
+        lastSeq = ev.sequence;
+        if (aborted) return;
+      }
+
       while (!aborted) {
         if (queue.length === 0) {
           await new Promise<void>((res) => {
@@ -240,6 +251,7 @@ workflowRuns.get('/:id/agent-stream', (c) => {
         }
         while (queue.length > 0 && !aborted) {
           const ev = queue.shift()!;
+          if (ev.sequence <= lastSeq) continue;
           await writeEvent(ev);
           lastSeq = ev.sequence;
         }

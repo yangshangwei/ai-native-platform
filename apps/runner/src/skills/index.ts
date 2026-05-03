@@ -1,15 +1,14 @@
-import type { SkillSpec, AgentBackendKind } from '@ainp/shared';
+import type { SkillSpec, ProjectAgentBackendKind } from '@ainp/shared';
 
 /**
  * Canonical SkillSpecs shipped with the runner. The platform owns these;
  * AgentBackends only consume them.
  *
- * MVP keeps prompts terse — `NativeBackend` will template the prompt with
- * run-time inputs and produce deterministic markdown. When a real LLM is
- * plugged in, the same SkillSpec drives the prompt and gate selection.
+ * Prompts stay backend-agnostic: Claude Code and Codex adapters consume the
+ * same SkillSpec, while tests may still exercise legacy fixtures directly.
  */
 
-const ALL: AgentBackendKind[] = ['native', 'codex', 'claude_code'];
+const ALL: ProjectAgentBackendKind[] = ['claude_code', 'codex'];
 
 export const SKILLS: SkillSpec[] = [
   {

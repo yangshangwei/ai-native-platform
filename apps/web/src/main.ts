@@ -29,6 +29,8 @@ const API_BASE = '/api';
 
 type Page = 'workbench' | 'task' | 'projects' | 'new-task' | 'reports' | 'knowledge' | 'settings';
 type StatusKind = 'good' | 'warn' | 'bad' | 'info' | 'muted';
+type ProjectAgentBackendKind = 'claude_code' | 'codex';
+type AgentBackendKind = ProjectAgentBackendKind | 'native';
 
 interface ProjectDto {
   id: string;
@@ -39,6 +41,7 @@ interface ProjectDto {
   sourceAuthKind?: ProjectSourceAuthKind;
   sourceUsername?: string | null;
   hasSourceCredential?: boolean;
+  agentBackend?: ProjectAgentBackendKind | null;
   status?: 'active' | 'archived';
   archivedAt?: string | null;
   language: string;
@@ -101,6 +104,7 @@ interface LocalDirectoryPickerState {
 interface ProjectSourceFormState {
   editingProjectId: string | null;
   sourceKind: ProjectSourceKind;
+  agentBackend: ProjectAgentBackendKind | '';
   name: string;
   sourceValue: string;
   sourceAuthKind: ProjectSourceAuthKind;
@@ -109,6 +113,20 @@ interface ProjectSourceFormState {
   defaultBranch: string;
   detectResult: SourceDetectResult | null;
   detecting: boolean;
+}
+
+interface AgentBackendPreflightDto {
+  backend: ProjectAgentBackendKind | null;
+  label: string;
+  bin: string | null;
+  installed: boolean;
+  runnable: boolean;
+  authenticated: boolean | null;
+  version: string | null;
+  status: 'not_configured' | 'connected' | 'missing_cli' | 'needs_login' | 'not_runnable';
+  error: string | null;
+  remediationHint: string;
+  checkedAt: string;
 }
 
 
@@ -216,6 +234,8 @@ const approvalInFlight = new Set<string>();
 const approvalLastSubmittedAt = new Map<string, number>();
 const projectActionInFlight = new Set<string>();
 const projectBranchRefreshInFlight = new Set<string>();
+const agentBackendPreflight = new Map<string, AgentBackendPreflightDto>();
+const agentBackendPreflightInFlight = new Set<string>();
 const runnerAutoStartAttemptedForRequest = new Set<string>();
 
 
@@ -229,6 +249,7 @@ const localDirectoryPicker: LocalDirectoryPickerState = {
 const projectSourceForm: ProjectSourceFormState = {
   editingProjectId: null,
   sourceKind: 'github',
+  agentBackend: '',
   name: '',
   sourceValue: '',
   sourceAuthKind: 'none',
@@ -372,9 +393,58 @@ function activeTaskRequest(): WorkflowRequestDto | null {
   return data.requests.find((request) => request.id === activeTaskRequestId) ?? null;
 }
 
-function agentBackendLabel(): string {
+function agentBackendDisplayName(kind: AgentBackendKind | null | undefined): string {
+  if (kind === 'claude_code') return 'Claude Code';
+  if (kind === 'codex') return 'Codex';
+  return 'Legacy test backend';
+}
+
+function selectedProjectBackend(): ProjectAgentBackendKind | null {
+  return selectedProject()?.agentBackend ?? null;
+}
+
+function activeRunAgentBackend(): AgentBackendKind | null {
   const tasks = data.activeDetail?.agentTasks ?? [];
-  return tasks.at(-1)?.backend ?? 'native / codex / claude_code';
+  const backend = tasks.at(-1)?.backend;
+  if (backend === 'claude_code' || backend === 'codex' || backend === 'native') return backend;
+  return null;
+}
+
+function agentBackendLabel(): string {
+  const runBackend = activeRunAgentBackend();
+  if (runBackend) return agentBackendDisplayName(runBackend);
+  const projectBackend = selectedProjectBackend();
+  return projectBackend ? agentBackendDisplayName(projectBackend) : '未配置';
+}
+
+function agentBackendStatusForProject(project: ProjectDto | null): { label: string; kind: StatusKind } {
+  if (!project?.agentBackend) return { label: 'Needs setup', kind: 'warn' };
+  const check = preflightForProjectBackend(project);
+  if (!check) return { label: 'Not checked', kind: 'muted' };
+  if (check.runnable) return { label: 'Connected', kind: 'good' };
+  if (check.status === 'needs_login') return { label: 'Needs login', kind: 'warn' };
+  if (check.status === 'missing_cli') return { label: 'CLI missing', kind: 'bad' };
+  return { label: 'Check failed', kind: 'bad' };
+}
+
+function agentBackendContextLabel(project: ProjectDto | null): { value: string; kind: StatusKind } {
+  const backend = agentBackendLabel();
+  const status = agentBackendStatusForProject(project);
+  return {
+    value: backend === '未配置' ? 'Needs setup' : `${backend} · ${status.label}`,
+    kind: status.kind,
+  };
+}
+
+function agentBackendLabelForProject(project: ProjectDto | null): string {
+  if (!project) return '未选择项目';
+  return project.agentBackend ? agentBackendDisplayName(project.agentBackend) : '未配置';
+}
+
+function preflightForProjectBackend(project: ProjectDto | null): AgentBackendPreflightDto | null {
+  if (!project?.agentBackend) return null;
+  const check = agentBackendPreflight.get(project.id);
+  return check?.backend === project.agentBackend ? check : null;
 }
 
 function buildEnvLabel(): string {
@@ -709,6 +779,7 @@ function renderTopbar(): HTMLElement {
   const project = selectedProject();
   const run = data.activeDetail?.run ?? data.runs[0] ?? null;
   const runner = latestRunner();
+  const backend = agentBackendContextLabel(project);
   return el('header', {
     class: 'topbar',
     children: [
@@ -725,7 +796,7 @@ function renderTopbar(): HTMLElement {
           contextItem('Project', project?.name ?? '未接入', 'info'),
           contextItem('Branch', run?.branch ?? project?.defaultBranch ?? '—', 'muted'),
           contextItem('Runner', runner ? runner.status : 'offline', runner ? statusKind(runner.status) : 'bad'),
-          contextItem('Agent Backend', agentBackendLabel(), 'muted'),
+          contextItem('Agent Backend', backend.value, backend.kind),
           contextItem('Build Env', buildEnvLabel(), runner ? 'good' : 'warn'),
         ],
       }),
@@ -1142,6 +1213,8 @@ function renderTaskNextActionPanel(
   projection: ReturnType<typeof buildRunProjection> | null,
 ): HTMLElement {
   if (!detail || !projection) {
+    const project = data.projects.find((p) => p.id === request.projectId) ?? null;
+    if (!project?.agentBackend) return renderAgentBackendSetupPrompt(project, '选择 Claude Code 或 Codex 后，Runner 才会认领真实执行任务。');
     const start = button(runnerStartInFlight ? '正在启动…' : '启动本地 Runner', 'button primary');
     start.disabled = runnerStartInFlight || Boolean(data.runnerControl?.running);
     start.onclick = () => void ensureRunnerStarted();
@@ -1195,6 +1268,20 @@ function renderRunnerControlPanel(): HTMLElement {
             ],
           })
         : el('p', { class: 'muted compact', text: '暂无 Runner 控制日志。' }),
+    ],
+  });
+}
+
+function renderAgentBackendSetupPrompt(project: ProjectDto | null, message: string): HTMLElement {
+  const configure = actionLink('去配置 Agent Backend', 'projects');
+  return el('section', {
+    class: 'panel side-panel checkpoint',
+    children: [
+      panelHeader('需要配置 Agent Backend', '项目级真实后端未就绪'),
+      el('p', { text: message }),
+      project ? field('Project', project.name) : null,
+      field('可选 Backend', 'Claude Code / Codex'),
+      el('div', { class: 'button-row', children: [configure] }),
     ],
   });
 }
@@ -1955,7 +2042,7 @@ function renderAgentTaskRow(task: RunDetail['agentTasks'][number], detail: RunDe
   return el('div', {
     class: 'evidence-row',
     children: [
-      el('span', { children: [pill(result?.status ?? 'pending'), document.createTextNode(` ${task.backend}:${task.kind}`)] }),
+      el('span', { children: [pill(result?.status ?? 'pending'), document.createTextNode(` ${agentBackendDisplayName(task.backend as AgentBackendKind)}:${task.kind}`)] }),
       result?.summary ? el('small', { text: result.summary }) : null,
     ],
   });
@@ -1972,14 +2059,38 @@ function renderAuditRow(item: RunDetail['audit'][number]): HTMLElement {
 }
 
 function renderAgentStreamPanel(): HTMLElement {
+  const runId = data.activeDetail?.run.id ?? null;
+  const events = runId ? agentStreamEventsForRun(runId) : [];
+  const backend = activeRunAgentBackend() ?? (events.at(-1)?.agentKind as AgentBackendKind | undefined) ?? selectedProjectBackend();
+  const title = backend === 'claude_code'
+    ? 'Claude Code 执行日志'
+    : backend === 'codex'
+      ? 'Codex 执行日志'
+      : 'Agent 执行日志';
+  const status = streamStatusForRun(runId);
   return el('section', {
     class: 'panel side-panel stream-panel',
     children: [
       el('div', {
         class: 'stream-head',
-        children: [el('h2', { text: 'Agent Stream' }), el('span', { id: 'stream-status', class: 'stream-status idle', text: 'disconnected' })],
+        children: [
+          el('div', {
+            children: [
+              el('h2', { text: title }),
+              el('small', { class: 'muted', text: runId ? `Run ${shortId(runId)} · ${events.length} events` : '等待 workflow run' }),
+            ],
+          }),
+          el('span', { id: 'stream-status', class: `stream-status ${status.cls}`, text: status.label }),
+        ],
       }),
-      el('div', { id: 'stream-body', class: 'stream-body' }),
+      el('div', {
+        id: 'stream-body',
+        class: 'stream-body',
+        attrs: runId ? { 'data-scroll-key': `agent-stream:${runId}` } : undefined,
+        children: events.length
+          ? events.flatMap(renderStreamEventLines)
+          : [el('div', { class: 'stream-line meta', text: '等待真实 Agent Backend 输出；连接后会先回放历史事件，再继续 live tail。' })],
+      }),
     ],
   });
 }
@@ -2002,6 +2113,7 @@ function renderProjectsPage(): HTMLElement {
     panelHeader(isEditing ? '编辑项目' : '接入项目', isEditing ? '右侧已接入项目点击后会回填到这里；修改连接信息后建议重新检测，再保存。' : '先选择接入类型；按类型填写连接信息；点击检测拉取项目名、分支和元数据；确认无误后接入。'),
     el('label', { class: 'input-block', children: [el('span', { text: 'Source Type' }), sourceSelect] }),
     ...renderProjectSourceDynamicFields(),
+    renderAgentBackendConfigFields(),
     renderProjectDetectPanel(),
   );
 
@@ -2083,6 +2195,50 @@ function renderProjectSourceDynamicFields(): HTMLElement[] {
     renderBranchControl(),
   );
   return fields;
+}
+
+function renderAgentBackendConfigFields(): HTMLElement {
+  const select = el('select', { attrs: { name: 'agentBackend' } });
+  select.appendChild(el('option', { text: '请选择真实 Agent Backend', attrs: { value: '' } }));
+  for (const option of agentBackendOptions()) {
+    const node = el('option', { text: option.label, attrs: { value: option.value } });
+    if (option.value === projectSourceForm.agentBackend) node.setAttribute('selected', 'selected');
+    select.appendChild(node);
+  }
+  select.onchange = () => {
+    projectSourceForm.agentBackend = select.value as ProjectSourceFormState['agentBackend'];
+    render();
+  };
+
+  const key = projectSourceForm.editingProjectId ?? formAgentBackendKey(projectSourceForm.agentBackend || null);
+  const selectedBackend = projectSourceForm.agentBackend || null;
+  const check = key ? agentBackendPreflight.get(key) : null;
+  const matchingCheck = check?.backend === selectedBackend ? check : null;
+  const checking = key ? agentBackendPreflightInFlight.has(key) : false;
+  const test = el('button', {
+    class: 'button secondary small',
+    text: checking ? '检测中…' : '检测连接',
+    attrs: { type: 'button' },
+  });
+  test.disabled = !projectSourceForm.agentBackend || checking;
+  test.onclick = () => void checkAgentBackend(projectSourceForm.agentBackend || null, projectSourceForm.editingProjectId ?? null);
+
+  return el('article', {
+    class: 'runner-card',
+    children: [
+      panelHeader('Agent Backend', '项目级默认；只能选择 Claude Code 或 Codex。保存后后续任务默认沿用。'),
+      el('label', { class: 'input-block', children: [el('span', { text: 'Backend' }), select] }),
+      matchingCheck ? renderAgentBackendCheck(matchingCheck) : el('p', { class: 'muted compact', text: '保存或创建任务前会要求完成连接检测；检测会调用真实 CLI。' }),
+      el('div', { class: 'button-row', children: [test] }),
+    ],
+  });
+}
+
+function agentBackendOptions(): Array<{ value: ProjectAgentBackendKind; label: string }> {
+  return [
+    { value: 'claude_code', label: 'Claude Code' },
+    { value: 'codex', label: 'Codex' },
+  ];
 }
 
 function renderLocalPathPickerField(): HTMLElement {
@@ -2336,9 +2492,71 @@ function renderToolchainReadiness(): HTMLElement {
   });
 }
 
+function renderAgentBackendCheck(check: AgentBackendPreflightDto): HTMLElement {
+  return el('div', {
+    class: 'agent-backend-check',
+    children: [
+      field('状态', pill(preflightStatusLabel(check), preflightStatusKind(check))),
+      field('CLI', check.bin ?? '—'),
+      field('Version', check.version ?? '—'),
+      check.error ? field('错误', check.error) : null,
+      field('修复提示', check.remediationHint),
+    ],
+  });
+}
+
+function preflightStatusLabel(check: AgentBackendPreflightDto): string {
+  if (check.runnable) return 'Connected';
+  if (check.status === 'not_configured') return 'Needs setup';
+  if (check.status === 'missing_cli') return 'CLI missing';
+  if (check.status === 'needs_login') return 'Needs login';
+  return 'Check failed';
+}
+
+function preflightStatusKind(check: AgentBackendPreflightDto): StatusKind {
+  if (check.runnable) return 'good';
+  if (check.status === 'not_configured' || check.status === 'needs_login') return 'warn';
+  return 'bad';
+}
+
+function formAgentBackendKey(backend: ProjectAgentBackendKind | null): string | null {
+  return backend ? `backend:${backend}` : null;
+}
+
+async function checkAgentBackend(
+  backend: ProjectAgentBackendKind | null,
+  projectId: string | null,
+): Promise<AgentBackendPreflightDto | null> {
+  const key = projectId ?? formAgentBackendKey(backend);
+  if (!backend || !key || agentBackendPreflightInFlight.has(key)) return null;
+  agentBackendPreflightInFlight.add(key);
+  render();
+  try {
+    const path = projectId
+      ? `/projects/${encodeURIComponent(projectId)}/agent-backend/preflight`
+      : '/projects/agent-backend/preflight';
+    const result = await api<AgentBackendPreflightDto>(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agentBackend: backend }),
+    });
+    agentBackendPreflight.set(key, result);
+    if (projectId) agentBackendPreflight.set(formAgentBackendKey(backend)!, result);
+    lastError = result.runnable ? null : `${result.label}: ${result.remediationHint}${result.error ? ` (${result.error})` : ''}`;
+    return result;
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
+    return null;
+  } finally {
+    agentBackendPreflightInFlight.delete(key);
+    render();
+  }
+}
+
 function renderProjectCard(project: ProjectDto): HTMLElement {
   const sourceKind = project.sourceKind ?? 'local';
   const status = project.status ?? 'active';
+  const backendStatus = agentBackendStatusForProject(project);
   const action = el('button', {
     class: status === 'archived' ? 'button ghost small' : 'button danger small',
     text: projectActionInFlight.has(project.id) ? '处理中…' : status === 'archived' ? '已归档' : '删除 / 归档',
@@ -2349,6 +2567,16 @@ function renderProjectCard(project: ProjectDto): HTMLElement {
     event.stopPropagation();
     void deleteOrArchiveProject(project);
   };
+  const backendCheck = el('button', {
+    class: 'button secondary small',
+    text: agentBackendPreflightInFlight.has(project.id) ? '检测中…' : '检测 Backend',
+    attrs: { type: 'button' },
+  });
+  backendCheck.disabled = !project.agentBackend || agentBackendPreflightInFlight.has(project.id);
+  backendCheck.onclick = (event) => {
+    event.stopPropagation();
+    void checkAgentBackend(project.agentBackend ?? null, project.id);
+  };
 
   const card = el('article', {
     class: `project-card ${projectSourceForm.editingProjectId === project.id ? 'active' : ''}`,
@@ -2357,6 +2585,11 @@ function renderProjectCard(project: ProjectDto): HTMLElement {
       el('div', { children: [el('strong', { text: project.name }), pill(status === 'archived' ? '已归档' : sourceKindLabel(sourceKind), status === 'archived' ? 'warn' : 'muted')] }),
       field('Branch', project.defaultBranch),
       field('Auth', authSummary(project)),
+      field('Agent Backend', el('span', { children: [
+        document.createTextNode(project.agentBackend ? agentBackendDisplayName(project.agentBackend) : '未配置'),
+        document.createTextNode(' · '),
+        pill(backendStatus.label, backendStatus.kind),
+      ] })),
       status === 'archived' ? field('Archived', fmtTime(project.archivedAt)) : null,
       field(sourceKind === 'local' ? 'Path' : 'Repo URL', el('code', { text: project.sourceUrl ?? project.localPath })),
       sourceKind !== 'local' ? field('Managed', el('code', { text: project.localPath })) : null,
@@ -2364,7 +2597,7 @@ function renderProjectCard(project: ProjectDto): HTMLElement {
         class: 'project-card-footer',
         children: [
           el('small', { class: 'muted', text: '点击编辑此项目' }),
-          el('div', { class: 'project-card-actions', children: [action] }),
+          el('div', { class: 'project-card-actions', children: [backendCheck, action] }),
         ],
       }),
     ],
@@ -2459,6 +2692,8 @@ async function ensureRunnerStarted(): Promise<void> {
 function maybeAutoStartRunnerForActiveTask(): void {
   const request = activeTaskRequest();
   if (!request || !['pending', 'claimed'].includes(request.status)) return;
+  const project = data.projects.find((p) => p.id === request.projectId);
+  if (!project?.agentBackend) return;
   if (data.runnerControl?.running || runnerStartInFlight) return;
   if (runnerAutoStartAttemptedForRequest.has(request.id)) return;
   runnerAutoStartAttemptedForRequest.add(request.id);
@@ -2469,6 +2704,7 @@ function editProject(project: ProjectDto): void {
   const sourceKind = project.sourceKind ?? 'local';
   projectSourceForm.editingProjectId = project.id;
   projectSourceForm.sourceKind = sourceKind;
+  projectSourceForm.agentBackend = project.agentBackend ?? '';
   projectSourceForm.name = project.name;
   projectSourceForm.sourceValue = sourceKind === 'local' ? project.localPath : project.sourceUrl ?? '';
   projectSourceForm.sourceAuthKind = project.sourceAuthKind ?? 'none';
@@ -2519,6 +2755,7 @@ function controlledInput(
 function projectSourcePayload(): Record<string, unknown> {
   const base: Record<string, unknown> = {
     sourceKind: projectSourceForm.sourceKind,
+    agentBackend: projectSourceForm.agentBackend || null,
     defaultBranch: projectSourceForm.defaultBranch || 'main',
   };
   const detectedBranches = projectSourceForm.detectResult?.ok ? projectSourceForm.detectResult.branches : [];
@@ -2567,6 +2804,11 @@ async function submitProject(event: SubmitEvent): Promise<void> {
     render();
     return;
   }
+  if (!projectSourceForm.agentBackend) {
+    lastError = '请选择 Claude Code 或 Codex 作为项目级 Agent Backend。';
+    render();
+    return;
+  }
   try {
     const editingProjectId = projectSourceForm.editingProjectId;
     await api<ProjectDto>(editingProjectId ? `/projects/${encodeURIComponent(editingProjectId)}` : '/projects', {
@@ -2588,6 +2830,7 @@ async function submitProject(event: SubmitEvent): Promise<void> {
 function resetProjectSourceForm(): void {
   projectSourceForm.editingProjectId = null;
   projectSourceForm.sourceKind = 'github';
+  projectSourceForm.agentBackend = '';
   projectSourceForm.name = '';
   projectSourceForm.sourceValue = '';
   projectSourceForm.sourceAuthKind = 'none';
@@ -2615,7 +2858,23 @@ function renderNewTaskPage(): HTMLElement {
   const branchSelect = el('select', { attrs: { name: 'branch' } });
   const branchRefresh = el('button', { class: 'button secondary small', text: '刷新分支', attrs: { type: 'button' } });
   const branchHint = el('p', { class: 'muted compact' });
+  const backendHint = el('p', { class: 'muted compact' });
+  const backendCheck = el('button', { class: 'button secondary small', text: '检测 Backend', attrs: { type: 'button' } });
+  const backendLabel = el('strong', { text: '未选择项目' });
   const clickedBranchProjects = new Set<string>();
+  const submit = el('button', { class: 'button primary', text: 'Create Workflow Request', attrs: { type: 'submit' } });
+  const updateBackendHint = (projectId: string) => {
+    const project = projects.find((p) => p.id === projectId) ?? projects[0] ?? null;
+    const status = agentBackendStatusForProject(project);
+    backendHint.textContent = project?.agentBackend
+      ? `Agent Backend: ${agentBackendDisplayName(project.agentBackend)} · ${status.label}。创建任务前会自动做一次真实 CLI preflight；失败时不会入队。`
+      : '这个项目还没有配置 Agent Backend。请到“项目接入”编辑项目，选择 Claude Code 或 Codex。';
+    backendLabel.textContent = agentBackendLabelForProject(project);
+    backendHint.className = `muted compact ${status.kind}`;
+    backendCheck.disabled = !project?.agentBackend || agentBackendPreflightInFlight.has(project.id);
+    backendCheck.textContent = project && agentBackendPreflightInFlight.has(project.id) ? '检测中…' : '检测 Backend';
+    submit.disabled = !projects.length || !project?.agentBackend;
+  };
   const updateBranchSelect = (projectId: string, preferredBranch: string | null = branchSelect.value || null) => {
     const project = projects.find((p) => p.id === projectId) ?? projects[0] ?? null;
     const previousBranch = preferredBranch?.trim() || '';
@@ -2639,6 +2898,7 @@ function renderNewTaskPage(): HTMLElement {
     branchHint.textContent = project
       ? `默认带入项目接入配置的默认分支 ${project.defaultBranch || 'main'}；点击 Source Branch 会从当前 Project 的源地址加载分支列表，也可以在这里为本次任务临时切换。`
       : '请先接入一个 active 项目。';
+    updateBackendHint(projectId);
   };
   const refreshBranches = (projectId: string, force = false) => {
     const project = projects.find((p) => p.id === projectId);
@@ -2659,9 +2919,13 @@ function renderNewTaskPage(): HTMLElement {
   branchSelect.onfocus = loadBranchesForCurrentProject;
   branchSelect.onclick = loadBranchesForCurrentProject;
   branchRefresh.onclick = () => refreshBranches(projectSelect.value, true);
+  backendCheck.onclick = () => {
+    const project = projects.find((p) => p.id === projectSelect.value);
+    if (!project?.agentBackend) return;
+    void checkAgentBackend(project.agentBackend, project.id).then(() => updateBackendHint(projectSelect.value));
+  };
   updateBranchSelect(projectSelect.value, null);
   refreshBranches(projectSelect.value);
-  const submit = el('button', { class: 'button primary', text: 'Create Workflow Request', attrs: { type: 'submit' } });
   if (!projects.length) submit.setAttribute('disabled', 'disabled');
   form.append(
     panelHeader('创建任务请求', 'UI 只入队；本地 runner watch 负责认领、建 worktree、执行 gate、等待人工确认。'),
@@ -2674,6 +2938,14 @@ function renderNewTaskPage(): HTMLElement {
         el('span', { text: 'Source Branch' }),
         el('div', { class: 'branch-select-row', children: [branchSelect, branchRefresh] }),
         branchHint,
+      ],
+    }),
+    el('div', {
+      class: 'input-block',
+      children: [
+        el('span', { text: 'Agent Backend' }),
+        el('div', { class: 'branch-select-row', children: [backendLabel, backendCheck] }),
+        backendHint,
       ],
     }),
     el('div', { class: 'button-row', children: [submit, actionLink('查看工作台', 'workbench')] }),
@@ -2711,6 +2983,9 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
   const project = data.projects.find((p) => p.id === projectId);
   const title = String(fd.get('title') ?? '').trim();
   try {
+    if (!project) throw new Error('请选择一个已接入项目。');
+    const ready = await ensureProjectAgentBackendReady(project);
+    if (!ready) return;
     const request = await api<WorkflowRequestDto>('/workflow-requests', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -2750,6 +3025,23 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
     lastError = err instanceof Error ? err.message : String(err);
     render();
   }
+}
+
+async function ensureProjectAgentBackendReady(project: ProjectDto): Promise<boolean> {
+  if (!project.agentBackend) {
+    lastError = '这个项目还没有配置 Agent Backend。请先到“项目接入”编辑项目，选择 Claude Code 或 Codex。';
+    render();
+    return false;
+  }
+  const cached = preflightForProjectBackend(project);
+  if (cached?.runnable) return true;
+  const checked = await checkAgentBackend(project.agentBackend, project.id);
+  if (checked?.runnable) return true;
+  if (!checked) {
+    lastError = 'Agent Backend 连接检测未完成，任务不会入队。';
+  }
+  render();
+  return false;
 }
 
 // ---- Coordinator conversational intake (Phase B) -------------------------
@@ -3114,6 +3406,8 @@ function renderKnowledgePage(): HTMLElement {
 
 function renderSettingsPage(): HTMLElement {
   const backend = agentBackendLabel();
+  const project = selectedProject();
+  const backendStatus = agentBackendStatusForProject(project);
   return el('section', {
     class: 'page-grid two-col',
     children: [
@@ -3134,7 +3428,7 @@ function renderSettingsPage(): HTMLElement {
             class: 'config-grid',
             children: [
               metric('Workflow Template', 'Java Maven Standard', '9-stage lifecycle', 'info'),
-              metric('Agent Backend', backend, 'AINP_AGENT_BACKEND', 'muted'),
+              metric('Agent Backend', `${backend} · ${backendStatus.label}`, project ? `Project default: ${project.name}` : 'Project default', backendStatus.kind),
               metric('Gate Rule Set', 'MVP deterministic', 'requirement/design/diff/build/test', 'good'),
               metric('Skill Version', 'built-in', 'context/req/design/impl/review', 'muted'),
             ],
@@ -3303,10 +3597,16 @@ interface AgentStreamEvent {
 
 let streamES: EventSource | null = null;
 let streamRunId: string | null = null;
-let streamLastSeq = -1;
+const streamEventsByRun = new Map<string, Map<number, AgentStreamEvent>>();
+let streamConnection: { runId: string | null; label: string; cls: 'live' | 'idle' | 'error' } = {
+  runId: null,
+  label: 'disconnected',
+  cls: 'idle',
+};
 const STREAM_EVENT_TYPES = ['system', 'assistant', 'user', 'result', 'stderr', 'meta', 'raw'] as const;
 
-function setStreamStatus(label: string, cls: 'live' | 'idle' | 'error'): void {
+function setStreamStatus(label: string, cls: 'live' | 'idle' | 'error', runId: string | null = streamRunId): void {
+  streamConnection = { runId, label, cls };
   const node = document.getElementById('stream-status');
   if (!node) return;
   node.textContent = label;
@@ -3314,37 +3614,80 @@ function setStreamStatus(label: string, cls: 'live' | 'idle' | 'error'): void {
 }
 
 function appendStreamEvent(ev: AgentStreamEvent): void {
-  if (ev.sequence <= streamLastSeq) return;
-  streamLastSeq = ev.sequence;
+  if (!rememberStreamEvent(ev)) return;
   const body = document.getElementById('stream-body');
   if (!body) return;
-  const text = ev.text ?? `(${ev.type})`;
-  for (const line of text.split('\n')) {
-    if (!line) continue;
-    body.appendChild(el('div', { class: `stream-line ${ev.type}`, text: line }));
-  }
+  if (ev.workflowRunId !== streamRunId) return;
+  for (const line of renderStreamEventLines(ev)) body.appendChild(line);
   while (body.childElementCount > 600) body.removeChild(body.firstChild!);
   body.scrollTop = body.scrollHeight;
+}
+
+function rememberStreamEvent(ev: AgentStreamEvent): boolean {
+  let events = streamEventsByRun.get(ev.workflowRunId);
+  if (!events) {
+    events = new Map();
+    streamEventsByRun.set(ev.workflowRunId, events);
+  }
+  if (events.has(ev.sequence)) return false;
+  events.set(ev.sequence, ev);
+  while (events.size > 1_000) {
+    const [first] = [...events.keys()].sort((a, b) => a - b);
+    if (first === undefined) break;
+    events.delete(first);
+  }
+  return true;
+}
+
+function agentStreamEventsForRun(runId: string): AgentStreamEvent[] {
+  return [...(streamEventsByRun.get(runId)?.values() ?? [])].sort((a, b) => a.sequence - b.sequence);
+}
+
+function lastStreamSeqForRun(runId: string): number {
+  return agentStreamEventsForRun(runId).at(-1)?.sequence ?? -1;
+}
+
+function renderStreamEventLines(ev: AgentStreamEvent): HTMLElement[] {
+  const text = ev.text ?? renderStreamFallbackText(ev);
+  const lines = text.split('\n').map((line) => line.trimEnd()).filter(Boolean);
+  const backend = agentBackendDisplayName(ev.agentKind as AgentBackendKind);
+  return (lines.length ? lines : [`(${ev.type})`]).map((line) =>
+    el('div', {
+      class: `stream-line ${ev.type}`,
+      children: [
+        el('span', { class: 'stream-prefix', text: `[${ev.sequence} ${backend} ${ev.type}]` }),
+        document.createTextNode(` ${line}`),
+      ],
+    }),
+  );
+}
+
+function renderStreamFallbackText(ev: AgentStreamEvent): string {
+  if (ev.type === 'meta') {
+    const event = typeof ev.payload.event === 'string' ? ev.payload.event : 'meta';
+    return `[meta:${event}]`;
+  }
+  return JSON.stringify(ev.payload);
 }
 
 function detachStream(): void {
   if (streamES) streamES.close();
   streamES = null;
   streamRunId = null;
-  streamLastSeq = -1;
-  setStreamStatus('disconnected', 'idle');
+  setStreamStatus('disconnected', 'idle', null);
 }
 
 function attachStream(runId: string): void {
   if (streamRunId === runId && streamES && streamES.readyState !== EventSource.CLOSED) return;
-  detachStream();
+  if (streamES) streamES.close();
   streamRunId = runId;
-  setStreamStatus('connecting…', 'idle');
+  setStreamStatus('connecting…', 'idle', runId);
 
-  const es = new EventSource(`${API_BASE}/workflow-runs/${encodeURIComponent(runId)}/agent-stream?sinceSeq=-1`);
+  const sinceSeq = lastStreamSeqForRun(runId);
+  const es = new EventSource(`${API_BASE}/workflow-runs/${encodeURIComponent(runId)}/agent-stream?sinceSeq=${sinceSeq}`);
   streamES = es;
-  es.addEventListener('ready', () => setStreamStatus('live', 'live'));
-  es.addEventListener('ping', () => setStreamStatus('live', 'live'));
+  es.addEventListener('ready', () => setStreamStatus('live', 'live', runId));
+  es.addEventListener('ping', () => setStreamStatus('live', 'live', runId));
   for (const type of STREAM_EVENT_TYPES) {
     es.addEventListener(type, (raw) => {
       try {
@@ -3355,8 +3698,13 @@ function attachStream(runId: string): void {
     });
   }
   es.onerror = () => {
-    if (streamES === es) setStreamStatus('reconnecting…', 'error');
+    if (streamES === es) setStreamStatus('reconnecting…', 'error', runId);
   };
+}
+
+function streamStatusForRun(runId: string | null): { label: string; cls: 'live' | 'idle' | 'error' } {
+  if (runId && streamConnection.runId === runId) return streamConnection;
+  return { label: 'disconnected', cls: 'idle' };
 }
 
 window.addEventListener('hashchange', async () => {

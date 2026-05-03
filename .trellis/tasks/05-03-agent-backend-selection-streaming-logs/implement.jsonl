@@ -1,0 +1,6 @@
+{"file":".trellis/spec/guides/index.md","reason":"Cross-package change touches shared types, API, runner, and web; include thinking guides for reuse and layer boundaries."}
+{"file":".trellis/spec/shared/backend/index.md","reason":"Shared AgentBackendKind/project types and API DTO contracts will change."}
+{"file":".trellis/spec/shared/frontend/index.md","reason":"Web consumes shared DTO/type semantics for backend labels and stream events."}
+{"file":".trellis/spec/api/backend/index.md","reason":"API must persist project backend config, expose preflight/status endpoints, and keep stream routes stable."}
+{"file":".trellis/spec/runner/backend/index.md","reason":"Runner backend resolution, CLI preflight, fail-fast behavior, and event emission are central to this task."}
+{"file":".trellis/spec/web/frontend/index.md","reason":"Web UI needs project-level backend selection/status and streaming log presentation updates."}

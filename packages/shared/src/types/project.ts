@@ -1,4 +1,5 @@
 import type { Iso8601, ProjectId } from './ids';
+import type { ProjectAgentBackendKind } from './agent';
 
 export type ProjectLanguage = 'java' | 'unknown';
 export type ProjectBuildTool = 'maven' | 'unknown';
@@ -28,6 +29,11 @@ export interface Project {
   /** Active projects can receive new work; archived projects keep history but reject new work. */
   status?: ProjectStatus;
   archivedAt?: Iso8601 | null;
+  /**
+   * Project-level default real Agent Backend. Missing/null means legacy rows
+   * still need setup before new workflow requests can run.
+   */
+  agentBackend?: ProjectAgentBackendKind | null;
   language: ProjectLanguage;
   buildTool: ProjectBuildTool;
   defaultBranch: string;

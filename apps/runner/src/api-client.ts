@@ -40,6 +40,7 @@ export const api = {
     sourceAuthKind?: Project['sourceAuthKind'];
     sourceUsername?: string;
     sourceCredential?: string;
+    agentBackend?: Project['agentBackend'];
     defaultBranch?: string;
   }) => request<Project>('POST', '/projects', params),
 

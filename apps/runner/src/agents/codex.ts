@@ -13,7 +13,15 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
-import type { AgentStreamEventInput, SkillSpec } from '@ainp/shared';
+import {
+  agentBackendCliArgs,
+  buildAgentBackendCliSpawn,
+  buildResolvedAgentBackendCliSpawn,
+  maskSecrets,
+  resolveAgentBackendCliCandidates,
+  type AgentStreamEventInput,
+  type SkillSpec,
+} from '@ainp/shared';
 import { api } from '../api-client';
 import { sh } from '../sh';
 import type { AgentArtifactOutput, AgentBackend, AgentTaskContext } from './native';
@@ -111,13 +119,10 @@ export class CodexBackend implements AgentBackend {
     ctx: AgentTaskContext,
     skill: SkillSpec,
   ): Promise<{ exitCode: number }> {
-    const bin = this.opts.bin ?? process.env.AINP_CODEX_BIN ?? 'codex';
     const lastMessagePath = join(ctx.artifactsDir, '.codex-last-message.txt');
     const args = [
       'exec',
       '--json',
-      '--color',
-      'never',
       '--ephemeral',
       '--skip-git-repo-check',
       '--cd',
@@ -126,21 +131,27 @@ export class CodexBackend implements AgentBackend {
       ctx.artifactsDir,
       '--sandbox',
       'workspace-write',
-      '--ask-for-approval',
-      'never',
       '--output-last-message',
       lastMessagePath,
     ];
     const model = this.opts.model ?? process.env.AINP_CODEX_MODEL;
     if (model) args.push('--model', model);
     args.push('-');
+    const invocation = buildResolvedAgentBackendCliSpawn('codex', args, {
+      bin: this.opts.bin,
+      env: process.env,
+      platform: process.platform,
+    });
+    const bin = invocation.bin;
 
     await emitMeta(ctx, 'started', { bin, stage: skill.stage, skillId: skill.id, sandbox: 'workspace-write' });
 
-    const child = spawn(bin, args, {
+    const child = spawn(invocation.command, invocation.args, {
       cwd: ctx.workspacePath,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env },
+      shell: invocation.shell,
+      windowsHide: invocation.windowsHide,
     });
     child.stdin.end(prompt);
 
@@ -157,8 +168,9 @@ export class CodexBackend implements AgentBackend {
       await emit(ctx, parsed);
     });
     const stderrDone = consumeLines(child.stderr, async (line) => {
-      process.stderr.write(`[codex:stderr] ${line}\n`);
-      await emit(ctx, { type: 'stderr', payload: { line }, text: line });
+      const safeLine = maskSecrets(line);
+      process.stderr.write(`[codex:stderr] ${safeLine}\n`);
+      await emit(ctx, { type: 'stderr', payload: { line: safeLine }, text: safeLine });
     });
 
     const exitCode: number = await new Promise((resolve) => {
@@ -172,13 +184,43 @@ export class CodexBackend implements AgentBackend {
   }
 }
 
-export async function codexCliAvailable(bin = process.env.AINP_CODEX_BIN ?? 'codex'): Promise<boolean> {
-  try {
-    const r = await sh(bin, ['--version']);
-    return r.exitCode === 0;
-  } catch {
-    return false;
+export async function codexCliAvailable(bin?: string): Promise<boolean> {
+  const candidates = resolveAgentBackendCliCandidates('codex', {
+    bin,
+    env: process.env,
+    platform: process.platform,
+  });
+
+  for (const candidate of candidates) {
+    if (await exitsZero(candidate, agentBackendCliArgs('codex', 'version'))) return true;
   }
+  return false;
+}
+
+function exitsZero(bin: string, args: string[]): Promise<boolean> {
+  return new Promise((resolve) => {
+    const invocation = buildAgentBackendCliSpawn(bin, args, {
+      env: process.env,
+      platform: process.platform,
+    });
+    const child = spawn(invocation.command, invocation.args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      shell: invocation.shell,
+      windowsHide: invocation.windowsHide,
+    });
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      resolve(false);
+    }, 3000);
+    child.once('error', () => {
+      clearTimeout(timer);
+      resolve(false);
+    });
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      resolve(code === 0);
+    });
+  });
 }
 
 interface BuildPromptArgs {
@@ -259,14 +301,19 @@ async function emit(
   ctx: AgentTaskContext,
   parsed: { type: AgentStreamEventInput['type']; payload: Record<string, unknown>; text: string | null },
 ): Promise<void> {
-  await api.postAgentEvent({
-    workflowRunId: ctx.workflowRunId,
-    stepRunId: ctx.stepRunId ?? null,
-    agentKind: 'codex',
-    type: parsed.type,
-    payload: parsed.payload,
-    text: parsed.text,
-  });
+  try {
+    await api.postAgentEvent({
+      workflowRunId: ctx.workflowRunId,
+      stepRunId: ctx.stepRunId ?? null,
+      agentKind: 'codex',
+      type: parsed.type,
+      payload: parsed.payload,
+      text: parsed.text,
+    });
+  } catch (err) {
+    // API push failure must not stop the local Codex process. The local console still gets it.
+    process.stderr.write(`[codex] postAgentEvent failed: ${maskSecrets((err as Error).message)}\n`);
+  }
 }
 
 async function emitMeta(

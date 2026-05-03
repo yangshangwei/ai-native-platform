@@ -9,10 +9,8 @@ import { TrustedLocalWorktreeEnvironment } from './worktree';
 import { DEFAULT_MAX_LOG_BYTES, DEFAULT_TIMEOUT_MS, WORKTREES_DIR } from './config';
 import { sendHeartbeat } from './heartbeat';
 import { findSkillForStage } from './skills';
-import { NativeBackend } from './agents/native';
 import type { AgentBackend } from './agents/native';
-import { ClaudeCodeBackend, claudeCliAvailable } from './agents/claude-code';
-import { CodexBackend, codexCliAvailable } from './agents/codex';
+import { selectAgentBackend } from './backend-selection';
 import { generateProjectProfile } from './profile';
 import {
   collectAcceptedKnowledge,
@@ -47,7 +45,7 @@ const STAGE_TO_ARTIFACT_KIND = {
 } as const;
 
 /**
- * Drive the full 9-stage lifecycle end-to-end with the local NativeBackend.
+ * Drive the full 9-stage lifecycle end-to-end with the project's real Agent Backend.
  * The Workflow Engine on the API is the only state writer; the runner emits
  * events. Human gates pause the flow until /approvals records a decision.
  */
@@ -56,6 +54,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
   console.log(`[runner] heartbeat from ${runnerId} (jdk=${tools.jdk}, mvn=${tools.maven})`);
 
   const project = await api.getProject(opts.project);
+  const backend = await selectAgentBackend(project);
   const run = await api.createWorkflowRun({
     projectName: project.name,
     title: opts.title,
@@ -78,7 +77,6 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
   const runArtifactsDir = join(ARTIFACTS_BASE, run.id);
   await mkdir(runArtifactsDir, { recursive: true });
 
-	  const backend = await pickBackend();
 	  const inputs: Record<string, string> = { user_request: opts.title };
 	  const inputArtifactIds: Record<string, string> = {};
 	  let ok = true;
@@ -678,35 +676,4 @@ function renderAgentPromptAudit(skill: SkillSpec, inputs: Record<string, string>
     '',
     `Inputs: ${inputNames.join(', ') || '(none)'}`,
   ].join('\n');
-}
-
-/**
- * Choose an AgentBackend based on `AINP_AGENT_BACKEND`. Defaults to Native.
- *   - `native`      → deterministic stub (no LLM, e2e baseline)
- *   - `codex`       → spawn local `codex exec --json`; falls back to Native
- *                     when the binary is missing.
- *   - `claude_code` → spawn local `claude` CLI; falls back to Native with a
- *                     warning when the binary is missing or unauthenticated.
- */
-async function pickBackend(): Promise<AgentBackend> {
-  const choice = (process.env.AINP_AGENT_BACKEND ?? 'native').toLowerCase();
-  if (choice === 'codex') {
-    if (await codexCliAvailable()) {
-      console.log(`[runner] backend = codex (bin=${process.env.AINP_CODEX_BIN ?? 'codex'})`);
-      return new CodexBackend();
-    }
-    console.warn('[runner] AINP_AGENT_BACKEND=codex but `codex` CLI unavailable; falling back to native');
-  }
-  if (choice === 'claude_code') {
-    if (await claudeCliAvailable()) {
-      console.log(`[runner] backend = claude_code (bin=${process.env.AINP_CLAUDE_BIN ?? 'claude'})`);
-      return new ClaudeCodeBackend();
-    }
-    console.warn('[runner] AINP_AGENT_BACKEND=claude_code but `claude` CLI unavailable; falling back to native');
-  }
-  if (choice !== 'native' && choice !== 'codex' && choice !== 'claude_code') {
-    console.warn(`[runner] unknown AINP_AGENT_BACKEND=${choice}; falling back to native`);
-  }
-  console.log('[runner] backend = native');
-  return new NativeBackend();
 }

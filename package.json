@@ -16,7 +16,7 @@
     "smoke:codex": "bun run scripts/smoke-codex.ts",
     "e2e": "bun run scripts/e2e.ts",
     "typecheck": "bun x tsc -p packages/shared/tsconfig.json --noEmit && bun x tsc -p apps/api/tsconfig.json --noEmit && bun x tsc -p apps/runner/tsconfig.json --noEmit && bun x tsc -p apps/web/tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "bun x --bun vitest run",
     "smoke:claude-code": "bun run scripts/smoke-claude-code.ts",
     "smoke:claude-requirement": "bun run scripts/smoke-claude-requirement.ts",
     "smoke:coordinator": "bun run scripts/smoke-coordinator.ts"

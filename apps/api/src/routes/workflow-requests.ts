@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { WorkflowRequestStatus, WorkflowRunType } from '@ainp/shared';
+import type { Project, WorkflowRequestStatus, WorkflowRunType } from '@ainp/shared';
 import { store } from '../store/store';
 import {
   claimWorkflowRequest,
@@ -47,6 +47,8 @@ workflowRequests.post('/', async (c) => {
   if (!project && body.projectName) project = store.projectByName(body.projectName);
   if (!project) return c.json({ error: 'projectId or projectName required' }, 400);
   if ((project.status ?? 'active') === 'archived') return c.json({ error: 'project is archived' }, 400);
+  const backendError = projectAgentBackendError(project);
+  if (backendError) return c.json({ error: backendError, needsAgentBackendSetup: true }, 400);
   if (!body.title?.trim()) return c.json({ error: 'title required' }, 400);
 
   const request = createWorkflowRequest({
@@ -57,6 +59,13 @@ workflowRequests.post('/', async (c) => {
   });
   return c.json(request, 201);
 });
+
+function projectAgentBackendError(project: Project): string | null {
+  if (!project.agentBackend) {
+    return 'Agent Backend is not configured for this project. Choose Claude Code or Codex before creating a workflow request.';
+  }
+  return null;
+}
 
 workflowRequests.post('/:id/claim', async (c) => {
   const requestId = c.req.param('id');

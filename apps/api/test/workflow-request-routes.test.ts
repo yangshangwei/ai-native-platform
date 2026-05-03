@@ -22,6 +22,7 @@ function seedProject(name = `route-project-${Date.now()}`): Project {
     language: 'java',
     buildTool: 'maven',
     defaultBranch: 'main',
+    agentBackend: 'codex',
     registeredAt: nowIso(),
   };
   storeMod.store.projects.set(project.id, project);
@@ -83,6 +84,40 @@ test('workflow request routes create, list, claim, and complete runner work', as
   expect((await completeRes.json()) as { status: string; workflowRunId: string }).toMatchObject({
     status: 'completed',
     workflowRunId: 'run_live_from_route',
+  });
+});
+
+test('workflow request creation fails fast when project agent backend is not configured', async () => {
+  const project = seedProject(`missing-backend-${Date.now()}`);
+  storeMod.store.projects.set(project.id, { ...project, agentBackend: null });
+
+  const res = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectName: project.name, title: 'should not queue', type: 'feature' }),
+  });
+
+  expect(res.status).toBe(400);
+  expect(await res.json()).toMatchObject({
+    needsAgentBackendSetup: true,
+    error: expect.stringContaining('Agent Backend'),
+  });
+});
+
+test('feature workflow run creation fails fast when project agent backend is not configured', async () => {
+  const project = seedProject(`missing-run-backend-${Date.now()}`);
+  storeMod.store.projects.set(project.id, { ...project, agentBackend: null });
+
+  const res = await app.request('/workflow-runs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectName: project.name, title: 'should not start', type: 'feature' }),
+  });
+
+  expect(res.status).toBe(400);
+  expect(await res.json()).toMatchObject({
+    needsAgentBackendSetup: true,
+    error: expect.stringContaining('Agent Backend'),
   });
 });
 
