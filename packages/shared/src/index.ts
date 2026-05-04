@@ -2,6 +2,7 @@ export * from './types/ids';
 export * from './types/project';
 export * from './types/workflow';
 export * from './types/artifact';
+export * from './types/knowledge-entity';
 export * from './types/command';
 export * from './types/gate';
 export * from './types/build';
