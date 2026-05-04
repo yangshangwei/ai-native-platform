@@ -74,3 +74,42 @@ Closed 6 gaps between docs/2026-05-03-requirements-phase-adaptation-plan.md desi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: V2 P0-2 entity-tables-bootstrap: brainstorm + 6-PR series
+
+**Date**: 2026-05-04
+**Task**: V2 P0-2 entity-tables-bootstrap: brainstorm + 6-PR series
+**Branch**: `main`
+
+### Summary
+
+V2 P0-2 entity tables bootstrap: brainstorm to PRD with 5 ADR-lite decisions (Q1=scope-alpha / Q2=head-pointer / Q3=hybrid-FK / Q4=no-backfill / Q5=API-side entity_id authority), then implemented across 6 PRs. PR1 added shared TS types (RequirementEntity / DesignEntity / PromoteRequest / PromoteResponse). PR2 added requirements + designs entity tables with composite PK (project_id, id) and composite FK designs(project_id, ref_req) -> requirements(project_id, id) ON DELETE RESTRICT, plus store CRUD with upsertHead. PR3 collapsed entity_id resolution + max+1 fallback + version bump + supersede + INSERT + UPSERT into a single db.transaction in apps/api/src/promote.ts; included a schema refinement that promoted the original draft's id-as-PK design to composite (project_id, id) after the inter-test pollution bug surfaced. PR4 exposed POST /knowledge-artifacts/promote with proper 400/409/500 error mapping. PR5 collapsed runner promoteAcceptedDraftToKnowledge from ~70 lines (algorithm) to ~25 lines (HTTP wrapper); PromoteDeps narrowed from 4 deps to 1; PR3 success log line preserved verbatim. PR6 promoted .trellis/spec/api/backend/database-guidelines.md from stub to real reference (FK convention rule, P0-2 upgrade semantics) and closed all 23 PRD acceptance criteria. Final: bun run --filter '*' typecheck PASS for shared/api/runner/web, bun test 296/296 pass, zero flake. V2 Wave 1 now 2/3 (artifact_kind expansion + entity tables done; dual-write pipeline still pending).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f2f97ed` | (see git log) |
+| `c0275c4` | (see git log) |
+| `5165060` | (see git log) |
+| `c9ce155` | (see git log) |
+| `50caaaa` | (see git log) |
+| `683f8b9` | (see git log) |
+| `3d01e93` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
