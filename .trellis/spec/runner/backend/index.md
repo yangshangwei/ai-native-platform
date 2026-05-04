@@ -20,6 +20,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [Agent Backend Runtime](./agent-backend-runtime.md) | Runner backend selection, preflight, and streaming execution | Current |
+| [Flow Registry](./flow-registry.md) | FLOW_REGISTRY semantics, runWorkflow dispatch, and W2-3+ extension contract | Current |
 
 ---
 
