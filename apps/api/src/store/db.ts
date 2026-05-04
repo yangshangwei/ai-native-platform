@@ -140,6 +140,40 @@ const MIGRATIONS: string[] = [
   `CREATE INDEX IF NOT EXISTS idx_knowledge_artifacts_project ON knowledge_artifacts(project_id)`,
   `CREATE INDEX IF NOT EXISTS idx_knowledge_artifacts_entity ON knowledge_artifacts(project_id, entity_id)`,
   `CREATE INDEX IF NOT EXISTS idx_knowledge_artifacts_kind ON knowledge_artifacts(project_id, kind)`,
+  // V2 P0-2: requirements / designs entity tables — head-pointer model.
+  // Each row represents the current authoritative version of a REQ-### /
+  // DSN-###; historical versions remain in `knowledge_artifacts` keyed by
+  // (project_id, entity_id). `current_artifact_id` references a specific
+  // accepted knowledge_artifacts row but is **NOT** declared as a DB FK
+  // (Q3=3-B): referential integrity is upheld by the API promote
+  // transaction (Q5=5-A). `designs.ref_req` IS a strong FK with
+  // ON DELETE RESTRICT — the only FK introduced in P0-2, gating REQ↔DSN
+  // traceability per V2 doc § 3.6. See
+  // `.trellis/tasks/05-04-v2-entity-tables-bootstrap/prd.md` ADR Q1-Q5.
+  `CREATE TABLE IF NOT EXISTS requirements (
+     id TEXT PRIMARY KEY,
+     project_id TEXT NOT NULL,
+     status TEXT NOT NULL DEFAULT 'draft',
+     current_version INTEGER NOT NULL,
+     current_artifact_id TEXT NOT NULL,
+     created_at TEXT NOT NULL,
+     updated_at TEXT NOT NULL,
+     UNIQUE(project_id, id)
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_requirements_project ON requirements(project_id)`,
+  `CREATE TABLE IF NOT EXISTS designs (
+     id TEXT PRIMARY KEY,
+     project_id TEXT NOT NULL,
+     status TEXT NOT NULL DEFAULT 'draft',
+     current_version INTEGER NOT NULL,
+     current_artifact_id TEXT NOT NULL,
+     ref_req TEXT NOT NULL REFERENCES requirements(id) ON DELETE RESTRICT,
+     created_at TEXT NOT NULL,
+     updated_at TEXT NOT NULL,
+     UNIQUE(project_id, id)
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_designs_project ON designs(project_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_designs_ref_req ON designs(ref_req)`,
   `CREATE TABLE IF NOT EXISTS build_runs (
      id TEXT PRIMARY KEY,
      workflow_run_id TEXT NOT NULL,

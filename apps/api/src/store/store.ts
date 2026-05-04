@@ -9,6 +9,9 @@ import type {
   KnowledgeArtifact,
   KnowledgeArtifactKind,
   KnowledgeArtifactStatus,
+  RequirementEntity,
+  RequirementEntityStatus,
+  DesignEntity,
   BuildRun,
   TestRun,
   AgentTask,
@@ -727,6 +730,215 @@ const knowledgeArtifacts = {
     db.prepare(
       'UPDATE knowledge_artifacts SET status = ?, updated_at = ? WHERE id = ?',
     ).run(status, updatedAt, id);
+  },
+};
+
+// ---- requirements / designs entity tables (V2 P0-2) ----------------------
+// Head-pointer model. Each row points at the *current* accepted version of
+// a REQ-### / DSN-### in `knowledge_artifacts`; historical versions stay in
+// `knowledge_artifacts` keyed by (project_id, entity_id). The API promote
+// transaction (PR3) is the single canonical writer; `upsertHead` is the
+// transaction's UPSERT step.
+//
+// Q3=3-B FK rules:
+//   - `current_artifact_id` is bare TEXT (no DB FK) — referential
+//     integrity is upheld by the promote transaction.
+//   - `designs.ref_req` IS a strong FK to `requirements(id)` with
+//     ON DELETE RESTRICT. The DB will reject INSERTs / DELETEs that
+//     would violate REQ↔DSN traceability.
+//
+// See `.trellis/tasks/05-04-v2-entity-tables-bootstrap/prd.md` ADR Q1-Q5.
+
+interface RequirementEntityRow {
+  id: string;
+  project_id: string;
+  status: string;
+  current_version: number;
+  current_artifact_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+function rowToRequirementEntity(r: RequirementEntityRow): RequirementEntity {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    status: r.status as RequirementEntityStatus,
+    currentVersion: r.current_version,
+    currentArtifactId: r.current_artifact_id,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+interface RequirementEntityHeadInput {
+  /** Entity_id, e.g. "REQ-001". */
+  id: string;
+  projectId: string;
+  status: RequirementEntityStatus;
+  currentVersion: number;
+  currentArtifactId: string;
+  /** ISO 8601 timestamp; used for both `created_at` (on first insert) and `updated_at`. */
+  now: string;
+}
+
+const requirementEntities = {
+  insert(e: RequirementEntity): void {
+    insertRow('requirements', {
+      id: e.id,
+      project_id: e.projectId,
+      status: e.status,
+      current_version: e.currentVersion,
+      current_artifact_id: e.currentArtifactId,
+      created_at: e.createdAt,
+      updated_at: e.updatedAt,
+    });
+  },
+  get(projectId: string, id: string): RequirementEntity | undefined {
+    const r = db
+      .prepare('SELECT * FROM requirements WHERE project_id = ? AND id = ?')
+      .get(projectId, id) as RequirementEntityRow | null;
+    return r ? rowToRequirementEntity(r) : undefined;
+  },
+  byProject(projectId: string): RequirementEntity[] {
+    return (
+      db
+        .prepare('SELECT * FROM requirements WHERE project_id = ? ORDER BY id ASC')
+        .all(projectId) as RequirementEntityRow[]
+    ).map(rowToRequirementEntity);
+  },
+  /**
+   * INSERT new entity head OR UPDATE existing one. Conflict target is the
+   * primary key `id`. On UPDATE: `created_at` is preserved; `updated_at`,
+   * `status`, `current_version`, `current_artifact_id` move forward.
+   * Returns the post-state row.
+   */
+  upsertHead(input: RequirementEntityHeadInput): RequirementEntity {
+    db.prepare(
+      `INSERT INTO requirements (id, project_id, status, current_version, current_artifact_id, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         status = excluded.status,
+         current_version = excluded.current_version,
+         current_artifact_id = excluded.current_artifact_id,
+         updated_at = excluded.updated_at`,
+    ).run(
+      input.id,
+      input.projectId,
+      input.status,
+      input.currentVersion,
+      input.currentArtifactId,
+      input.now,
+      input.now,
+    );
+    // Re-read so callers see the canonical post-state (preserves created_at
+    // on UPDATE-path).
+    const r = db
+      .prepare('SELECT * FROM requirements WHERE id = ?')
+      .get(input.id) as RequirementEntityRow;
+    return rowToRequirementEntity(r);
+  },
+  setStatus(id: string, status: RequirementEntityStatus, updatedAt: string): void {
+    db.prepare('UPDATE requirements SET status = ?, updated_at = ? WHERE id = ?').run(
+      status,
+      updatedAt,
+      id,
+    );
+  },
+};
+
+interface DesignEntityRow extends RequirementEntityRow {
+  ref_req: string;
+}
+
+function rowToDesignEntity(r: DesignEntityRow): DesignEntity {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    status: r.status as RequirementEntityStatus,
+    currentVersion: r.current_version,
+    currentArtifactId: r.current_artifact_id,
+    refReq: r.ref_req,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+interface DesignEntityHeadInput extends RequirementEntityHeadInput {
+  /** ID of the requirement this design references; FK to `requirements.id`. */
+  refReq: string;
+}
+
+const designEntities = {
+  insert(e: DesignEntity): void {
+    insertRow('designs', {
+      id: e.id,
+      project_id: e.projectId,
+      status: e.status,
+      current_version: e.currentVersion,
+      current_artifact_id: e.currentArtifactId,
+      ref_req: e.refReq,
+      created_at: e.createdAt,
+      updated_at: e.updatedAt,
+    });
+  },
+  get(projectId: string, id: string): DesignEntity | undefined {
+    const r = db
+      .prepare('SELECT * FROM designs WHERE project_id = ? AND id = ?')
+      .get(projectId, id) as DesignEntityRow | null;
+    return r ? rowToDesignEntity(r) : undefined;
+  },
+  byProject(projectId: string): DesignEntity[] {
+    return (
+      db
+        .prepare('SELECT * FROM designs WHERE project_id = ? ORDER BY id ASC')
+        .all(projectId) as DesignEntityRow[]
+    ).map(rowToDesignEntity);
+  },
+  byRefReq(projectId: string, refReq: string): DesignEntity[] {
+    return (
+      db
+        .prepare(
+          'SELECT * FROM designs WHERE project_id = ? AND ref_req = ? ORDER BY id ASC',
+        )
+        .all(projectId, refReq) as DesignEntityRow[]
+    ).map(rowToDesignEntity);
+  },
+  /**
+   * INSERT or UPDATE the design entity head. `ref_req` is preserved across
+   * UPDATEs (it should not change for a given DSN-### — if a design moves
+   * to reference a different REQ that is a new entity).
+   */
+  upsertHead(input: DesignEntityHeadInput): DesignEntity {
+    db.prepare(
+      `INSERT INTO designs (id, project_id, status, current_version, current_artifact_id, ref_req, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         status = excluded.status,
+         current_version = excluded.current_version,
+         current_artifact_id = excluded.current_artifact_id,
+         updated_at = excluded.updated_at`,
+    ).run(
+      input.id,
+      input.projectId,
+      input.status,
+      input.currentVersion,
+      input.currentArtifactId,
+      input.refReq,
+      input.now,
+      input.now,
+    );
+    const r = db
+      .prepare('SELECT * FROM designs WHERE id = ?')
+      .get(input.id) as DesignEntityRow;
+    return rowToDesignEntity(r);
+  },
+  setStatus(id: string, status: RequirementEntityStatus, updatedAt: string): void {
+    db.prepare('UPDATE designs SET status = ?, updated_at = ? WHERE id = ?').run(
+      status,
+      updatedAt,
+      id,
+    );
   },
 };
 
@@ -1462,6 +1674,8 @@ export const store = {
   gateRuns,
   artifacts,
   knowledgeArtifacts,
+  requirementEntities,
+  designEntities,
   buildRuns,
   testRuns,
   agentTasks,
