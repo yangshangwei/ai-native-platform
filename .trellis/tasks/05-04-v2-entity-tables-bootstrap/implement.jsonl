@@ -1,0 +1,14 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Always-included shared guides bundle"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Promote logic must not fork between runner+api — Q5=5-A moves the canonical implementation entirely into api/promote.ts; runner shrinks to HTTP wrapper"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Q5=5-A introduces new cross-layer contract PromoteRequest/PromoteResponse — shared/api/runner must stay aligned across PR1→PR5"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "RequirementEntity / DesignEntity / PromoteRequest / PromoteResponse types live in packages/shared/src/types"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "TS quality bar for new entity types and request/response shapes (no any leaks, exports correct)"}
+{"file": ".trellis/spec/shared/backend/database-guidelines.md", "reason": "Shared TS<->DB column-name conventions (camelCase TS / snake_case DB) — relevant to new entity table row mappers"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API architectural rules — entity tables + promote endpoint + single transaction all live in apps/api"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "Migration pattern (idempotent CREATE TABLE) for new requirements + designs tables; FK convention being introduced for first time per Q3=3-B; this file MUST be updated per R18 / R23 / AC-12d"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "Promote single-transaction rollback semantics (R10/R11/R29); FK violation must surface as business error, not silent drop (R19)"}
+{"file": ".trellis/spec/api/backend/logging-guidelines.md", "reason": "Promote success/failure log format — runner preserves PR3 '[runner] promoted ...' log line per R30"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "Runner-side promote hook contract narrows to a single api dependency (PromoteDeps from 4→1) after Q5=5-A"}
+{"file": ".trellis/spec/runner/backend/error-handling.md", "reason": "Runner downgrades HTTP failures to log + does NOT break acceptance gate — same R18 rule from PR3 preserved (R12, R28)"}
+{"file": "docs/2026-05-04-ai-native-platform-v2-design-notes.md", "reason": "V2 architectural reference: § 3.6 entity numbering / FK / traceability; § 1.2 'workflow engine 唯一状态写者' principle"}
+{"file": ".trellis/tasks/05-04-v2-entity-tables-bootstrap/prd.md", "reason": "This task's PRD — 5 ADR-lite decisions (Q1-Q5), R1-R31 requirements, AC-1~AC-13 + 8 sub-ACs, Technical Approach + 6-PR Implementation Plan"}

@@ -1,0 +1,12 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Always-included shared guides bundle"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Verify promote logic landed in ONE canonical place (api/promote.ts) — runner is thin HTTP wrapper, no duplicated entity_id / version / supersede algorithm"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify PromoteRequest / PromoteResponse contracts aligned across shared/api/runner — no drift, payload/response field names match across all 3 layers"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "Verify TS types clean — RequirementEntity / DesignEntity / PromoteRequest exported, no any leak, type guards added if needed"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "API-side quality bar (logging, naming, layering, transaction style consistent with existing workflow-engine.ts)"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "Verify migration idempotent CREATE TABLE; designs.ref_req strong FK + ON DELETE RESTRICT (Q3=3-B / AC-6); current_artifact_id is bare TEXT NOT NULL (Q3=3-B / AC-5); spec doc itself updated with FK convention rule (R18) and P0-2 upgrade-semantics note (R23 / AC-12d)"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "Verify promote single-transaction rollback on any of 6 step failures (AC-12f); FK violation reported as business error not silent drop (R19); runner HTTP failure downgrades to log per R12"}
+{"file": ".trellis/spec/api/backend/logging-guidelines.md", "reason": "Verify '[runner] promoted requirement_draft <id> -> requirement REQ-001 v1 (id=<knArtId>)' log line preserved verbatim from PR3"}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "Runner-side quality bar — promoteAcceptedDraftToKnowledge ≤ 30 lines (AC-12h), PromoteDeps reduced from 4 deps to 1"}
+{"file": ".trellis/spec/runner/backend/error-handling.md", "reason": "Verify runner HTTP failure downgrades to log; acceptance gate not broken (R12, R28); PR3's V1-compat semantics preserved"}
+{"file": "docs/2026-05-04-ai-native-platform-v2-design-notes.md", "reason": "Cross-check implementation against V2 § 3.6 entity table model (REQ↔DSN traceability via FK) + § 1.2 single-writer principle (Q5=5-A)"}
+{"file": ".trellis/tasks/05-04-v2-entity-tables-bootstrap/prd.md", "reason": "Verify all 31 R + 21 AC checkboxes marked; ADR-lite Q1-Q5 consequences satisfied; risk register R-Risk-1~4 addressed"}
