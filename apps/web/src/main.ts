@@ -1087,7 +1087,8 @@ function renderTaskHero(
       el('div', {
         class: 'metric-grid',
         children: [
-          metric('Project', projectName(request.projectId), request.type, 'info'),
+          metric('Project', projectName(request.projectId), `用户标记: ${request.type}`, 'info'),
+          renderCoordinatorVerdictMetric(request),
           metric('Source Branch', request.branch, '本次任务基础分支', 'muted'),
           metric('Current', current, detail?.run.workspacePath ?? '尚未准备 worktree', detail ? statusKind(detail.run.status) : statusKind(request.status)),
           metric('Evidence', projection ? `${projection.summary.gatesPassed}/${detail?.gates.length ?? 0} gates` : '尚未开始', projection ? `${projection.summary.commands} commands` : '等待 Runner', projection?.summary.gatesFailed ? 'bad' : 'muted'),
@@ -2995,21 +2996,14 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
         type: String(fd.get('type') ?? 'feature'),
         title,
         branch: String(fd.get('branch') ?? '').trim() || project?.defaultBranch,
+        // PR1 atomic intake (PRD §P0-2 / P0-3): API persists the request
+        // and the first user message in one transaction so the runner
+        // watch loop never races between request creation and the
+        // initial chat turn. The previous two-step (POST + follow-up
+        // POST /messages) is dropped.
+        firstMessage: title.length > 0 ? { role: 'user' as const, content: title } : undefined,
       }),
     });
-    // Phase B: also post the title as the first user-side chat message so the
-    // Coordinator's triage sees a coherent thread (not just a bare request title).
-    if (title.length > 0) {
-      try {
-        await api(`/workflow-requests/${encodeURIComponent(request.id)}/messages`, {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ role: 'user', content: title }),
-        });
-      } catch {
-        /* non-fatal: thread is best-effort */
-      }
-    }
     form.reset();
     await loadData({ render: false });
     activeTaskRequestId = request.id;
@@ -3187,6 +3181,49 @@ async function sendCoordinatorReply(requestId: string, textArea: HTMLTextAreaEle
       textArea.disabled = wasDisabled;
     }
   }
+}
+
+/**
+ * Surface the Coordinator's verdict next to the user-typed task type so the
+ * user can see when the Coordinator has overridden their classification
+ * (PR2, PRD §P1-5). Renders a placeholder while no decision exists yet.
+ *
+ * The metric grid sits alongside Project / Source Branch / Current /
+ * Evidence at the top of the task detail page. When the user-marked type
+ * and the Coordinator's runType disagree the metric is rendered in `warn`
+ * kind to highlight the divergence.
+ */
+function renderCoordinatorVerdictMetric(request: WorkflowRequestDto): HTMLElement {
+  const state = coordinatorChats.get(request.id);
+  if (!state || !state.decision) {
+    if (!state) void loadCoordinatorChat(request.id);
+    return metric('Coordinator 判定', '等待分诊', `用户标记 ${request.type}`, 'muted');
+  }
+  const decision = state.decision.decision;
+  const sourceLabel = state.decision.source === 'rules' ? '规则匹配' : state.decision.source === 'llm' ? 'LLM 判定' : '人工';
+  const confLabel = state.decision.confidence.toFixed(2);
+  if (decision.action === 'proceed') {
+    const mismatch = decision.runType !== request.type;
+    const value = `${decision.runType} (${decision.routeCase})`;
+    const hint = mismatch
+      ? `与用户标记 ${request.type} 不一致 · ${sourceLabel} ${confLabel}`
+      : `与用户标记一致 · ${sourceLabel} ${confLabel}`;
+    return metric('Coordinator 判定', value, hint, mismatch ? 'warn' : 'good');
+  }
+  if (decision.action === 'pause_for_human') {
+    return metric(
+      'Coordinator 判定',
+      `等待澄清 (${decision.questions.length})`,
+      `${sourceLabel} ${confLabel} · ${decision.reason}`,
+      'warn',
+    );
+  }
+  return metric(
+    'Coordinator 判定',
+    '已取消',
+    `${sourceLabel} ${confLabel} · ${decision.reason}`,
+    'bad',
+  );
 }
 
 function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLElement | null {
