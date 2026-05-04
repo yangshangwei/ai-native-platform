@@ -710,11 +710,17 @@ function renderAgentPromptAudit(skill: SkillSpec, inputs: Record<string, string>
 }
 
 // ---------------------------------------------------------------------------
-// V2 P0-1 / PR3: promoteAcceptedDraftToKnowledge
+// V2 P0-2 / PR5: promoteAcceptedDraftToKnowledge (thin HTTP wrapper)
 //
 // After acceptance_gate passes, lift each requirement_draft / design_doc into
-// a knowledge entity (REQ-### / DSN-###). Failure must NOT break acceptance —
-// log and return per ADR Q2 (2-beta) / R18.
+// a knowledge entity (REQ-### / DSN-###). The entire algorithm (entity_id
+// resolution, version bump, supersede prior accepted, INSERT
+// knowledge_artifacts, UPSERT entity head) lives server-side in a single
+// `db.transaction(...)` per Q5=5-A — see `apps/api/src/promote.ts`.
+//
+// This wrapper just maps `PromoteDraftInput` → `PromoteRequest`, calls
+// `api.promoteDraft`, and downgrades failures to a log line so the
+// acceptance gate is never broken (R12 / R28).
 // ---------------------------------------------------------------------------
 
 export interface PromoteDraftInput {
@@ -723,15 +729,12 @@ export interface PromoteDraftInput {
   uri: string;
   size: number;
   contentType: string;
-  /** Full markdown body of the draft (used to extract entity_id from frontmatter). */
+  /** Full markdown body of the draft (forwarded as-is to the API). */
   text: string;
 }
 
 export interface PromoteDeps {
-  postKnowledgeArtifact: typeof api.postKnowledgeArtifact;
-  listKnowledgeArtifactsByKind: typeof api.listKnowledgeArtifactsByKind;
-  listKnowledgeArtifactsByEntity: typeof api.listKnowledgeArtifactsByEntity;
-  setKnowledgeArtifactStatus: typeof api.setKnowledgeArtifactStatus;
+  promoteDraft: typeof api.promoteDraft;
   log?: (msg: string) => void;
   errorLog?: (msg: string) => void;
 }
@@ -739,68 +742,25 @@ export interface PromoteDeps {
 export async function promoteAcceptedDraftToKnowledge(
   projectId: string,
   draft: PromoteDraftInput,
-  deps: PromoteDeps = {
-    postKnowledgeArtifact: api.postKnowledgeArtifact,
-    listKnowledgeArtifactsByKind: api.listKnowledgeArtifactsByKind,
-    listKnowledgeArtifactsByEntity: api.listKnowledgeArtifactsByEntity,
-    setKnowledgeArtifactStatus: api.setKnowledgeArtifactStatus,
-  },
+  deps: PromoteDeps = { promoteDraft: api.promoteDraft },
 ): Promise<void> {
   const log = deps.log ?? ((m) => console.log(m));
   const errorLog = deps.errorLog ?? ((m) => console.error(m));
   try {
-    const targetKind = draft.kind === 'requirement_draft' ? 'requirement' : 'design';
-    const idPrefix = targetKind === 'requirement' ? 'REQ' : 'DSN';
-
-    // 1. Try to extract entity_id from draft frontmatter / body. The skill
-    //    instructions ask the model to include `REQ-###` / `DSN-###`; we
-    //    accept any first match. If absent, fall through to sequential.
-    const idRegex = new RegExp(`\\b${idPrefix}-(\\d{1,6})\\b`);
-    const idMatch = draft.text.match(idRegex);
-    let entityId: string;
-    if (idMatch && idMatch[1]) {
-      entityId = `${idPrefix}-${idMatch[1].padStart(3, '0')}`;
-    } else {
-      // 2. Sequential fallback: max(existing.entity_id) + 1, project-scoped.
-      const existing = await deps.listKnowledgeArtifactsByKind({
-        projectId,
-        kind: targetKind,
-      });
-      const maxNum = existing
-        .map((a) => a.entityId)
-        .filter((id): id is string => Boolean(id))
-        .map((id) => id.match(new RegExp(`^${idPrefix}-(\\d+)$`))?.[1])
-        .filter((n): n is string => Boolean(n))
-        .map(Number)
-        .reduce((acc, n) => Math.max(acc, n), 0);
-      entityId = `${idPrefix}-${String(maxNum + 1).padStart(3, '0')}`;
-    }
-
-    // 3. Resolve next version + supersede prior accepted rows for this entity.
-    const sameEntity = await deps.listKnowledgeArtifactsByEntity({ projectId, entityId });
-    const nextVersion =
-      sameEntity.length === 0 ? 1 : Math.max(...sameEntity.map((e) => e.version)) + 1;
-    for (const e of sameEntity.filter((e) => e.status === 'accepted')) {
-      await deps.setKnowledgeArtifactStatus({ id: e.id, status: 'superseded' });
-    }
-
-    // 4. Create the new accepted entity row.
-    const created = await deps.postKnowledgeArtifact({
+    const result = await deps.promoteDraft({
       projectId,
-      kind: targetKind,
+      kind: draft.kind,
+      draftArtifactId: draft.artifactId,
+      draftText: draft.text,
       uri: draft.uri,
       size: draft.size,
       contentType: draft.contentType,
-      status: 'accepted',
-      version: nextVersion,
-      entityId,
-      derivedFromArtifactId: draft.artifactId,
     });
     log(
-      `[runner] promoted ${draft.kind} ${draft.artifactId} -> ${targetKind} ${entityId} v${nextVersion} (id=${created.id})`,
+      `[runner] promoted ${draft.kind} ${draft.artifactId} -> ${result.entityKind} ${result.entityId} v${result.version} (id=${result.knowledgeArtifactId})`,
     );
   } catch (err) {
-    // R18: failure MUST be downgraded — never break acceptance gate.
+    // R12 / R28: failure MUST be downgraded — never break acceptance gate.
     errorLog(
       `[runner] promoteAcceptedDraftToKnowledge failed for ${draft.kind} ${draft.artifactId}: ${
         err instanceof Error ? err.message : String(err)

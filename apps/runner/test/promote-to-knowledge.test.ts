@@ -4,45 +4,20 @@ import {
   type PromoteDeps,
   type PromoteDraftInput,
 } from '../src/orchestrator';
-import type { KnowledgeArtifact } from '@ainp/shared';
+import type { PromoteRequest, PromoteResponse } from '@ainp/shared';
 
 // ---------------------------------------------------------------------------
 // Fixtures
+//
+// V2 P0-2 / PR5: runner-side `promoteAcceptedDraftToKnowledge` is now a thin
+// HTTP wrapper around `api.promoteDraft` — the algorithm (entity_id
+// resolution / max+1 fallback / version bump / supersede / INSERT / UPSERT
+// entity head) lives server-side in a single DB transaction (PR3). These
+// tests verify the wrapper contract: shape mapping, log formatting, and
+// R12/R28 fault tolerance (HTTP errors must NOT break acceptance gate).
 // ---------------------------------------------------------------------------
 
 const PROJECT_ID = 'proj-promote-test';
-
-const REQUIREMENT_DRAFT_TEXT_WITH_ID = `---
-doc_type: requirement
-pitch: a thing
-status: draft
-REQ-042: ${PROJECT_ID}
----
-
-# A requirement
-
-## 用户故事
-- ...
-`;
-
-const REQUIREMENT_DRAFT_TEXT_NO_ID = `---
-doc_type: requirement
-pitch: anonymous
-status: draft
----
-
-# A nameless requirement
-`;
-
-const DESIGN_DOC_TEXT = `---
-doc_type: design
-design_id: DSN-007
-related_req: REQ-042
-status: draft
----
-
-# DSN-007: pretty design
-`;
 
 function makeDraft(
   kind: 'requirement_draft' | 'design_doc',
@@ -58,50 +33,22 @@ function makeDraft(
   };
 }
 
-function makeKnowledgeArtifact(overrides: Partial<KnowledgeArtifact>): KnowledgeArtifact {
-  return {
-    id: 'ka-existing',
-    kind: 'requirement',
-    uri: 'mem://prior',
-    projectId: PROJECT_ID,
-    size: 100,
-    contentType: 'text/markdown',
-    status: 'accepted',
-    version: 1,
-    entityId: 'REQ-042',
-    derivedFromArtifactId: null,
-    subtype: null,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    metadata: {},
-    ...overrides,
-  };
-}
-
 function makeDeps(
   partial: Partial<PromoteDeps> = {},
 ): PromoteDeps & {
-  postKnowledgeArtifact: ReturnType<typeof vi.fn>;
-  listKnowledgeArtifactsByKind: ReturnType<typeof vi.fn>;
-  listKnowledgeArtifactsByEntity: ReturnType<typeof vi.fn>;
-  setKnowledgeArtifactStatus: ReturnType<typeof vi.fn>;
+  promoteDraft: ReturnType<typeof vi.fn>;
   log: ReturnType<typeof vi.fn>;
   errorLog: ReturnType<typeof vi.fn>;
 } {
   return {
-    postKnowledgeArtifact: vi.fn(async (input) =>
-      makeKnowledgeArtifact({
-        id: `ka-new-${Math.random().toString(36).slice(2, 6)}`,
-        kind: input.kind,
-        version: input.version ?? 1,
-        entityId: input.entityId ?? null,
-        derivedFromArtifactId: input.derivedFromArtifactId ?? null,
-        status: input.status ?? 'accepted',
+    promoteDraft: vi.fn<(req: PromoteRequest) => Promise<PromoteResponse>>(
+      async (req) => ({
+        knowledgeArtifactId: `ka-new-${Math.random().toString(36).slice(2, 6)}`,
+        entityId: req.kind === 'requirement_draft' ? 'REQ-001' : 'DSN-001',
+        entityKind: req.kind === 'requirement_draft' ? 'requirement' : 'design',
+        version: 1,
       }),
     ),
-    listKnowledgeArtifactsByKind: vi.fn(async () => []),
-    listKnowledgeArtifactsByEntity: vi.fn(async () => []),
-    setKnowledgeArtifactStatus: vi.fn(async () => makeKnowledgeArtifact({})),
     log: vi.fn(),
     errorLog: vi.fn(),
     ...partial,
@@ -109,169 +56,143 @@ function makeDeps(
 }
 
 // ---------------------------------------------------------------------------
-// Happy path
+// Shape mapping: PromoteDraftInput → PromoteRequest
 // ---------------------------------------------------------------------------
 
-describe('promoteAcceptedDraftToKnowledge', () => {
-  test('lifts requirement_draft into a requirement entity using REQ-### from frontmatter', async () => {
+describe('promoteAcceptedDraftToKnowledge (PR5 thin wrapper)', () => {
+  test('forwards a requirement_draft as a single PromoteRequest with all fields mapped', async () => {
     const deps = makeDeps();
-    const draft = makeDraft('requirement_draft', REQUIREMENT_DRAFT_TEXT_WITH_ID);
+    const draft = makeDraft(
+      'requirement_draft',
+      '---\nentity_id: REQ-042\n---\n# A requirement',
+    );
 
     await promoteAcceptedDraftToKnowledge(PROJECT_ID, draft, deps);
 
-    expect(deps.postKnowledgeArtifact).toHaveBeenCalledTimes(1);
-    const call = deps.postKnowledgeArtifact.mock.calls[0]![0];
-    expect(call.projectId).toBe(PROJECT_ID);
-    expect(call.kind).toBe('requirement');
-    expect(call.entityId).toBe('REQ-042');
-    expect(call.version).toBe(1);
-    expect(call.status).toBe('accepted');
-    expect(call.derivedFromArtifactId).toBe(draft.artifactId);
+    expect(deps.promoteDraft).toHaveBeenCalledTimes(1);
+    const sent = deps.promoteDraft.mock.calls[0]![0] as PromoteRequest;
+    expect(sent).toEqual({
+      projectId: PROJECT_ID,
+      kind: 'requirement_draft',
+      draftArtifactId: draft.artifactId,
+      draftText: draft.text,
+      uri: draft.uri,
+      size: draft.size,
+      contentType: draft.contentType,
+    });
     expect(deps.errorLog).not.toHaveBeenCalled();
   });
 
-  test('lifts design_doc into a design entity using DSN-###', async () => {
+  test('forwards a design_doc identically (only kind differs)', async () => {
     const deps = makeDeps();
-    const draft = makeDraft('design_doc', DESIGN_DOC_TEXT);
+    const draft = makeDraft(
+      'design_doc',
+      '---\nentity_id: DSN-007\nref_req: REQ-042\n---\n# A design',
+    );
 
     await promoteAcceptedDraftToKnowledge(PROJECT_ID, draft, deps);
 
-    const call = deps.postKnowledgeArtifact.mock.calls[0]![0];
-    expect(call.kind).toBe('design');
-    expect(call.entityId).toBe('DSN-007');
-  });
-
-  test('falls back to sequential entity_id when frontmatter has none', async () => {
-    const deps = makeDeps({
-      listKnowledgeArtifactsByKind: vi.fn(async () => [
-        makeKnowledgeArtifact({ entityId: 'REQ-001' }),
-        makeKnowledgeArtifact({ entityId: 'REQ-005' }),
-        makeKnowledgeArtifact({ entityId: null }), // ignored (no id)
-      ]),
-    });
-    const draft = makeDraft('requirement_draft', REQUIREMENT_DRAFT_TEXT_NO_ID);
-
-    await promoteAcceptedDraftToKnowledge(PROJECT_ID, draft, deps);
-
-    const call = deps.postKnowledgeArtifact.mock.calls[0]![0];
-    expect(call.entityId).toBe('REQ-006'); // max(1,5) + 1 padded to 3 digits
-  });
-
-  test('starts at REQ-001 when no prior entities exist and no frontmatter id', async () => {
-    const deps = makeDeps({
-      listKnowledgeArtifactsByKind: vi.fn(async () => []),
-    });
-    const draft = makeDraft('requirement_draft', REQUIREMENT_DRAFT_TEXT_NO_ID);
-
-    await promoteAcceptedDraftToKnowledge(PROJECT_ID, draft, deps);
-    expect(deps.postKnowledgeArtifact.mock.calls[0]![0].entityId).toBe('REQ-001');
+    const sent = deps.promoteDraft.mock.calls[0]![0] as PromoteRequest;
+    expect(sent.kind).toBe('design_doc');
+    expect(sent.draftText).toBe(draft.text);
   });
 });
 
 // ---------------------------------------------------------------------------
-// Versioning + supersession
+// Log formatting (preserved verbatim from PR3 per R30)
 // ---------------------------------------------------------------------------
 
-describe('promote versioning', () => {
-  test('bumps version and supersedes prior accepted row when entity_id already exists', async () => {
-    const priorAccepted = makeKnowledgeArtifact({
-      id: 'ka-prior-v1',
-      version: 1,
-      entityId: 'REQ-042',
-      status: 'accepted',
-    });
+describe('promote log line', () => {
+  test('on success logs "[runner] promoted <kind> <id> -> <entityKind> <entityId> v<version> (id=<artId>)"', async () => {
     const deps = makeDeps({
-      listKnowledgeArtifactsByEntity: vi.fn(async () => [priorAccepted]),
+      promoteDraft: vi.fn(async () => ({
+        knowledgeArtifactId: 'kart-xyz',
+        entityId: 'REQ-042',
+        entityKind: 'requirement' as const,
+        version: 2,
+      })),
     });
-    const draft = makeDraft('requirement_draft', REQUIREMENT_DRAFT_TEXT_WITH_ID);
+    const draft = makeDraft('requirement_draft', 'See REQ-042');
 
     await promoteAcceptedDraftToKnowledge(PROJECT_ID, draft, deps);
 
-    expect(deps.setKnowledgeArtifactStatus).toHaveBeenCalledWith({
-      id: 'ka-prior-v1',
-      status: 'superseded',
-    });
-    const post = deps.postKnowledgeArtifact.mock.calls[0]![0];
-    expect(post.version).toBe(2);
-    expect(post.entityId).toBe('REQ-042');
+    expect(deps.log).toHaveBeenCalledOnce();
+    const msg = deps.log.mock.calls[0]![0];
+    expect(msg).toBe(
+      `[runner] promoted requirement_draft ${draft.artifactId} -> requirement REQ-042 v2 (id=kart-xyz)`,
+    );
   });
 
-  test('bumps from highest version when multiple historical versions exist', async () => {
+  test('on success for a design_doc the log uses entityKind=design', async () => {
     const deps = makeDeps({
-      listKnowledgeArtifactsByEntity: vi.fn(async () => [
-        makeKnowledgeArtifact({ id: 'v1', version: 1, status: 'superseded' }),
-        makeKnowledgeArtifact({ id: 'v2', version: 2, status: 'superseded' }),
-        makeKnowledgeArtifact({ id: 'v3', version: 3, status: 'accepted' }),
-      ]),
+      promoteDraft: vi.fn(async () => ({
+        knowledgeArtifactId: 'kart-d-1',
+        entityId: 'DSN-007',
+        entityKind: 'design' as const,
+        version: 1,
+      })),
     });
-    const draft = makeDraft('requirement_draft', REQUIREMENT_DRAFT_TEXT_WITH_ID);
+    const draft = makeDraft('design_doc', 'See DSN-007 → REQ-042');
 
     await promoteAcceptedDraftToKnowledge(PROJECT_ID, draft, deps);
 
-    expect(deps.postKnowledgeArtifact.mock.calls[0]![0].version).toBe(4);
-    // Only the currently accepted row should be superseded.
-    expect(deps.setKnowledgeArtifactStatus).toHaveBeenCalledTimes(1);
-    expect(deps.setKnowledgeArtifactStatus).toHaveBeenCalledWith({
-      id: 'v3',
-      status: 'superseded',
-    });
+    expect(deps.log.mock.calls[0]![0]).toContain('-> design DSN-007 v1');
   });
 });
 
 // ---------------------------------------------------------------------------
-// R18 fault tolerance — must NOT throw on any failure path
+// R12 / R28 fault tolerance — HTTP failures MUST be downgraded
 // ---------------------------------------------------------------------------
 
-describe('R18 fault tolerance', () => {
-  test('postKnowledgeArtifact rejection is caught and logged, not thrown', async () => {
+describe('R12 / R28 fault tolerance', () => {
+  test('promoteDraft rejection is caught and logged, not thrown (acceptance gate must NOT break)', async () => {
     const deps = makeDeps({
-      postKnowledgeArtifact: vi.fn(async () => {
-        throw new Error('API down');
+      promoteDraft: vi.fn(async () => {
+        throw new Error('HTTP 500 / API down');
       }),
     });
-    const draft = makeDraft('requirement_draft', REQUIREMENT_DRAFT_TEXT_WITH_ID);
+    const draft = makeDraft('requirement_draft', 'See REQ-042');
 
     await expect(
       promoteAcceptedDraftToKnowledge(PROJECT_ID, draft, deps),
     ).resolves.toBeUndefined();
 
     expect(deps.errorLog).toHaveBeenCalledOnce();
-    const errMsg = deps.errorLog.mock.calls[0]![0];
-    expect(errMsg).toContain('promoteAcceptedDraftToKnowledge failed');
-    expect(errMsg).toContain('API down');
+    const msg = deps.errorLog.mock.calls[0]![0];
+    expect(msg).toContain('promoteAcceptedDraftToKnowledge failed');
+    expect(msg).toContain('HTTP 500 / API down');
+    expect(deps.log).not.toHaveBeenCalled();
   });
 
-  test('listKnowledgeArtifactsByKind failure is caught and logged when needed for sequential fallback', async () => {
+  test('FK CONSTRAINT_VIOLATION (409) bubbles back as an Error and is downgraded the same way', async () => {
     const deps = makeDeps({
-      listKnowledgeArtifactsByKind: vi.fn(async () => {
-        throw new Error('list crashed');
+      promoteDraft: vi.fn(async () => {
+        throw new Error('FOREIGN KEY constraint failed');
       }),
     });
-    const draft = makeDraft('requirement_draft', REQUIREMENT_DRAFT_TEXT_NO_ID);
+    const draft = makeDraft('design_doc', 'See DSN-999 → REQ-9999');
 
     await expect(
       promoteAcceptedDraftToKnowledge(PROJECT_ID, draft, deps),
     ).resolves.toBeUndefined();
 
-    expect(deps.errorLog).toHaveBeenCalledOnce();
-    expect(deps.postKnowledgeArtifact).not.toHaveBeenCalled();
+    const msg = deps.errorLog.mock.calls[0]![0];
+    expect(msg).toContain('FOREIGN KEY');
   });
 
-  test('setKnowledgeArtifactStatus failure during supersession is caught', async () => {
+  test('non-Error thrown values (e.g. strings) are stringified safely', async () => {
     const deps = makeDeps({
-      listKnowledgeArtifactsByEntity: vi.fn(async () => [
-        makeKnowledgeArtifact({ id: 'v1', status: 'accepted', version: 1 }),
-      ]),
-      setKnowledgeArtifactStatus: vi.fn(async () => {
-        throw new Error('patch failed');
+      promoteDraft: vi.fn(async () => {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw 'boom';
       }),
     });
-    const draft = makeDraft('requirement_draft', REQUIREMENT_DRAFT_TEXT_WITH_ID);
+    const draft = makeDraft('requirement_draft', 'See REQ-001');
 
     await expect(
       promoteAcceptedDraftToKnowledge(PROJECT_ID, draft, deps),
     ).resolves.toBeUndefined();
 
-    expect(deps.errorLog).toHaveBeenCalledOnce();
+    expect(deps.errorLog.mock.calls[0]![0]).toContain('boom');
   });
 });

@@ -11,6 +11,8 @@ import type {
   KnowledgeArtifact,
   KnowledgeArtifactKind,
   KnowledgeArtifactStatus,
+  PromoteRequest,
+  PromoteResponse,
   AgentStreamEventInput,
   AgentBackendKind,
   AgentTaskKind,
@@ -276,6 +278,19 @@ export const api = {
       `/knowledge-artifacts/${encodeURIComponent(params.id)}/status`,
       { status: params.status },
     ).then((r) => r.artifact),
+
+  // ---- promote (V2 P0-2 / Q5=5-A) --------------------------------------
+  // Single canonical entry point. The API runs the entire 6-step promote
+  // pipeline (regex extract → max+1 fallback → version bump → supersede →
+  // INSERT knowledge_artifact → UPSERT entity head) inside one DB
+  // transaction. This wrapper just forwards the request and surfaces the
+  // response — runner-side algorithm code was retired in PR5.
+  promoteDraft: (req: PromoteRequest): Promise<PromoteResponse> =>
+    request<{ ok: boolean; result: PromoteResponse }>(
+      'POST',
+      `/knowledge-artifacts/promote`,
+      req,
+    ).then((r) => r.result),
 
   runGate: (params: {
     workflowRunId: string;
