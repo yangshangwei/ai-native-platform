@@ -6,6 +6,9 @@ import type {
   CommandRun,
   GateRun,
   Artifact,
+  KnowledgeArtifact,
+  KnowledgeArtifactKind,
+  KnowledgeArtifactStatus,
   BuildRun,
   TestRun,
   AgentTask,
@@ -616,6 +619,114 @@ const artifacts = {
         )
         .all(workflowRunId, kind) as ArtifactRow[]
     ).map(rowToArtifact);
+  },
+};
+
+// ---- knowledge_artifacts ---------------------------------------------------
+// V2 P0-1: project-scoped, long-lived, editable, versioned. Sibling to
+// `artifacts` (per-run, one-shot). See PRD ADR Q1 / Q2 / Q3 / Q4.
+
+interface KnowledgeArtifactRow {
+  id: string;
+  kind: string;
+  uri: string;
+  project_id: string;
+  size: number;
+  content_type: string;
+  status: string;
+  version: number;
+  entity_id: string | null;
+  derived_from_artifact_id: string | null;
+  subtype: string | null;
+  metadata_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+function rowToKnowledgeArtifact(r: KnowledgeArtifactRow): KnowledgeArtifact {
+  return {
+    id: r.id,
+    kind: r.kind as KnowledgeArtifactKind,
+    uri: r.uri,
+    projectId: r.project_id,
+    size: r.size,
+    contentType: r.content_type,
+    status: r.status as KnowledgeArtifactStatus,
+    version: r.version,
+    entityId: r.entity_id,
+    derivedFromArtifactId: r.derived_from_artifact_id,
+    subtype: r.subtype,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    metadata: JSON.parse(r.metadata_json) as Record<string, unknown>,
+  };
+}
+
+const knowledgeArtifacts = {
+  insert(a: KnowledgeArtifact): void {
+    insertRow('knowledge_artifacts', {
+      id: a.id,
+      kind: a.kind,
+      uri: a.uri,
+      project_id: a.projectId,
+      size: a.size,
+      content_type: a.contentType,
+      status: a.status,
+      version: a.version,
+      entity_id: a.entityId,
+      derived_from_artifact_id: a.derivedFromArtifactId,
+      subtype: a.subtype,
+      metadata_json: JSON.stringify(a.metadata),
+      created_at: a.createdAt,
+      updated_at: a.updatedAt,
+    });
+  },
+  get(id: string): KnowledgeArtifact | undefined {
+    const r = db
+      .prepare('SELECT * FROM knowledge_artifacts WHERE id = ?')
+      .get(id) as KnowledgeArtifactRow | null;
+    return r ? rowToKnowledgeArtifact(r) : undefined;
+  },
+  byProject(projectId: string): KnowledgeArtifact[] {
+    return (
+      db
+        .prepare(
+          'SELECT * FROM knowledge_artifacts WHERE project_id = ? ORDER BY created_at ASC',
+        )
+        .all(projectId) as KnowledgeArtifactRow[]
+    ).map(rowToKnowledgeArtifact);
+  },
+  byKind(projectId: string, kind: KnowledgeArtifactKind): KnowledgeArtifact[] {
+    return (
+      db
+        .prepare(
+          'SELECT * FROM knowledge_artifacts WHERE project_id = ? AND kind = ? ORDER BY created_at ASC',
+        )
+        .all(projectId, kind) as KnowledgeArtifactRow[]
+    ).map(rowToKnowledgeArtifact);
+  },
+  byEntityId(projectId: string, entityId: string): KnowledgeArtifact[] {
+    return (
+      db
+        .prepare(
+          'SELECT * FROM knowledge_artifacts WHERE project_id = ? AND entity_id = ? ORDER BY version ASC',
+        )
+        .all(projectId, entityId) as KnowledgeArtifactRow[]
+    ).map(rowToKnowledgeArtifact);
+  },
+  /** Highest-version row for an entity_id (the "current" record). */
+  latestByEntityId(projectId: string, entityId: string): KnowledgeArtifact | undefined {
+    const r = db
+      .prepare(
+        'SELECT * FROM knowledge_artifacts WHERE project_id = ? AND entity_id = ? ORDER BY version DESC LIMIT 1',
+      )
+      .get(projectId, entityId) as KnowledgeArtifactRow | null;
+    return r ? rowToKnowledgeArtifact(r) : undefined;
+  },
+  updateStatus(id: string, status: KnowledgeArtifactStatus, updatedAt: string): void {
+    db.prepare(
+      'UPDATE knowledge_artifacts SET status = ?, updated_at = ? WHERE id = ?',
+    ).run(status, updatedAt, id);
   },
 };
 
@@ -1350,6 +1461,7 @@ export const store = {
   commandRuns,
   gateRuns,
   artifacts,
+  knowledgeArtifacts,
   buildRuns,
   testRuns,
   agentTasks,

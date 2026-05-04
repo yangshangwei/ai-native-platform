@@ -1,4 +1,4 @@
-import type { Iso8601, ArtifactId, WorkflowRunId, StepRunId } from './ids';
+import type { Iso8601, ArtifactId, ProjectId, WorkflowRunId, StepRunId } from './ids';
 
 // ---------------------------------------------------------------------------
 // Artifact kinds
@@ -222,4 +222,38 @@ export interface EvidenceRef {
   artifactId: ArtifactId;
   /** What this artifact proves. e.g. "mvn test exit=0" */
   claim: string;
+}
+
+// ---------------------------------------------------------------------------
+// Knowledge artifact shape (V2 P0-1)
+//
+// Mirrors `Artifact` but lives in the dedicated `knowledge_artifacts` table
+// (see DB migration in apps/api/src/store/db.ts). Project-scoped (no
+// `workflowRunId`). Carries the strongly-typed `KnowledgeMetadataCore`
+// fields surfaced as first-class columns; remaining freeform metadata
+// rides under the `metadata` field.
+// ---------------------------------------------------------------------------
+
+export interface KnowledgeArtifact {
+  id: ArtifactId;
+  kind: KnowledgeArtifactKind;
+  /** URI: file://, mem:// or http(s):// */
+  uri: string;
+  projectId: ProjectId;
+  size: number;
+  contentType: string;
+  /** Lifecycle status (mirrors metadata.status; surfaced as a column). */
+  status: KnowledgeArtifactStatus;
+  /** Version counter; bumped each time the entity is re-promoted. */
+  version: number;
+  /** REQ-### / DSN-### / ADR-### etc. App-layer-enforced uniqueness in P0-1. */
+  entityId: string | null;
+  /** Back-pointer to the per-run artifact this entity was promoted from. */
+  derivedFromArtifactId: ArtifactId | null;
+  /** Per-kind subtype (must satisfy KNOWLEDGE_SUBTYPES). */
+  subtype: string | null;
+  createdAt: Iso8601;
+  updatedAt: Iso8601;
+  /** Free-form extension metadata (typed core fields are NOT duplicated here). */
+  metadata: Record<string, unknown>;
 }

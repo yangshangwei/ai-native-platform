@@ -2,6 +2,8 @@ import {
   newId,
   nowIso,
   slugify,
+  isKnowledgeArtifactKind,
+  isValidKnowledgeSubtype,
   type Artifact,
   type ArtifactKind,
   type AgentBackendKind,
@@ -15,6 +17,9 @@ import {
   type CommandRun,
   type CommandRunId,
   type GateRun,
+  type KnowledgeArtifact,
+  type KnowledgeArtifactKind,
+  type KnowledgeArtifactStatus,
   type MessageRole,
   type ProjectId,
   type RequestMessage,
@@ -398,6 +403,85 @@ export function createArtifact(input: CreateArtifactInput): Artifact {
   store.artifacts.insert(a);
   audit(input.workflowRunId, 'artifact.created', { artifactId: a.id, kind: a.kind });
   return a;
+}
+
+// ---- Knowledge artifact (V2 P0-1) ----------------------------------------
+// Project-scoped, long-lived counterpart to per-run `Artifact`. See PRD ADRs
+// at .trellis/tasks/05-04-v2-artifact-kind-expansion/prd.md.
+
+export interface CreateKnowledgeArtifactInput {
+  projectId: ProjectId;
+  kind: KnowledgeArtifactKind;
+  uri: string;
+  size: number;
+  contentType: string;
+  /** Defaults to 'draft' if omitted. */
+  status?: KnowledgeArtifactStatus;
+  /** Defaults to 1 if omitted. */
+  version?: number;
+  /** REQ-### / DSN-### / ADR-### etc. Soft uniqueness in P0-1 (P0-2 hardens). */
+  entityId?: string | null;
+  /** Back-pointer to the per-run draft this entity was promoted from. */
+  derivedFromArtifactId?: ArtifactId | null;
+  /** Per-kind enum (see KNOWLEDGE_SUBTYPES). */
+  subtype?: string | null;
+  /** Freeform extension metadata; typed core fields are NOT duplicated here. */
+  metadata?: Record<string, unknown>;
+}
+
+export class KnowledgeArtifactValidationError extends Error {
+  constructor(message: string, readonly field: string) {
+    super(message);
+    this.name = 'KnowledgeArtifactValidationError';
+  }
+}
+
+export function createKnowledgeArtifact(
+  input: CreateKnowledgeArtifactInput,
+): KnowledgeArtifact {
+  if (!isKnowledgeArtifactKind(input.kind)) {
+    throw new KnowledgeArtifactValidationError(
+      `kind '${String(input.kind)}' is not a KnowledgeArtifactKind`,
+      'kind',
+    );
+  }
+  if (!isValidKnowledgeSubtype(input.kind, input.subtype ?? undefined)) {
+    throw new KnowledgeArtifactValidationError(
+      `subtype '${String(input.subtype)}' is not allowed for kind '${input.kind}'`,
+      'subtype',
+    );
+  }
+  const ts = nowIso();
+  const a: KnowledgeArtifact = {
+    id: newId('kart'),
+    kind: input.kind,
+    uri: input.uri,
+    projectId: input.projectId,
+    size: input.size,
+    contentType: input.contentType,
+    status: input.status ?? 'draft',
+    version: input.version ?? 1,
+    entityId: input.entityId ?? null,
+    derivedFromArtifactId: input.derivedFromArtifactId ?? null,
+    subtype: input.subtype ?? null,
+    createdAt: ts,
+    updatedAt: ts,
+    metadata: input.metadata ?? {},
+  };
+  store.knowledgeArtifacts.insert(a);
+  return a;
+}
+
+export function setKnowledgeArtifactStatus(
+  id: string,
+  status: KnowledgeArtifactStatus,
+): KnowledgeArtifact {
+  const existing = store.knowledgeArtifacts.get(id);
+  if (!existing) throw new Error(`knowledge artifact not found: ${id}`);
+  store.knowledgeArtifacts.updateStatus(id, status, nowIso());
+  const updated = store.knowledgeArtifacts.get(id);
+  if (!updated) throw new Error(`knowledge artifact disappeared after update: ${id}`);
+  return updated;
 }
 
 // ---- Maven build ingest ---------------------------------------------------

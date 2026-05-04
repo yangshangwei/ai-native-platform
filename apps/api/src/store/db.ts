@@ -118,6 +118,28 @@ const MIGRATIONS: string[] = [
      metadata_json TEXT NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_artifacts_workflow ON artifacts(workflow_run_id)`,
+  // V2 P0-1: knowledge_artifacts — project-scoped, long-lived, editable,
+  // versioned. Distinct from `artifacts` (per-run, one-shot). See
+  // `.trellis/tasks/05-04-v2-artifact-kind-expansion/prd.md` ADR Q1.
+  `CREATE TABLE IF NOT EXISTS knowledge_artifacts (
+     id TEXT PRIMARY KEY,
+     kind TEXT NOT NULL,
+     uri TEXT NOT NULL,
+     project_id TEXT NOT NULL,
+     size INTEGER NOT NULL,
+     content_type TEXT NOT NULL,
+     status TEXT NOT NULL DEFAULT 'draft',
+     version INTEGER NOT NULL DEFAULT 1,
+     entity_id TEXT,
+     derived_from_artifact_id TEXT,
+     subtype TEXT,
+     metadata_json TEXT NOT NULL,
+     created_at TEXT NOT NULL,
+     updated_at TEXT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_knowledge_artifacts_project ON knowledge_artifacts(project_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_knowledge_artifacts_entity ON knowledge_artifacts(project_id, entity_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_knowledge_artifacts_kind ON knowledge_artifacts(project_id, kind)`,
   `CREATE TABLE IF NOT EXISTS build_runs (
      id TEXT PRIMARY KEY,
      workflow_run_id TEXT NOT NULL,

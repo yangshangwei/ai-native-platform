@@ -8,6 +8,7 @@ import type {
   AgentBackendKind,
   AgentTaskKind,
 } from '@ainp/shared';
+import { isPerRunArtifactKind } from '@ainp/shared';
 import {
   finishStep,
   recordCommandRun,
@@ -179,6 +180,17 @@ runnerEvents.post('/artifact', async (c) => {
     metadata?: Record<string, unknown>;
   };
   try {
+    // V2 P0-1: confused-tier protection. The /runner/events/artifact entrypoint
+    // is for per-run artifacts only. Knowledge kinds must go through
+    // POST /knowledge-artifacts/projects/:projectId.
+    if (!isPerRunArtifactKind(body.kind)) {
+      return c.json(
+        {
+          error: `kind '${String(body.kind)}' is not a PerRunArtifactKind. Use POST /knowledge-artifacts/projects/:projectId for knowledge artifacts.`,
+        },
+        400,
+      );
+    }
     if (body.uri.startsWith('file://')) assertReadableFileUri(body.uri);
     const a = createArtifact({
       workflowRunId: body.workflowRunId,
