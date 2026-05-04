@@ -1,0 +1,11 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Always-included shared guides bundle"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Avoid duplicating write paths between artifacts and knowledge_artifacts; one canonical postKnowledgeArtifact entry"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Change touches shared/api/runner — keep contract consistent across layers"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "Type definitions live in packages/shared — extending ArtifactKind union + adding KnowledgeMetadataCore"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "TS quality bar for the new union types and the typed metadata core"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API architectural rules — knowledge_artifacts table sits in apps/api"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "Migration pattern for new knowledge_artifacts table; follow ALTER TABLE / PRAGMA convention in db.ts"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "promoteToKnowledge() must degrade gracefully without breaking acceptance gate (R18)"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "Runner-side write path changes (orchestrator + api-client postArtifact call sites)"}
+{"file": ".trellis/spec/runner/backend/error-handling.md", "reason": "Acceptance gate hook failure must log + downgrade, not throw — V1 acceptance behavior preserved"}
+{"file": "docs/2026-05-04-ai-native-platform-v2-design-notes.md", "reason": "V2 architectural reference: §3.1 dual-write, §3.4 structured artifacts, §3.6 entity numbering"}

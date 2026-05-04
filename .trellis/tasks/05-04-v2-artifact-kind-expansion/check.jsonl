@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Always-included shared guides bundle"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Verify implementation didn't fork write paths — one canonical postKnowledgeArtifact entry"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify shared/api/runner contract stayed consistent across layers"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "Verify TS union types are clean, no any leaks, KnowledgeMetadataCore exported correctly"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "API-side quality bar (logging, naming, layering)"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "Verify migration follows existing idempotent CREATE TABLE + ALTER pattern; new table indexed properly"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "Verify promoteToKnowledge fault tolerance: failure logs but doesn't break acceptance"}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "Runner-side quality bar"}
+{"file": ".trellis/spec/runner/backend/error-handling.md", "reason": "Verify runner upgrade hook downgrades gracefully on failure"}
+{"file": "docs/2026-05-04-ai-native-platform-v2-design-notes.md", "reason": "Cross-check implementation against V2 vision §3.1 dual-write / §3.4 structured artifacts / §3.6 entity numbering"}
