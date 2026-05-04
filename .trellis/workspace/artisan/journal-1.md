@@ -38,3 +38,39 @@ Implemented PR4 of the runtime-config-UI series inline (sub-agent service was th
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: Close requirement-analysis stage design-impl gaps (P0-1/P0-2/P0-3 + P1-4/P1-5/P1-7)
+
+**Date**: 2026-05-04
+**Task**: Close requirement-analysis stage design-impl gaps (P0-1/P0-2/P0-3 + P1-4/P1-5/P1-7)
+**Branch**: `main`
+
+### Summary
+
+Closed 6 gaps between docs/2026-05-03-requirements-phase-adaptation-plan.md design and current implementation in 4 atomic PRs. PR1 (api): POST /workflow-requests now accepts firstMessage and writes both inside db.transaction so the runner watch loop never races; PATCH /workflow-requests/:id/status enforces ALLOWED_TRANSITIONS with 409 on illegal moves. PR3 (runner): rewrote Coordinator LLM fallback with LlmFallbackDeps injection seam + codex one-shot via --output-last-message; selectionOrder picks the project's configured agentBackend first, falls back to the other CLI, degrades to pause_for_human only when both unavailable. PR2 (web): submitWorkflowRequest is a single call carrying firstMessage; new renderCoordinatorVerdictMetric exposes 'Coordinator 判定' next to 'Project 用户标记' with warn highlight on mismatch. PR4 (docs): requirement-workflow.md flow diagram + new chapter on awaiting_clarification; adaptation-plan.md gets a Closure table mapping each gap to its landing. Final check: bun test 221/221, bun run typecheck PASS for shared/api/runner/web.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c36becc` | (see git log) |
+| `d1dd5ab` | (see git log) |
+| `b3d64dc` | (see git log) |
+| `6cbc182` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
