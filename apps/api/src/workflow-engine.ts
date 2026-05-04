@@ -16,6 +16,7 @@ import {
   type BuildRun,
   type CommandRun,
   type CommandRunId,
+  type FlowId,
   type GateRun,
   type KnowledgeArtifact,
   type KnowledgeArtifactKind,
@@ -61,6 +62,13 @@ export function createWorkflowRun(params: {
   type: WorkflowRunType;
   title: string;
   sourceBranch?: string;
+  /**
+   * V2 W2-1 / PR3: optional flow id. Defaults to `'feature.standard'` so
+   * existing callers (API routes, runner triggers) need no changes for
+   * V1-equivalent runs. Future flows (`feature.fastforward`, etc.) pass
+   * an explicit flowId from the route layer.
+   */
+  flowId?: FlowId;
 }): WorkflowRun {
   const id = newId('run');
   const branch = `ai/${id}-${slugify(params.title)}`;
@@ -72,6 +80,7 @@ export function createWorkflowRun(params: {
     title: params.title,
     status: 'pending',
     currentStage: 'init',
+    flowId: params.flowId ?? 'feature.standard',
     configSnapshotId: null,
     sourceBranch: params.sourceBranch?.trim() || 'main',
     branch,
@@ -80,7 +89,12 @@ export function createWorkflowRun(params: {
     updatedAt: now,
   };
   store.workflowRuns.set(id, run);
-  audit(id, 'workflow_run.created', { type: run.type, title: run.title, sourceBranch: run.sourceBranch });
+  audit(id, 'workflow_run.created', {
+    type: run.type,
+    title: run.title,
+    sourceBranch: run.sourceBranch,
+    flowId: run.flowId,
+  });
   return run;
 }
 

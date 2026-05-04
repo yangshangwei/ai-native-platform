@@ -92,3 +92,44 @@ test('completeWorkflowRun preserves the failed stage instead of jumping to compl
   expect(completed.status).toBe('failed');
   expect(completed.currentStage).toBe('requirement');
 });
+
+// ---------------------------------------------------------------------------
+// V2 W2-1 / PR3 — createWorkflowRun.flowId end-to-end (PRD AC-12 / AC-13 /
+// AC-14 / R19). Verifies the default + explicit + persistence paths so the
+// `WorkflowRun.flowId` contract is honored at the API layer before the
+// runner reads it via FLOW_REGISTRY.
+// ---------------------------------------------------------------------------
+
+test('createWorkflowRun defaults flowId to feature.standard when omitted (AC-13)', () => {
+  const run = workflow.createWorkflowRun({
+    projectId: 'proj_default_flowid',
+    type: 'feature',
+    title: 'default flow',
+    sourceBranch: 'main',
+  });
+  expect(run.flowId).toBe('feature.standard');
+});
+
+test('createWorkflowRun honors an explicit flowId in params (AC-12)', () => {
+  const run = workflow.createWorkflowRun({
+    projectId: 'proj_explicit_flowid',
+    type: 'feature',
+    title: 'explicit flow',
+    sourceBranch: 'main',
+    flowId: 'feature.standard',
+  });
+  expect(run.flowId).toBe('feature.standard');
+});
+
+test('createWorkflowRun.flowId round-trips through SQLite (AC-4 / AC-5 / AC-11)', () => {
+  const run = workflow.createWorkflowRun({
+    projectId: 'proj_flowid_roundtrip',
+    type: 'feature',
+    title: 'roundtrip flow',
+    sourceBranch: 'main',
+  });
+  // Re-read from store (rowToWorkflowRun maps `flow_id` column → `flowId`).
+  const reloaded = storeMod.store.workflowRuns.get(run.id);
+  expect(reloaded).toBeDefined();
+  expect(reloaded!.flowId).toBe('feature.standard');
+});

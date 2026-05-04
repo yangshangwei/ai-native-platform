@@ -108,6 +108,16 @@ export interface WorkflowRun {
   type: WorkflowRunType;
   status: WorkflowRunStatus;
   currentStage: WorkflowStage;
+  /**
+   * V2 W2-1: which flow definition this run executes. Indexes into
+   * `FLOW_REGISTRY` (`apps/runner/src/flows/registry.ts`).
+   *
+   * Always present — `workflow_runs.flow_id` is `NOT NULL DEFAULT
+   * 'feature.standard'` (PRD ADR Q2). Defaulting happens in
+   * `createWorkflowRun()` so callers (API routes / runner triggers)
+   * remain unchanged for V1-equivalent runs.
+   */
+  flowId: FlowId;
   /** Reserved for future configuration snapshot reference. */
   configSnapshotId: string | null;
   /** Source branch used as the base when preparing the run worktree. */

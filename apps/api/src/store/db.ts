@@ -45,6 +45,7 @@ const MIGRATIONS: string[] = [
      branch TEXT NOT NULL,
      workspace_path TEXT,
      title TEXT NOT NULL,
+     flow_id TEXT NOT NULL DEFAULT 'feature.standard',
      created_at TEXT NOT NULL,
      updated_at TEXT NOT NULL
    )`,
@@ -355,4 +356,17 @@ if (!projectColumns.has('source_branches_json')) {
 const workflowRunColumns = columnNames('workflow_runs');
 if (!workflowRunColumns.has('source_branch')) {
   runSql(`ALTER TABLE workflow_runs ADD COLUMN source_branch TEXT`);
+}
+// V2 W2-1 / PR3: workflow_runs.flow_id — declarative pointer into
+// FLOW_REGISTRY (apps/runner/src/flows/registry.ts). New rows get the
+// column DEFAULT; historical rows are explicitly backfilled (PRD ADR Q2).
+// Both the ALTER and the UPDATE are idempotent.
+if (!workflowRunColumns.has('flow_id')) {
+  runSql(
+    `ALTER TABLE workflow_runs ADD COLUMN flow_id TEXT NOT NULL DEFAULT 'feature.standard'`,
+  );
+  // Defensive backfill: ALTER ... DEFAULT covers freshly-CREATEd rows,
+  // but normalises any pre-existing row that may have been written with
+  // an empty string via a different code path. Idempotent.
+  runSql(`UPDATE workflow_runs SET flow_id = 'feature.standard' WHERE flow_id = ''`);
 }
