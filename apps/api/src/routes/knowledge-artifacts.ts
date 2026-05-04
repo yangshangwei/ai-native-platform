@@ -14,6 +14,7 @@ import {
   isKnowledgeArtifactKind,
   type KnowledgeArtifactKind,
   type KnowledgeArtifactStatus,
+  type PromoteRequest,
 } from '@ainp/shared';
 import { store } from '../store/store';
 import {
@@ -21,6 +22,7 @@ import {
   setKnowledgeArtifactStatus,
   KnowledgeArtifactValidationError,
 } from '../workflow-engine';
+import { promoteDraftInTransaction } from '../promote';
 
 export const knowledgeArtifacts = new Hono();
 
@@ -71,6 +73,66 @@ knowledgeArtifacts.post('/projects/:projectId', async (c) => {
       return c.json({ error: err.message, field: err.field }, 400);
     }
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+  }
+});
+
+// ---- promote (V2 P0-2 / Q5=5-A) -------------------------------------------
+//
+// Single canonical entry point for turning an accepted per-run draft
+// (`requirement_draft` / `design_doc`) into a knowledge entity. The full
+// 6-step pipeline runs inside one db.transaction in
+// `promoteDraftInTransaction`. Runner-side code (PR5) is a thin HTTP
+// wrapper that just forwards the request and surfaces the response.
+//
+// Errors:
+//   - 400 KnowledgeArtifactValidationError (bad kind, missing refReq, etc.)
+//   - 409 SQLITE FK / constraint violation (refers to non-existent REQ)
+//   - 500 anything else
+
+knowledgeArtifacts.post('/promote', async (c) => {
+  const body = (await c.req.json()) as PromoteRequest;
+
+  // Shallow shape check before handing off to the transaction.
+  for (const field of [
+    'projectId',
+    'kind',
+    'draftArtifactId',
+    'draftText',
+    'uri',
+    'contentType',
+  ] as const) {
+    if (typeof body[field] !== 'string' || body[field].length === 0) {
+      return c.json(
+        { error: `missing or invalid required string field: '${field}'` },
+        400,
+      );
+    }
+  }
+  if (typeof body.size !== 'number' || !Number.isFinite(body.size) || body.size < 0) {
+    return c.json({ error: `missing or invalid 'size' (must be a non-negative number)` }, 400);
+  }
+  if (body.kind !== 'requirement_draft' && body.kind !== 'design_doc') {
+    return c.json(
+      {
+        error: `kind '${String(body.kind)}' is not a promotable draft kind (allowed: requirement_draft, design_doc)`,
+      },
+      400,
+    );
+  }
+
+  try {
+    const result = promoteDraftInTransaction(body);
+    return c.json({ ok: true, result }, 201);
+  } catch (err) {
+    if (err instanceof KnowledgeArtifactValidationError) {
+      return c.json({ error: err.message, field: err.field }, 400);
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    // SQLite FK / unique violations land here (the transaction rolled back).
+    if (/FOREIGN KEY|UNIQUE|constraint/i.test(msg)) {
+      return c.json({ error: msg, code: 'CONSTRAINT_VIOLATION' }, 409);
+    }
+    return c.json({ error: msg }, 500);
   }
 });
 
