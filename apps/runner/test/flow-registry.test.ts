@@ -49,8 +49,11 @@ const V1_STAGE_ORDER: readonly WorkflowStage[] = [
 ] as const;
 
 describe('FLOW_REGISTRY', () => {
-  test('AC-8: exposes exactly one flow (feature.standard) in W2-1', () => {
-    expect(Object.keys(FLOW_REGISTRY)).toEqual(['feature.standard']);
+  test('exposes both V2 Wave 2 flows: feature.standard + feature.fastforward (W2-3)', () => {
+    expect(Object.keys(FLOW_REGISTRY).sort()).toEqual([
+      'feature.fastforward',
+      'feature.standard',
+    ]);
   });
 
   describe('feature.standard', () => {
@@ -104,6 +107,81 @@ describe('FLOW_REGISTRY', () => {
         } else {
           expect(step.skillId).toBeUndefined();
         }
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // V2 W2-3 — feature.fastforward: 4-stage strict subset of feature.standard.
+  // PRD AC-4 / AC-5 / AC-6 / AC-7 / AC-8 (the W2-3 task PRD, not W2-1's).
+  // ---------------------------------------------------------------------------
+
+  describe('feature.fastforward (W2-3)', () => {
+    const flow = FLOW_REGISTRY['feature.fastforward'];
+
+    /**
+     * Reference order: 4 stages, strictly the subset of `feature.standard`
+     * that DOES the work + audits it. Skips `context_pack` / `requirement` /
+     * `design` (front-end) and `knowledge` (back-end). Keeps `review` because
+     * V1 review owns the human acceptance gate; fastforward MUST NOT bypass
+     * human ack.
+     */
+    const FASTFORWARD_STAGE_ORDER: readonly WorkflowStage[] = [
+      'implementation',
+      'build_test',
+      'review',
+      'completion',
+    ] as const;
+
+    test('id matches its registry key', () => {
+      expect(flow.id).toBe('feature.fastforward');
+    });
+
+    test('AC-7: kind is "feature" (variant of the same WorkflowRunType)', () => {
+      expect(flow.kind).toBe('feature');
+    });
+
+    test('description is non-empty', () => {
+      expect(typeof flow.description).toBe('string');
+      expect(flow.description.length).toBeGreaterThan(0);
+    });
+
+    test('AC-5: stages length is exactly 4', () => {
+      expect(flow.stages).toHaveLength(4);
+      expect(flow.stages).toHaveLength(FASTFORWARD_STAGE_ORDER.length);
+    });
+
+    test('AC-6: stages.map(s => s.stage) strictly equals fastforward reference order', () => {
+      const order = flow.stages.map((s: StageStep) => s.stage);
+      expect(order).toEqual([...FASTFORWARD_STAGE_ORDER]);
+    });
+
+    test('skipped stages are NOT in the list (context_pack/requirement/design/knowledge)', () => {
+      const present = new Set(flow.stages.map((s) => s.stage));
+      expect(present.has('context_pack')).toBe(false);
+      expect(present.has('requirement')).toBe(false);
+      expect(present.has('design')).toBe(false);
+      expect(present.has('knowledge')).toBe(false);
+    });
+
+    test('build_test + completion are runner-side engine stages', () => {
+      const byStage = Object.fromEntries(flow.stages.map((s) => [s.stage, s]));
+      expect(byStage.build_test.kind).toBe('engine');
+      expect(byStage.completion.kind).toBe('engine');
+    });
+
+    test('implementation + review are agent stages with skillIds', () => {
+      const byStage = Object.fromEntries(flow.stages.map((s) => [s.stage, s]));
+      expect(byStage.implementation.kind).toBe('agent');
+      expect(byStage.implementation.skillId).toBe('cs-feat-impl');
+      expect(byStage.review.kind).toBe('agent');
+      expect(byStage.review.skillId).toBe('cs-feat-accept');
+    });
+
+    test('every step.kind is one of the four StageStepKind buckets', () => {
+      const buckets = new Set<string>(['agent', 'gate', 'human', 'engine']);
+      for (const step of flow.stages) {
+        expect(buckets.has(step.kind)).toBe(true);
       }
     });
   });

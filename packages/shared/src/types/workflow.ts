@@ -42,8 +42,15 @@ export type WorkflowRunType = 'feature' | 'bugfix' | 'smoke';
  *
  * Shape: `<work_kind>.<variant>` (lowercase alphabetic + dot + alphabetic).
  *
- * Currently only `'feature.standard'` is shipped (W2-1). Future tasks add:
- *   - `'feature.fastforward'`           (W2-3)
+ * Currently shipped:
+ *   - `'feature.standard'`              (W2-1) — full 8-stage pipeline
+ *   - `'feature.fastforward'`           (W2-3) — 4-stage subset (implementation
+ *                                                / build_test / review /
+ *                                                completion); skips
+ *                                                context_pack / requirement /
+ *                                                design / knowledge
+ *
+ * Future tasks add:
  *   - `'issue.standard'`                (W2-2)
  *   - `'refactor.standard'`             (W2-2)
  *
@@ -51,7 +58,7 @@ export type WorkflowRunType = 'feature' | 'bugfix' | 'smoke';
  * `runWorkflow(run.flowId)` and FLOW_REGISTRY indexing are type-checked
  * end-to-end. New flows must add their FlowId to this union.
  */
-export type FlowId = 'feature.standard';
+export type FlowId = 'feature.standard' | 'feature.fastforward';
 
 /**
  * Classification of how a single {@link StageStep} is executed.

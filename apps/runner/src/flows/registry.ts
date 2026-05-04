@@ -65,11 +65,40 @@ const FEATURE_STANDARD: FlowDef = {
 };
 
 /**
+ * Fast-forward feature pipeline — strict 4-stage subset of `feature.standard`,
+ * for the V2 Wave 2 W2-3 "patch a semicolon shouldn't walk 9 stages" use case.
+ *
+ * Skips `context_pack` (heavy profile + knowledge load), `requirement` (no PRD
+ * for fastforward), `design` (no design doc), and `knowledge` (small changes
+ * rarely produce reusable knowledge). Keeps `review` because the V1 review
+ * step still owns the human acceptance gate (`awaitHuman({ stage: 'review' })`
+ * + `acceptance_gate` approval) — fastforward MUST NOT bypass human ack.
+ * Keeps `completion` for the audit trail.
+ *
+ * The implementation skill running on a fastforward run won't have
+ * `inputs['project_profile.md']` / `inputs['accepted_knowledge.md']` populated
+ * (context_pack didn't run); the skill is expected to handle absent inputs
+ * gracefully — `invokeSkill`'s `inputArtifactIds` mapping already filters
+ * undefined entries via `.filter((id): id is string => Boolean(id))`.
+ */
+const FEATURE_FASTFORWARD: FlowDef = {
+  id: 'feature.fastforward',
+  kind: 'feature',
+  description:
+    'Fast-forward 4-stage feature pipeline — skips context_pack/requirement/design/knowledge; runs implementation -> build_test -> review (with human acceptance gate) -> completion. W2-3.',
+  stages: [
+    { stage: 'implementation', kind: 'agent', skillId: 'cs-feat-impl' },
+    { stage: 'build_test', kind: 'engine' },
+    { stage: 'review', kind: 'agent', skillId: 'cs-feat-accept' },
+    { stage: 'completion', kind: 'engine' },
+  ],
+};
+
+/**
  * Single source of truth for V2 flow definitions, keyed by {@link FlowId}.
  *
- * W2-1 (this PR) ships only `'feature.standard'`. Subsequent Wave 2 tasks
- * append entries:
- *   - `'feature.fastforward'` (W2-3)
+ * W2-1 shipped `'feature.standard'`. W2-3 adds `'feature.fastforward'`.
+ * Subsequent Wave 2 tasks append entries:
  *   - `'issue.standard'`      (W2-2)
  *   - `'refactor.standard'`   (W2-2)
  *
@@ -80,4 +109,5 @@ const FEATURE_STANDARD: FlowDef = {
  */
 export const FLOW_REGISTRY: Readonly<Record<FlowId, FlowDef>> = {
   'feature.standard': FEATURE_STANDARD,
+  'feature.fastforward': FEATURE_FASTFORWARD,
 };

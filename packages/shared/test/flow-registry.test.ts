@@ -16,9 +16,11 @@ import type {
 // assertions only touch the constructed values.
 // ---------------------------------------------------------------------------
 
-test('FlowId currently exposes exactly one literal: feature.standard', () => {
-  const id: FlowId = 'feature.standard';
-  expect(id).toBe('feature.standard');
+test('FlowId carries feature.standard (W2-1) + feature.fastforward (W2-3)', () => {
+  const std: FlowId = 'feature.standard';
+  const ff: FlowId = 'feature.fastforward';
+  expect(std).toBe('feature.standard');
+  expect(ff).toBe('feature.fastforward');
 });
 
 test('StageStepKind enumerates the four dispatch buckets', () => {
