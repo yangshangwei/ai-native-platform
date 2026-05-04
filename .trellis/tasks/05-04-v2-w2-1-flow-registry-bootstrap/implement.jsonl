@@ -1,0 +1,12 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Always-included shared guides bundle"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Verify W2-1 doesn't fork stage dispatch — runContextPack / runStage helpers + new executeXxx fns must share a single dispatchStep entry"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "FlowId / FlowDef / StageStep are new cross-layer contracts: shared types consumed by runner; WorkflowRun.flowId field threads from API → DB → runner"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "FlowId / FlowDef / StageStep types live in packages/shared/src/types/workflow.ts (alongside WorkflowStage / WorkflowRunType)"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "TS quality bar for the new types — FlowId is a string literal union, not a free string; JSDoc required"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API rules — workflow_runs.flow_id migration + createWorkflowRunInput.flowId? + WorkflowRun.flowId field write path"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "Idempotent ALTER TABLE pattern with NOT NULL DEFAULT (existing pattern from db.ts:285-330) + post-migration UPDATE backfill (Q2 decision)"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "FLOW_REGISTRY lives at apps/runner/src/flows/registry.ts; runWorkflow refactor to for-of dispatch"}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "Runner quality bar — when extracting executeXxx fns from runWorkflow, signatures must share a single RunCtx interface; no leaked closure variables"}
+{"file": "docs/2026-05-04-ai-native-platform-v2-design-notes.md", "reason": "V2 architectural reference: § 2.1 工作类型多态 / § 5 Wave 2 改造路径"}
+{"file": ".trellis/tasks/archive/2026-05/05-04-v2-wave2-workflow-polymorphism/prd.md", "reason": "Wave 2 roadmap PRD — locks FLOW_REGISTRY shape, FlowId format, naming conventions; W2-1 inherits all R4-R15"}
+{"file": ".trellis/tasks/05-04-v2-w2-1-flow-registry-bootstrap/prd.md", "reason": "This task's PRD — 4 ADR-lite (Q1=α thin / Q2 backfill / Q3 createWorkflowRunInput.flowId? / Q4 双轨测试), R1-R19, AC-1~AC-19, 4-PR plan"}

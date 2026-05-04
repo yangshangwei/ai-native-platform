@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Always-included shared guides bundle"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Verify single dispatchStep entry; no forked stage dispatch logic"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify FlowId / FlowDef / StageStep contracts aligned across shared/api/runner — no drift"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "Verify FlowId is a string literal union, not a free string; JSDoc present"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "API quality bar — migration idempotency, no NULL fallback in orchestrator"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "Verify migration pattern: ALTER ADD COLUMN NOT NULL DEFAULT + post-UPDATE backfill (Q2 派生)"}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "Verify executeXxx functions share RunCtx; no leaked closure variables; runWorkflow main loop is small"}
+{"file": "docs/2026-05-04-ai-native-platform-v2-design-notes.md", "reason": "Cross-check W2-1 implementation against V2 § 2.1 / § 5"}
+{"file": ".trellis/tasks/05-04-v2-w2-1-flow-registry-bootstrap/prd.md", "reason": "Verify all 19 R + 19 AC checkboxes; ADR Q1-Q4 consequences satisfied"}
