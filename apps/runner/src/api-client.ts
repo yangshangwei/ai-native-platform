@@ -1,5 +1,6 @@
 import type {
   CommandRun,
+  FlowId,
   WorkflowRun,
   WorkflowRequest,
   WorkflowRequestStatus,
@@ -56,6 +57,8 @@ export const api = {
     title: string;
     type?: 'smoke' | 'feature' | 'bugfix';
     sourceBranch?: string;
+    /** V2 W2-3: optional flow id; defaults server-side to 'feature.standard'. */
+    flowId?: FlowId;
   }) =>
     request<WorkflowRun>('POST', '/workflow-runs', { ...params, type: params.type ?? 'smoke' }),
 

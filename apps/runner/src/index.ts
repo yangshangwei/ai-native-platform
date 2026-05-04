@@ -5,6 +5,18 @@ import { cmdDoctor } from './cmd/doctor';
 import { cmdWatch } from './cmd/watch';
 import { cmdOrchestrate } from './orchestrator';
 import { api } from './api-client';
+import type { FlowId } from '@ainp/shared';
+
+const KNOWN_FLOW_IDS: readonly FlowId[] = ['feature.standard', 'feature.fastforward'];
+function parseFlowIdFlag(raw: unknown): FlowId | undefined {
+  if (raw === undefined || raw === true) return undefined;
+  const s = String(raw);
+  if ((KNOWN_FLOW_IDS as readonly string[]).includes(s)) return s as FlowId;
+  console.error(
+    `[runner] --flow-id must be one of: ${KNOWN_FLOW_IDS.join(', ')} (got: ${s})`,
+  );
+  process.exit(2);
+}
 
 function parseFlags(argv: string[]): Record<string, string | boolean> {
   const flags: Record<string, string | boolean> = {};
@@ -34,7 +46,7 @@ Usage:
   ainp-runner register --path <path> --name <name> [--agent-backend <claude_code|codex>]
   ainp-runner register --url <git-url> --source <github|gitee|git|gitlab> --name <name> [--branch <branch>] [--agent-backend <claude_code|codex>]
   ainp-runner run --project <name> --command "<whitelisted command>" [--title <t>] [--keep-worktree]
-  ainp-runner orchestrate --project <name> --title "<task>" [--keep-worktree]
+  ainp-runner orchestrate --project <name> --title "<task>" [--flow-id <feature.standard|feature.fastforward>] [--keep-worktree]
   ainp-runner watch [--once] [--poll-ms <ms>] [--keep-worktree]
 
 Examples:
@@ -43,6 +55,7 @@ Examples:
   ainp-runner register --url git@gitlab.internal.example.com:platform/app.git --source gitlab --name platform-app
   ainp-runner run --project java-sample --command "mvn -B test" --title "smoke mvn test"
   ainp-runner orchestrate --project java-sample --title "add a no-op marker comment"
+  ainp-runner orchestrate --project java-sample --title "tweak readme typo" --flow-id feature.fastforward
   ainp-runner watch --once
 `);
   process.exit(2);
@@ -105,10 +118,12 @@ async function main(): Promise<void> {
       const project = String(flags.project ?? '');
       const title = String(flags.title ?? '');
       if (!project || !title) usage();
+      const flowId = parseFlowIdFlag(flags['flow-id']);
       await cmdOrchestrate({
         project,
         title,
         cleanup: !flags['keep-worktree'],
+        flowId,
       });
       return;
     }

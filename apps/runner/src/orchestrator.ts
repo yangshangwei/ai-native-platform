@@ -37,6 +37,12 @@ export interface OrchestrateOpts {
   workflowRequestId?: string;
   /** Coordinator-decided run type. Defaults to 'feature' if omitted. */
   runType?: WorkflowRunType;
+  /**
+   * V2 W2-3: optional flow id (e.g. 'feature.fastforward'). Forwarded to
+   * `api.createWorkflowRun`; omitting it lets the API default to
+   * 'feature.standard'. PRD W2-3 ADR Q4.
+   */
+  flowId?: FlowId;
   /** Default true — auto-clean worktree at the end. */
   cleanup?: boolean;
   /** Default true for CLI mode; watch mode keeps the daemon alive on failed jobs. */
@@ -110,6 +116,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     title: opts.title,
     type: opts.runType ?? 'feature',
     sourceBranch: opts.sourceBranch ?? project.defaultBranch,
+    flowId: opts.flowId,
   });
   console.log(`[runner] workflow-run ${run.id} created (flow=${run.flowId})`);
   if (opts.workflowRequestId) {

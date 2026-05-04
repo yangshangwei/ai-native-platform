@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import type { AgentStreamEvent, Project, WorkflowRunType } from '@ainp/shared';
+import type { AgentStreamEvent, FlowId, Project, WorkflowRunType } from '@ainp/shared';
 import { store } from '../store/store';
 import {
   createWorkflowRun,
@@ -12,6 +12,18 @@ import { generateCompletionReport, generateKnowledgeCandidate } from '../reports
 import { subscribe } from '../agent-stream-bus';
 
 export const workflowRuns = new Hono();
+
+/**
+ * Trust-boundary type guard for the FlowId union. Keep in sync with
+ * `packages/shared/src/types/workflow.ts:FlowId`. The HTTP body can carry
+ * any string; we reject anything that isn't a registered FlowId so the
+ * downstream FLOW_REGISTRY[run.flowId] lookup never sees garbage. PRD
+ * W2-3 ADR Q3 + R-Risk-3.
+ */
+const KNOWN_FLOW_IDS: readonly FlowId[] = ['feature.standard', 'feature.fastforward'];
+function isFlowId(value: unknown): value is FlowId {
+  return typeof value === 'string' && (KNOWN_FLOW_IDS as readonly string[]).includes(value);
+}
 
 workflowRuns.get('/', (c) => {
   const projectId = c.req.query('projectId');
@@ -28,6 +40,7 @@ workflowRuns.post('/', async (c) => {
     type?: WorkflowRunType;
     title?: string;
     sourceBranch?: string;
+    flowId?: string;
   };
 
   let projectId = body.projectId;
@@ -45,11 +58,26 @@ workflowRuns.post('/', async (c) => {
   if (backendError) return c.json({ error: backendError, needsAgentBackendSetup: true }, 400);
   if (!body.title) return c.json({ error: 'title required' }, 400);
 
+  // V2 W2-3: optional flowId in body. If supplied, must be a registered
+  // FlowId; otherwise createWorkflowRun() applies the 'feature.standard'
+  // default at the API layer (PRD W2-1 ADR Q3, W2-3 ADR Q3).
+  let flowId: FlowId | undefined;
+  if (body.flowId !== undefined) {
+    if (!isFlowId(body.flowId)) {
+      return c.json(
+        { error: `unknown flowId: ${body.flowId} (known: ${KNOWN_FLOW_IDS.join(', ')})` },
+        400,
+      );
+    }
+    flowId = body.flowId;
+  }
+
   const run = createWorkflowRun({
     projectId,
     type: runType,
     title: body.title,
     sourceBranch: body.sourceBranch?.trim() || project.defaultBranch,
+    flowId,
   });
   return c.json(run, 201);
 });
