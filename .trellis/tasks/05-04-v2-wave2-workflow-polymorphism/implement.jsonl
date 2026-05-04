@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Always-included shared guides bundle"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Roadmap defines cross-layer naming conventions (FlowId / StageStep) — ensures shared/runner/api stay aligned across W2-1..W2-4 child tasks"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "FLOW_REGISTRY lives in apps/runner/src/flows/registry.ts (Q2/R4); runner is the orchestrator owner"}
+{"file": "docs/2026-05-04-ai-native-platform-v2-design-notes.md", "reason": "V2 architectural reference: § 2.1 哲学 1 工作类型多态 / § 3.2 智能路由入口 / § 4.2 第一阶段 3 种工作流 / § 5 改造路径 Wave 2 / § 6 设计禁忌"}
+{"file": ".trellis/tasks/05-04-v2-wave2-workflow-polymorphism/prd.md", "reason": "This roadmap PRD — 4 ADR-lite (Q1-Q4), R1-R15 requirements, AC-1~AC-5, 4 future-task summaries with slug + scope + estimate + dependency, dependency graph"}
+{"file": ".trellis/tasks/archive/2026-05/05-04-v2-dual-write-pipeline/prd.md", "reason": "Predecessor task (P1-1, V2 Wave 1 closure) — most recent reference for ADR-lite + 4-PR pattern that Wave 2 child tasks should mirror"}

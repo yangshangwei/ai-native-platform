@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Always-included shared guides bundle"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify Roadmap conventions documented sufficiently for downstream child tasks to inherit"}
+{"file": "docs/2026-05-04-ai-native-platform-v2-design-notes.md", "reason": "Cross-check Roadmap against V2 § 2.1 哲学 1 / § 3.2 / § 4.2 / § 5 / § 6"}
+{"file": ".trellis/tasks/05-04-v2-wave2-workflow-polymorphism/prd.md", "reason": "Verify all 5 AC checkboxes (AC-1, AC-2, AC-3 done; AC-4, AC-5 outside scope of this roadmap, deferred to W2-1 / archive step); ADR-lite Q1-Q4 consequences satisfied"}
