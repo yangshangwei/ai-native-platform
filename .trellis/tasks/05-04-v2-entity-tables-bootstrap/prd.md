@@ -125,41 +125,41 @@ lessons (id: LSN-001, severity, related_files[])
 ## Acceptance Criteria (evolving)
 
 ### 兼容性
-- [ ] AC-1. PR2 落地的 `knowledge_artifacts` schema 零改动（不加 / 不删 / 不改列）
-- [ ] AC-2. 现有 V1 + P0-1 全部测试通过（260+），零回归
+- [x] AC-1. PR2 落地的 `knowledge_artifacts` schema 零改动（不加 / 不删 / 不改列）
+- [x] AC-2. 现有 V1 + P0-1 全部测试通过（260+），零回归
 
 ### Schema (Q2=2-A 派生)
-- [ ] AC-3. `requirements` / `designs` 两张 migration 落地，列覆盖 R5 / R6
-- [ ] AC-4. `(project_id, id)` 在两张 entity 表上 DB-level UNIQUE
-- [ ] AC-5. `current_artifact_id` 列存在，**不声明** FK（Q3=3-B）；引用完整性靠 promote 事务保证（AC-9 覆盖）
-- [ ] AC-6. `designs.ref_req` 声明强 FK：`REFERENCES requirements(id) ON DELETE RESTRICT`
-- [ ] AC-6b. 端到端测试：试图 INSERT `designs` with `ref_req='REQ-NONEXIST'` → SQLite 报 FK violation
-- [ ] AC-6c. 端到端测试：DELETE 一个被 design 引用的 `requirements` 行 → SQLite 拒绝（RESTRICT 生效）
+- [x] AC-3. `requirements` / `designs` 两张 migration 落地，列覆盖 R5 / R6
+- [x] AC-4. `(project_id, id)` 在两张 entity 表上是复合 PRIMARY KEY（直接 enforce 项目维度唯一性，比原 R7 的 `id PK + UNIQUE(project_id, id)` 双层兜底更简洁）
+- [x] AC-5. `current_artifact_id` 列存在，**不声明** FK（Q3=3-B）；引用完整性靠 promote 事务保证（AC-9 覆盖）
+- [x] AC-6. `designs` 声明复合强 FK：`FOREIGN KEY (project_id, ref_req) REFERENCES requirements(project_id, id) ON DELETE RESTRICT`（升级原 R15 单列设计——同时锁 project_id 一致性 + ref_req 必须存在）
+- [x] AC-6b. 端到端测试：试图 INSERT `designs` with `ref_req='REQ-NONEXIST'` → SQLite 报 FK violation
+- [x] AC-6c. 端到端测试：DELETE 一个被 design 引用的 `requirements` 行 → SQLite 拒绝（RESTRICT 生效）
 
 ### Promote 路径事务化 (R10/R11 派生)
-- [ ] AC-7. `promoteAcceptedDraftToKnowledge` 在事务内完成"插 knowledge_artifacts + UPSERT entity"两步
-- [ ] AC-8. 端到端测试：第一次 promote → entity 行新建（version=1）；同 entity 第二次 promote → entity 行 head 指针前推（version=2，旧 knowledge_artifacts 行 supersede）
-- [ ] AC-9. 端到端测试：故意让第二步失败 → 第一步也回滚（entity 表不出现，knowledge_artifacts 也不留新行）
-- [ ] AC-10. PR3 现有 promote 接口签名 / 调用方代码零改动
+- [x] AC-7. `promoteAcceptedDraftToKnowledge` 在事务内完成"插 knowledge_artifacts + UPSERT entity"两步
+- [x] AC-8. 端到端测试：第一次 promote → entity 行新建（version=1）；同 entity 第二次 promote → entity 行 head 指针前推（version=2，旧 knowledge_artifacts 行 supersede）
+- [x] AC-9. 端到端测试：故意让第二步失败 → 第一步也回滚（entity 表不出现，knowledge_artifacts 也不留新行）
+- [x] AC-10. PR3 现有 promote 接口签名 / 调用方代码零改动
 
 ### Store / 查询接口
-- [ ] AC-11. 新增 `requirements.byProject` / `requirements.get` / `designs.byProject` / `designs.get` 查询并有单测覆盖
-- [ ] AC-12. `knowledgeArtifacts.latestByEntityId` 等 PR2 既有接口仍可用（兼容性）
+- [x] AC-11. 新增 `requirements.byProject` / `requirements.get` / `designs.byProject` / `designs.get` 查询并有单测覆盖
+- [x] AC-12. `knowledgeArtifacts.latestByEntityId` 等 PR2 既有接口仍可用（兼容性）
 
 ### Backfill (Q4=4-B 派生)
-- [ ] AC-12b. Migration 跑完后，`requirements` / `designs` 表为空，**完全不读取也不写入** `knowledge_artifacts`
-- [ ] AC-12c. 端到端测试：构造一条已存在的 `knowledge_artifacts` 行（kind=requirement, entity_id='REQ-001', version=2, status='accepted'），跑 migration → entity 表仍为空 → 触发新一次 `promoteAcceptedDraftToKnowledge` → entity 行自动创建，`current_version=3`（接续 max+1）
-- [ ] AC-12d. spec 文档更新："P0-2 升级前已有 entity_id 行不会自动出现在 entity 表"（R23）
+- [x] AC-12b. Migration 跑完后，`requirements` / `designs` 表为空，**完全不读取也不写入** `knowledge_artifacts`
+- [x] AC-12c. 端到端测试：构造一条已存在的 `knowledge_artifacts` 行（kind=requirement, entity_id='REQ-001', version=2, status='accepted'），跑 migration → entity 表仍为空 → 触发新一次 `promoteAcceptedDraftToKnowledge` → entity 行自动创建，`current_version=3`（接续 max+1）
+- [x] AC-12d. spec 文档更新："P0-2 升级前已有 entity_id 行不会自动出现在 entity 表"（R23）
 
 ### entity_id 生成下沉 API (Q5=5-A 派生)
-- [ ] AC-12e. 新增端点 `POST /knowledge-artifacts/promote`，单元测试覆盖：(a) frontmatter 抓到 entity_id (b) frontmatter 没抓到走 max+1 (c) 同 entity_id 多次 promote 累加 version (d) 旧 accepted 行被自动 superseded (e) entity head 表 upsert
-- [ ] AC-12f. 单事务原子性测试：故意让 entity head upsert 失败 → INSERT knowledge_artifact 也回滚（DB 回到调用前状态）
-- [ ] AC-12g. 并发测试：两个 promote 请求同时进入（同 project / 同 kind / frontmatter 都没 hint）→ 各自分配到不同 entity_id，无重号
-- [ ] AC-12h. Runner `promoteAcceptedDraftToKnowledge` 收缩为 HTTP 包装（行数 ≤ 30），原 entity_id 算法 / version 算法 / supersede 调用全部移除
-- [ ] AC-12i. PR3 现有 runner 端单测全部通过（mock 层从 4 依赖减到 1 依赖）；新增 API 端单测覆盖原算法
+- [x] AC-12e. 新增端点 `POST /knowledge-artifacts/promote`，单元测试覆盖：(a) frontmatter 抓到 entity_id (b) frontmatter 没抓到走 max+1 (c) 同 entity_id 多次 promote 累加 version (d) 旧 accepted 行被自动 superseded (e) entity head 表 upsert
+- [x] AC-12f. 单事务原子性测试：故意让 entity head upsert 失败 → INSERT knowledge_artifact 也回滚（DB 回到调用前状态）
+- [x] AC-12g. 并发测试：两个 promote 请求同时进入（同 project / 同 kind / frontmatter 都没 hint）→ 各自分配到不同 entity_id，无重号
+- [x] AC-12h. Runner `promoteAcceptedDraftToKnowledge` 收缩为 HTTP 包装（行数 ≤ 30），原 entity_id 算法 / version 算法 / supersede 调用全部移除
+- [x] AC-12i. PR3 现有 runner 端单测全部通过（mock 层从 4 依赖减到 1 依赖）；新增 API 端单测覆盖原算法
 
 ### 工程
-- [ ] AC-13. `tsc` 全清；lint 通过；`npm test` green
+- [x] AC-13. `tsc` 全清；lint 通过；`npm test` green
 
 ## Definition of Done
 
