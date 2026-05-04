@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Always-included shared guides bundle"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Verify dual-write logic is co-located in promoteDraftInTransaction (apps/api/src/promote.ts) — not duplicated in routes / runner"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify EntityFileFrontmatter / RenderEntityInput contract aligned across packages/shared and apps/api consumers"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "Verify TS types clean — frontmatter types exported, no any leaks"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "API quality bar — pure render fn vs IO fn split, no fs/promises calls inside render"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "Verify dual-write convention added (codestable layout, Stage-then-Finalize, working tree dirty is normal); spec doc must reflect AC-14"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "Verify Step 7 rename failure logs with DB row id + does NOT roll back DB (R11); tmp cleanup on DB rollback is best-effort log-only (R10)"}
+{"file": ".trellis/spec/api/backend/logging-guidelines.md", "reason": "Verify log line shapes are present — promote success / tmp cleanup failure / rename failure with knowledgeArtifactId for ops trace"}
+{"file": "docs/2026-05-04-ai-native-platform-v2-design-notes.md", "reason": "Cross-check implementation against V2 § 3.1 dual-write principle (file as SoT) and § 3.6 entity numbering"}
+{"file": ".trellis/tasks/05-04-v2-dual-write-pipeline/prd.md", "reason": "Verify all 22 R + 16 AC checkboxes marked; ADR-lite Q1-Q6 consequences satisfied; risk register R-Risk-1..5 addressed"}

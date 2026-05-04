@@ -1,0 +1,13 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Always-included shared guides bundle"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Promote path is the single canonical write entry — file write logic must be co-located with promoteDraftInTransaction, not duplicated elsewhere"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Dual-write introduces new shared types (EntityFileFrontmatter / RenderEntityInput); shared/api must stay aligned"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "Shared types for the dual-write contract live in packages/shared/src/types/dual-write.ts"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "TS quality bar for the new frontmatter / render input types — no any leak, JSDoc"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API architectural rules — promote-file.ts pure-render + IO split, write into project.localPath"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "Co-locate dual-write convention here — extend with the codestable layout + Stage-then-Finalize pattern (R14, AC-14); covers PR3 single-transaction semantics this task preserves"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "File rename failure must record error log without rolling back DB (R10/R11); tmp cleanup on DB rollback is best-effort with log-only failure"}
+{"file": ".trellis/spec/api/backend/logging-guidelines.md", "reason": "Log lines for: file write success, tmp cleanup failure, rename failure (with DB row id for ops follow-up)"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "API quality bar — pure render fn separated from IO; no test pollution from shared FS state (use mkdtemp per test)"}
+{"file": "docs/2026-05-04-ai-native-platform-v2-design-notes.md", "reason": "V2 architectural reference: § 3.1 dual-write principle (file as SoT, DB as index), § 3.6 entity numbering (REQ/DSN), appendix A V1→V2 mapping"}
+{"file": ".trellis/tasks/05-04-v2-dual-write-pipeline/prd.md", "reason": "This task's PRD — 6 ADR-lite decisions Q1-Q6, R1-R22, AC-1~AC-16, Stage-then-Finalize technical approach + 4-PR plan + 5-item risk register"}
+{"file": ".trellis/tasks/archive/2026-05/05-04-v2-entity-tables-bootstrap/prd.md", "reason": "Predecessor task (P0-2) — promoteDraftInTransaction code structure, entity table schema, FK convention all defined here; PR3 of this task hooks into that flow"}
