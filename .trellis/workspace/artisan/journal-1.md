@@ -113,3 +113,40 @@ V2 P0-2 entity tables bootstrap: brainstorm to PRD with 5 ADR-lite decisions (Q1
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: V2 P1-1 dual-write-pipeline: brainstorm + 4-PR series
+
+**Date**: 2026-05-04
+**Task**: V2 P1-1 dual-write-pipeline: brainstorm + 4-PR series
+**Branch**: `main`
+
+### Summary
+
+V2 P1-1 dual-write pipeline (DB + 文件): brainstorm to PRD with 6 ADR-lite decisions (Q1=scope-alpha REQ+DSN only / Q2=codestable layout / Q3=Stage-then-Finalize / Q4=no auto-commit / Q5=no drift scan / Q6=typed core + freeform extension frontmatter), then implemented across 4 PRs. PR1 added shared TS types (DualWriteEntityKind / EntityFileFrontmatter discriminated union / RenderEntityInput / StageEntityFileInput) and the pure renderEntityMarkdown function with stable-order frontmatter and ISO-8601 single-quoting; ENTITY_ID_PATTERN regex for path safety. PR2 added the IO layer: ensureCodestableDir (mkdir -p, fail-fast pre-tx), writeEntityFile (atomic via tmp+rename with random hex suffix), deleteEntityFile (compensating cleanup with ENOENT-as-success), plus path helpers resolveCodestableDir / resolveEntityFilePath. PR3 wired dual-write into promoteDraftInTransaction: function became async, pre-tx step looks up project.localPath + ensureCodestableDir, post-tx step renders frontmatter with FINAL values from the tx and writes to <localPath>/codestable/<kind-plural>/<entityId>.md; file write failure logs with knowledge_artifact_id but does not roll back DB (R10/R11). promote.test.ts rewritten to async with project row seeded in beforeAll; promote-route.test.ts also seeds project. PR4 promoted .trellis/spec/api/backend/database-guidelines.md with a dedicated dual-write section: file layout reference, frontmatter schema doc, Stage-then-Finalize protocol, 5-stage failure-semantics matrix, git working-tree note, race-window note, plus 2 new common-mistakes entries. Final: bun run --filter '*' typecheck PASS for shared/api/runner/web, bun test 333/333 pass, zero flake. V2 Wave 1 NOW COMPLETE (3/3): artifact_kind expansion + entity tables + dual-write pipeline all shipped.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `31a143e` | (see git log) |
+| `4596462` | (see git log) |
+| `950b450` | (see git log) |
+| `72c07e4` | (see git log) |
+| `217ce86` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

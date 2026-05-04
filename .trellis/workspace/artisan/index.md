@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 3
+- **Total Sessions**: 4
 - **Last Active**: 2026-05-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~115 | Active |
+| `journal-1.md` | ~152 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 4 | 2026-05-04 | V2 P1-1 dual-write-pipeline: brainstorm + 4-PR series | `31a143e`, `4596462`, `950b450`, `72c07e4`, `217ce86` | `main` |
 | 3 | 2026-05-04 | V2 P0-2 entity-tables-bootstrap: brainstorm + 6-PR series | `f2f97ed`, `c0275c4`, `5165060`, `c9ce155`, `50caaaa`, `683f8b9`, `3d01e93` | `main` |
 | 2 | 2026-05-04 | Close requirement-analysis stage design-impl gaps (P0-1/P0-2/P0-3 + P1-4/P1-5/P1-7) | `c36becc`, `d1dd5ab`, `b3d64dc`, `6cbc182` | `main` |
 | 1 | 2026-05-04 | PR4 settings polish + config_audit mirror + projection test | `704cf51` | `main` |
