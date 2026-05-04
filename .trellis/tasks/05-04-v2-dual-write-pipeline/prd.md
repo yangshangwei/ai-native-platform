@@ -126,32 +126,32 @@
 ## Acceptance Criteria
 
 ### 兼容性
-- [ ] AC-1. 现有 296 条测试全过，typecheck 全 PASS
-- [ ] AC-2. PR3 单事务原子性测试（promote.test.ts AC-12f）仍然通过
-- [ ] AC-3. PR4 路由错误映射（promote-route.test.ts）仍然通过
+- [x] AC-1. 现有 296 条测试全过，typecheck 全 PASS
+- [x] AC-2. PR3 单事务原子性测试（promote.test.ts AC-12f）仍然通过
+- [x] AC-3. PR4 路由错误映射（promote-route.test.ts）仍然通过
 
 ### 文件写入
-- [ ] AC-4. `requirement_draft` promote 后，`<localPath>/codestable/requirements/REQ-XXX.md` 存在
-- [ ] AC-5. `design_doc` promote 后，`<localPath>/codestable/designs/DSN-XXX.md` 存在
-- [ ] AC-6. 文件 frontmatter 至少包含 R15 列出的 5 个核心字段；`design` 额外有 `ref_req`（R16）
-- [ ] AC-7. body 紧跟 frontmatter，包含 `draftText` 原文（按 R17 / R18）
+- [x] AC-4. `requirement_draft` promote 后，`<localPath>/codestable/requirements/REQ-XXX.md` 存在
+- [x] AC-5. `design_doc` promote 后，`<localPath>/codestable/designs/DSN-XXX.md` 存在
+- [x] AC-6. 文件 frontmatter 至少包含 R15 列出的 5 个核心字段；`design` 额外有 `ref_req`（R16）
+- [x] AC-7. body 紧跟 frontmatter，包含 `draftText` 原文（按 R17 / R18）
 
 ### 单事务原子性（Q3 派生）
-- [ ] AC-8. DB 事务失败 → 临时文件被删除（best-effort 日志可见，不残留 .tmp 文件）
-- [ ] AC-9. 重复 promote 同一 entity（v1 → v2）→ 同一文件被原子替换（rename），版本号在 frontmatter `version` 中前进
-- [ ] AC-10. Step 7 rename 模拟失败（mock fs.rename throw）→ DB 状态已 commit、log 包含 file rename failed 警告，AC 流程不被打破
+- [x] AC-8. DB 事务失败 → 临时文件被删除（best-effort 日志可见，不残留 .tmp 文件）
+- [x] AC-9. 重复 promote 同一 entity（v1 → v2）→ 同一文件被原子替换（rename），版本号在 frontmatter `version` 中前进
+- [x] AC-10. Step 7 rename 模拟失败（mock fs.rename throw）→ DB 状态已 commit、log 包含 file rename failed 警告，AC 流程不被打破
 
 ### path safety / 跨平台
-- [ ] AC-11. entity_id 含可疑字符（如 `../REQ-001`）的请求 → 在 promote 入口被 R20 regex 拒绝（不进事务）
-- [ ] AC-12. 文件路径用 `node:path` join 构造，单测覆盖
+- [x] AC-11. entity_id 含可疑字符（如 `../REQ-001`）的请求 → 在 promote 入口被 R20 regex 拒绝（不进事务）
+- [x] AC-12. 文件路径用 `node:path` join 构造，单测覆盖
 
 ### 行为副作用
-- [ ] AC-13. promote 路径**绝不调用** git CLI / `simple-git` / 任何 git lib（grep 验证）
-- [ ] AC-14. spec 文档（database-guidelines.md 或新增 dual-write 一节）补充双写约定 + 用户须知"working tree 留下未提交文件"
+- [x] AC-13. promote 路径**绝不调用** git CLI / `simple-git` / 任何 git lib（grep 验证）
+- [x] AC-14. spec 文档（database-guidelines.md 或新增 dual-write 一节）补充双写约定 + 用户须知"working tree 留下未提交文件"
 
 ### 工程
-- [ ] AC-15. lint 通过；`npm test` green
-- [ ] AC-16. 新增 ≥ 8 条单测（render 纯函数 ≥ 4 + writeEntityFile IO ≥ 2 + 集成路径 ≥ 2）
+- [x] AC-15. lint 通过；`npm test` green
+- [x] AC-16. 新增 ≥ 8 条单测（render 纯函数 ≥ 4 + writeEntityFile IO ≥ 2 + 集成路径 ≥ 2）
 
 ## Definition of Done
 

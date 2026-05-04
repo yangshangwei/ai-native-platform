@@ -133,9 +133,87 @@ A future task may add a CLI / admin endpoint to bulk-reconcile `knowledge_artifa
 
 ---
 
+## V2 P1-1 dual-write — files as source of truth
+
+V2 § 3.1 holds the entity *files* on disk as the source of truth and the DB rows as an index/relations mirror. P1-1 (`05-04-v2-dual-write-pipeline`) is the first task to honor this rule: every successful `promoteDraftInTransaction` call writes a markdown file alongside the DB transaction.
+
+### File layout
+
+```
+<project.localPath>/
+  codestable/
+    requirements/
+      REQ-001.md
+      REQ-002.md
+    designs/
+      DSN-001.md
+```
+
+- One top-level `codestable/` directory per project working tree (constant `CODESTABLE_DIR_NAME` in `apps/api/src/promote-file.ts`)
+- One subdirectory per entity kind in plural form (`ENTITY_KIND_DIR` map: `requirement → requirements`, `design → designs`)
+- One file per entity, named `<entity-id>.md`. The entity_id MUST satisfy `ENTITY_ID_PATTERN` (`^(REQ|DSN)-\d{1,6}$`). Path safety is enforced before any FS operation (R20).
+
+Future entity kinds (architecture / roadmap / decision / lesson / pattern / explore / dev_guide / api_doc) will get their own plural subdirectory once their entity tables exist (P0-2.5 / P1-1.5). Add the mapping to `ENTITY_KIND_DIR` and extend `ENTITY_ID_PATTERN` (or split into per-kind regexes) — keep the path-stable convention.
+
+### Frontmatter schema
+
+```yaml
+---
+entity_id: REQ-001          # PK column; matches ENTITY_ID_PATTERN
+kind: requirement           # 'requirement' | 'design'
+status: accepted            # P1-1 only writes 'accepted'
+version: 1                  # integer; tracks knowledge_artifacts.version
+updated_at: '2026-05-04T13:00:00Z'   # ISO 8601, single-quoted (YAML colon escape)
+knowledge_artifact_id: kart-abc      # FK-style pointer at the head row
+ref_req: REQ-042            # design only — DB strong FK target
+---
+```
+
+- 6 fields are mandatory for every entity (7 for designs).
+- The renderer (`renderFrontmatterBlock` in `apps/api/src/promote-file.ts`) emits keys in stable order so files diff cleanly on re-promote.
+- Body following the frontmatter is the verbatim `draftText` from the `PromoteRequest` (no parsing, no merging with the user's own frontmatter — see PRD R17 / R18).
+
+### Write protocol — Stage-then-Finalize
+
+The bun:sqlite transaction primitive is synchronous; filesystem ops are async. We split the work into three phases (see `apps/api/src/promote.ts:promoteDraftInTransaction`):
+
+1. **Stage (pre-tx, async)** — `await ensureCodestableDir(localPath, kind)`. Validates project exists, mkdir -p the entity-kind directory. Any IO error here aborts before the DB tx starts (fail-fast).
+2. **Tx (sync)** — the original 6 DB steps. Decides the final `entityId` (frontmatter hint OR project-scoped max+1) and `version`.
+3. **Finalize (post-tx, async)** — `await writeEntityFile({...})`. Renders frontmatter with the FINAL values from the tx and writes via tmp file + rename for atomicity.
+
+### Failure semantics
+
+| Failure stage | Effect on DB | Effect on FS | Caller observation |
+|---|---|---|---|
+| Project not found (pre-tx) | tx never starts | nothing written | 400 KnowledgeArtifactValidationError |
+| `ensureCodestableDir` fails (pre-tx, e.g. ENOENT / permission) | tx never starts | nothing written | propagates as 500 |
+| DB tx fails (FK / UNIQUE / inside-tx error) | rolled back | nothing written | propagates as 409 / 500 |
+| `writeEntityFile` fails (post-tx, e.g. disk full at rename) | committed | partial / no file | error logged, 201 returned |
+| Path-unsafe `entityId` (post-tx) | committed | nothing written | warning logged, 201 returned |
+
+The post-tx failure paths leave the DB ahead of the filesystem. Recovery is intentionally manual in MVP (P1-1 Q5 = no auto-drift-scan); future tasks may add a `rebuild-files-from-db` admin command.
+
+### git working tree implications
+
+Per P1-1 Q4, promote does **NOT** auto-commit. The newly-written `codestable/<...>.md` file is left in the project's git working tree as an unstaged change. Users decide when to `git add codestable/ && git commit`. This is intentional:
+
+- Users keep full control of their commit history
+- AI never spam-commits during long workflows
+- Entity files naturally pair with related code changes in the user's PR
+
+`/trellis:finish-work` and similar tools that demand a clean working tree should treat `codestable/` like `.trellis/` — that is, be aware that V2 promote naturally leaves these paths dirty.
+
+### Race-window note
+
+Two concurrent promotes of the same kind without explicit entity_ids both extract a max+1 guess outside the tx, but the SQLite write lock in step 2 serializes them. The losing tx re-runs max+1 inside its own scope and gets a fresh number. The file path computed inside the post-tx finalize step uses the FINAL entity_id, so both promotes end up with distinct files. If both happen to target the same entity_id (concurrent re-promote of an explicit REQ-001), the rename is a last-writer-wins atomic swap; readers always see one consistent file.
+
+---
+
 ## Common Mistakes
 
 - **Using a single-column PK when you need project-scoped uniqueness.** SQLite enforces PK globally; `id TEXT PRIMARY KEY` makes `id` unique across all projects. For project-scoped namespaces (REQ-### / DSN-###), use a composite PK `PRIMARY KEY (project_id, id)` and update the matching `ON CONFLICT(project_id, id)` clause in any UPSERT.
 - **Forgetting to update the `ON CONFLICT` target after a PK change.** SQLite silently treats a non-matching conflict target as "no UPSERT", inserting a duplicate or failing on the unique constraint instead of updating the existing row.
 - **Adding a FK without checking that `PRAGMA foreign_keys = ON` is set on the connection actually used by tests.** This project sets it globally on the `db` singleton, but custom DB connections in tests need to set it themselves.
 - **Reading a row by `id` only when the schema is project-scoped.** Always include `project_id = ?` in the WHERE clause when querying entity tables.
+- **Trying to do filesystem ops inside `db.transaction(() => ...)`.** bun:sqlite's transaction body must be synchronous; any `await` on `fs/promises` will not be awaited in the way the developer expects (the tx commits before the IO finishes). For dual-write, do FS work either fully BEFORE the tx (mkdir / pre-stage) or fully AFTER (atomic rename / write).
+- **Forgetting that post-tx file write failures do not roll back the DB.** Per V2 P1-1 Q3, the file is the source of truth in theory, but in MVP the DB is what's actually written first; a post-tx file write failure leaves the DB ahead. Always log with the `knowledge_artifact_id` so ops can reconcile manually.
