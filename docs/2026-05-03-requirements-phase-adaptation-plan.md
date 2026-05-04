@@ -1661,3 +1661,31 @@ git tag phase-b-coordinator-conversational-intake
 - [ ] requirement_gate produces 9 rule results (5 existing + 4 cs-req); all pass for NativeBackend output
 - [ ] Coordinator persists every decision; web UI displays the chat thread + decision reason
 - [ ] No CodeStable `cs-*` skill files imported into runtime code (instruction inspiration only)
+
+---
+
+## Closure (2026-05-04)
+
+> Tracked in trellis task `.trellis/tasks/05-04-fix-requirement-analysis-stage-design-impl-gaps`. The PRD records the decisions Q1=A / Q2=A / Q3=A and the per-PR file map.
+
+| Gap (PRD §) | Status | Landing |
+|---|---|---|
+| **P0-1** LLM fallback only supported Claude Code | ✅ Closed | `apps/runner/src/agents/coordinator/llm-fallback.ts` adds a `LlmFallbackDeps`-injectable codex one-shot using `--output-last-message`; selection is project-aware (`preferredBackend`); falls back to the other CLI when the preferred one is unavailable. New tests: `apps/runner/test/coordinator-llm-fallback.test.ts` (9 cases). |
+| **P0-2** New-task form did two POSTs (request, then message) | ✅ Closed | `POST /workflow-requests` now accepts an optional `firstMessage`; `apps/api/src/workflow-engine.ts` writes both inside `db.transaction(...)`. Web `submitWorkflowRequest` is a single call. |
+| **P0-3** Race between request creation and first message | ✅ Closed | Same atomic transaction as P0-2 + `apps/runner/src/cmd/watch.ts` `defaultTriage` now reads `project.agentBackend` and threads it as `preferredBackend` into `triageRequest(...)`. |
+| **P1-4** `requirement-workflow.md` flow diagram missed Coordinator | ✅ Closed | Diagram updated; new "对话分诊与 awaiting_clarification" chapter explains the 4-case routing and the LLM-fallback selection rules. |
+| **P1-5** Form `type` was silently overridden by Coordinator | ✅ Closed | `apps/web/src/main.ts` renders a new `Coordinator 判定` metric next to `Project (用户标记)`. Mismatch is rendered with `warn` kind. |
+| **P1-7** `PATCH /workflow-requests/:id/status` accepted any transition | ✅ Closed | `apps/api/src/routes/workflow-request-chat.ts` carries an explicit `ALLOWED_TRANSITIONS` whitelist; illegal transitions return 409. |
+
+### Verification snapshot at closure
+
+- `bun test`: 221 pass / 0 fail across 40 files
+- `bun run typecheck`: PASS for shared / api / runner / web
+- `apps/api/test/workflow-request-routes.test.ts` and `apps/api/test/workflow-request-chat.test.ts` cover the new firstMessage round-trip + status whitelist
+- `apps/runner/test/coordinator-llm-fallback.test.ts` covers backend-availability × preferredBackend combinations
+
+### Out of scope (still P1+ as the original plan stated)
+
+- `skill.implementation` / `skill.review` cs-* injection — not done; intentionally deferred.
+- Hook / `requiredGates` / `inputs` / `outputs` runtime-config exposure — not done; PR3+ scope.
+- Tool-policy sandbox-level enforcement — explicitly off-roadmap (project memory directive).

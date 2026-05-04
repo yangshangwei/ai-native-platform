@@ -4,8 +4,8 @@ slug: requirement-workflow
 component: requirement-workflow
 status: current
 summary: 用户录入需求前需要准备什么，以及需求录入后如何按 Pipeline 完成交付闭环。
-tags: [workflow, requirement, runner, gate]
-last_reviewed: 2026-05-03
+tags: [workflow, requirement, runner, gate, coordinator]
+last_reviewed: 2026-05-04
 ---
 
 # 需求工作流用户指南
@@ -14,11 +14,12 @@ last_reviewed: 2026-05-03
 
 需求工作流不是把一句话丢给 Agent 后等待“魔法完成”，而是把一次需求交付拆成可查看、可暂停、可审批、可追溯的 Pipeline。
 
-当前实现里，用户在 Web UI 创建的是 **Workflow Request**：它先进入队列；本地 Runner 认领后，才会创建真实的 **Workflow Run**，准备独立 Git worktree，并按固定生命周期推进。
+当前实现里，用户在 Web UI 创建的是 **Workflow Request**：它先进入队列；本地 Runner 认领前会跑一次 **Coordinator 对话分诊**，把"想清楚了"的需求送进真实的 **Workflow Run**，把"还没想清楚"的请求暂停在 `awaiting_clarification` 等用户补充。Run 创建之后准备独立 Git worktree，并按固定生命周期推进。
 
 ```text
 项目接入与工具链准备
   → 新建任务请求
+  → Coordinator 对话分诊（pending ↔ awaiting_clarification）
   → Runner 认领并创建 worktree
   → Context Pack
   → Requirement Draft + Requirement Gate + 人工确认
@@ -31,6 +32,30 @@ last_reviewed: 2026-05-03
 ```
 
 从用户视角看，它应该呈现为一个直观的工作流 / Pipeline：每一格代表一个阶段，每个 Gate 决定能否进入下一格，人工只在关键确认点介入。
+
+## 对话分诊与 awaiting_clarification
+
+录入请求 → Runner 真正 claim 之间还有一个"分诊"阶段。Coordinator Agent 会先看一眼用户的话和（如有）后续聊天，把请求分到 4 个 case：
+
+| Case | 含义 | 后续动作 |
+|---|---|---|
+| `feature_clear` | 清晰的新能力，能对得上验收 | Runner claim、`runType=feature` 进 9 阶段流水线 |
+| `bugfix` | 现存功能坏了 / 异常 / 期望 vs 实际 | Runner claim、`runType=bugfix` 进流水线 |
+| `feature_brainstorm` / `roadmap_needed` / `unclear` | 信息不够 / 范围太大 / 完全模糊 | 暂停为 `awaiting_clarification`，把 1-2 个澄清问题贴进对话线程 |
+
+`awaiting_clarification` 状态下：
+
+- 任务详情页右侧的 **Coordinator 对话** 面板会显示 Coordinator 的问题，并允许用户回复。
+- 用户提交回复后，请求自动回到 `pending`，Runner 重新 triage（带上完整对话历史）。
+- Coordinator 调到 `proceed` 后，请求被 claim、Run 创建，从 Context Pack 阶段开始正式跑流水线。
+
+工作台头部会同时显示 **用户标记**（你在表单里选的 type，比如 `feature`）和 **Coordinator 判定**（`runType (routeCase)`，比如 `bugfix (bugfix)`）。两者不一致时 Coordinator 判定会高亮 `warn`——这是有用的运维信号，说明用户的语义信号被 Coordinator 纠正了。
+
+LLM fallback 通道按项目级 `agentBackend` 优先级挑选 CLI（见"项目接入"页配置）：
+
+- 项目选 `claude_code` → 优先 `claude` CLI，不可用时回落 `codex`
+- 项目选 `codex` → 优先 `codex` CLI，不可用时回落 `claude`
+- 两个 CLI 都不可用 → Coordinator 直接 `pause_for_human` 让用户补充
 
 ## 录入需求之前需要怎么做
 
@@ -117,6 +142,8 @@ pending → claimed → completed / failed
 Runner Watch 看到 pending 请求后，会 claim 请求、创建 `WorkflowRun`、准备独立 worktree、生成 `ai/{runId}-{slug}` 分支，并把 workspace 路径写回 API。
 
 从这里开始，工作台会出现一条可跟踪的 Run。
+
+> 注：Runner 在 claim 之前会先跑 Coordinator 对话分诊（见 [对话分诊与 awaiting_clarification](#对话分诊与-awaiting_clarification)）。歧义请求会被暂停为 `awaiting_clarification`，由用户补充后再 claim；清晰请求会被直接 claim，并由 Coordinator 决定 `runType`（feature / bugfix / smoke）。
 
 ### 2. Context Pack：先找工程背景
 
