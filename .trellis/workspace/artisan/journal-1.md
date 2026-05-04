@@ -150,3 +150,36 @@ V2 P1-1 dual-write pipeline (DB + 文件): brainstorm to PRD with 6 ADR-lite dec
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: V2 Wave 2 roadmap brainstorm — workflow polymorphism + smart routing
+
+**Date**: 2026-05-04
+**Task**: V2 Wave 2 roadmap brainstorm — workflow polymorphism + smart routing
+**Branch**: `main`
+
+### Summary
+
+V2 Wave 2 roadmap-only brainstorm (no code). 4 ADR-lite decisions pinned: Q1 Roadmap mode (global structural decisions only; 4 child tasks documented as slug + scope summaries rather than pre-created); Q2 FLOW_REGISTRY = TypeScript object literal at apps/runner/src/flows/registry.ts with FlowDef + StageStep typed shape; Q3 sub-project order W2-1 (FLOW_REGISTRY bootstrap, 1 wk) → W2-3 (fastforward, 1 wk) → W2-2 (issue + refactor, 2 wk) → W2-4 (smart router, 2 wk), total ~6 weeks; Q4 naming conventions FlowId = '<work_kind>.<variant>' (feature.standard / feature.fastforward / issue.standard / refactor.standard) with WorkflowStage enum kept as-is. PRD has R1-R15 + 5 AC + full Wave 2 roadmap section with 4 future-task descriptors and a dependency graph. References V2 design notes § 2.1 (工作类型多态) / § 3.2 (智能路由 - V2's second architectural pillar) / § 4.2 (first-stage scope = 3 work flows) / § 5 (Wave 2 estimates) / § 6 (forbidden zones — graphical editor avoidance). Workflow: brainstorm → start → commit (af2253d) → archive in one session, since the task is documentation-only. User creates each child task manually via task.py create when ready.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `af2253d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
