@@ -817,7 +817,7 @@ const requirementEntities = {
     db.prepare(
       `INSERT INTO requirements (id, project_id, status, current_version, current_artifact_id, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET
+       ON CONFLICT(project_id, id) DO UPDATE SET
          status = excluded.status,
          current_version = excluded.current_version,
          current_artifact_id = excluded.current_artifact_id,
@@ -834,8 +834,8 @@ const requirementEntities = {
     // Re-read so callers see the canonical post-state (preserves created_at
     // on UPDATE-path).
     const r = db
-      .prepare('SELECT * FROM requirements WHERE id = ?')
-      .get(input.id) as RequirementEntityRow;
+      .prepare('SELECT * FROM requirements WHERE project_id = ? AND id = ?')
+      .get(input.projectId, input.id) as RequirementEntityRow;
     return rowToRequirementEntity(r);
   },
   setStatus(id: string, status: RequirementEntityStatus, updatedAt: string): void {
@@ -913,7 +913,7 @@ const designEntities = {
     db.prepare(
       `INSERT INTO designs (id, project_id, status, current_version, current_artifact_id, ref_req, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET
+       ON CONFLICT(project_id, id) DO UPDATE SET
          status = excluded.status,
          current_version = excluded.current_version,
          current_artifact_id = excluded.current_artifact_id,
@@ -929,8 +929,8 @@ const designEntities = {
       input.now,
     );
     const r = db
-      .prepare('SELECT * FROM designs WHERE id = ?')
-      .get(input.id) as DesignEntityRow;
+      .prepare('SELECT * FROM designs WHERE project_id = ? AND id = ?')
+      .get(input.projectId, input.id) as DesignEntityRow;
     return rowToDesignEntity(r);
   },
   setStatus(id: string, status: RequirementEntityStatus, updatedAt: string): void {

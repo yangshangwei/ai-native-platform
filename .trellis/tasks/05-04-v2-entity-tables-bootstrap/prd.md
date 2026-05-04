@@ -86,9 +86,9 @@ lessons (id: LSN-001, severity, related_files[])
 - R4. **不做** acceptance_criteria / mount_points / implementations / test_runs / 其他 4 类知识 entity（推到后续 task）
 
 ### Head pointer 模型派生（Q2=2-A）
-- R5. `requirements` 表 schema：`id TEXT PK`（直接用 entity_id，如 `REQ-001`）/ `project_id` / `status` / `current_version INTEGER` / `current_artifact_id TEXT`（FK 到 `knowledge_artifacts.id`）/ `created_at` / `updated_at`
-- R6. `designs` 表 schema：与 R5 同形 + `ref_req TEXT`（指向 `requirements.id`，FK 严格度由 Q3 决定）
-- R7. `(project_id, id)` 在两张 entity 表上 DB-level UNIQUE（`id` 已是 PK，再叠 UNIQUE 是为了 project 维度兜底）
+- R5. `requirements` 表 schema：`id TEXT NOT NULL` / `project_id TEXT NOT NULL` / `status` / `current_version INTEGER` / `current_artifact_id TEXT`（指向 `knowledge_artifacts.id`，FK 严格度见 Q3）/ `created_at` / `updated_at`；**复合主键 `PRIMARY KEY (project_id, id)`** —— entity_id 是项目内（不是全局）唯一
+- R6. `designs` 表 schema：与 R5 同形 + `ref_req TEXT NOT NULL`（指向 `requirements` 的项目内 entity_id，FK 严格度由 Q3 决定）；同样复合主键 `PRIMARY KEY (project_id, id)`
+- R7. ~~`(project_id, id)` 在两张 entity 表上 DB-level UNIQUE~~ → 已升级为复合 PK，全局唯一性不存在，**项目维度唯一性** 由 PK 直接兜底
 - R8. **每条 entity 行表示"当前权威版本头"**——历史版本仍在 `knowledge_artifacts` 表，按 `(project_id, entity_id)` 索引检索
 - R9. `knowledge_artifacts` 表 schema 零改动（PR2 落地的形状不动），entity 表的 FK 反指 knowledge_artifacts
 - R10. `promoteAcceptedDraftToKnowledge` 改造为事务两步写：
@@ -100,7 +100,7 @@ lessons (id: LSN-001, severity, related_files[])
 - R14. `latestByEntityId` 等 PR2 既有查询保持兼容不删除（兼容性兜底；后续 P3 再看是否替换）
 
 ### FK 严格度派生（Q3=3-B）
-- R15. `designs.ref_req` 声明强 FK：`ref_req TEXT NOT NULL REFERENCES requirements(id) ON DELETE RESTRICT`
+- R15. `designs` 声明**复合**强 FK：`FOREIGN KEY (project_id, ref_req) REFERENCES requirements(project_id, id) ON DELETE RESTRICT` —— 同时锁 project_id 一致性（design 不能引用别的项目的 requirement）+ ref_req 必须存在
 - R16. `requirements.current_artifact_id` / `designs.current_artifact_id` **不声明 FK**——裸 `TEXT NOT NULL`，引用完整性走 promote 事务（同事务先 INSERT knowledge_artifacts、再 UPSERT entity 引用刚生成的 id）
 - R17. `PRAGMA foreign_keys = ON` 已在 db.ts:16 全局打开，无需新增
 - R18. spec 文档（`.trellis/spec/api/backend/database-guidelines.md`）补一段："产品核心关系（REQ↔DSN traceability）声明 FK；辅助指针（head pointer 指向不可变历史行）走应用层事务"——为后续 P0-2.5 / P3-1 设原则

@@ -151,29 +151,30 @@ const MIGRATIONS: string[] = [
   // traceability per V2 doc § 3.6. See
   // `.trellis/tasks/05-04-v2-entity-tables-bootstrap/prd.md` ADR Q1-Q5.
   `CREATE TABLE IF NOT EXISTS requirements (
-     id TEXT PRIMARY KEY,
+     id TEXT NOT NULL,
      project_id TEXT NOT NULL,
      status TEXT NOT NULL DEFAULT 'draft',
      current_version INTEGER NOT NULL,
      current_artifact_id TEXT NOT NULL,
      created_at TEXT NOT NULL,
      updated_at TEXT NOT NULL,
-     UNIQUE(project_id, id)
+     PRIMARY KEY (project_id, id)
    )`,
   `CREATE INDEX IF NOT EXISTS idx_requirements_project ON requirements(project_id)`,
   `CREATE TABLE IF NOT EXISTS designs (
-     id TEXT PRIMARY KEY,
+     id TEXT NOT NULL,
      project_id TEXT NOT NULL,
      status TEXT NOT NULL DEFAULT 'draft',
      current_version INTEGER NOT NULL,
      current_artifact_id TEXT NOT NULL,
-     ref_req TEXT NOT NULL REFERENCES requirements(id) ON DELETE RESTRICT,
+     ref_req TEXT NOT NULL,
      created_at TEXT NOT NULL,
      updated_at TEXT NOT NULL,
-     UNIQUE(project_id, id)
+     PRIMARY KEY (project_id, id),
+     FOREIGN KEY (project_id, ref_req) REFERENCES requirements(project_id, id) ON DELETE RESTRICT
    )`,
   `CREATE INDEX IF NOT EXISTS idx_designs_project ON designs(project_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_designs_ref_req ON designs(ref_req)`,
+  `CREATE INDEX IF NOT EXISTS idx_designs_ref_req ON designs(project_id, ref_req)`,
   `CREATE TABLE IF NOT EXISTS build_runs (
      id TEXT PRIMARY KEY,
      workflow_run_id TEXT NOT NULL,
