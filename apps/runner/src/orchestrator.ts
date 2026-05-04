@@ -79,6 +79,20 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
 
 	  const inputs: Record<string, string> = { user_request: opts.title };
 	  const inputArtifactIds: Record<string, string> = {};
+	  /**
+	   * V2 P0-1 / PR3: drafts captured for promoteToKnowledge after acceptance.
+	   * Each entry is the markdown draft of a `requirement_draft` / `design_doc`
+	   * stage output. Promotion lifts the draft into a knowledge entity row
+	   * (REQ-### / DSN-###) on acceptance approval. ADR Q2 (2-beta).
+	   */
+	  const draftsToPromote: Array<{
+	    artifactId: string;
+	    kind: 'requirement_draft' | 'design_doc';
+	    uri: string;
+	    size: number;
+	    contentType: string;
+	    text: string;
+	  }> = [];
 	  let ok = true;
 
   try {
@@ -249,6 +263,12 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     if (!accepted) {
       ok = false;
       throw new Error('acceptance_gate rejected');
+    }
+
+    // V2 P0-1 / PR3: promote accepted requirement / design drafts to knowledge
+    // entities. Failure inside the helper is logged but never thrown — R18.
+    for (const draft of draftsToPromote) {
+      await promoteAcceptedDraftToKnowledge(project.id, draft);
     }
 
     // 7. completion report
@@ -426,6 +446,17 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
 	      });
 	      inputs[out.name] = text;
 	      inputArtifactIds[out.name] = a.id;
+	      // V2 P0-1 / PR3: track requirement / design drafts for post-acceptance promotion.
+	      if (kind === 'requirement_draft' || kind === 'design_doc') {
+	        draftsToPromote.push({
+	          artifactId: a.id,
+	          kind,
+	          uri: `file://${out.path}`,
+	          size: out.size,
+	          contentType: out.contentType,
+	          text,
+	        });
+	      }
 	      artifactIds.push(a.id);
 	      console.log(`[runner] ${stage} artifact ${a.kind} -> ${a.uri}`);
 	    }
@@ -676,4 +707,104 @@ function renderAgentPromptAudit(skill: SkillSpec, inputs: Record<string, string>
     '',
     `Inputs: ${inputNames.join(', ') || '(none)'}`,
   ].join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// V2 P0-1 / PR3: promoteAcceptedDraftToKnowledge
+//
+// After acceptance_gate passes, lift each requirement_draft / design_doc into
+// a knowledge entity (REQ-### / DSN-###). Failure must NOT break acceptance —
+// log and return per ADR Q2 (2-beta) / R18.
+// ---------------------------------------------------------------------------
+
+export interface PromoteDraftInput {
+  artifactId: string;
+  kind: 'requirement_draft' | 'design_doc';
+  uri: string;
+  size: number;
+  contentType: string;
+  /** Full markdown body of the draft (used to extract entity_id from frontmatter). */
+  text: string;
+}
+
+export interface PromoteDeps {
+  postKnowledgeArtifact: typeof api.postKnowledgeArtifact;
+  listKnowledgeArtifactsByKind: typeof api.listKnowledgeArtifactsByKind;
+  listKnowledgeArtifactsByEntity: typeof api.listKnowledgeArtifactsByEntity;
+  setKnowledgeArtifactStatus: typeof api.setKnowledgeArtifactStatus;
+  log?: (msg: string) => void;
+  errorLog?: (msg: string) => void;
+}
+
+export async function promoteAcceptedDraftToKnowledge(
+  projectId: string,
+  draft: PromoteDraftInput,
+  deps: PromoteDeps = {
+    postKnowledgeArtifact: api.postKnowledgeArtifact,
+    listKnowledgeArtifactsByKind: api.listKnowledgeArtifactsByKind,
+    listKnowledgeArtifactsByEntity: api.listKnowledgeArtifactsByEntity,
+    setKnowledgeArtifactStatus: api.setKnowledgeArtifactStatus,
+  },
+): Promise<void> {
+  const log = deps.log ?? ((m) => console.log(m));
+  const errorLog = deps.errorLog ?? ((m) => console.error(m));
+  try {
+    const targetKind = draft.kind === 'requirement_draft' ? 'requirement' : 'design';
+    const idPrefix = targetKind === 'requirement' ? 'REQ' : 'DSN';
+
+    // 1. Try to extract entity_id from draft frontmatter / body. The skill
+    //    instructions ask the model to include `REQ-###` / `DSN-###`; we
+    //    accept any first match. If absent, fall through to sequential.
+    const idRegex = new RegExp(`\\b${idPrefix}-(\\d{1,6})\\b`);
+    const idMatch = draft.text.match(idRegex);
+    let entityId: string;
+    if (idMatch && idMatch[1]) {
+      entityId = `${idPrefix}-${idMatch[1].padStart(3, '0')}`;
+    } else {
+      // 2. Sequential fallback: max(existing.entity_id) + 1, project-scoped.
+      const existing = await deps.listKnowledgeArtifactsByKind({
+        projectId,
+        kind: targetKind,
+      });
+      const maxNum = existing
+        .map((a) => a.entityId)
+        .filter((id): id is string => Boolean(id))
+        .map((id) => id.match(new RegExp(`^${idPrefix}-(\\d+)$`))?.[1])
+        .filter((n): n is string => Boolean(n))
+        .map(Number)
+        .reduce((acc, n) => Math.max(acc, n), 0);
+      entityId = `${idPrefix}-${String(maxNum + 1).padStart(3, '0')}`;
+    }
+
+    // 3. Resolve next version + supersede prior accepted rows for this entity.
+    const sameEntity = await deps.listKnowledgeArtifactsByEntity({ projectId, entityId });
+    const nextVersion =
+      sameEntity.length === 0 ? 1 : Math.max(...sameEntity.map((e) => e.version)) + 1;
+    for (const e of sameEntity.filter((e) => e.status === 'accepted')) {
+      await deps.setKnowledgeArtifactStatus({ id: e.id, status: 'superseded' });
+    }
+
+    // 4. Create the new accepted entity row.
+    const created = await deps.postKnowledgeArtifact({
+      projectId,
+      kind: targetKind,
+      uri: draft.uri,
+      size: draft.size,
+      contentType: draft.contentType,
+      status: 'accepted',
+      version: nextVersion,
+      entityId,
+      derivedFromArtifactId: draft.artifactId,
+    });
+    log(
+      `[runner] promoted ${draft.kind} ${draft.artifactId} -> ${targetKind} ${entityId} v${nextVersion} (id=${created.id})`,
+    );
+  } catch (err) {
+    // R18: failure MUST be downgraded — never break acceptance gate.
+    errorLog(
+      `[runner] promoteAcceptedDraftToKnowledge failed for ${draft.kind} ${draft.artifactId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+  }
 }

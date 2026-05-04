@@ -8,6 +8,9 @@ import type {
   GateRun,
   Artifact,
   ArtifactKind,
+  KnowledgeArtifact,
+  KnowledgeArtifactKind,
+  KnowledgeArtifactStatus,
   AgentStreamEventInput,
   AgentBackendKind,
   AgentTaskKind,
@@ -219,6 +222,60 @@ export const api = {
     request<Artifact>('POST', '/runner/events/artifact', params).then(
       (r) => (r as unknown as { artifact: Artifact }).artifact ?? r,
     ),
+
+  // ---- knowledge_artifacts (V2 P0-1 / PR3) -----------------------------
+  // The runner uses these from the acceptance-gate `promoteToKnowledge` hook
+  // to lift accepted requirement_draft / design_doc into project-scoped
+  // entity rows (REQ-### / DSN-###). See PRD ADR Q2 (2-beta).
+
+  postKnowledgeArtifact: (params: {
+    projectId: string;
+    kind: KnowledgeArtifactKind;
+    uri: string;
+    size: number;
+    contentType: string;
+    status?: KnowledgeArtifactStatus;
+    version?: number;
+    entityId?: string | null;
+    derivedFromArtifactId?: string | null;
+    subtype?: string | null;
+    metadata?: Record<string, unknown>;
+  }) => {
+    const { projectId, ...body } = params;
+    return request<{ ok: boolean; artifact: KnowledgeArtifact }>(
+      'POST',
+      `/knowledge-artifacts/projects/${encodeURIComponent(projectId)}`,
+      body,
+    ).then((r) => r.artifact);
+  },
+
+  listKnowledgeArtifactsByKind: (params: {
+    projectId: string;
+    kind: KnowledgeArtifactKind;
+  }) =>
+    request<{ ok: boolean; artifacts: KnowledgeArtifact[] }>(
+      'GET',
+      `/knowledge-artifacts/projects/${encodeURIComponent(params.projectId)}?kind=${encodeURIComponent(params.kind)}`,
+    ).then((r) => r.artifacts),
+
+  listKnowledgeArtifactsByEntity: (params: {
+    projectId: string;
+    entityId: string;
+  }) =>
+    request<{ ok: boolean; artifacts: KnowledgeArtifact[] }>(
+      'GET',
+      `/knowledge-artifacts/projects/${encodeURIComponent(params.projectId)}/by-entity/${encodeURIComponent(params.entityId)}`,
+    ).then((r) => r.artifacts),
+
+  setKnowledgeArtifactStatus: (params: {
+    id: string;
+    status: KnowledgeArtifactStatus;
+  }) =>
+    request<{ ok: boolean; artifact: KnowledgeArtifact }>(
+      'PATCH',
+      `/knowledge-artifacts/${encodeURIComponent(params.id)}/status`,
+      { status: params.status },
+    ).then((r) => r.artifact),
 
   runGate: (params: {
     workflowRunId: string;
