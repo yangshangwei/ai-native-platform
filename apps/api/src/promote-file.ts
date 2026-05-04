@@ -1,3 +1,6 @@
+import { randomBytes } from 'node:crypto';
+import { mkdir, rename, unlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type {
   DualWriteEntityKind,
   EntityFileFrontmatter,
@@ -107,4 +110,160 @@ export function renderEntityMarkdown(input: RenderEntityInput): string {
   // to a single \n for deterministic output.
   const trimmedBody = input.body.replace(/\s+$/u, '');
   return `${fmBlock}\n\n${trimmedBody}\n`;
+}
+
+// ---------------------------------------------------------------------------
+// V2 P1-1 / PR2: IO layer (Stage-then-Finalize)
+//
+// Two functions implement the dual-write filesystem side:
+//
+//   1. ensureCodestableDir(projectLocalPath, entityKind):
+//      Pre-transaction step. Creates `<projectLocalPath>/codestable/
+//      <kind-plural>/` if missing. Returns the absolute directory
+//      path. Fail-fast: any disk / permission error surfaces here,
+//      before the DB transaction starts.
+//
+//   2. writeEntityFile({ projectLocalPath, entityKind, entityId,
+//      contents }):
+//      Post-transaction step. Writes `contents` to
+//      `<dir>/<entityId>.md` atomically via a tmp file + rename.
+//      Path-safety guard rejects path-traversal entityIds before
+//      touching the filesystem (R20).
+//
+// Failure semantics (R10 / R11 / R-Risk-1):
+//
+//   - ensureCodestableDir failure (mkdir / permission / disk full)
+//     → propagate, DB transaction never starts.
+//   - writeEntityFile failure → caller logs the error; DB is already
+//     committed, no compensating rollback. Caller MUST capture the
+//     `entityId` and `knowledgeArtifactId` in the log line so ops
+//     can manually reconcile (R23 / future drift-scan task).
+//
+// See `.trellis/tasks/05-04-v2-dual-write-pipeline/prd.md` ADR-lite Q3.
+// ---------------------------------------------------------------------------
+
+/**
+ * Top-level dual-write directory under a project's git working tree.
+ * Kept in a constant so PR3 / spec doc / tests reference the same
+ * literal — change here, ripple everywhere.
+ */
+export const CODESTABLE_DIR_NAME = 'codestable';
+
+/**
+ * Resolve the absolute directory path for a given project + entity
+ * kind, without touching the filesystem.
+ *
+ *   resolveCodestableDir('/proj', 'requirement') → '/proj/codestable/requirements'
+ *   resolveCodestableDir('/proj', 'design')      → '/proj/codestable/designs'
+ */
+export function resolveCodestableDir(
+  projectLocalPath: string,
+  entityKind: DualWriteEntityKind,
+): string {
+  return join(projectLocalPath, CODESTABLE_DIR_NAME, ENTITY_KIND_DIR[entityKind]);
+}
+
+/**
+ * Resolve the absolute file path for a (project, kind, entity_id)
+ * triple. Rejects path-unsafe entity_ids by throwing — call sites
+ * must validate via `isPathSafeEntityId` first if they want to
+ * surface the error as a typed validation failure (PR3 path).
+ */
+export function resolveEntityFilePath(
+  projectLocalPath: string,
+  entityKind: DualWriteEntityKind,
+  entityId: string,
+): string {
+  if (!isPathSafeEntityId(entityId)) {
+    throw new Error(
+      `entity_id '${entityId}' fails path-safety check ${ENTITY_ID_PATTERN}`,
+    );
+  }
+  return join(resolveCodestableDir(projectLocalPath, entityKind), `${entityId}.md`);
+}
+
+/**
+ * Pre-transaction step. mkdir -p the entity-kind directory.
+ * Fail-fast: any IO error propagates so the caller can abort before
+ * the DB transaction starts.
+ *
+ * Returns the absolute directory path.
+ */
+export async function ensureCodestableDir(
+  projectLocalPath: string,
+  entityKind: DualWriteEntityKind,
+): Promise<string> {
+  const dir = resolveCodestableDir(projectLocalPath, entityKind);
+  await mkdir(dir, { recursive: true });
+  return dir;
+}
+
+/**
+ * Post-transaction step. Atomic write of the entity markdown file
+ * using a tmp file + rename. Overwrites any existing file at the
+ * final path (the rename is the atomic swap).
+ *
+ * Returns the absolute final path written.
+ *
+ * Errors:
+ *   - throws if `entityId` fails path-safety
+ *   - propagates filesystem errors (caller logs + leaves DB committed)
+ */
+export async function writeEntityFile(input: {
+  projectLocalPath: string;
+  entityKind: DualWriteEntityKind;
+  entityId: string;
+  contents: string;
+}): Promise<{ finalPath: string }> {
+  const finalPath = resolveEntityFilePath(
+    input.projectLocalPath,
+    input.entityKind,
+    input.entityId,
+  );
+  // Random suffix avoids tmp-file collision if two promotes race on
+  // the same final path (the DB write lock will sort one to lose,
+  // but both may have queued tmp writes before that resolved).
+  const tmpSuffix = randomBytes(6).toString('hex');
+  const tmpPath = `${finalPath}.tmp.${tmpSuffix}`;
+  try {
+    await writeFile(tmpPath, input.contents, 'utf8');
+    await rename(tmpPath, finalPath);
+    return { finalPath };
+  } catch (err) {
+    // Best-effort cleanup of the tmp file. Swallow cleanup errors —
+    // the original error is what matters.
+    await unlink(tmpPath).catch(() => undefined);
+    throw err;
+  }
+}
+
+/**
+ * Compensating delete. Best-effort unlink of an entity file at its
+ * canonical path. Used by PR3 callers that need to recover after a
+ * post-write failure decided to roll back. Swallows ENOENT (file
+ * already gone is a success).
+ *
+ * Returns `{ deleted: true }` if a file was removed, `{ deleted: false }`
+ * if the file was already absent.
+ */
+export async function deleteEntityFile(input: {
+  projectLocalPath: string;
+  entityKind: DualWriteEntityKind;
+  entityId: string;
+}): Promise<{ deleted: boolean }> {
+  const finalPath = resolveEntityFilePath(
+    input.projectLocalPath,
+    input.entityKind,
+    input.entityId,
+  );
+  try {
+    await unlink(finalPath);
+    return { deleted: true };
+  } catch (err) {
+    // ENOENT — file already absent — is treated as success.
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { deleted: false };
+    }
+    throw err;
+  }
 }
