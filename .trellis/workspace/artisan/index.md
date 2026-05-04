@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
-- **Last Active**: 2026-05-04
+- **Total Sessions**: 6
+- **Last Active**: 2026-05-05
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~185 | Active |
+| `journal-1.md` | ~221 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-05-05 | V2 W2-1 — FLOW_REGISTRY bootstrap shipped (4-PR series, 0 regression) | `a188ede`, `ac16371`, `a37815a`, `becfddf` | `main` |
 | 5 | 2026-05-04 | V2 Wave 2 roadmap brainstorm — workflow polymorphism + smart routing | `af2253d` | `main` |
 | 4 | 2026-05-04 | V2 P1-1 dual-write-pipeline: brainstorm + 4-PR series | `31a143e`, `4596462`, `950b450`, `72c07e4`, `217ce86` | `main` |
 | 3 | 2026-05-04 | V2 P0-2 entity-tables-bootstrap: brainstorm + 6-PR series | `f2f97ed`, `c0275c4`, `5165060`, `c9ce155`, `50caaaa`, `683f8b9`, `3d01e93` | `main` |

@@ -183,3 +183,39 @@ V2 Wave 2 roadmap-only brainstorm (no code). 4 ADR-lite decisions pinned: Q1 Roa
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: V2 W2-1 — FLOW_REGISTRY bootstrap shipped (4-PR series, 0 regression)
+
+**Date**: 2026-05-05
+**Task**: V2 W2-1 — FLOW_REGISTRY bootstrap shipped (4-PR series, 0 regression)
+**Branch**: `main`
+
+### Summary
+
+Wave 2 keystone task W2-1 done end-to-end. PR1 = FlowId/FlowDef/StageStep shared types. PR2 = FLOW_REGISTRY with feature.standard FlowDef + 9-test stage-order pin. PR3 = workflow_runs.flow_id NOT NULL DEFAULT 'feature.standard' migration + WorkflowRun.flowId required field + createWorkflowRun.flowId? optional + runWorkflow refactored to drive iteration from FLOW_REGISTRY[run.flowId].stages via for-of + dispatchStep, with 5 V1 inline blocks (implementation/build_test/acceptance/completion/knowledge) extracted into executeXxx(ctx: RunCtx) inner functions. PR4 = .trellis/spec/runner/backend/flow-registry.md spec doc covering thin (Q1=alpha) semantics, 8-stage layout, flowId entry contract, executeXxx invariants, validation matrix, and W2-3+ extension recipe. Tests 352 pass / 0 fail (V1 baseline 340 + 9 PR2 + 3 PR3). typecheck 4/4 green. Behavior byte-for-byte equivalent to V1 (PRD ADR Q1 = alpha thin refactor).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a188ede` | (see git log) |
+| `ac16371` | (see git log) |
+| `a37815a` | (see git log) |
+| `becfddf` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
