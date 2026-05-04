@@ -8,6 +8,7 @@ import {
   type PromotedEntityKind,
   type PromoteRequest,
   type PromoteResponse,
+  type EntityFileFrontmatter,
 } from '@ainp/shared';
 import { db } from './store/db';
 import { store } from './store/store';
@@ -15,6 +16,12 @@ import {
   createKnowledgeArtifact,
   KnowledgeArtifactValidationError,
 } from './workflow-engine';
+import {
+  ensureCodestableDir,
+  isPathSafeEntityId,
+  renderEntityMarkdown,
+  writeEntityFile,
+} from './promote-file';
 
 // ---------------------------------------------------------------------------
 // V2 P0-2 / Q5=5-A: API-side single-transaction promote
@@ -90,15 +97,30 @@ function nextEntityIdFallback(
 }
 
 /**
- * Single-transaction promote: 6 steps + entity head upsert. See module
- * docstring for the algorithm and FK behavior contract.
+ * Single-transaction promote: 6 DB steps + dual-write file output.
+ *
+ * V2 P1-1 / Q3 (Stage-then-Finalize):
+ *   1. Pre-tx: validate project exists + has localPath; ensureCodestableDir
+ *      (mkdir -p `<localPath>/codestable/<kind-plural>/`). Fail-fast.
+ *   2. Tx: PR3 6-step DB pipeline unchanged.
+ *   3. Post-tx: render frontmatter with FINAL values from the tx
+ *      (entityId, version, knowledgeArtifactId), writeEntityFile to the
+ *      canonical `<entityId>.md` path. Failure here is logged but does
+ *      NOT roll back DB (R10 / R11) — would require compensating tx
+ *      complexity for marginal benefit.
+ *
+ * Returns immediately on success even if file-write logging surfaces an
+ * error — the runner-side wrapper preserves "never break acceptance gate"
+ * (R12 / R28); ops can reconcile via the future drift-scan task.
  *
  * @throws {KnowledgeArtifactValidationError} for missing refReq on a design
- *   draft, or invalid input shape.
- * @throws {Error} for DB / FK errors (caught at the transaction boundary;
- *   rolled back automatically by bun:sqlite's transaction primitive).
+ *   draft, invalid kind, or unknown projectId.
+ * @throws {Error} for DB / FK errors (transaction rolled back automatically)
+ *   and ensureCodestableDir failures (mkdir / permission / disk full).
  */
-export function promoteDraftInTransaction(input: PromoteRequest): PromoteResponse {
+export async function promoteDraftInTransaction(
+  input: PromoteRequest,
+): Promise<PromoteResponse> {
   const entityKind = KIND_TO_ENTITY[input.kind];
   if (!entityKind || !isKnowledgeArtifactKind(entityKind)) {
     throw new KnowledgeArtifactValidationError(
@@ -121,7 +143,22 @@ export function promoteDraftInTransaction(input: PromoteRequest): PromoteRespons
     );
   }
 
+  // P1-1 / Q3 step 1 (pre-tx): resolve project + ensure codestable dir
+  // exists. mkdir -p is fail-fast — disk full / permission / missing
+  // localPath all surface here BEFORE the DB transaction starts.
+  const project = store.projects.get(input.projectId);
+  if (!project) {
+    throw new KnowledgeArtifactValidationError(
+      `project '${input.projectId}' does not exist; cannot promote into a missing project`,
+      'projectId',
+    );
+  }
+  await ensureCodestableDir(project.localPath, entityKind);
+
   let response!: PromoteResponse;
+  let createdRow!: KnowledgeArtifact;
+  let resolvedEntityId!: string;
+  let resolvedVersion!: number;
   const txn = db.transaction(() => {
     // Step 2-cont: resolve entity_id (frontmatter hint OR max+1 fallback).
     // Fallback runs in-tx so concurrent promotes serialize on SQLite's write
@@ -183,8 +220,68 @@ export function promoteDraftInTransaction(input: PromoteRequest): PromoteRespons
       entityKind,
       version: nextVersion,
     };
+    createdRow = created;
+    resolvedEntityId = entityId;
+    resolvedVersion = nextVersion;
   });
 
   txn();
+
+  // P1-1 / Q3 step 3 (post-tx): write entity markdown file. Re-render with
+  // FINAL values from the tx (entityId might have changed due to in-tx
+  // max+1 fallback). Failure here is logged but does NOT roll back DB
+  // per R10 / R11 — drift recoverable via future scan task.
+  if (isPathSafeEntityId(resolvedEntityId)) {
+    try {
+      const fm: EntityFileFrontmatter =
+        entityKind === 'requirement'
+          ? {
+              entity_id: resolvedEntityId,
+              kind: 'requirement',
+              status: 'accepted',
+              version: resolvedVersion,
+              updated_at: createdRow.updatedAt,
+              knowledge_artifact_id: createdRow.id,
+            }
+          : {
+              entity_id: resolvedEntityId,
+              kind: 'design',
+              status: 'accepted',
+              version: resolvedVersion,
+              updated_at: createdRow.updatedAt,
+              knowledge_artifact_id: createdRow.id,
+              ref_req: extractedRefReq as string,
+            };
+
+      const contents = renderEntityMarkdown({ frontmatter: fm, body: input.draftText });
+
+      await writeEntityFile({
+        projectLocalPath: project.localPath,
+        entityKind,
+        entityId: resolvedEntityId,
+        contents,
+      });
+    } catch (err) {
+      // R10 / R11: file write failure does NOT trigger DB rollback. Log
+      // with the DB row id + entity_id so ops can reconcile via the
+      // future drift-scan task; surface it back to the caller as a
+      // warning side-channel (the response below still indicates DB
+      // success).
+      console.error(
+        `[promote] file write failed for ${resolvedEntityId} (kart=${createdRow.id}): ${
+          err instanceof Error ? err.message : String(err)
+        } — DB row is committed; filesystem may diverge`,
+      );
+    }
+  } else {
+    // Path-unsafe entity_id (regex-mismatched). DB row is committed; we
+    // skip file write entirely and log so ops can decide on a manual
+    // reconcile path. This branch is exotic — entity_id is normally
+    // produced by the API itself and matches REQ-### / DSN-### exactly.
+    console.error(
+      `[promote] entity_id '${resolvedEntityId}' fails path-safety; skipping file write (kart=${createdRow.id})`,
+    );
+  }
+
   return response;
 }

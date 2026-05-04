@@ -13,6 +13,10 @@ process.env.AINP_HOME = join(
   '.ai-native',
 );
 
+// Real project working tree for V2 P1-1 dual-write — every promote needs
+// a project with a writable localPath so it can stage codestable/ files.
+const PROJECT_LOCAL_PATH = mkdtempSync(join(tmpdir(), 'ainp-promote-localpath-'));
+
 let promoteDraftInTransaction: typeof import('../src/promote')['promoteDraftInTransaction'];
 let store: Awaited<typeof import('../src/store/store')>['store'];
 let KnowledgeArtifactValidationError: typeof import('../src/workflow-engine')['KnowledgeArtifactValidationError'];
@@ -23,6 +27,21 @@ beforeAll(async () => {
   ({ promoteDraftInTransaction } = await import('../src/promote'));
   ({ store } = await import('../src/store/store'));
   ({ KnowledgeArtifactValidationError } = await import('../src/workflow-engine'));
+
+  // Seed the project row so promote can resolve localPath. Required for
+  // V2 P1-1 dual-write (file write target).
+  store.projects.set(PROJECT, {
+    id: PROJECT,
+    name: 'promote-test-project',
+    localPath: PROJECT_LOCAL_PATH,
+    sourceKind: 'local',
+    sourceAuthKind: 'none',
+    status: 'active',
+    language: 'java',
+    buildTool: 'maven',
+    defaultBranch: 'main',
+    registeredAt: new Date().toISOString(),
+  });
 });
 
 const baseRequest = {
@@ -37,8 +56,8 @@ const baseRequest = {
 // AC-12e (a): frontmatter抓到 entity_id
 // ---------------------------------------------------------------------------
 
-test('requirement_draft with REQ-### in body resolves to that entity_id', () => {
-  const res = promoteDraftInTransaction({
+test('requirement_draft with REQ-### in body resolves to that entity_id', async () => {
+  const res = await promoteDraftInTransaction({
     ...baseRequest,
     kind: 'requirement_draft',
     draftArtifactId: 'art-draft-1',
@@ -57,9 +76,9 @@ test('requirement_draft with REQ-### in body resolves to that entity_id', () => 
 // AC-12e (b): frontmatter没抓到走 max+1 fallback
 // ---------------------------------------------------------------------------
 
-test('requirement_draft without REQ-### falls back to project-scoped max+1', () => {
+test('requirement_draft without REQ-### falls back to project-scoped max+1', async () => {
   // After the previous test REQ-042 exists. So fallback should produce REQ-043.
-  const res = promoteDraftInTransaction({
+  const res = await promoteDraftInTransaction({
     ...baseRequest,
     kind: 'requirement_draft',
     draftArtifactId: 'art-draft-2',
@@ -73,9 +92,9 @@ test('requirement_draft without REQ-### falls back to project-scoped max+1', () 
 // AC-12e (c+d): 同 entity_id 多次 promote 累加 version；旧 accepted 行 superseded
 // ---------------------------------------------------------------------------
 
-test('promoting the same entity_id again advances version and supersedes the prior row', () => {
+test('promoting the same entity_id again advances version and supersedes the prior row', async () => {
   // First promote of REQ-100.
-  const v1 = promoteDraftInTransaction({
+  const v1 = await promoteDraftInTransaction({
     ...baseRequest,
     kind: 'requirement_draft',
     draftArtifactId: 'art-100-v1',
@@ -85,7 +104,7 @@ test('promoting the same entity_id again advances version and supersedes the pri
   expect(v1.version).toBe(1);
 
   // Second promote of REQ-100.
-  const v2 = promoteDraftInTransaction({
+  const v2 = await promoteDraftInTransaction({
     ...baseRequest,
     kind: 'requirement_draft',
     draftArtifactId: 'art-100-v2',
@@ -111,9 +130,9 @@ test('promoting the same entity_id again advances version and supersedes the pri
 // AC-12e: design_doc happy path with REQ-### + DSN-### in body
 // ---------------------------------------------------------------------------
 
-test('design_doc with both DSN-### and REQ-### resolves entity + ref_req', () => {
+test('design_doc with both DSN-### and REQ-### resolves entity + ref_req', async () => {
   // First, ensure REQ-100 exists (it does from prior test).
-  const res = promoteDraftInTransaction({
+  const res = await promoteDraftInTransaction({
     ...baseRequest,
     kind: 'design_doc',
     draftArtifactId: 'art-design-1',
@@ -134,34 +153,34 @@ test('design_doc with both DSN-### and REQ-### resolves entity + ref_req', () =>
 // PRD R29: design_doc without any REQ-### must error (no silent drop)
 // ---------------------------------------------------------------------------
 
-test('design_doc without a REQ-### reference is rejected (R29)', () => {
-  expect(() =>
+test('design_doc without a REQ-### reference is rejected (R29)', async () => {
+  await expect(
     promoteDraftInTransaction({
       ...baseRequest,
       kind: 'design_doc',
       draftArtifactId: 'art-design-noref',
       draftText: '# Some design with no upstream requirement reference',
     }),
-  ).toThrow(KnowledgeArtifactValidationError);
+  ).rejects.toThrow(KnowledgeArtifactValidationError);
 });
 
 // ---------------------------------------------------------------------------
 // AC-12f: 单事务原子性 — entity head upsert 失败 → INSERT knowledge_artifact 回滚
 // ---------------------------------------------------------------------------
 
-test('design_doc referencing non-existent REQ rolls back BOTH knowledge_artifact INSERT and supersede', () => {
+test('design_doc referencing non-existent REQ rolls back BOTH knowledge_artifact INSERT and supersede', async () => {
   const beforeCount = store.knowledgeArtifacts.byKind(PROJECT, 'design').length;
 
   // REQ-999 is well-formed (regex matches) but no `requirements` entity row
   // exists for it — designs.ref_req FK fires with ON DELETE RESTRICT.
-  expect(() =>
+  await expect(
     promoteDraftInTransaction({
       ...baseRequest,
       kind: 'design_doc',
       draftArtifactId: 'art-design-bad-fk',
       draftText: 'See DSN-999 → REQ-999.',
     }),
-  ).toThrow(/FOREIGN KEY/i);
+  ).rejects.toThrow(/FOREIGN KEY/i);
 
   const afterCount = store.knowledgeArtifacts.byKind(PROJECT, 'design').length;
   // Step 6a (INSERT into knowledge_artifacts) MUST be rolled back along
@@ -171,22 +190,15 @@ test('design_doc referencing non-existent REQ rolls back BOTH knowledge_artifact
   expect(store.designEntities.get(PROJECT, 'DSN-999')).toBeUndefined();
 });
 
-test('rollback also undoes step 5 (supersede) when step 6 fails', () => {
+test('rollback also undoes step 5 (supersede) when step 6 fails', async () => {
   // Pre-condition: REQ-100 exists with v2 accepted (from earlier test).
-  // Force a failure on a SECOND promote for REQ-100 by simulating an
-  // FK error indirectly: try to promote a design that references a
-  // requirement entity ID that exists ONLY as a knowledge_artifacts row,
-  // not in the entity head table. Use a value that has no
-  // requirements row to ensure FK rejects.
   const reqHeadBefore = store.requirementEntities.get(PROJECT, 'REQ-100');
   expect(reqHeadBefore?.currentVersion).toBe(2);
 
-  // Promote a design that points at a non-existent REQ to trigger FK violation.
-  // Then verify the requirement REQ-100 was untouched (no spurious supersede).
   const r100KnRowsBefore = store.knowledgeArtifacts
     .byEntityId(PROJECT, 'REQ-100')
     .map((a) => ({ id: a.id, status: a.status }));
-  expect(() =>
+  await expect(
     promoteDraftInTransaction({
       ...baseRequest,
       kind: 'design_doc',
@@ -194,7 +206,7 @@ test('rollback also undoes step 5 (supersede) when step 6 fails', () => {
       // REQ-998 is well-formed but does not exist as a requirements entity.
       draftText: 'See DSN-998 → REQ-998.',
     }),
-  ).toThrow();
+  ).rejects.toThrow();
   const r100KnRowsAfter = store.knowledgeArtifacts
     .byEntityId(PROJECT, 'REQ-100')
     .map((a) => ({ id: a.id, status: a.status }));
@@ -202,19 +214,17 @@ test('rollback also undoes step 5 (supersede) when step 6 fails', () => {
 });
 
 // ---------------------------------------------------------------------------
-// AC-12g: 并发 — sequential calls without hint produce distinct entity_ids
-// (SQLite's single-writer guarantee covers true concurrency; here we assert
-// the algorithm doesn't reuse a number when called twice in a row.)
+// AC-12g: sequential calls without hint produce distinct entity_ids
 // ---------------------------------------------------------------------------
 
-test('two requirement_draft promotes without hint produce distinct entity_ids', () => {
-  const r1 = promoteDraftInTransaction({
+test('two requirement_draft promotes without hint produce distinct entity_ids', async () => {
+  const r1 = await promoteDraftInTransaction({
     ...baseRequest,
     kind: 'requirement_draft',
     draftArtifactId: 'art-no-hint-1',
     draftText: 'no-hint draft 1',
   });
-  const r2 = promoteDraftInTransaction({
+  const r2 = await promoteDraftInTransaction({
     ...baseRequest,
     kind: 'requirement_draft',
     draftArtifactId: 'art-no-hint-2',
@@ -230,16 +240,16 @@ test('two requirement_draft promotes without hint produce distinct entity_ids', 
 // design_doc upsertHead does not change ref_req on UPDATE path
 // ---------------------------------------------------------------------------
 
-test('promoting same DSN twice keeps original ref_req on entity head UPDATE', () => {
+test('promoting same DSN twice keeps original ref_req on entity head UPDATE', async () => {
   // Make sure REQ-300 exists for this test to be valid.
-  promoteDraftInTransaction({
+  await promoteDraftInTransaction({
     ...baseRequest,
     kind: 'requirement_draft',
     draftArtifactId: 'art-req-300',
     draftText: 'See REQ-300.',
   });
   // First promote of DSN-300 → REQ-300.
-  const d1 = promoteDraftInTransaction({
+  const d1 = await promoteDraftInTransaction({
     ...baseRequest,
     kind: 'design_doc',
     draftArtifactId: 'art-dsn-300-v1',
@@ -250,14 +260,14 @@ test('promoting same DSN twice keeps original ref_req on entity head UPDATE', ()
   expect(store.designEntities.get(PROJECT, 'DSN-300')?.refReq).toBe('REQ-300');
 
   // Make REQ-301 also exist so FK won't reject the second promote attempt.
-  promoteDraftInTransaction({
+  await promoteDraftInTransaction({
     ...baseRequest,
     kind: 'requirement_draft',
     draftArtifactId: 'art-req-301',
     draftText: 'See REQ-301.',
   });
   // Second promote of DSN-300 still mentions REQ-300 (unchanged).
-  const d2 = promoteDraftInTransaction({
+  const d2 = await promoteDraftInTransaction({
     ...baseRequest,
     kind: 'design_doc',
     draftArtifactId: 'art-dsn-300-v2',
@@ -267,4 +277,103 @@ test('promoting same DSN twice keeps original ref_req on entity head UPDATE', ()
   expect(d2.version).toBe(2);
   // ref_req remains REQ-300 (UPDATE path doesn't change ref_req).
   expect(store.designEntities.get(PROJECT, 'DSN-300')?.refReq).toBe('REQ-300');
+});
+
+// ---------------------------------------------------------------------------
+// V2 P1-1 / PR3: dual-write file output side effects
+// ---------------------------------------------------------------------------
+
+import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+
+test('promote writes <localPath>/codestable/requirements/<entity-id>.md', async () => {
+  const res = await promoteDraftInTransaction({
+    ...baseRequest,
+    kind: 'requirement_draft',
+    draftArtifactId: 'art-dual-write-req',
+    draftText: '---\nentity_id: REQ-700\n---\n# Body of REQ-700',
+  });
+
+  const filePath = join(
+    PROJECT_LOCAL_PATH,
+    'codestable',
+    'requirements',
+    `${res.entityId}.md`,
+  );
+  expect(existsSync(filePath)).toBe(true);
+  const text = await readFile(filePath, 'utf8');
+  // Typed core frontmatter present.
+  expect(text).toContain('entity_id: REQ-700');
+  expect(text).toContain('kind: requirement');
+  expect(text).toContain('status: accepted');
+  expect(text).toContain('version: 1');
+  expect(text).toContain(`knowledge_artifact_id: ${res.knowledgeArtifactId}`);
+  // Body verbatim from draftText.
+  expect(text).toContain('# Body of REQ-700');
+});
+
+test('promote writes <localPath>/codestable/designs/<entity-id>.md with ref_req', async () => {
+  // REQ-700 exists from prior test.
+  const res = await promoteDraftInTransaction({
+    ...baseRequest,
+    kind: 'design_doc',
+    draftArtifactId: 'art-dual-write-design',
+    draftText: '---\nentity_id: DSN-700\nref_req: REQ-700\n---\n# Design body',
+  });
+
+  const filePath = join(
+    PROJECT_LOCAL_PATH,
+    'codestable',
+    'designs',
+    `${res.entityId}.md`,
+  );
+  expect(existsSync(filePath)).toBe(true);
+  const text = await readFile(filePath, 'utf8');
+  expect(text).toContain('entity_id: DSN-700');
+  expect(text).toContain('kind: design');
+  expect(text).toContain('ref_req: REQ-700');
+  expect(text).toContain('# Design body');
+});
+
+test('re-promote overwrites file with frontmatter version=2', async () => {
+  // First promote.
+  const v1 = await promoteDraftInTransaction({
+    ...baseRequest,
+    kind: 'requirement_draft',
+    draftArtifactId: 'art-rep-v1',
+    draftText: '---\nentity_id: REQ-800\n---\n# v1 body',
+  });
+  // Second promote — replaces the file.
+  const v2 = await promoteDraftInTransaction({
+    ...baseRequest,
+    kind: 'requirement_draft',
+    draftArtifactId: 'art-rep-v2',
+    draftText: '---\nentity_id: REQ-800\n---\n# v2 body',
+  });
+  expect(v1.version).toBe(1);
+  expect(v2.version).toBe(2);
+
+  const filePath = join(
+    PROJECT_LOCAL_PATH,
+    'codestable',
+    'requirements',
+    'REQ-800.md',
+  );
+  const text = await readFile(filePath, 'utf8');
+  expect(text).toContain('version: 2');
+  expect(text).toContain('# v2 body');
+  // The v1 body is gone — file is fully replaced, not appended.
+  expect(text).not.toContain('# v1 body');
+});
+
+test('promote rejects projectId that has no project row', async () => {
+  await expect(
+    promoteDraftInTransaction({
+      ...baseRequest,
+      projectId: 'proj-does-not-exist',
+      kind: 'requirement_draft',
+      draftArtifactId: 'art-noproj',
+      draftText: 'See REQ-001.',
+    }),
+  ).rejects.toThrow(KnowledgeArtifactValidationError);
 });

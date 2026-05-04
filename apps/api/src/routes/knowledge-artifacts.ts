@@ -121,7 +121,7 @@ knowledgeArtifacts.post('/promote', async (c) => {
   }
 
   try {
-    const result = promoteDraftInTransaction(body);
+    const result = await promoteDraftInTransaction(body);
     return c.json({ ok: true, result }, 201);
   } catch (err) {
     if (err instanceof KnowledgeArtifactValidationError) {

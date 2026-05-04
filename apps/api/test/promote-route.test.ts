@@ -13,12 +13,30 @@ process.env.AINP_HOME = join(
   '.ai-native',
 );
 
+// Project working tree for V2 P1-1 dual-write file output.
+const PROJECT_LOCAL_PATH = mkdtempSync(join(tmpdir(), 'ainp-promote-route-localpath-'));
+
 let app: Awaited<typeof import('../src/app')>['app'];
+let store: Awaited<typeof import('../src/store/store')>['store'];
 
 const PROJECT = 'proj-promote-route-test';
 
 beforeAll(async () => {
   ({ app } = await import('../src/app'));
+  ({ store } = await import('../src/store/store'));
+  // Seed the project so promote can resolve localPath for dual-write.
+  store.projects.set(PROJECT, {
+    id: PROJECT,
+    name: 'promote-route-test-project',
+    localPath: PROJECT_LOCAL_PATH,
+    sourceKind: 'local',
+    sourceAuthKind: 'none',
+    status: 'active',
+    language: 'java',
+    buildTool: 'maven',
+    defaultBranch: 'main',
+    registeredAt: new Date().toISOString(),
+  });
 });
 
 async function postPromote(body: Record<string, unknown>): Promise<Response> {
