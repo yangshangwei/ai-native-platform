@@ -219,3 +219,38 @@ Wave 2 keystone task W2-1 done end-to-end. PR1 = FlowId/FlowDef/StageStep shared
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: V2 W2-3 — feature.fastforward shipped (3-PR series, 0 regression)
+
+**Date**: 2026-05-05
+**Task**: V2 W2-3 — feature.fastforward shipped (3-PR series, 0 regression)
+**Branch**: `main`
+
+### Summary
+
+Wave 2 second keystone done end-to-end. PR1 = shared FlowId union extended to 'feature.standard' | 'feature.fastforward' + FLOW_REGISTRY second entry FEATURE_FASTFORWARD with 4-stage subset (implementation -> build_test -> review -> completion) + 9 new pinning tests. PR2 = POST /workflow-runs route accepts body.flowId with isFlowId trust-boundary validator (rejects unknown -> 400) + runner api-client.createWorkflowRun.flowId + OrchestrateOpts.flowId + runner CLI 'orchestrate --flow-id' flag with parseFlowIdFlag validator (exits 2 on unknown) + 4 new route integration tests. PR3 = .trellis/spec/runner/backend/flow-registry.md updated: stage layout for fastforward (4 steps, what's skipped, known degradations on implementation skill inputs / draftsToPromote / acceptance_gate caveat), trust-boundary validation lists rule, 4 trigger paths (HTTP / CLI / watch / smoke), 'Adding a new flow' recipe expanded from 5 to 7 steps, Good/Base/Bad cases refreshed. PR4 (Web UI Fast-forward button) deliberately deferred to a supervised session per CLAUDE.md UI-testing rule. Tests 365 pass / 0 fail (W2-1 baseline 352 + 9 PR1 + 4 PR2 = 365). typecheck 4/4 green. cmdRun (smoke) and watch loop unchanged -- watch's flow routing is W2-4's job (smart router).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f250ed9` | (see git log) |
+| `b1f6e5d` | (see git log) |
+| `21ad9be` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
