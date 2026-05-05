@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import type { AgentStreamEvent, FlowId, Project, WorkflowRunType } from '@ainp/shared';
+import type { AgentStreamEvent, FlowId, Project, WorkflowRunType, WorkflowStage } from '@ainp/shared';
 import { store } from '../store/store';
 import {
   createWorkflowRun,
@@ -25,6 +25,31 @@ function isFlowId(value: unknown): value is FlowId {
   return typeof value === 'string' && (KNOWN_FLOW_IDS as readonly string[]).includes(value);
 }
 
+/**
+ * V2 W2-4 / PR4: trust-boundary guard for `WorkflowStage`. Mirrors the
+ * union in `packages/shared/src/types/workflow.ts:WorkflowStage` so a
+ * stale list silently accepting an obsolete stage name is impossible
+ * (TS exhaustiveness elsewhere catches the additions).
+ */
+const KNOWN_WORKFLOW_STAGES: readonly WorkflowStage[] = [
+  'init',
+  'context_pack',
+  'requirement',
+  'design',
+  'implementation',
+  'build_test',
+  'review',
+  'completion',
+  'knowledge',
+  'report',
+  'analyze',
+  'scan',
+  'plan',
+];
+function isWorkflowStage(value: unknown): value is WorkflowStage {
+  return typeof value === 'string' && (KNOWN_WORKFLOW_STAGES as readonly string[]).includes(value);
+}
+
 workflowRuns.get('/', (c) => {
   const projectId = c.req.query('projectId');
   const items = projectId
@@ -41,6 +66,7 @@ workflowRuns.post('/', async (c) => {
     title?: string;
     sourceBranch?: string;
     flowId?: string;
+    startStage?: string;
   };
 
   let projectId = body.projectId;
@@ -72,12 +98,32 @@ workflowRuns.post('/', async (c) => {
     flowId = body.flowId;
   }
 
+  // V2 W2-4 / PR4: optional startStage in body. Set by the UI override
+  // path (智能推荐 card → "override") or by automation that already knows
+  // which stage to skip from. Validated against `WorkflowStage`; the
+  // orchestrator then re-validates that the stage is actually present
+  // in the chosen flow (R-Risk-1).
+  let startStage: WorkflowStage | null | undefined;
+  if (body.startStage !== undefined) {
+    if (body.startStage === null) {
+      startStage = null;
+    } else if (!isWorkflowStage(body.startStage)) {
+      return c.json(
+        { error: `unknown startStage: ${body.startStage} (known: ${KNOWN_WORKFLOW_STAGES.join(', ')})` },
+        400,
+      );
+    } else {
+      startStage = body.startStage;
+    }
+  }
+
   const run = createWorkflowRun({
     projectId,
     type: runType,
     title: body.title,
     sourceBranch: body.sourceBranch?.trim() || project.defaultBranch,
     flowId,
+    startStage,
   });
   return c.json(run, 201);
 });

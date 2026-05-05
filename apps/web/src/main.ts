@@ -2865,6 +2865,83 @@ function renderNewTaskPage(): HTMLElement {
   const backendLabel = el('strong', { text: '未选择项目' });
   const clickedBranchProjects = new Set<string>();
   const submit = el('button', { class: 'button primary', text: 'Create Workflow Request', attrs: { type: 'submit' } });
+
+  // V2 W2-4 / PR4: 智能推荐 card.
+  //
+  // On title blur, POST /router/recommend with { projectId, title, runType }
+  // and render the recommendation (flowId / startStage / estimates / reason).
+  // The Coordinator path doesn't yet plumb flowId through workflow_requests
+  // — auto-pick happens server-side when createWorkflowRun() lands. The
+  // card is informational for now (override is a follow-up that requires
+  // workflow_requests body extension; PR4 ships preview only). Cache by
+  // (projectId, runType, title) so re-blurs don't spam the endpoint.
+  const recoCard = el('div', { class: 'panel compact' });
+  recoCard.style.display = 'none';
+  let recoLastKey = '';
+  let recoInFlight = false;
+  type RecoResponse = {
+    flowId: string;
+    startStage: string | null;
+    estimates: { timeSec: number; tokens: number };
+    reason: string;
+    rulesFired: string[];
+  };
+  const fetchRecommendation = async (): Promise<void> => {
+    const projectId = projectSelect.value;
+    const runType = typeSelect.value;
+    const titleText = title.value.trim();
+    if (!projectId || !titleText) {
+      recoCard.style.display = 'none';
+      return;
+    }
+    const key = `${projectId}|${runType}|${titleText}`;
+    if (key === recoLastKey || recoInFlight) return;
+    recoInFlight = true;
+    recoCard.style.display = 'block';
+    recoCard.replaceChildren(
+      panelHeader('智能推荐', '正在加载…'),
+      el('p', { class: 'muted compact', text: 'POST /router/recommend' }),
+    );
+    try {
+      const reco = await api<RecoResponse>('/router/recommend', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ projectId, title: titleText, runType }),
+      });
+      recoLastKey = key;
+      const stageLabel = reco.startStage ? `从 ${reco.startStage} 开始` : '从头执行';
+      const minsApprox = Math.round(reco.estimates.timeSec / 60);
+      recoCard.replaceChildren(
+        panelHeader('智能推荐', '可作为参考；服务器创建任务时会自动应用'),
+        el('p', { class: 'compact', children: [
+          el('strong', { text: `${reco.flowId}` }),
+          el('span', { text: ` · ${stageLabel}` }),
+        ] }),
+        el('p', { class: 'muted compact', text: `预估 ~${minsApprox} 分钟 / ~${reco.estimates.tokens} tokens` }),
+        el('p', { class: 'muted compact', text: `规则: ${reco.rulesFired.join(' / ') || '(none)'}` }),
+      );
+    } catch (err) {
+      recoCard.replaceChildren(
+        panelHeader('智能推荐', '获取失败'),
+        el('p', { class: 'muted compact', text: err instanceof Error ? err.message : String(err) }),
+      );
+    } finally {
+      recoInFlight = false;
+    }
+  };
+  let recoDebounce: ReturnType<typeof setTimeout> | null = null;
+  const scheduleReco = () => {
+    if (recoDebounce) clearTimeout(recoDebounce);
+    recoDebounce = setTimeout(() => void fetchRecommendation(), 400);
+  };
+  title.onblur = scheduleReco;
+  typeSelect.addEventListener('change', () => {
+    recoLastKey = '';
+    scheduleReco();
+  });
+  projectSelect.addEventListener('change', () => {
+    recoLastKey = '';
+  });
   const updateBackendHint = (projectId: string) => {
     const project = projects.find((p) => p.id === projectId) ?? projects[0] ?? null;
     const status = agentBackendStatusForProject(project);
@@ -2934,6 +3011,7 @@ function renderNewTaskPage(): HTMLElement {
     el('label', { class: 'input-block', children: [el('span', { text: 'Project' }), projectSelect] }),
     el('label', { class: 'input-block', children: [el('span', { text: 'Type' }), typeSelect] }),
     el('label', { class: 'input-block', children: [el('span', { text: 'Task Title / Intent' }), title] }),
+    recoCard,
     el('div', {
       class: 'input-block',
       children: [

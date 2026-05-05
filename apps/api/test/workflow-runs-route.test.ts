@@ -184,3 +184,48 @@ test('POST /workflow-runs rejects an unknown flowId with 400 (trust-boundary val
   expect(body.error).toContain('issue.standard');
   expect(body.error).toContain('refactor.standard');
 });
+
+// ---------------------------------------------------------------------------
+// V2 W2-4 / PR4 — body.startStage plumbing for direct UI override path.
+// ---------------------------------------------------------------------------
+
+test('POST /workflow-runs honors body.startStage = design (W2-4 PR4)', async () => {
+  const project = registerProject('startstage-design');
+
+  const res = await app.request('/workflow-runs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      type: 'feature',
+      title: 'manual override starting at design stage with a longer description here',
+      flowId: 'feature.standard',
+      startStage: 'design',
+    }),
+  });
+
+  expect(res.status).toBe(201);
+  const run = (await res.json()) as WorkflowRun;
+  expect(run.flowId).toBe('feature.standard');
+  expect(run.startStage).toBe('design');
+});
+
+test('POST /workflow-runs rejects an unknown startStage with 400', async () => {
+  const project = registerProject('startstage-bogus');
+
+  const res = await app.request('/workflow-runs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      type: 'feature',
+      title: 'should reject unknown stage',
+      flowId: 'feature.standard',
+      startStage: 'fictional_stage',
+    }),
+  });
+
+  expect(res.status).toBe(400);
+  const body = (await res.json()) as { error: string };
+  expect(body.error).toContain('fictional_stage');
+});
