@@ -56,7 +56,10 @@ export type AgentTaskKind =
   | 'implementation'
   | 'review'
   | 'debug'
-  | 'noop';
+  | 'noop'
+  // V2 W2-2a: issue.standard flow agent tasks
+  | 'report'
+  | 'analyze';
 
 export interface AgentTask {
   id: AgentTaskId;

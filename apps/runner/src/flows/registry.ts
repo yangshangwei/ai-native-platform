@@ -95,12 +95,48 @@ const FEATURE_FASTFORWARD: FlowDef = {
 };
 
 /**
+ * Standard 6-stage issue/bug pipeline — V2 W2-2a.
+ *
+ * Ships as the second non-feature flow in FLOW_REGISTRY (W2-3 was the first
+ * variant of feature; this is the first different `<work_kind>`). Skips
+ * `context_pack` / `requirement` / `design` / `knowledge` (issue work has
+ * no requirement/design artifact; report/analyze cover the front-end).
+ * Reuses `implementation` for the fix step (semantically identical: agent →
+ * diff artifact). The different prompt for "fix" vs "feature impl" is a
+ * `skillId` concern handled by W2-4 routing; W2-2a leaves `skillId` as a
+ * placeholder (PRD ADR Q1, Q4).
+ *
+ * Stages pinned by `apps/runner/test/flow-registry.test.ts` against an
+ * out-of-band reference array (W2-2a PRD AC-7).
+ *
+ * `kind: 'bugfix'` reuses an existing WorkflowRunType that the Coordinator
+ * (`apps/runner/src/agents/coordinator/rules.ts`) already routes bug-shaped
+ * inputs to. The naming asymmetry (type='bugfix' vs flow='issue.standard')
+ * is documented in `.trellis/spec/runner/backend/flow-registry.md` and is
+ * deliberate — V2 § 4.2 calls this work "issue" but renaming the existing
+ * 'bugfix' WorkflowRunType is out of scope (W2-2a PRD ADR Q2).
+ */
+const ISSUE_STANDARD: FlowDef = {
+  id: 'issue.standard',
+  kind: 'bugfix',
+  description:
+    'Standard 6-stage issue/bug pipeline (V2 W2-2a). Runs report -> analyze -> implementation (=fix) -> build_test -> review (with human acceptance gate) -> completion. Skips context_pack/requirement/design/knowledge.',
+  stages: [
+    { stage: 'report', kind: 'agent', skillId: 'cs-issue-report' },
+    { stage: 'analyze', kind: 'agent', skillId: 'cs-issue-analyze' },
+    { stage: 'implementation', kind: 'agent', skillId: 'cs-issue-fix' },
+    { stage: 'build_test', kind: 'engine' },
+    { stage: 'review', kind: 'agent', skillId: 'cs-feat-accept' },
+    { stage: 'completion', kind: 'engine' },
+  ],
+};
+
+/**
  * Single source of truth for V2 flow definitions, keyed by {@link FlowId}.
  *
  * W2-1 shipped `'feature.standard'`. W2-3 adds `'feature.fastforward'`.
- * Subsequent Wave 2 tasks append entries:
- *   - `'issue.standard'`      (W2-2)
- *   - `'refactor.standard'`   (W2-2)
+ * W2-2a adds `'issue.standard'`. Subsequent Wave 2 tasks append entries:
+ *   - `'refactor.standard'`   (W2-2b)
  *
  * Typed as `Readonly<Record<FlowId, FlowDef>>` so that:
  *   1. Adding a new FlowId literal in `@ainp/shared` without registering
@@ -110,4 +146,5 @@ const FEATURE_FASTFORWARD: FlowDef = {
 export const FLOW_REGISTRY: Readonly<Record<FlowId, FlowDef>> = {
   'feature.standard': FEATURE_STANDARD,
   'feature.fastforward': FEATURE_FASTFORWARD,
+  'issue.standard': ISSUE_STANDARD,
 };

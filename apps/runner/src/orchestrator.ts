@@ -223,6 +223,12 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       case 'knowledge':
         await executeKnowledgePromotion(_ctx);
         return;
+      case 'report':
+        await executeReport(_ctx);
+        return;
+      case 'analyze':
+        await executeAnalyze(_ctx);
+        return;
       case 'init':
         throw new Error(`'init' is not a dispatchable stage (status placeholder only)`);
       default: {
@@ -403,6 +409,95 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     for (const draft of c.draftsToPromote) {
       await promoteAcceptedDraftToKnowledge(c.project.id, draft);
     }
+  }
+
+  // V2 W2-2a: report & analyze stages for issue.standard flow.
+  // Both are "agent → markdown artifact" stages; outputs land as kind='other'
+  // (PRD ADR Q5: no KnowledgeArtifactKind extension for issue analysis).
+  // Inner-function style mirrors W2-1 PR3 (executeXxx sharing RunCtx).
+
+  async function executeReport(c: RunCtx): Promise<void> {
+    const skill = await mustSkill('report');
+    const { step } = await api.stepStarted({
+      workflowRunId: c.run.id,
+      stage: 'report',
+      name: skill.id,
+    });
+    const stepId = step.id;
+    const stepArtifactsDir = join(c.runArtifactsDir, 'report');
+    const agent = await invokeSkill(skill, {
+      workflowRunId: c.run.id,
+      stepRunId: stepId,
+      workspacePath: c.workspace.path,
+      branch: c.workspace.branch,
+      title: c.opts.title,
+      artifactsDir: stepArtifactsDir,
+      inputs: c.inputs,
+    });
+    const artifactIds: string[] = [];
+    for (const out of agent.outputs) {
+      const a = await api.postArtifact({
+        workflowRunId: c.run.id,
+        stepRunId: stepId,
+        kind: 'other',
+        uri: `file://${out.path}`,
+        size: out.size,
+        contentType: out.contentType,
+        metadata: { skill: skill.id, output: out.name, stage: 'report' },
+      });
+      c.inputs[out.name] = await Bun.file(out.path).text();
+      c.inputArtifactIds[out.name] = a.id;
+      artifactIds.push(a.id);
+      console.log(`[runner] report artifact ${a.id} (${out.name})`);
+    }
+    await finishAgentSuccess(
+      agent.taskId,
+      artifactIds,
+      `report produced ${artifactIds.length} artifact(s)`,
+    );
+    await api.stepFinished({ stepRunId: stepId, status: 'passed' });
+  }
+
+  async function executeAnalyze(c: RunCtx): Promise<void> {
+    const skill = await mustSkill('analyze');
+    const { step } = await api.stepStarted({
+      workflowRunId: c.run.id,
+      stage: 'analyze',
+      name: skill.id,
+    });
+    const stepId = step.id;
+    const stepArtifactsDir = join(c.runArtifactsDir, 'analyze');
+    const agent = await invokeSkill(skill, {
+      workflowRunId: c.run.id,
+      stepRunId: stepId,
+      workspacePath: c.workspace.path,
+      branch: c.workspace.branch,
+      title: c.opts.title,
+      artifactsDir: stepArtifactsDir,
+      inputs: c.inputs,
+    });
+    const artifactIds: string[] = [];
+    for (const out of agent.outputs) {
+      const a = await api.postArtifact({
+        workflowRunId: c.run.id,
+        stepRunId: stepId,
+        kind: 'other',
+        uri: `file://${out.path}`,
+        size: out.size,
+        contentType: out.contentType,
+        metadata: { skill: skill.id, output: out.name, stage: 'analyze' },
+      });
+      c.inputs[out.name] = await Bun.file(out.path).text();
+      c.inputArtifactIds[out.name] = a.id;
+      artifactIds.push(a.id);
+      console.log(`[runner] analyze artifact ${a.id} (${out.name})`);
+    }
+    await finishAgentSuccess(
+      agent.taskId,
+      artifactIds,
+      `analyze produced ${artifactIds.length} artifact(s)`,
+    );
+    await api.stepFinished({ stepRunId: stepId, status: 'passed' });
   }
 
   async function executeCompletion(c: RunCtx): Promise<void> {
@@ -666,7 +761,9 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
   }
 }
 
-async function mustSkill(stage: 'requirement' | 'design' | 'implementation' | 'review') {
+async function mustSkill(
+  stage: 'requirement' | 'design' | 'implementation' | 'review' | 'report' | 'analyze',
+) {
   const s = await findSkillForStage(stage);
   if (!s) throw new Error(`no skill for stage ${stage}`);
   return s;
@@ -824,6 +921,10 @@ function taskKindForSkill(skill: SkillSpec): AgentTaskKind {
       return 'implementation';
     case 'review':
       return 'review';
+    case 'report':
+      return 'report';
+    case 'analyze':
+      return 'analyze';
     default:
       return 'noop';
   }

@@ -49,10 +49,11 @@ const V1_STAGE_ORDER: readonly WorkflowStage[] = [
 ] as const;
 
 describe('FLOW_REGISTRY', () => {
-  test('exposes both V2 Wave 2 flows: feature.standard + feature.fastforward (W2-3)', () => {
+  test('exposes V2 Wave 2 flows: feature.standard + feature.fastforward (W2-3) + issue.standard (W2-2a)', () => {
     expect(Object.keys(FLOW_REGISTRY).sort()).toEqual([
       'feature.fastforward',
       'feature.standard',
+      'issue.standard',
     ]);
   });
 
@@ -174,6 +175,99 @@ describe('FLOW_REGISTRY', () => {
       const byStage = Object.fromEntries(flow.stages.map((s) => [s.stage, s]));
       expect(byStage.implementation.kind).toBe('agent');
       expect(byStage.implementation.skillId).toBe('cs-feat-impl');
+      expect(byStage.review.kind).toBe('agent');
+      expect(byStage.review.skillId).toBe('cs-feat-accept');
+    });
+
+    test('every step.kind is one of the four StageStepKind buckets', () => {
+      const buckets = new Set<string>(['agent', 'gate', 'human', 'engine']);
+      for (const step of flow.stages) {
+        expect(buckets.has(step.kind)).toBe(true);
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // V2 W2-2a — issue.standard: 6-stage issue/bug pipeline.
+  // PRD AC-4 / AC-5 / AC-6 / AC-7 / AC-8 (W2-2a task PRD).
+  // ---------------------------------------------------------------------------
+
+  describe('issue.standard (W2-2a)', () => {
+    const flow = FLOW_REGISTRY['issue.standard'];
+
+    /**
+     * Reference order: 6 stages — issue work-type's own front-end (report,
+     * analyze) plus the back-end shared with feature flows (implementation,
+     * build_test, review, completion). Skips `context_pack` / `requirement`
+     * / `design` / `knowledge` (issue has no PRD/design and rarely produces
+     * reusable knowledge from a single bug). `fix` reuses `implementation`
+     * (PRD ADR Q1).
+     */
+    const ISSUE_STANDARD_STAGE_ORDER: readonly WorkflowStage[] = [
+      'report',
+      'analyze',
+      'implementation',
+      'build_test',
+      'review',
+      'completion',
+    ] as const;
+
+    test('id matches its registry key', () => {
+      expect(flow.id).toBe('issue.standard');
+    });
+
+    test('AC-8: kind is "bugfix" (reuses existing WorkflowRunType, PRD ADR Q2)', () => {
+      expect(flow.kind).toBe('bugfix');
+    });
+
+    test('description is non-empty', () => {
+      expect(typeof flow.description).toBe('string');
+      expect(flow.description.length).toBeGreaterThan(0);
+    });
+
+    test('AC-6: stages length is exactly 6', () => {
+      expect(flow.stages).toHaveLength(6);
+      expect(flow.stages).toHaveLength(ISSUE_STANDARD_STAGE_ORDER.length);
+    });
+
+    test('AC-7: stages.map(s => s.stage) strictly equals issue.standard reference order', () => {
+      const order = flow.stages.map((s: StageStep) => s.stage);
+      expect(order).toEqual([...ISSUE_STANDARD_STAGE_ORDER]);
+    });
+
+    test('skipped stages are NOT in the list (context_pack/requirement/design/knowledge)', () => {
+      const present = new Set(flow.stages.map((s) => s.stage));
+      expect(present.has('context_pack')).toBe(false);
+      expect(present.has('requirement')).toBe(false);
+      expect(present.has('design')).toBe(false);
+      expect(present.has('knowledge')).toBe(false);
+    });
+
+    test('build_test + completion are runner-side engine stages', () => {
+      const byStage = Object.fromEntries(flow.stages.map((s) => [s.stage, s]));
+      expect(byStage.build_test.kind).toBe('engine');
+      expect(byStage.completion.kind).toBe('engine');
+    });
+
+    test('agent stages declare a non-empty skillId; engine stages do not', () => {
+      for (const step of flow.stages) {
+        if (step.kind === 'agent') {
+          expect(typeof step.skillId).toBe('string');
+          expect(step.skillId!.length).toBeGreaterThan(0);
+        } else {
+          expect(step.skillId).toBeUndefined();
+        }
+      }
+    });
+
+    test('R9: skillId placeholders for issue agent stages (W2-4 will consume)', () => {
+      const byStage = Object.fromEntries(flow.stages.map((s) => [s.stage, s]));
+      expect(byStage.report.kind).toBe('agent');
+      expect(byStage.report.skillId).toBe('cs-issue-report');
+      expect(byStage.analyze.kind).toBe('agent');
+      expect(byStage.analyze.skillId).toBe('cs-issue-analyze');
+      expect(byStage.implementation.kind).toBe('agent');
+      expect(byStage.implementation.skillId).toBe('cs-issue-fix');
       expect(byStage.review.kind).toBe('agent');
       expect(byStage.review.skillId).toBe('cs-feat-accept');
     });

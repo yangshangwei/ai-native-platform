@@ -9,7 +9,10 @@ export type WorkflowStage =
   | 'build_test'
   | 'review'
   | 'completion'
-  | 'knowledge';
+  | 'knowledge'
+  // V2 W2-2a: issue.standard flow stages (report → analyze → fix=implementation reuse).
+  | 'report'
+  | 'analyze';
 
 export type WorkflowRunStatus =
   | 'pending'
@@ -49,16 +52,22 @@ export type WorkflowRunType = 'feature' | 'bugfix' | 'smoke';
  *                                                completion); skips
  *                                                context_pack / requirement /
  *                                                design / knowledge
+ *   - `'issue.standard'`                (W2-2a) — 6-stage issue/bug pipeline
+ *                                                 (report / analyze /
+ *                                                 implementation / build_test
+ *                                                 / review / completion);
+ *                                                 skips context_pack /
+ *                                                 requirement / design /
+ *                                                 knowledge
  *
  * Future tasks add:
- *   - `'issue.standard'`                (W2-2)
- *   - `'refactor.standard'`             (W2-2)
+ *   - `'refactor.standard'`             (W2-2b)
  *
  * Kept as a string-literal union (not a free `string`) so that
  * `runWorkflow(run.flowId)` and FLOW_REGISTRY indexing are type-checked
  * end-to-end. New flows must add their FlowId to this union.
  */
-export type FlowId = 'feature.standard' | 'feature.fastforward';
+export type FlowId = 'feature.standard' | 'feature.fastforward' | 'issue.standard';
 
 /**
  * Classification of how a single {@link StageStep} is executed.
