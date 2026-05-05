@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 9
+- **Total Sessions**: 10
 - **Last Active**: 2026-05-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~325 | Active |
+| `journal-1.md` | ~359 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 10 | 2026-05-05 | V2 W2-4 smart-router PR1 shipped + paused for next session | `ddc302d`, `50b6406` | `main` |
 | 9 | 2026-05-05 | V2 W2-2b refactor.standard flow shipped | `cc65eaf`, `57cc13c` | `main` |
 | 8 | 2026-05-05 | V2 W2-2a issue.standard flow shipped | `1f480df`, `149bc05`, `9ce6ef3` | `main` |
 | 7 | 2026-05-05 | V2 W2-3 — feature.fastforward shipped (3-PR series, 0 regression) | `f250ed9`, `b1f6e5d`, `21ad9be` | `main` |

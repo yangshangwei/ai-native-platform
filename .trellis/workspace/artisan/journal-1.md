@@ -323,3 +323,37 @@ Wave 2 second keystone done end-to-end. PR1 = shared FlowId union extended to 'f
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: V2 W2-4 smart-router PR1 shipped + paused for next session
+
+**Date**: 2026-05-05
+**Task**: V2 W2-4 smart-router PR1 shipped + paused for next session
+**Branch**: `main`
+
+### Summary
+
+W2-4 (smart-router) brainstormed and started: 5 ADRs locked (Q1=C V1 outputs flowId+startStage+knowledge+estimates / Q2=C api-side router + POST /router/recommend / Q3=B start_stage DB column + runWorkflow slice / Q4=A auto-pick on missing flowId / Q5=A rules-only). PR1 (ddc302d) shipped: smart-router pure-function rule engine + RouterInput/RouterRecommendation shared types + CoordinatorAction.runType += 'refactor' (W2-2b mirror fix) + FLOW_REGISTRY relocated to packages/shared/src/flows/registry.ts (cross-layer access; runner side preserved as re-export shim) + 12 unit tests (R10/R11/R12/R13 coverage) + canonical spec doc smart-router.md. Session paused at PR1 done; PR2 (workflow_runs.start_stage migration + runWorkflow slice), PR3 (/router/recommend endpoint + createWorkflowRun auto-pick), PR4 (UI 入口卡 + flow-registry.md § Smart Router) remain. Handoff committed (50b6406) at .trellis/workspace/artisan/handoff-2026-05-05-w2-4-pr2.md with concrete file-by-file plans for each remaining PR. typecheck 4/4 green / 403 pass / 0 fail (W2-2b baseline 391 + 12 new). Task remains in_progress for next session.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ddc302d` | (see git log) |
+| `50b6406` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
