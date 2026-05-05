@@ -62,25 +62,104 @@ position must survive the render.
 
 ## State Categories
 
-<!-- Local state, global state, server state, URL state -->
+The SPA recognizes four state categories. Each lives in a different place
+and has a different lifecycle.
 
-(To be filled by the team)
+| Category | Where it lives | Example |
+|---|---|---|
+| **Server state** | Module-scope objects in `main.ts`, populated by `fetch('/api/...')`; replaced wholesale on next poll/SSE event. | `state.workflowRuns`, `state.projects` |
+| **User-owned draft state** | Module-scope `Map`s keyed by stable entity id; survives `render()` calls. | `coordinatorReplyDrafts: Map<requestId, string>`, project-form drafts. |
+| **UI navigation state** | `state.page` (literal `Page` union), modal-open flags, picker-open flags. | `state.page = 'task'`, `localDirectoryPicker.open = true` |
+| **Derived state** | Computed inline during render via `projection.ts` helpers; never stored. | `buildRunProjection(run)` output, `buildAcceptanceChecklist(...)`. |
+
+The first three are stored; the fourth is recomputed every render. Resist
+the urge to cache derived values — re-running a pure projection is cheap,
+caching it adds an invalidation problem.
 
 ---
 
 ## When to Use Global State
 
-<!-- Criteria for promoting state to global -->
+There is no separate "store" library. All state is module-scope inside
+`main.ts`, which IS the project's global state by virtue of being the
+entry. The decision is "module-scope variable in `main.ts`" vs. "local
+variable inside a renderer function".
 
-(To be filled by the team)
+Promote a value to module scope when:
+
+- It must survive `render()` calls (drafts, focus restore markers).
+- It's read or written from more than one renderer (page navigation,
+  shared selections like `selectedProjectId`).
+- It needs to outlive an event handler (e.g. polling intervals, open
+  EventSource handles).
+
+Keep it local when:
+
+- It's a temporary value computed inside a single renderer (DOM ids
+  generated from a list index, intermediate strings).
+- It's an event handler's transient parameter.
+
+Don't promote "in case we need it later" — local is the default.
 
 ---
 
 ## Server State
 
-<!-- How server data is cached and synchronized -->
+API responses are cached only as long as the user remains on the page that
+needs them. There is no global server-state cache (no React Query, no
+SWR). The patterns:
 
-(To be filled by the team)
+### Polling pages (workbench, task list)
+
+```ts
+let pollHandle: number | null = null;
+
+async function loadWorkflowRuns(): Promise<void> {
+  const res = await fetch(`${API_BASE}/workflow-runs`);
+  if (!res.ok) return;
+  const body = (await res.json()) as { items: WorkflowRunDto[] };
+  state.workflowRuns = body.items;            // wholesale replacement
+  render();
+}
+
+function enterWorkbench(): void {
+  loadWorkflowRuns();
+  pollHandle = window.setInterval(loadWorkflowRuns, 5000);
+}
+function leaveWorkbench(): void {
+  if (pollHandle !== null) window.clearInterval(pollHandle);
+  pollHandle = null;
+}
+```
+
+### SSE pages (task detail, agent stream)
+
+History fetch first, then SSE attach for live appends:
+
+```ts
+const history = await fetch(`${API_BASE}/runner/events/agent-events?workflowRunId=${id}`).then(r => r.json());
+state.agentStream = history.items;
+
+const es = new EventSource(`${API_BASE}/runner/events/agent-stream/${id}`);
+es.addEventListener('message', (ev) => {
+  const event = JSON.parse(ev.data) as AgentStreamEvent;
+  state.agentStream.push(event);
+  render();
+});
+```
+
+The api side guarantees no race between history and SSE — both go through
+the same `publish` (see `apps/api/src/agent-stream-bus.ts:7-10`). The
+client just needs to fetch history first, then attach.
+
+### Optimistic vs. authoritative updates
+
+This SPA is **not** optimistic. After a `POST /workflow-runs`, wait for
+the response (the new run object) and then update local state from that
+response. Reason: backend rules (Smart Router auto-pick, validation,
+status setting) may differ from what the client sent.
+
+---
 
 ---
 

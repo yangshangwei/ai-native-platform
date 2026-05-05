@@ -1,54 +1,44 @@
-# Directory Structure
+# Directory Structure — `api` package
 
-> How frontend code is organized in this project.
-
----
-
-## Overview
-
-<!--
-Document your project's frontend directory structure here.
-
-Questions to answer:
-- Where do components live?
-- How are features/modules organized?
-- Where are shared utilities?
-- How are assets organized?
--->
-
-(To be filled by the team)
+> **Not applicable.** `apps/api/` has no frontend layer. This file is
+> intentionally a redirect.
 
 ---
 
-## Directory Layout
+## Why
 
-```
-<!-- Replace with your actual structure -->
-src/
-├── ...
-└── ...
-```
+`apps/api/` is a Hono HTTP server (backend only). There is no UI code in this package, so
+component / hook / state / type-safety / structure / quality conventions
+for the UI don't apply here.
 
----
-
-## Module Organization
-
-<!-- How should new features be organized? -->
-
-(To be filled by the team)
+The trellis-init scaffolding creates `frontend/` for every package by
+convention; we keep this file as a placeholder so the spec structure stays
+uniform across packages.
 
 ---
 
-## Naming Conventions
+## Real reference
 
-<!-- File and folder naming rules -->
+The project's only real frontend lives at `apps/web/`. The matching
+convention doc is:
 
-(To be filled by the team)
+- [`.trellis/spec/web/frontend/directory-structure.md`](../../web/frontend/directory-structure.md)
+
+Open that file for the actual rules.
 
 ---
 
-## Examples
+## Future expansion
 
-<!-- Link to well-organized modules as examples -->
+If a small UI surface ever ships inside this package — for example a
+runner TUI written with Ink, or an api operator panel served at
+`/admin` — document its conventions here at that time. Until then this
+file remains a redirect.
 
-(To be filled by the team)
+---
+
+## Forbidden in `apps/api/`
+
+- React / Vue / Svelte / JSX imports.
+- DOM API usage.
+- Anything that requires a browser runtime to evaluate.

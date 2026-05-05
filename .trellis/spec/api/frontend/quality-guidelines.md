@@ -1,51 +1,44 @@
-# Quality Guidelines
+# Quality Guidelines — `api` package
 
-> Code quality standards for frontend development.
-
----
-
-## Overview
-
-<!--
-Document your project's quality standards here.
-
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
-
-(To be filled by the team)
+> **Not applicable.** `apps/api/` has no frontend layer. This file is
+> intentionally a redirect.
 
 ---
 
-## Forbidden Patterns
+## Why
 
-<!-- Patterns that should never be used and why -->
+`apps/api/` is a Hono HTTP server (backend only). There is no UI code in this package, so
+component / hook / state / type-safety / structure / quality conventions
+for the UI don't apply here.
 
-(To be filled by the team)
-
----
-
-## Required Patterns
-
-<!-- Patterns that must always be used -->
-
-(To be filled by the team)
+The trellis-init scaffolding creates `frontend/` for every package by
+convention; we keep this file as a placeholder so the spec structure stays
+uniform across packages.
 
 ---
 
-## Testing Requirements
+## Real reference
 
-<!-- What level of testing is expected -->
+The project's only real frontend lives at `apps/web/`. The matching
+convention doc is:
 
-(To be filled by the team)
+- [`.trellis/spec/web/frontend/quality-guidelines.md`](../../web/frontend/quality-guidelines.md)
+
+Open that file for the actual rules.
 
 ---
 
-## Code Review Checklist
+## Future expansion
 
-<!-- What reviewers should check -->
+If a small UI surface ever ships inside this package — for example a
+runner TUI written with Ink, or an api operator panel served at
+`/admin` — document its conventions here at that time. Until then this
+file remains a redirect.
 
-(To be filled by the team)
+---
+
+## Forbidden in `apps/api/`
+
+- React / Vue / Svelte / JSX imports.
+- DOM API usage.
+- Anything that requires a browser runtime to evaluate.

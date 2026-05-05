@@ -1,51 +1,44 @@
-# Hook Guidelines
+# Hook Guidelines — `shared` package
 
-> How hooks are used in this project.
-
----
-
-## Overview
-
-<!--
-Document your project's hook conventions here.
-
-Questions to answer:
-- What custom hooks do you have?
-- How do you handle data fetching?
-- What are the naming conventions?
-- How do you share stateful logic?
--->
-
-(To be filled by the team)
+> **Not applicable.** `packages/shared/` has no frontend layer. This file is
+> intentionally a redirect.
 
 ---
 
-## Custom Hook Patterns
+## Why
 
-<!-- How to create and structure custom hooks -->
+`packages/shared/` is a zero-runtime types and pure-utility package (no UI, no I/O). There is no UI code in this package, so
+component / hook / state / type-safety / structure / quality conventions
+for the UI don't apply here.
 
-(To be filled by the team)
-
----
-
-## Data Fetching
-
-<!-- How data fetching is handled (React Query, SWR, etc.) -->
-
-(To be filled by the team)
+The trellis-init scaffolding creates `frontend/` for every package by
+convention; we keep this file as a placeholder so the spec structure stays
+uniform across packages.
 
 ---
 
-## Naming Conventions
+## Real reference
 
-<!-- Hook naming rules (use*, etc.) -->
+The project's only real frontend lives at `apps/web/`. The matching
+convention doc is:
 
-(To be filled by the team)
+- [`.trellis/spec/web/frontend/hook-guidelines.md`](../../web/frontend/hook-guidelines.md)
+
+Open that file for the actual rules.
 
 ---
 
-## Common Mistakes
+## Future expansion
 
-<!-- Hook-related mistakes your team has made -->
+If a small UI surface ever ships inside this package — for example a
+runner TUI written with Ink, or an api operator panel served at
+`/admin` — document its conventions here at that time. Until then this
+file remains a redirect.
 
-(To be filled by the team)
+---
+
+## Forbidden in `packages/shared/`
+
+- React / Vue / Svelte / JSX imports.
+- DOM API usage.
+- Anything that requires a browser runtime to evaluate.

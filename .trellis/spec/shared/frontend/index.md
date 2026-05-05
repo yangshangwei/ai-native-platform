@@ -1,39 +1,59 @@
-# Frontend Development Guidelines
+# Frontend Development Guidelines — `shared` package
 
-> Best practices for frontend development in this project.
-
----
-
-## Overview
-
-This directory contains guidelines for frontend development. Fill in each file with your project's specific conventions.
+> This package has **no frontend layer**. This entire `frontend/` directory
+> is a redirect to the project's only real frontend, which lives at
+> `apps/web/` and is documented in [`.trellis/spec/web/frontend/`](../../web/frontend/).
 
 ---
 
-## Guidelines Index
+## Why this directory exists
 
-| Guide | Description | Status |
-|-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Component Guidelines](./component-guidelines.md) | Component patterns, props, composition | To fill |
-| [Hook Guidelines](./hook-guidelines.md) | Custom hooks, data fetching patterns | To fill |
-| [State Management](./state-management.md) | Local state, global state, server state | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Type Safety](./type-safety.md) | Type patterns, validation | To fill |
+`packages/shared/` is a zero-runtime types and pure-utility package (no UI, no I/O). The trellis-init scaffolding generates a
+`frontend/` spec layer for every package by convention — we keep it so the
+structure stays uniform across packages and so that, *if* a small UI
+surface ever ships alongside this package (e.g. a runner TUI, an api
+admin panel), conventions can land here without restructuring.
 
----
-
-## How to Fill These Guidelines
-
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
+Until that happens, every file in this directory is intentionally a
+one-line redirect.
 
 ---
 
-**Language**: All documentation should be written in **English**.
+## Real reference
+
+All current frontend conventions live at:
+- [`.trellis/spec/web/frontend/index.md`](../../web/frontend/index.md)
+
+| File in this directory | Status |
+|---|---|
+| [Directory Structure](./directory-structure.md) | Not applicable — see [`web/frontend/directory-structure.md`](../../web/frontend/directory-structure.md) |
+| [Component Guidelines](./component-guidelines.md) | Not applicable — see [`web/frontend/component-guidelines.md`](../../web/frontend/component-guidelines.md) |
+| [Hook Guidelines](./hook-guidelines.md) | Not applicable — see [`web/frontend/hook-guidelines.md`](../../web/frontend/hook-guidelines.md) |
+| [Quality Guidelines](./quality-guidelines.md) | Not applicable — see [`web/frontend/quality-guidelines.md`](../../web/frontend/quality-guidelines.md) |
+| [State Management](./state-management.md) | Not applicable — see [`web/frontend/state-management.md`](../../web/frontend/state-management.md) |
+| [Type Safety](./type-safety.md) | Not applicable — see [`web/frontend/type-safety.md`](../../web/frontend/type-safety.md) |
+
+---
+
+## Pre-Development Checklist
+
+If you are about to write **frontend code**, you should be in
+`apps/web/src/`. The conventions there are real and reflect what the
+codebase actually does (vanilla TypeScript SPA, Vite, projection-style
+rendering — no React, no Vue).
+
+Read [`.trellis/spec/web/frontend/index.md`](../../web/frontend/index.md)
+and follow the checklist there.
+
+---
+
+## Forbidden in `packages/shared/`
+
+- React / Vue / Svelte imports. This package has no UI runtime.
+- DOM API usage (`document.*`, `window.*`).
+- Browser-only globals (`fetch` is fine on the server side, but anything
+  that assumes a browser environment is wrong here).
+
+---
+
+**Language**: All documentation is written in **English**.
