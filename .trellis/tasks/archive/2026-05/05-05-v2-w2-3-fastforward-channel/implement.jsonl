@@ -1,0 +1,13 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Always-included shared guides bundle"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "fastforward inherits FLOW_REGISTRY shape — must NOT fork dispatch logic; reuse W2-1's dispatchStep / executeXxx unchanged"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "FlowId 'feature.fastforward' threads from shared types -> runner registry -> API route -> DB; new cross-layer literal must align"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "FlowId union is in packages/shared/src/types/workflow.ts:54 alongside W2-1's existing types"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "FlowId stays a string-literal union (Q2 decision); no free string fallback"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "POST /workflow-runs route layer — body type extension"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "FLOW_REGISTRY lives at apps/runner/src/flows/registry.ts; W2-3 adds the second entry"}
+{"file": ".trellis/spec/runner/backend/flow-registry.md", "reason": "W2-1 spec doc — Section 5.5 'Adding a new flow' is the recipe W2-3 must follow"}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "Runner quality bar — fastforward must follow the same StageStep kind/skillId convention as feature.standard"}
+{"file": ".trellis/tasks/archive/2026-05/05-04-v2-w2-1-flow-registry-bootstrap/prd.md", "reason": "W2-1 PRD — locked ADRs for FLOW_REGISTRY shape, FlowId format, naming conventions; W2-3 inherits all"}
+{"file": ".trellis/tasks/archive/2026-05/05-04-v2-wave2-workflow-polymorphism/prd.md", "reason": "Wave 2 roadmap PRD — W2-3 scope summary at lines 143-149"}
+{"file": ".trellis/tasks/05-05-v2-w2-3-fastforward-channel/prd.md", "reason": "This task's PRD — 4 ADR-lite (Q1=4-stage subset / Q2 union extension / Q3 body.flowId / Q4 CLI --flow-id), R1-R17, AC-1~AC-14, 3-PR plan"}
+{"file": "docs/2026-05-04-ai-native-platform-v2-design-notes.md", "reason": "V2 § 1.3 V1 short-list (e.g. 'patch a semicolon still walks 9 stages') which is the user-facing motivation for fastforward"}
