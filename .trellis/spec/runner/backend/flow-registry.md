@@ -60,7 +60,26 @@ Skipped from `feature.standard`: `context_pack` (heavy profile + knowledge load)
 
 Known degradation: the implementation skill on a fastforward run won't see `inputs['project_profile.md']` / `inputs['accepted_knowledge.md']` (context_pack didn't run). The skill is expected to handle absent inputs gracefully — `invokeSkill`'s `inputArtifactIds` mapping already filters undefined entries via `.filter((id): id is string => Boolean(id))`. Likewise `executeAcceptance` iterates `c.draftsToPromote` which is empty (no requirement/design ran), so the post-acceptance promotion loop is a no-op for fastforward runs.
 
-Open caveat: `acceptance_gate` (the traceability gate inside `executeAcceptance`) was designed assuming requirement/design artifacts exist. Behavior on fastforward runs is governed by the gate engine's current logic; if it surfaces as a usability problem, raise a follow-up against the gate engine — do NOT change the fastforward stage list to add `requirement` / `design` (that would defeat the fast-forward semantics).
+Resolved (W2-2a): `acceptance_gate` (the traceability gate inside `executeAcceptance`) was originally designed assuming requirement/design artifacts exist, which would have failed on fastforward runs. W2-2a made `runAcceptanceTraceabilityGate` stage-history-aware: if no `StepRun` for `requirement` / `design` exists on the workflow run, the corresponding rule returns `pass` with `"not applicable: ... stage not in this flow"` instead of failing. The fastforward and issue flows both rely on this. See "Stage layout for `issue.standard`" and § 4 below.
+
+#### Stage layout for `issue.standard` (W2-2a)
+
+Six steps, in this exact order — pinned by `apps/runner/test/flow-registry.test.ts` against an out-of-band reference array (W2-2a PRD AC-7):
+
+1. `report` (kind=`agent`, skillId=`cs-issue-report`) — produces a structured bug report (`report.md`, kind=`'other'`) via `executeReport(c)` inner function. PRD ADR Q4=B: SkillSpec `skill.issue_report` ships placeholder instructions sufficient for the LLM to emit schema-correct artifacts; prompt-tuning is a follow-up.
+2. `analyze` (kind=`agent`, skillId=`cs-issue-analyze`) — produces root-cause + 2-3 fix options (`analysis_doc.md`, kind=`'other'`) via `executeAnalyze(c)` inner function. Same SkillSpec placeholder caveat.
+3. `implementation` (kind=`agent`, skillId=`cs-issue-fix`) — `executeImplementation`. **Reuses** the same stage / executor / SkillSpec as `feature.standard`; the different prompt for "issue fix" vs "feature impl" is a `skillId` concern handled by W2-4 routing — W2-1 ADR Q1=α leaves `skillId` as a placeholder. PRD ADR Q1=A. The `skill.implementation.inputs[design.md].required` was relaxed from `true` to `false` so issue runs (which have no design step) are still schema-valid; the implementation skill instructions explicitly fall back to `analysis_doc.md` / `report.md`.
+4. `build_test` (kind=`engine`) — `executeBuildTest`.
+5. `review` (kind=`agent`, skillId=`cs-feat-accept`) — same dual-half (review agent + inline `executeAcceptance`) as `feature.standard` / `feature.fastforward`.
+6. `completion` (kind=`engine`) — `executeCompletion`.
+
+Skipped from `feature.standard`: `context_pack` (issue work has no project-wide profile reload need), `requirement` (no PRD), `design` (no design doc), `knowledge` (a single bug fix rarely produces reusable knowledge — V2 § 4.2).
+
+`FlowDef.kind = 'bugfix'` (W2-2a PRD ADR Q2=A). The naming asymmetry (`run.type='bugfix'` vs `run.flowId='issue.standard'`) is deliberate: `'bugfix'` is the existing `WorkflowRunType` the Coordinator (`apps/runner/src/agents/coordinator/rules.ts`) already routes bug-shaped inputs to; W2-2a does NOT rename `'bugfix'` → `'issue'` (cross-task V1→V2 cleanup, follow-up). W2-4 router will provide the type → flowId mapping (`'bugfix' → 'issue.standard'`).
+
+Acceptance gate rule for issue.standard: `runAcceptanceTraceabilityGate` is **stage-history-aware** (W2-2a PRD ADR Q3=C). Since `issue.standard` schedules NO `requirement` / `design` step, the gate's `acceptance.requirement_present` / `acceptance.design_present` rules return `pass` with note `"not applicable: ... stage not in this flow"`. The other three rules (`diff_present` / `review_present` / `test_gate_passed`) still apply. Same mechanism gives `feature.fastforward` a passing acceptance gate (W2-3 R-Risk-2 fix as side effect).
+
+Knowledge promotion: `c.draftsToPromote` is naturally empty on `issue.standard` runs (no `requirement` / `design` step writes into it), so the `executeAcceptance` post-acceptance promotion loop is a no-op. W2-2a does NOT extend `KnowledgeArtifactKind` or `promoteAcceptedDraftToKnowledge` to handle `analysis_doc` / `report` (PRD ADR Q5=A — issue-specific analysis is not project knowledge).
 
 #### Entry contract — `flowId` plumbing
 
@@ -112,6 +131,7 @@ Verify: `bun test` should grow by the new flow's tests; `bun run --filter '*' ty
 
 - **Good** — `runWorkflow` lookup: `const flow = FLOW_REGISTRY[run.flowId]; if (!flow) throw ...; for (const step of flow.stages) await dispatchStep(step, ctx);`. Single point of dispatch; failure surfaces a clear error.
 - **Good** — W2-3 `feature.fastforward` extension (now shipped): added to `FlowId` union, registered in `FLOW_REGISTRY` with the abbreviated 4-stage list (`implementation` → `build_test` → `review` → `completion`), pinned against an out-of-band reference array, both trust-boundary `KNOWN_FLOW_IDS` lists updated, route + CLI plumbed end-to-end. No runner orchestrator code change beyond the registry — proof that W2-1's thin abstraction held.
+- **Good** — W2-2a `issue.standard` extension (now shipped): same recipe with two new `WorkflowStage` values (`report` / `analyze`), two new `executeXxx` inner functions, two placeholder `SkillSpec`s, and the `skill.implementation.inputs[design.md].required` relaxed from `true` to `false` so issue runs are schema-valid. `kind: 'bugfix'` reused (no `WorkflowRunType` extension). `runAcceptanceTraceabilityGate` made stage-history-aware in the same task (PR2) so flows without requirement/design steps don't fail the traceability rules — closes W2-3 R-Risk-2 (fastforward acceptance gate) as a side benefit. Confirms W2-1 thin abstraction holds across **work-kind** extension (`feature` → `bugfix`), not just **variant** extension within `feature`.
 - **Base** — V1 feature run: route omits `flowId` -> `createWorkflowRun` defaults to `'feature.standard'` -> runner fetches the same 8-stage pipeline as V1 -> behavior byte-for-byte identical to pre-W2-1. This is the AC-2 zero-regression target.
 - **Base** — fastforward triggered via API: `POST /workflow-runs { ..., flowId: 'feature.fastforward' }` -> 201 with `run.flowId === 'feature.fastforward'` -> runner picks up the 4-stage subset -> 4 dispatched stages.
 - **Bad** — adding `??` fallback in orchestrator: `const flowId = run.flowId ?? 'feature.standard';` is a contract violation. The DB column is NOT NULL with DEFAULT and the TS field is required; runtime fallback hides bugs. Q2 ADR explicitly forbids this.
@@ -124,7 +144,8 @@ Verify: `bun test` should grow by the new flow's tests; `bun run --filter '*' ty
 ### 6. References
 
 - W2-1 PRD: `.trellis/tasks/archive/2026-05/05-04-v2-w2-1-flow-registry-bootstrap/prd.md` — ADRs Q1–Q4, R1–R19, AC-1–AC-19.
-- W2-3 PRD: `.trellis/tasks/05-05-v2-w2-3-fastforward-channel/prd.md` — ADRs Q1–Q4 (4-stage subset / union extension / body.flowId / CLI --flow-id), R1–R17, AC-1–AC-14.
+- W2-3 PRD: `.trellis/tasks/archive/2026-05/05-05-v2-w2-3-fastforward-channel/prd.md` — ADRs Q1–Q4 (4-stage subset / union extension / body.flowId / CLI --flow-id), R1–R17, AC-1–AC-14.
+- W2-2a PRD: `.trellis/tasks/05-05-v2-w2-2a-issue-standard-flow/prd.md` — ADRs Q0–Q5 (split / stages / 'bugfix' kind / stage-history acceptance / placeholder SkillSpecs / no knowledge promotion), R1–R26, AC-1–AC-25.
 - Wave 2 roadmap: `.trellis/tasks/archive/2026-05/05-04-v2-wave2-workflow-polymorphism/prd.md` — locks shared conventions across all Wave 2 child tasks.
 - V2 design notes: `docs/2026-05-04-ai-native-platform-v2-design-notes.md` § 1.3 (V1 short-list — fastforward motivation), § 2.1 (work-type polymorphism), § 5 (Wave 2 estimates).
 - Implementation: `apps/runner/src/flows/registry.ts`, `apps/runner/src/orchestrator.ts`, `apps/runner/src/api-client.ts`, `apps/runner/src/index.ts`, `apps/api/src/routes/workflow-runs.ts`, `packages/shared/src/types/workflow.ts`.

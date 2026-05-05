@@ -20,7 +20,7 @@ export const workflowRuns = new Hono();
  * downstream FLOW_REGISTRY[run.flowId] lookup never sees garbage. PRD
  * W2-3 ADR Q3 + R-Risk-3.
  */
-const KNOWN_FLOW_IDS: readonly FlowId[] = ['feature.standard', 'feature.fastforward'];
+const KNOWN_FLOW_IDS: readonly FlowId[] = ['feature.standard', 'feature.fastforward', 'issue.standard'];
 function isFlowId(value: unknown): value is FlowId {
   return typeof value === 'string' && (KNOWN_FLOW_IDS as readonly string[]).includes(value);
 }

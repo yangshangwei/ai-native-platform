@@ -109,6 +109,32 @@ test('POST /workflow-runs honors body.flowId = feature.standard (explicit form o
   expect(run.flowId).toBe('feature.standard');
 });
 
+test('POST /workflow-runs honors body.flowId = issue.standard (W2-2a AC-20)', async () => {
+  const project = registerProject('issue-route-explicit');
+
+  const res = await app.request('/workflow-runs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      type: 'bugfix',
+      title: 'issue via body',
+      flowId: 'issue.standard',
+    }),
+  });
+
+  expect(res.status).toBe(201);
+  const run = (await res.json()) as WorkflowRun;
+  expect(run.flowId).toBe('issue.standard');
+  // PRD ADR Q2: FlowDef.kind='bugfix' but type plumbed from body.type;
+  // route doesn't enforce type↔flow correspondence (W2-4 router will).
+  expect(run.type).toBe('bugfix');
+
+  // Persistence sanity: the row in workflow_runs.flow_id matches.
+  const reloaded = storeMod.store.workflowRuns.get(run.id);
+  expect(reloaded?.flowId).toBe('issue.standard');
+});
+
 test('POST /workflow-runs rejects an unknown flowId with 400 (trust-boundary validation)', async () => {
   const project = registerProject('ff-route-bogus');
 
@@ -128,4 +154,5 @@ test('POST /workflow-runs rejects an unknown flowId with 400 (trust-boundary val
   expect(body.error).toContain('feature.bogus');
   expect(body.error).toContain('feature.standard');
   expect(body.error).toContain('feature.fastforward');
+  expect(body.error).toContain('issue.standard');
 });

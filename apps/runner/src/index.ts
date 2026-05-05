@@ -7,7 +7,7 @@ import { cmdOrchestrate } from './orchestrator';
 import { api } from './api-client';
 import type { FlowId } from '@ainp/shared';
 
-const KNOWN_FLOW_IDS: readonly FlowId[] = ['feature.standard', 'feature.fastforward'];
+const KNOWN_FLOW_IDS: readonly FlowId[] = ['feature.standard', 'feature.fastforward', 'issue.standard'];
 function parseFlowIdFlag(raw: unknown): FlowId | undefined {
   if (raw === undefined || raw === true) return undefined;
   const s = String(raw);
@@ -46,7 +46,7 @@ Usage:
   ainp-runner register --path <path> --name <name> [--agent-backend <claude_code|codex>]
   ainp-runner register --url <git-url> --source <github|gitee|git|gitlab> --name <name> [--branch <branch>] [--agent-backend <claude_code|codex>]
   ainp-runner run --project <name> --command "<whitelisted command>" [--title <t>] [--keep-worktree]
-  ainp-runner orchestrate --project <name> --title "<task>" [--flow-id <feature.standard|feature.fastforward>] [--keep-worktree]
+  ainp-runner orchestrate --project <name> --title "<task>" [--flow-id <feature.standard|feature.fastforward|issue.standard>] [--keep-worktree]
   ainp-runner watch [--once] [--poll-ms <ms>] [--keep-worktree]
 
 Examples:
