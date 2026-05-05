@@ -17,7 +17,20 @@
 - `user/requirement-workflow.md`
   - 面向终端用户解释需求录入前准备、开始执行的基本条件，以及录入后从 Workflow Request 到 Report / Knowledge 的端到端 Pipeline。
 
-## 0.3 一条需求的通俗日程表
+## 0.3 2026-05-06 端到端梳理（最新）
+
+基于 V1 已落地 + V2 4 条 Flow / Smart Router / 知识实体化的最新代码现状，重新整理的端到端业务流程与技术方案：
+
+- `2026-05-06-end-to-end-business-flow.md`
+  - **业务流程梳理**。覆盖项目接入、Coordinator 分诊、Smart Router、四种 Flow 的 stage 详述、人工 Gate 触发点、报告与知识沉淀、用户视角时间线。建议作为新人理解全流程的第一入口。
+- `2026-05-06-technical-architecture-design.md`
+  - **技术方案 / 核心架构篇**。总体架构、模块拆解、数据模型与 ArtifactKind 二族、Workflow Engine（唯一状态写者）、Gate Engine 规则表、Smart Router 决策、FLOW_REGISTRY 跨层共享。
+- `2026-05-06-technical-architecture-execution.md`
+  - **技术方案 / 执行与演进篇**。Skill / AgentBackend、Local Runner / Worktree、持久化与 Knowledge 反馈环路、SSE 实时事件流、API 接口分类、安全与可观测性、V2 已落地 vs 待办、设计原则速查。
+- `2026-05-06-ui-end-to-end-operations.md`
+  - **UI 端到端操作流程梳理**。基于 `apps/web/src/main.ts` 真实代码，覆盖 6 个顶层页面（工作台/项目接入/新建任务/报告/知识库/配置）+ 任务详情页；详述 5 个人工检查点的 UI 入口、Smart Router 预览、Agent Stream SSE 面板、完整 4 分钟 fastforward 鼠标键盘时间线、新人「最少必学」6 件事。面向用户使用 + 客户演示 + UI/UX 评审。
+
+## 0.4 一条需求的通俗日程表
 
 这个项目的初衷不是做一个“把任务丢给 AI 然后等奇迹发生”的黑盒，而是做一个 **AI 参与的软件交付工作台**：用户接入项目、提出需求，平台用 Runner、worktree、Agent、Gate 和人工确认，把一次改动变成能追踪、能验收、能复盘的交付过程。
 
