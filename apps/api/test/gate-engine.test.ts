@@ -359,6 +359,55 @@ test('AC-15: issue.standard shape — no requirement/design step scheduled → p
   expect(ruleById['acceptance.test_gate_passed'].status).toBe('pass');
 });
 
+test('AC-15 / W2-2b AC-15: refactor.standard shape — no requirement/design step → presence rules pass with N/A', () => {
+  const workflowRunId = 'run_acceptance_trace_refactor';
+  const stepRunId = 'step_acceptance_trace_refactor';
+  const scanPath = join(tmpdir(), `refactor-scan-${Date.now()}.md`);
+  const planPath = join(tmpdir(), `refactor-plan-${Date.now()}.md`);
+  const diffPath = join(tmpdir(), `refactor-diff-${Date.now()}.diff`);
+  const reviewPath = join(tmpdir(), `refactor-review-${Date.now()}.md`);
+  writeFileSync(scanPath, '# Scan\nfound dead code in module X');
+  writeFileSync(planPath, '# Refactor Plan\nextract helper Y');
+  writeFileSync(diffPath, 'diff --git a/src/main b/src/main\n');
+  writeFileSync(reviewPath, '# Review\nrefactor LGTM, behaviour preserved');
+
+  // refactor.standard produces scan_doc + refactor_plan as kind='other'
+  // (PRD ADR Q5 inherited). Plus a diff from implementation step. Latest
+  // 'other' artifact wins the byKind lookup → review.
+  for (const a of [
+    { ...artifact('other', scanPath), workflowRunId, stepRunId },
+    { ...artifact('other', planPath), workflowRunId, stepRunId },
+    { ...artifact('diff', diffPath), workflowRunId, stepRunId },
+    { ...artifact('other', reviewPath), workflowRunId, stepRunId },
+  ]) {
+    storeMod.store.artifacts.insert(a);
+  }
+  // refactor.standard schedules scan / plan / implementation / build_test /
+  // review / completion — NO requirement / design step.
+  for (const stage of [
+    'scan',
+    'plan',
+    'implementation',
+    'build_test',
+    'review',
+  ] as const) {
+    insertStepRun(workflowRunId, stage);
+  }
+  insertPassingTestGate(workflowRunId, stepRunId);
+
+  const gate = gates.runAcceptanceTraceabilityGate({ workflowRunId, stepRunId });
+
+  expect(gate.status).toBe('pass');
+  const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
+  expect(ruleById['acceptance.requirement_present'].status).toBe('pass');
+  expect(ruleById['acceptance.requirement_present'].message).toMatch(/not applicable/i);
+  expect(ruleById['acceptance.design_present'].status).toBe('pass');
+  expect(ruleById['acceptance.design_present'].message).toMatch(/not applicable/i);
+  expect(ruleById['acceptance.diff_present'].status).toBe('pass');
+  expect(ruleById['acceptance.review_present'].status).toBe('pass');
+  expect(ruleById['acceptance.test_gate_passed'].status).toBe('pass');
+});
+
 test('AC-16: feature.fastforward shape — no requirement/design step → pass (W2-3 R-Risk-2 fix)', () => {
   const workflowRunId = 'run_acceptance_trace_fastforward';
   const stepRunId = 'step_acceptance_trace_fastforward';

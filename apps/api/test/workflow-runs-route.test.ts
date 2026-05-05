@@ -135,6 +135,32 @@ test('POST /workflow-runs honors body.flowId = issue.standard (W2-2a AC-20)', as
   expect(reloaded?.flowId).toBe('issue.standard');
 });
 
+test('POST /workflow-runs honors body.flowId = refactor.standard (W2-2b AC-18)', async () => {
+  const project = registerProject('refactor-route-explicit');
+
+  const res = await app.request('/workflow-runs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      type: 'refactor',
+      title: 'refactor via body',
+      flowId: 'refactor.standard',
+    }),
+  });
+
+  expect(res.status).toBe(201);
+  const run = (await res.json()) as WorkflowRun;
+  expect(run.flowId).toBe('refactor.standard');
+  // PRD ADR Q2=A: WorkflowRunType extended; FlowDef.kind='refactor' matches
+  // body.type='refactor' (clean naming, unlike W2-2a's 'bugfix' asymmetry).
+  expect(run.type).toBe('refactor');
+
+  // Persistence sanity: the row in workflow_runs.flow_id matches.
+  const reloaded = storeMod.store.workflowRuns.get(run.id);
+  expect(reloaded?.flowId).toBe('refactor.standard');
+});
+
 test('POST /workflow-runs rejects an unknown flowId with 400 (trust-boundary validation)', async () => {
   const project = registerProject('ff-route-bogus');
 
@@ -155,4 +181,5 @@ test('POST /workflow-runs rejects an unknown flowId with 400 (trust-boundary val
   expect(body.error).toContain('feature.standard');
   expect(body.error).toContain('feature.fastforward');
   expect(body.error).toContain('issue.standard');
+  expect(body.error).toContain('refactor.standard');
 });

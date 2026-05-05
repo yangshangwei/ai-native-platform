@@ -155,7 +155,7 @@ interface RunnerDto {
 interface WorkflowRequestDto {
   id: string;
   projectId: string;
-  type: 'feature' | 'bugfix' | 'smoke';
+  type: 'feature' | 'bugfix' | 'smoke' | 'refactor';
   title: string;
   branch: string;
   status: 'pending' | 'awaiting_clarification' | 'claimed' | 'completed' | 'failed' | 'cancelled';
@@ -2855,7 +2855,7 @@ function renderNewTaskPage(): HTMLElement {
     projectSelect.setAttribute('disabled', 'disabled');
   }
   const typeSelect = el('select', { attrs: { name: 'type' } });
-  for (const type of ['feature', 'bugfix', 'smoke']) typeSelect.appendChild(el('option', { text: type, attrs: { value: type } }));
+  for (const type of ['feature', 'bugfix', 'smoke', 'refactor']) typeSelect.appendChild(el('option', { text: type, attrs: { value: type } }));
   const title = el('textarea', { attrs: { name: 'title', rows: '7', placeholder: '描述业务目标、验收标准、约束。例如：为报告页增加导出按钮，并确保 mvn test 通过。' } });
   const branchSelect = el('select', { attrs: { name: 'branch' } });
   const branchRefresh = el('button', { class: 'button secondary small', text: '刷新分支', attrs: { type: 'button' } });
