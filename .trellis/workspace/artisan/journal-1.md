@@ -498,3 +498,37 @@ practices indirectly.
 - Future work: open trellis tasks (or codestable analyze) for the 3
   filed cs-issues, prioritising the Claude Code exit-143 case (P1,
   largest user-visible impact).
+
+
+## Session 13: E2E business validation L1-L4 + fix claude-code no-exit & coordinator fallback
+
+**Date**: 2026-05-06
+**Task**: E2E business validation L1-L4 + fix claude-code no-exit & coordinator fallback
+**Branch**: `main`
+
+### Summary
+
+Layered end-to-end business validation: L1 (vitest 425/425, typecheck) + L2 (smoke mvn) + L3 (fake claude standard 9 stages) + L4 (real Claude Code e2e). Found L4 blocked by 2 P1 issues from the 2026-05-05 validation report; fixed both. Fix 1 (claude-code-implementation-no-exit) handles two variants — post-result grace shutdown for the documented hang, plus HOME isolation for the user's hooks-induced 'Stop.' loop discovered during real-CLI L4. Fix 2 (coordinator-fallback-pauses-concrete-request) classifies LLM transient failures via failureKind so the rule classifier's 'proceed' survives when the LLM CLI throws. scripts/e2e.ts patched to pass --flow-id feature.standard so it actually exercises 9 stages. Tests 425 -> 431 (+6). L4 passed end-to-end (run_2f6dc6b27c80, ~$0.62). AC#3 Web queue path also verified (wreq_c3692cf3350c -> run_584fec47f82a, no awaiting_clarification). Issue 3 (coordinator-duplicate-clarification-on-watch-race, P2) explicitly deferred.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6d47e7c` | (see git log) |
+| `ad3067a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

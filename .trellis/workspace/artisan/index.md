@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 12
-- **Last Active**: 2026-05-05
+- **Total Sessions**: 13
+- **Last Active**: 2026-05-06
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~428 | Active |
+| `journal-1.md` | ~534 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 13 | 2026-05-06 | E2E business validation L1-L4 + fix claude-code no-exit & coordinator fallback | `6d47e7c`, `ad3067a` | `main` |
 | 12 | 2026-05-05 | Old-task cleanup: archive 5 completed tasks (W2-4 + 4 sibling) | `7414112` | `main` |
 | 11 | 2026-05-05 | V2 W2-4 smart-router PR2/PR3/PR4 — Wave 2 closeout | `a2e0900`, `0efe3d8`, `c76826f`, `e9cac7d` | `main` |
 | 10 | 2026-05-05 | V2 W2-4 smart-router PR1 shipped + paused for next session | `ddc302d`, `50b6406` | `main` |
