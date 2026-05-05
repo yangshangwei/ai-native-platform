@@ -229,6 +229,12 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       case 'analyze':
         await executeAnalyze(_ctx);
         return;
+      case 'scan':
+        await executeScan(_ctx);
+        return;
+      case 'plan':
+        await executePlan(_ctx);
+        return;
       case 'init':
         throw new Error(`'init' is not a dispatchable stage (status placeholder only)`);
       default: {
@@ -500,6 +506,96 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     await api.stepFinished({ stepRunId: stepId, status: 'passed' });
   }
 
+  // V2 W2-2b: scan & plan stages for refactor.standard flow. Mirror
+  // executeReport / executeAnalyze (W2-2a) — agent → markdown artifact
+  // landing as kind='other' (PRD ADR Q5: no KnowledgeArtifactKind extension).
+  // Inner-function style mirrors W2-1 PR3 / W2-2a PR1 (executeXxx sharing
+  // RunCtx).
+
+  async function executeScan(c: RunCtx): Promise<void> {
+    const skill = await mustSkill('scan');
+    const { step } = await api.stepStarted({
+      workflowRunId: c.run.id,
+      stage: 'scan',
+      name: skill.id,
+    });
+    const stepId = step.id;
+    const stepArtifactsDir = join(c.runArtifactsDir, 'scan');
+    const agent = await invokeSkill(skill, {
+      workflowRunId: c.run.id,
+      stepRunId: stepId,
+      workspacePath: c.workspace.path,
+      branch: c.workspace.branch,
+      title: c.opts.title,
+      artifactsDir: stepArtifactsDir,
+      inputs: c.inputs,
+    });
+    const artifactIds: string[] = [];
+    for (const out of agent.outputs) {
+      const a = await api.postArtifact({
+        workflowRunId: c.run.id,
+        stepRunId: stepId,
+        kind: 'other',
+        uri: `file://${out.path}`,
+        size: out.size,
+        contentType: out.contentType,
+        metadata: { skill: skill.id, output: out.name, stage: 'scan' },
+      });
+      c.inputs[out.name] = await Bun.file(out.path).text();
+      c.inputArtifactIds[out.name] = a.id;
+      artifactIds.push(a.id);
+      console.log(`[runner] scan artifact ${a.id} (${out.name})`);
+    }
+    await finishAgentSuccess(
+      agent.taskId,
+      artifactIds,
+      `scan produced ${artifactIds.length} artifact(s)`,
+    );
+    await api.stepFinished({ stepRunId: stepId, status: 'passed' });
+  }
+
+  async function executePlan(c: RunCtx): Promise<void> {
+    const skill = await mustSkill('plan');
+    const { step } = await api.stepStarted({
+      workflowRunId: c.run.id,
+      stage: 'plan',
+      name: skill.id,
+    });
+    const stepId = step.id;
+    const stepArtifactsDir = join(c.runArtifactsDir, 'plan');
+    const agent = await invokeSkill(skill, {
+      workflowRunId: c.run.id,
+      stepRunId: stepId,
+      workspacePath: c.workspace.path,
+      branch: c.workspace.branch,
+      title: c.opts.title,
+      artifactsDir: stepArtifactsDir,
+      inputs: c.inputs,
+    });
+    const artifactIds: string[] = [];
+    for (const out of agent.outputs) {
+      const a = await api.postArtifact({
+        workflowRunId: c.run.id,
+        stepRunId: stepId,
+        kind: 'other',
+        uri: `file://${out.path}`,
+        size: out.size,
+        contentType: out.contentType,
+        metadata: { skill: skill.id, output: out.name, stage: 'plan' },
+      });
+      c.inputs[out.name] = await Bun.file(out.path).text();
+      c.inputArtifactIds[out.name] = a.id;
+      artifactIds.push(a.id);
+      console.log(`[runner] plan artifact ${a.id} (${out.name})`);
+    }
+    await finishAgentSuccess(
+      agent.taskId,
+      artifactIds,
+      `plan produced ${artifactIds.length} artifact(s)`,
+    );
+    await api.stepFinished({ stepRunId: stepId, status: 'passed' });
+  }
+
   async function executeCompletion(c: RunCtx): Promise<void> {
     await api.stageTransition({ workflowRunId: c.run.id, stage: 'completion' });
     const reportRes = await fetch(
@@ -762,7 +858,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
 }
 
 async function mustSkill(
-  stage: 'requirement' | 'design' | 'implementation' | 'review' | 'report' | 'analyze',
+  stage: 'requirement' | 'design' | 'implementation' | 'review' | 'report' | 'analyze' | 'scan' | 'plan',
 ) {
   const s = await findSkillForStage(stage);
   if (!s) throw new Error(`no skill for stage ${stage}`);
@@ -925,6 +1021,10 @@ function taskKindForSkill(skill: SkillSpec): AgentTaskKind {
       return 'report';
     case 'analyze':
       return 'analyze';
+    case 'scan':
+      return 'scan';
+    case 'plan':
+      return 'plan';
     default:
       return 'noop';
   }

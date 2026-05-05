@@ -59,7 +59,10 @@ export type AgentTaskKind =
   | 'noop'
   // V2 W2-2a: issue.standard flow agent tasks
   | 'report'
-  | 'analyze';
+  | 'analyze'
+  // V2 W2-2b: refactor.standard flow agent tasks
+  | 'scan'
+  | 'plan';
 
 export interface AgentTask {
   id: AgentTaskId;

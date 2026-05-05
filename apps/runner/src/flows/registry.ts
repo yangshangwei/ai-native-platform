@@ -132,11 +132,50 @@ const ISSUE_STANDARD: FlowDef = {
 };
 
 /**
+ * Standard 6-stage refactor pipeline — V2 W2-2b.
+ *
+ * Third non-feature flow in FLOW_REGISTRY (W2-2a was the second; this is the
+ * first dedicated `'refactor'` work-kind). Skips `context_pack` / `requirement`
+ * / `design` / `knowledge` (refactor work has no PRD; scan/plan cover the
+ * front-end). Reuses `implementation` for the `apply` step (semantically
+ * identical: agent → diff artifact). The different prompt for "refactor apply"
+ * vs "feature impl" is a `skillId` concern handled by W2-4 routing.
+ *
+ * `'plan'` is a NEW WorkflowStage value (not a reuse of feature `'design'`).
+ * Rationale (W2-2b PRD ADR Q1=B): feature `'design'` carries REQ-### / AC-###
+ * tracing assumptions baked into `design_gate`, which would force a
+ * stage-history-aware refactor of design_gate (mirroring W2-2a Q3 for
+ * acceptance_gate but on a more complex 10-rule gate). Adding `'plan'` as a
+ * separate stage keeps the change scoped and avoids touching design_gate.
+ *
+ * Stages pinned by `apps/runner/test/flow-registry.test.ts` against an
+ * out-of-band reference array (W2-2b PRD AC-9).
+ *
+ * `kind: 'refactor'` extends WorkflowRunType (W2-2b PRD ADR Q2=A).
+ * Coordinator does not currently produce 'refactor' routing — that's W2-4
+ * router scope. Direct CLI / API explicit `flowId='refactor.standard'` is
+ * the only entry point for now.
+ */
+const REFACTOR_STANDARD: FlowDef = {
+  id: 'refactor.standard',
+  kind: 'refactor',
+  description:
+    'Standard 6-stage refactor pipeline (V2 W2-2b). Runs scan -> plan -> implementation (=apply) -> build_test -> review (with human acceptance gate) -> completion. Skips context_pack/requirement/design/knowledge.',
+  stages: [
+    { stage: 'scan', kind: 'agent', skillId: 'cs-refactor-scan' },
+    { stage: 'plan', kind: 'agent', skillId: 'cs-refactor-design' },
+    { stage: 'implementation', kind: 'agent', skillId: 'cs-refactor-apply' },
+    { stage: 'build_test', kind: 'engine' },
+    { stage: 'review', kind: 'agent', skillId: 'cs-feat-accept' },
+    { stage: 'completion', kind: 'engine' },
+  ],
+};
+
+/**
  * Single source of truth for V2 flow definitions, keyed by {@link FlowId}.
  *
  * W2-1 shipped `'feature.standard'`. W2-3 adds `'feature.fastforward'`.
- * W2-2a adds `'issue.standard'`. Subsequent Wave 2 tasks append entries:
- *   - `'refactor.standard'`   (W2-2b)
+ * W2-2a adds `'issue.standard'`. W2-2b adds `'refactor.standard'`.
  *
  * Typed as `Readonly<Record<FlowId, FlowDef>>` so that:
  *   1. Adding a new FlowId literal in `@ainp/shared` without registering
@@ -147,4 +186,5 @@ export const FLOW_REGISTRY: Readonly<Record<FlowId, FlowDef>> = {
   'feature.standard': FEATURE_STANDARD,
   'feature.fastforward': FEATURE_FASTFORWARD,
   'issue.standard': ISSUE_STANDARD,
+  'refactor.standard': REFACTOR_STANDARD,
 };

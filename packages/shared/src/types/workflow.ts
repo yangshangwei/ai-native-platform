@@ -12,7 +12,10 @@ export type WorkflowStage =
   | 'knowledge'
   // V2 W2-2a: issue.standard flow stages (report → analyze → fix=implementation reuse).
   | 'report'
-  | 'analyze';
+  | 'analyze'
+  // V2 W2-2b: refactor.standard flow stages (scan → plan → apply=implementation reuse).
+  | 'scan'
+  | 'plan';
 
 export type WorkflowRunStatus =
   | 'pending'
@@ -22,7 +25,7 @@ export type WorkflowRunStatus =
   | 'failed'
   | 'cancelled';
 
-export type WorkflowRunType = 'feature' | 'bugfix' | 'smoke';
+export type WorkflowRunType = 'feature' | 'bugfix' | 'smoke' | 'refactor';
 
 // ---------------------------------------------------------------------------
 // V2 W2-1: FLOW_REGISTRY contracts (shared types)
@@ -59,15 +62,21 @@ export type WorkflowRunType = 'feature' | 'bugfix' | 'smoke';
  *                                                 skips context_pack /
  *                                                 requirement / design /
  *                                                 knowledge
- *
- * Future tasks add:
- *   - `'refactor.standard'`             (W2-2b)
+ *   - `'refactor.standard'`             (W2-2b) — 6-stage refactor pipeline
+ *                                                 (scan / plan /
+ *                                                 implementation / build_test
+ *                                                 / review / completion);
+ *                                                 skips context_pack /
+ *                                                 requirement / design /
+ *                                                 knowledge. 'plan' is a new
+ *                                                 stage distinct from feature
+ *                                                 'design' (no REQ-### tracing).
  *
  * Kept as a string-literal union (not a free `string`) so that
  * `runWorkflow(run.flowId)` and FLOW_REGISTRY indexing are type-checked
  * end-to-end. New flows must add their FlowId to this union.
  */
-export type FlowId = 'feature.standard' | 'feature.fastforward' | 'issue.standard';
+export type FlowId = 'feature.standard' | 'feature.fastforward' | 'issue.standard' | 'refactor.standard';
 
 /**
  * Classification of how a single {@link StageStep} is executed.

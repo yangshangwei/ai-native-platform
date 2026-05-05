@@ -172,7 +172,7 @@ export const SKILLS: SkillSpec[] = [
     version: '0.1.0',
     stage: 'implementation',
     instructions:
-      'Implement the approved design. Allowed to edit files inside the worktree only. Stay within paths surfaced in the Context Pack unless the design explicitly broadens scope. If `design.md` is absent (e.g. issue.standard flow), use `analysis_doc.md` (or `report.md` as last resort) as primary reference; stay within paths surfaced in those docs.',
+      'Implement the approved design. Allowed to edit files inside the worktree only. Stay within paths surfaced in the Context Pack unless the design explicitly broadens scope. If `design.md` is absent (e.g. issue.standard flow), use `analysis_doc.md` (or `report.md` as last resort) as primary reference; stay within paths surfaced in those docs. If `refactor_plan.md` is present (refactor.standard flow), follow it as primary reference and preserve behaviour — do NOT introduce visible changes.',
     inputs: [
       { name: 'design.md', kind: 'artifact', required: false, description: 'approved design (optional — issue.standard flow has no design step; implementation reads analysis_doc.md / report.md in that case)' },
       {
@@ -275,6 +275,79 @@ export const SKILLS: SkillSpec[] = [
     ],
     outputs: [
       { name: 'analysis_doc.md', kind: 'artifact', required: true, description: 'root-cause analysis + fix options markdown' },
+    ],
+    toolPolicy: { allowedCommands: [], writableGlobs: [], networkAllowed: false },
+    requiredGates: [],
+    compatibleBackends: ALL,
+  },
+  // ---- V2 W2-2b: refactor.standard flow placeholder skills ----------------
+  // Per PRD ADR Q4 (inherited from W2-2a B): instructions are simplified
+  // placeholders sufficient for LLMs to emit schema-correct artifacts;
+  // prompt-tuning follow-up.
+  {
+    id: 'skill.refactor_scan',
+    version: '0.1.0',
+    stage: 'scan',
+    instructions: [
+      'Identify refactor opportunities in the codebase relevant to the user request, following CodeStable cs-refactor-scan methodology.',
+      '',
+      'Frontmatter MUST contain:',
+      '  doc_type: scan',
+      '  SCAN-### identifier (e.g. SCAN-001)',
+      '  status: draft',
+      '',
+      'Body MUST contain four sections in this order:',
+      '',
+      '1. **切入点 (Entry Points)** — what user-supplied concern triggers this scan; one short paragraph',
+      '2. **候选改造点 (Candidates)** — bullet list of code locations / patterns worth refactoring; cite `src/...:NN`',
+      '3. **优先级 (Priority)** — rank candidates: high-impact + low-risk first',
+      '4. **建议范围 (Suggested Scope)** — recommend MVP boundary (which N candidates to do this round)',
+      '',
+      'HARD RULES:',
+      '  - Do NOT write the refactor plan or apply changes yet (those are later stages).',
+      '  - Every cited code reference MUST use `src/...` path format; uncited claims forbidden.',
+      '  - Stay neutral on implementation details — describe WHAT could be refactored, not HOW.',
+    ].join('\n'),
+    inputs: [
+      { name: 'user_request', kind: 'text', required: true, description: 'one-liner refactor request' },
+    ],
+    outputs: [
+      { name: 'scan_doc.md', kind: 'artifact', required: true, description: 'refactor scan markdown' },
+    ],
+    toolPolicy: { allowedCommands: [], writableGlobs: [], networkAllowed: false },
+    requiredGates: [],
+    compatibleBackends: ALL,
+  },
+  {
+    id: 'skill.refactor_design',
+    version: '0.1.0',
+    stage: 'plan',
+    instructions: [
+      'Given the scan results, draft a refactor plan following CodeStable cs-refactor-design methodology. The plan describes how to change structure while preserving behaviour.',
+      '',
+      'Frontmatter MUST contain:',
+      '  doc_type: refactor_plan',
+      '  RFP-### identifier (e.g. RFP-001)',
+      '  status: draft',
+      '',
+      'Body MUST contain four sections in this order:',
+      '',
+      '1. **现状 (Current State)** — describe the relevant existing code; cite `src/...:NN`',
+      '2. **变化 (Changes)** — what gets restructured; data layer + control flow delta',
+      '3. **推进策略 (Roll-out)** — ordered steps for safe in-place refactor; each step has a single exit signal (e.g. "tests for module X still pass")',
+      '4. **风险 (Risks)** — what could break; explicit test coverage assertions',
+      '',
+      'HARD RULES:',
+      '  - Behaviour MUST stay unchanged — refactor preserves observable contract; if behaviour changes, this is a feature, not a refactor.',
+      '  - Every claim about existing code MUST cite a `src/...` path.',
+      '  - Do NOT introduce REQ-### tracing — refactor plans do not link to requirements (that is the feature design stage).',
+      '  - Roll-out steps must be small and individually verifiable.',
+    ].join('\n'),
+    inputs: [
+      { name: 'scan_doc.md', kind: 'artifact', required: true, description: 'scan results from prior stage' },
+    ],
+    outputs: [
+      { name: 'refactor_plan.md', kind: 'artifact', required: true, description: 'refactor plan markdown' },
     ],
     toolPolicy: { allowedCommands: [], writableGlobs: [], networkAllowed: false },
     requiredGates: [],

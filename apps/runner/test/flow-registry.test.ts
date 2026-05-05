@@ -49,11 +49,12 @@ const V1_STAGE_ORDER: readonly WorkflowStage[] = [
 ] as const;
 
 describe('FLOW_REGISTRY', () => {
-  test('exposes V2 Wave 2 flows: feature.standard + feature.fastforward (W2-3) + issue.standard (W2-2a)', () => {
+  test('exposes V2 Wave 2 flows: feature.standard + feature.fastforward (W2-3) + issue.standard (W2-2a) + refactor.standard (W2-2b)', () => {
     expect(Object.keys(FLOW_REGISTRY).sort()).toEqual([
       'feature.fastforward',
       'feature.standard',
       'issue.standard',
+      'refactor.standard',
     ]);
   });
 
@@ -268,6 +269,100 @@ describe('FLOW_REGISTRY', () => {
       expect(byStage.analyze.skillId).toBe('cs-issue-analyze');
       expect(byStage.implementation.kind).toBe('agent');
       expect(byStage.implementation.skillId).toBe('cs-issue-fix');
+      expect(byStage.review.kind).toBe('agent');
+      expect(byStage.review.skillId).toBe('cs-feat-accept');
+    });
+
+    test('every step.kind is one of the four StageStepKind buckets', () => {
+      const buckets = new Set<string>(['agent', 'gate', 'human', 'engine']);
+      for (const step of flow.stages) {
+        expect(buckets.has(step.kind)).toBe(true);
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // V2 W2-2b — refactor.standard: 6-stage refactor pipeline.
+  // PRD AC-4 / AC-5 / AC-8 / AC-9 / AC-10 / AC-11 / AC-12 (W2-2b task PRD).
+  // ---------------------------------------------------------------------------
+
+  describe('refactor.standard (W2-2b)', () => {
+    const flow = FLOW_REGISTRY['refactor.standard'];
+
+    /**
+     * Reference order: 6 stages — refactor work-type's own front-end (scan,
+     * plan) plus the back-end shared with feature/issue flows (implementation,
+     * build_test, review, completion). Skips `context_pack` / `requirement` /
+     * `design` / `knowledge` (refactor has no PRD; rarely produces reusable
+     * project-wide knowledge from a single restructure). `apply` reuses
+     * `implementation` (PRD ADR Q1=B). `plan` is a NEW WorkflowStage distinct
+     * from feature `design` (no REQ-### tracing).
+     */
+    const REFACTOR_STANDARD_STAGE_ORDER: readonly WorkflowStage[] = [
+      'scan',
+      'plan',
+      'implementation',
+      'build_test',
+      'review',
+      'completion',
+    ] as const;
+
+    test('id matches its registry key', () => {
+      expect(flow.id).toBe('refactor.standard');
+    });
+
+    test('AC-10: kind is "refactor" (new WorkflowRunType, PRD ADR Q2=A)', () => {
+      expect(flow.kind).toBe('refactor');
+    });
+
+    test('description is non-empty', () => {
+      expect(typeof flow.description).toBe('string');
+      expect(flow.description.length).toBeGreaterThan(0);
+    });
+
+    test('AC-8: stages length is exactly 6', () => {
+      expect(flow.stages).toHaveLength(6);
+      expect(flow.stages).toHaveLength(REFACTOR_STANDARD_STAGE_ORDER.length);
+    });
+
+    test('AC-9: stages.map(s => s.stage) strictly equals refactor.standard reference order', () => {
+      const order = flow.stages.map((s: StageStep) => s.stage);
+      expect(order).toEqual([...REFACTOR_STANDARD_STAGE_ORDER]);
+    });
+
+    test('skipped stages are NOT in the list (context_pack/requirement/design/knowledge)', () => {
+      const present = new Set(flow.stages.map((s) => s.stage));
+      expect(present.has('context_pack')).toBe(false);
+      expect(present.has('requirement')).toBe(false);
+      expect(present.has('design')).toBe(false);
+      expect(present.has('knowledge')).toBe(false);
+    });
+
+    test('build_test + completion are runner-side engine stages', () => {
+      const byStage = Object.fromEntries(flow.stages.map((s) => [s.stage, s]));
+      expect(byStage.build_test.kind).toBe('engine');
+      expect(byStage.completion.kind).toBe('engine');
+    });
+
+    test('agent stages declare a non-empty skillId; engine stages do not', () => {
+      for (const step of flow.stages) {
+        if (step.kind === 'agent') {
+          expect(typeof step.skillId).toBe('string');
+          expect(step.skillId!.length).toBeGreaterThan(0);
+        } else {
+          expect(step.skillId).toBeUndefined();
+        }
+      }
+    });
+
+    test('R10: skillId placeholders for refactor agent stages (W2-4 will consume)', () => {
+      const byStage = Object.fromEntries(flow.stages.map((s) => [s.stage, s]));
+      expect(byStage.scan.kind).toBe('agent');
+      expect(byStage.scan.skillId).toBe('cs-refactor-scan');
+      expect(byStage.plan.kind).toBe('agent');
+      expect(byStage.plan.skillId).toBe('cs-refactor-design');
+      expect(byStage.implementation.kind).toBe('agent');
+      expect(byStage.implementation.skillId).toBe('cs-refactor-apply');
       expect(byStage.review.kind).toBe('agent');
       expect(byStage.review.skillId).toBe('cs-feat-accept');
     });

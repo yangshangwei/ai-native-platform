@@ -55,7 +55,7 @@ export const api = {
   createWorkflowRun: (params: {
     projectName: string;
     title: string;
-    type?: 'smoke' | 'feature' | 'bugfix';
+    type?: 'smoke' | 'feature' | 'bugfix' | 'refactor';
     sourceBranch?: string;
     /** V2 W2-3: optional flow id; defaults server-side to 'feature.standard'. */
     flowId?: FlowId;
@@ -71,7 +71,7 @@ export const api = {
     projectId?: string;
     projectName?: string;
     title: string;
-    type?: 'smoke' | 'feature' | 'bugfix';
+    type?: 'smoke' | 'feature' | 'bugfix' | 'refactor';
     branch?: string;
   }) =>
     request<WorkflowRequest>('POST', '/workflow-requests', {
