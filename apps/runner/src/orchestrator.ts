@@ -166,8 +166,16 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     );
   }
 
+  const stagesToRun = sliceStagesFromStartStage({
+    flowId: run.flowId,
+    runId: run.id,
+    stages: flow.stages,
+    startStage: run.startStage,
+    log: (m) => console.log(m),
+  });
+
   try {
-    for (const step of flow.stages) {
+    for (const step of stagesToRun) {
       await dispatchStep(step, ctx);
     }
   } catch (err) {
@@ -863,6 +871,38 @@ async function mustSkill(
   const s = await findSkillForStage(stage);
   if (!s) throw new Error(`no skill for stage ${stage}`);
   return s;
+}
+
+// ---------------------------------------------------------------------------
+// V2 W2-4 / PR2: pure slice helper — given a flow's full stage list and an
+// optional startStage, return the stages to actually dispatch.
+//
+// Contract:
+//   - startStage null/undefined → return stages unchanged (V1 default).
+//   - startStage present but not in flow → throw 'unknown startStage in flow'
+//     (R-Risk-1: never silently skip a misconfigured run).
+//   - startStage present and matches index N → return stages.slice(N) and
+//     log how many earlier stages were skipped.
+// ---------------------------------------------------------------------------
+export function sliceStagesFromStartStage(params: {
+  flowId: FlowId;
+  runId: string;
+  stages: readonly StageStep[];
+  startStage: WorkflowRun['startStage'];
+  log?: (msg: string) => void;
+}): readonly StageStep[] {
+  if (!params.startStage) return params.stages;
+  const fromIdx = params.stages.findIndex((s) => s.stage === params.startStage);
+  if (fromIdx === -1) {
+    throw new Error(
+      `unknown startStage in flow: ${String(params.startStage)} (flow=${params.flowId}, run=${params.runId})`,
+    );
+  }
+  if (fromIdx === 0) return params.stages;
+  params.log?.(
+    `[runner] starting from stage ${params.startStage} (skipping ${fromIdx} earlier stage(s))`,
+  );
+  return params.stages.slice(fromIdx);
 }
 
 function artifactKindForStageOutput(

@@ -370,3 +370,9 @@ if (!workflowRunColumns.has('flow_id')) {
   // an empty string via a different code path. Idempotent.
   runSql(`UPDATE workflow_runs SET flow_id = 'feature.standard' WHERE flow_id = ''`);
 }
+// V2 W2-4 / PR2: workflow_runs.start_stage — optional skip-prefix entry
+// stage chosen by the smart-router (or UI override). NULL means "start
+// from the flow's first stage" (V1-equivalent default). Idempotent.
+if (!workflowRunColumns.has('start_stage')) {
+  runSql(`ALTER TABLE workflow_runs ADD COLUMN start_stage TEXT`);
+}

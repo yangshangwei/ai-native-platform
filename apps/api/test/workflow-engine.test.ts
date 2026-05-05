@@ -133,3 +133,56 @@ test('createWorkflowRun.flowId round-trips through SQLite (AC-4 / AC-5 / AC-11)'
   expect(reloaded).toBeDefined();
   expect(reloaded!.flowId).toBe('feature.standard');
 });
+
+// ---------------------------------------------------------------------------
+// V2 W2-4 / PR2 — createWorkflowRun.startStage end-to-end (PRD AC-4 / AC-5 /
+// AC-16 / AC-17 / AC-18 + R3 / R4 / R5 / R6 / R19 / R20).
+// ---------------------------------------------------------------------------
+
+test('createWorkflowRun defaults startStage to null when omitted (AC-16)', () => {
+  const run = workflow.createWorkflowRun({
+    projectId: 'proj_default_startstage',
+    type: 'feature',
+    title: 'default start stage',
+    sourceBranch: 'main',
+  });
+  expect(run.startStage).toBeNull();
+});
+
+test('createWorkflowRun honors an explicit startStage in params (AC-17)', () => {
+  const run = workflow.createWorkflowRun({
+    projectId: 'proj_explicit_startstage',
+    type: 'feature',
+    title: 'explicit start stage',
+    sourceBranch: 'main',
+    flowId: 'feature.standard',
+    startStage: 'design',
+  });
+  expect(run.startStage).toBe('design');
+});
+
+test('createWorkflowRun.startStage round-trips through SQLite (AC-18)', () => {
+  const run = workflow.createWorkflowRun({
+    projectId: 'proj_startstage_roundtrip',
+    type: 'feature',
+    title: 'roundtrip start stage',
+    sourceBranch: 'main',
+    flowId: 'feature.standard',
+    startStage: 'implementation',
+  });
+  const reloaded = storeMod.store.workflowRuns.get(run.id);
+  expect(reloaded).toBeDefined();
+  expect(reloaded!.startStage).toBe('implementation');
+});
+
+test('createWorkflowRun preserves null startStage round-trip (NULL column read)', () => {
+  const run = workflow.createWorkflowRun({
+    projectId: 'proj_startstage_null_rt',
+    type: 'feature',
+    title: 'null start stage roundtrip',
+    sourceBranch: 'main',
+  });
+  const reloaded = storeMod.store.workflowRuns.get(run.id);
+  expect(reloaded).toBeDefined();
+  expect(reloaded!.startStage).toBeNull();
+});

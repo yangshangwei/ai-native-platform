@@ -183,6 +183,8 @@ interface WorkflowRunRow {
   title: string;
   /** V2 W2-1: NOT NULL DEFAULT 'feature.standard' — see db.ts migration. */
   flow_id: string;
+  /** V2 W2-4: nullable — null means "start from flow's first stage". */
+  start_stage: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -195,6 +197,7 @@ function rowToWorkflowRun(r: WorkflowRunRow): WorkflowRun {
     status: r.status as WorkflowRun['status'],
     currentStage: r.current_stage as WorkflowRun['currentStage'],
     flowId: r.flow_id as WorkflowRun['flowId'],
+    startStage: (r.start_stage ?? null) as WorkflowRun['startStage'],
     configSnapshotId: r.config_snapshot_id,
     sourceBranch: r.source_branch ?? '',
     branch: r.branch,
@@ -221,6 +224,7 @@ const workflowRuns: MapLike<WorkflowRun> & {
       workspace_path: run.workspacePath,
       title: run.title,
       flow_id: run.flowId,
+      start_stage: run.startStage,
       created_at: run.createdAt,
       updated_at: run.updatedAt,
     });

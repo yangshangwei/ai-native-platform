@@ -143,6 +143,19 @@ export interface WorkflowRun {
    * remain unchanged for V1-equivalent runs.
    */
   flowId: FlowId;
+  /**
+   * V2 W2-4: which stage of the flow this run starts at. `null` means
+   * "start from the flow's first stage" — the V1-equivalent default.
+   *
+   * Non-null is set when the smart-router (or an explicit UI override)
+   * picks a skip-prefix entry. The orchestrator slices
+   * `FLOW_REGISTRY[flowId].stages` at this stage; if the stage is not
+   * present in the chosen flow it throws `unknown startStage in flow`.
+   *
+   * Currently only `feature.standard` carries non-null values; other
+   * flows are short and run head-to-tail.
+   */
+  startStage: WorkflowStage | null;
   /** Reserved for future configuration snapshot reference. */
   configSnapshotId: string | null;
   /** Source branch used as the base when preparing the run worktree. */

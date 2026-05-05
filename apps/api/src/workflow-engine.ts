@@ -69,6 +69,15 @@ export function createWorkflowRun(params: {
    * an explicit flowId from the route layer.
    */
   flowId?: FlowId;
+  /**
+   * V2 W2-4 / PR2: optional starting stage. `null` (or omitted) means
+   * "start from the flow's first stage" — V1-equivalent default. Set
+   * via the smart-router auto-pick path (PR3) or explicit UI override
+   * (PR4); orchestrator slices `FLOW_REGISTRY[flowId].stages` from the
+   * matching index. Validation that the stage is present in the chosen
+   * flow lives in the orchestrator dispatcher (R-Risk-1).
+   */
+  startStage?: WorkflowStage | null;
 }): WorkflowRun {
   const id = newId('run');
   const branch = `ai/${id}-${slugify(params.title)}`;
@@ -81,6 +90,7 @@ export function createWorkflowRun(params: {
     status: 'pending',
     currentStage: 'init',
     flowId: params.flowId ?? 'feature.standard',
+    startStage: params.startStage ?? null,
     configSnapshotId: null,
     sourceBranch: params.sourceBranch?.trim() || 'main',
     branch,
@@ -94,6 +104,7 @@ export function createWorkflowRun(params: {
     title: run.title,
     sourceBranch: run.sourceBranch,
     flowId: run.flowId,
+    startStage: run.startStage,
   });
   return run;
 }
