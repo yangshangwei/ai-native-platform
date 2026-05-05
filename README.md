@@ -17,9 +17,9 @@ AI 软件交付工作台。从一句话需求到验收报告的闭环：需求 �
 
 ```
 apps/
-  api/      Hono on Bun + SQLite store + Workflow Engine + Gate Engine + Reports
+  api/      Hono on Bun + SQLite store + Workflow Engine + Gate Engine + Reports + local Runner control
   runner/   Local Runner CLI (worktree, local compile/test, Codex/Claude Code backends, orchestrator)
-  web/      Vite-less TS delivery workbench: project onboarding, task queue, structured Requirement/Design/Acceptance, reports, knowledge, evidence
+  web/      Vite-less TS delivery workbench: project onboarding, API-managed Runner startup, task queue, structured Requirement/Design/Acceptance, reports, knowledge, evidence
 packages/
   shared/   Cross-cutting types + utils (whitelist, surefire parser, slug/id)
 examples/
@@ -39,13 +39,21 @@ bun run dev:api
 
 # Terminal B — Web on :5173 (proxies /api/* to API)
 bun run dev:web
+```
 
-# Terminal C — choose a real Agent Backend on the project, then drive a full lifecycle:
+Open `http://127.0.0.1:5173/`, configure the project Agent Backend (`Claude Code` or `Codex`), create requests, inspect evidence, and approve human gates. For normal Web UI usage, you do **not** need to start `bun run runner -- watch` in a third terminal: the Web UI calls the API's `/runner/control/start`, and the API starts/supervises a local runner watch process (`apps/runner/src/index.ts watch --poll-ms 1000`). Runner remains the core execution component; only the normal local startup path is API-managed.
+
+Manual Runner CLI commands are still useful for explicit workflows, debugging, and fallback operation:
+
+```bash
+# Register a local project directly:
 bun run runner -- register --path ./examples/java-maven-sample --name java-sample --agent-backend codex
+
+# Drive a full lifecycle directly from the CLI:
 bun run runner -- orchestrate --project java-sample --title "smoke add a marker comment"
-# Or let the 5173 UI enqueue tasks and have the runner claim them:
+
+# Fallback/debug mode if API-managed Runner control is unavailable:
 bun run runner -- watch
-# Open http://127.0.0.1:5173/ to create requests, inspect evidence, and approve human gates.
 
 # One-shot smokes (no manual interaction):
 bun run smoke   # quick: just `mvn -B test`
@@ -86,6 +94,7 @@ bun run typecheck
 - `POST /workflow-runs/:id/completion-report`, `POST /workflow-runs/:id/knowledge-candidate`
 - `POST /approvals`, `GET /approvals?workflowRunId=` — manual gate decisions
 - `GET /runners` — last-seen runner heartbeats
+- `GET /runner/control/status`, `POST /runner/control/{start,stop}` — API-managed local Runner watch supervision for Web UI flows
 - `GET /artifacts/:id/content`, `GET /artifacts/workflow-runs/:workflowRunId/:kind/latest/content` — local file artifact text for UI drill-down
 - `GET /command-runs/:id/logs` — stdout/stderr text for Build/Test evidence drill-down
 - `POST /runner/events/{workspace-prepared,step-started,step-finished,command-run,stage-transition,await-human,workflow-completed,heartbeat,maven-build,artifact,run-gate}` — runner ingress; only path that touches the Workflow Engine
