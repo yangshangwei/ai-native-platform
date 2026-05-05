@@ -1,1 +1,7 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API-side workflow, route, and persistence constraints relevant to end-to-end validation"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "Runner orchestration and backend execution rules relevant to direct and watch-based flows"}
+{"file": ".trellis/spec/runner/backend/agent-backend-runtime.md", "reason": "Agent backend preflight/runtime contract for diagnosing end-to-end failures"}
+{"file": ".trellis/spec/runner/backend/flow-registry.md", "reason": "Stage-order and flow-shape contract for full lifecycle assertions"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Web-facing task creation and runner control expectations for the API-managed path"}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Backend setup and queue gating contract exposed through the Web flow"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "This validation spans API, runner, shared contracts, and Web entry behavior"}

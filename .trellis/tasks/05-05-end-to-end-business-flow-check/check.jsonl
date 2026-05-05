@@ -1,1 +1,7 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "Verify API-side workflow behavior and evidence shape"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "Verify runner-side lifecycle behavior and orchestration contracts"}
+{"file": ".trellis/spec/runner/backend/agent-backend-runtime.md", "reason": "Check backend-selection and runtime failures against the documented contract"}
+{"file": ".trellis/spec/runner/backend/flow-registry.md", "reason": "Verify observed stage progression matches the declared flow contract"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Check queue-based flow against Web-facing behavior expectations"}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Check backend gating and runner-control semantics for the UI path"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer validation checklist for end-to-end issues"}
