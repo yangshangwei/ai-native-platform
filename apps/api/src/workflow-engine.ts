@@ -48,6 +48,7 @@ import {
   runManualGate,
 } from './gate-engine';
 import { publish as publishAgentEvent } from './agent-stream-bus';
+import { recommend } from './router';
 
 /**
  * Workflow Engine — sole state writer.
@@ -82,6 +83,9 @@ export function createWorkflowRun(params: {
   const id = newId('run');
   const branch = `ai/${id}-${slugify(params.title)}`;
   const now = nowIso();
+  const routerRecommendation = params.flowId === undefined
+    ? recommend({ projectId: params.projectId, title: params.title, runType: params.type })
+    : null;
   const run: WorkflowRun = {
     id,
     projectId: params.projectId,
@@ -89,8 +93,8 @@ export function createWorkflowRun(params: {
     title: params.title,
     status: 'pending',
     currentStage: 'init',
-    flowId: params.flowId ?? 'feature.standard',
-    startStage: params.startStage ?? null,
+    flowId: params.flowId ?? routerRecommendation?.flowId ?? 'feature.standard',
+    startStage: params.startStage ?? routerRecommendation?.startStage ?? null,
     configSnapshotId: null,
     sourceBranch: params.sourceBranch?.trim() || 'main',
     branch,
@@ -105,6 +109,15 @@ export function createWorkflowRun(params: {
     sourceBranch: run.sourceBranch,
     flowId: run.flowId,
     startStage: run.startStage,
+    ...(routerRecommendation
+      ? {
+          routerRecommendation: {
+            flowId: routerRecommendation.flowId,
+            startStage: routerRecommendation.startStage,
+            rulesFired: routerRecommendation.rulesFired,
+          },
+        }
+      : {}),
   });
   return run;
 }

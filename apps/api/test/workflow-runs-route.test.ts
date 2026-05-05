@@ -49,7 +49,7 @@ function registerProject(name: string): Project {
 // PRD W2-3 AC-9 / AC-10 (HTTP route plumbing).
 // ---------------------------------------------------------------------------
 
-test('POST /workflow-runs without flowId defaults to feature.standard (W2-3 AC-10)', async () => {
+test('POST /workflow-runs without flowId routes via smart-router (W2-4 AC-13)', async () => {
   const project = registerProject('ff-route-default');
 
   const res = await app.request('/workflow-runs', {
@@ -64,7 +64,8 @@ test('POST /workflow-runs without flowId defaults to feature.standard (W2-3 AC-1
 
   expect(res.status).toBe(201);
   const run = (await res.json()) as WorkflowRun;
-  expect(run.flowId).toBe('feature.standard');
+  // PR3 swap: short feature title → router picks feature.fastforward.
+  expect(run.flowId).toBe('feature.fastforward');
 });
 
 test('POST /workflow-runs honors body.flowId = feature.fastforward (W2-3 AC-9)', async () => {

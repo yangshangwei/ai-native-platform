@@ -100,14 +100,17 @@ test('completeWorkflowRun preserves the failed stage instead of jumping to compl
 // runner reads it via FLOW_REGISTRY.
 // ---------------------------------------------------------------------------
 
-test('createWorkflowRun defaults flowId to feature.standard when omitted (AC-13)', () => {
+test('createWorkflowRun defaults flowId via smart-router auto-pick when omitted (W2-4 AC-12)', () => {
+  // PR3 changes the omitted-flowId path from a static 'feature.standard'
+  // default to smart-router auto-pick. Short title + type=feature → router
+  // picks feature.fastforward.
   const run = workflow.createWorkflowRun({
     projectId: 'proj_default_flowid',
     type: 'feature',
     title: 'default flow',
     sourceBranch: 'main',
   });
-  expect(run.flowId).toBe('feature.standard');
+  expect(run.flowId).toBe('feature.fastforward');
 });
 
 test('createWorkflowRun honors an explicit flowId in params (AC-12)', () => {
@@ -121,12 +124,13 @@ test('createWorkflowRun honors an explicit flowId in params (AC-12)', () => {
   expect(run.flowId).toBe('feature.standard');
 });
 
-test('createWorkflowRun.flowId round-trips through SQLite (AC-4 / AC-5 / AC-11)', () => {
+test('createWorkflowRun.flowId round-trips through SQLite when supplied explicitly', () => {
   const run = workflow.createWorkflowRun({
     projectId: 'proj_flowid_roundtrip',
     type: 'feature',
     title: 'roundtrip flow',
     sourceBranch: 'main',
+    flowId: 'feature.standard',
   });
   // Re-read from store (rowToWorkflowRun maps `flow_id` column → `flowId`).
   const reloaded = storeMod.store.workflowRuns.get(run.id);
@@ -185,4 +189,66 @@ test('createWorkflowRun preserves null startStage round-trip (NULL column read)'
   const reloaded = storeMod.store.workflowRuns.get(run.id);
   expect(reloaded).toBeDefined();
   expect(reloaded!.startStage).toBeNull();
+});
+
+// ---------------------------------------------------------------------------
+// V2 W2-4 / PR3 — createWorkflowRun smart-router auto-pick + audit payload.
+// PRD AC-15 + R-Risk-3 / R-Risk-4 (auto-pick path; explicit override skips
+// router; audit log carries routerRecommendation iff router fired).
+// ---------------------------------------------------------------------------
+
+test('omitting flowId triggers smart-router auto-pick (bugfix → issue.standard)', () => {
+  const run = workflow.createWorkflowRun({
+    projectId: 'proj_autopick_bugfix',
+    type: 'bugfix',
+    title: 'NullPointer in payment refund handler crashes the worker every time',
+    sourceBranch: 'main',
+  });
+  expect(run.flowId).toBe('issue.standard');
+  expect(run.startStage).toBeNull();
+});
+
+test('omitting flowId on a long feature title → router picks feature.standard', () => {
+  const run = workflow.createWorkflowRun({
+    projectId: 'proj_autopick_feature_long',
+    type: 'feature',
+    title:
+      'add a brand new dashboard widget that displays real-time payment events with charts and historical filtering controls',
+    sourceBranch: 'main',
+  });
+  expect(run.flowId).toBe('feature.standard');
+});
+
+test('explicit body.flowId always wins (router NOT consulted; no routerRecommendation in audit)', () => {
+  const run = workflow.createWorkflowRun({
+    projectId: 'proj_explicit_skip_router',
+    type: 'feature',
+    title: 'fix typo in README', // router would pick fastforward, but we override
+    sourceBranch: 'main',
+    flowId: 'feature.standard',
+  });
+  expect(run.flowId).toBe('feature.standard');
+  const audits = storeMod.store.auditLog.byWorkflow(run.id);
+  const created = audits.find((a) => a.kind === 'workflow_run.created');
+  expect(created).toBeDefined();
+  expect(created!.payload.routerRecommendation).toBeUndefined();
+});
+
+test('auto-pick path attaches routerRecommendation to workflow_run.created audit', () => {
+  const run = workflow.createWorkflowRun({
+    projectId: 'proj_autopick_audit',
+    type: 'refactor',
+    title: 'extract helpers from monolith into smaller utility modules',
+    sourceBranch: 'main',
+  });
+  const audits = storeMod.store.auditLog.byWorkflow(run.id);
+  const created = audits.find((a) => a.kind === 'workflow_run.created');
+  expect(created).toBeDefined();
+  const rec = created!.payload.routerRecommendation as
+    | { flowId: string; startStage: string | null; rulesFired: string[] }
+    | undefined;
+  expect(rec).toBeDefined();
+  expect(rec!.flowId).toBe('refactor.standard');
+  expect(rec!.startStage).toBeNull();
+  expect(rec!.rulesFired).toContain('flow.refactor_to_refactor_standard');
 });
