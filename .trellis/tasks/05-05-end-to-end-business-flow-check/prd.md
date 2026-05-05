@@ -34,11 +34,11 @@ Validate the current AI Native Platform end-to-end business flow from the real u
 
 ## Acceptance Criteria
 
-- [ ] A direct full-lifecycle validation has been executed against the current codebase and its result is recorded.
-- [ ] A queue-based/API-managed validation has been executed against the current codebase and its result is recorded.
-- [ ] Any failure includes concrete reproduction evidence and a classification of likely root cause.
-- [ ] If a product defect is fixed, the affected flow is re-run and verified.
-- [ ] The final report states which user-facing business flows are green, degraded, or blocked.
+- [x] A direct full-lifecycle validation has been executed against the current codebase and its result is recorded. (`run_75dd25561a7a` passed via deterministic fake backend; `bun run e2e` real-backend attempts `run_6beb318c2ee7` / `run_340b2046742a` recorded as failed.)
+- [x] A queue-based/API-managed validation has been executed against the current codebase and its result is recorded. (`wreq_5218be86ddc5` paused at `awaiting_clarification` with cause recorded.)
+- [x] Any failure includes concrete reproduction evidence and a classification of likely root cause. (6 issues with run/wreq ids + reproduction commands in `research/e2e-validation-report.md`.)
+- [ ] If a product defect is fixed, the affected flow is re-run and verified. — **Out of scope this task**: defects 4/5/6 filed as cs-issue reports under `codestable/issues/2026-05-05-*` for follow-up. Defects 1/2 are script-side and tracked as recommended follow-ups. Defect 3 is environment-side (Codex 403 insufficient balance), not platform.
+- [x] The final report states which user-facing business flows are green, degraded, or blocked. (See `## Confirmed Green Path` and `## Issues Found` in the validation report.)
 
 ## Out of Scope
 

@@ -21,11 +21,11 @@ the rest conversationally.
 
 ## Status (update the checkboxes as you complete each item)
 
-- [ ] Fill guidelines for @ainp/api
-- [ ] Fill guidelines for @ainp/runner
-- [ ] Fill guidelines for @ainp/web
-- [ ] Fill guidelines for @ainp/shared
-- [ ] Add code examples
+- [x] Fill guidelines for @ainp/api  — backend 4 stubs filled (directory-structure / error-handling / logging / quality), frontend marked N/A redirect (api is Hono backend only).
+- [x] Fill guidelines for @ainp/runner — backend 5 stubs filled, frontend marked N/A redirect (runner is Bun CLI only).
+- [x] Fill guidelines for @ainp/web — frontend 5 stubs filled (vanilla TS SPA conventions), state-management completed.
+- [x] Fill guidelines for @ainp/shared — backend 5 stubs filled, frontend marked N/A redirect (types + utils, no UI).
+- [x] Add code examples — every backend spec references real `apps/<pkg>/src/` paths and minimal-restatement code snippets from the actual codebase.
 
 ---
 

@@ -34,7 +34,8 @@ logs/
 .claude/scheduled_tasks.lock
 .claude/scheduled_tasks.json
 /CodeStable/
-# `codestable/` (lowercase) is the cs-* skill artifact root — issues, decisions, requirements, etc.
-# It IS tracked. Negate so the case-insensitive macOS APFS doesn't pull it under /CodeStable/.
-!codestable/
-!codestable/**
+# `codestable/` (lowercase) is the cs-* skill artifact root and is its OWN
+# git repo — managed independently, not tracked from this main repo. Listed
+# here so contributors don't try to `git add codestable/`; the per-skill
+# artifacts (issues/, decisions/, requirements/, …) live in that sub-repo.
+codestable/

@@ -25,6 +25,8 @@ Validate the current AI Native Platform business flow end to end and identify pr
 | Direct documented full E2E with Claude Code | `bun run e2e` after configuring project backend to `claude_code` | Failed at `implementation` before a full standard-lifecycle proof | `run_340b2046742a`, status `failed`, agent result `claude exited 143 during implementation`; stream repeatedly printed `Done.` until 10-minute timeout; run `flowId = feature.fastforward` |
 | Build/test smoke | `bun run smoke` | Passed | `run_faee3a65b583`, status `passed`, `mvn -B test` exit `0`, `test_gate=pass`, Surefire `3 passed / 3` |
 | API-managed Runner control + WorkflowRequest queue | `POST /runner/control/start`, then `POST /workflow-requests` | Runner consumed request but paused before WorkflowRun | `wreq_5218be86ddc5`, status `awaiting_clarification`; runner logs show Coordinator `pause_for_human`; message duplicated after manual `watch --once` |
+| Browser UI: project onboarding + short feature request | gstack browser drove `http://127.0.0.1:5174/#projects` and `#new-task`; API used isolated `AINP_DB_PATH=/tmp/ainp-browser-e2e-20260505.sqlite`, `AINP_HOME=/tmp/ainp-browser-e2e-home`, API `:8788`, Web `:5174` | UI path worked through project registration, Codex preflight, request creation, API-managed runner start, and runner claim; workflow then failed correctly at implementation gate | Project `proj_2a63e4149468` registered with `agentBackend=codex`; `wreq_ff2af8d5f1ee` claimed; `run_ca7bc0294635`, `flowId=feature.fastforward`, `status=failed`, `diff_scope_gate=fail`, `sensitive_change_gate=warn`; screenshot `/tmp/ainp-browser-failed-task.png`; annotated screenshot `/tmp/ainp-browser-failed-task-annotated.png` |
+| Browser UI: project onboarding + explicit standard-flow-sized request | Same browser-driven UI path with a longer task title so Smart Router selected `feature.standard` | UI path again worked through request creation and runner start; standard workflow failed at `context_pack` before first manual gate | `wreq_a2942c88512d` claimed; `run_e83d36c8b93c`, `flowId=feature.standard`, `status=failed`, `currentStage=context_pack`; `agentResults[0].summary = codex produced empty artifact at /Users/artisan/.ai-native/artifacts/run_e83d36c8b93c/context_pack/context_pack.md`; `.codex-last-message.txt` says Codex was blocked because the required artifact path was outside writable roots; screenshot `/tmp/ainp-browser-standard-failed-task.png`; annotated screenshot `/tmp/ainp-browser-standard-failed-task-annotated.png` |
 | Internal full standard lifecycle with deterministic fake Claude backend | `AINP_CLAUDE_BIN=.trellis/.../fake-claude-e2e.mjs bun run runner -- orchestrate --flow-id feature.standard ...` plus auto approvals | Passed | `run_75dd25561a7a`, status `passed`; gates `requirement/design/diff_scope/sensitive_change/compile/test/acceptance/knowledge` all `pass`; compile/test commands exit `0`; Surefire `4 passed / 4`; completion and knowledge artifacts generated |
 
 ## Verification Command Coverage
@@ -94,6 +96,23 @@ Key evidence from `run_75dd25561a7a`:
    - Evidence: `wreq_5218be86ddc5/messages` had two coordinator messages with `LLM 调用失败，能否补充更多上下文？`.
    - Cause observed in validation: API-managed watch paused the request; a manual `watch --once` run later processed the same request state again.
 
+7. Browser/UI queue flow is not currently green with real Codex, even though UI intake itself works.
+   - Browser-driven project onboarding worked: local sample path was detected, Codex was selected, and Codex preflight returned `connected`.
+   - Browser-driven task creation worked: `POST /api/workflow-requests` returned `201`, and the UI triggered `POST /api/runner/control/start`.
+   - Short feature request `run_ca7bc0294635` reached real implementation, but Codex added `.gitignore`; `diff_scope_gate` failed with `outside scope: .gitignore`, and `sensitive_change_gate` warned on `.gitignore`.
+   - This is a useful product signal: the fast-forward prompt/gate combination permits the agent to make a plausible extra hygiene edit that the platform later rejects.
+
+8. `feature.standard` with Codex cannot currently produce non-worktree artifacts.
+   - Browser-driven standard request `run_e83d36c8b93c` selected `feature.standard` and entered `context_pack`.
+   - The runner asked Codex to write `context_pack.md` under `/Users/artisan/.ai-native/artifacts/...`.
+   - Codex sandbox rejected the write because that artifact path is outside the project writable roots; `context_pack.md` remained `0` bytes and the run failed.
+   - Likely product-side fix area: align Codex `--add-dir` / sandbox writable roots with the artifact output directory, or place agent-produced artifacts under a writable path that Codex can access.
+
+9. Failed runs can leave the UI task detail page visually under-informative at the first viewport.
+   - Browser screenshots for both failed task detail pages showed only the sidebar and `Runner 已自动运行` in the captured viewport.
+   - API evidence had rich failure detail, but the first viewport did not expose the failed stage summary strongly enough in the snapshot.
+   - This is lower priority than the runtime blockers, but it affects browser dogfooding and supportability.
+
 ## Recommended Follow-ups
 
 - Fix `scripts/e2e.ts` so it configures an Agent Backend explicitly and uses `--flow-id feature.standard` or an API path that forces standard flow when it claims full lifecycle coverage.
@@ -101,3 +120,5 @@ Key evidence from `run_75dd25561a7a`:
 - Investigate Claude Code one-shot/runtime termination under the current local hook setup; a completed assistant answer must produce process exit before Runner timeout.
 - Harden Coordinator pause handling so an already-paused request is not re-paused with duplicate coordinator messages by concurrent or repeated watch runs.
 - Consider a rules-first bypass for obviously small feature requests so Web intake is less dependent on LLM fallback availability.
+- For Codex-backed standard flows, ensure the artifact output directory is inside Codex writable roots or pass sandbox/add-dir settings that actually permit writing the requested artifact path.
+- Tighten the fast-forward implementation prompt or allowed-write policy so model hygiene edits like `.gitignore` do not make otherwise valid small changes fail late at `diff_scope_gate`.
