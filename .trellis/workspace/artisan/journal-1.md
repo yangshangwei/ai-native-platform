@@ -289,3 +289,37 @@ Wave 2 second keystone done end-to-end. PR1 = shared FlowId union extended to 'f
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: V2 W2-2b refactor.standard flow shipped
+
+**Date**: 2026-05-05
+**Task**: V2 W2-2b refactor.standard flow shipped
+**Branch**: `main`
+
+### Summary
+
+2-PR thin extension adding 'refactor.standard' FlowDef to FLOW_REGISTRY (6-stage pipeline: scan → plan → implementation (=apply) → build_test → review → completion). PR1: shared types (WorkflowStage += scan/plan; FlowId += refactor.standard; WorkflowRunType += refactor; AgentTaskKind += scan/plan) + ISSUE-FREE 'plan' WorkflowStage avoids design_gate refactor + 2 placeholder SkillSpecs (cs-refactor-scan / cs-refactor-design) + skill.implementation instructions extended with refactor_plan fallback + dispatchStep + executeScan/executePlan + flow-registry.test.ts. PR2: trust-boundary KNOWN_FLOW_IDS in route + CLI + web UI WorkflowRunType literal + typeSelect option + workflow-runs route test + gate-engine refactor fixture (auto-adapts via W2-2a's stage-history-aware logic with zero new gate code) + spec doc append. Smaller than W2-2a (2 PR vs 3) since gate-engine work was front-loaded in W2-2a PR2 — proves the abstraction tightens as it accretes. Wave 2 first-phase 3 workflows (feature / issue / refactor) now complete; only W2-4 smart-router remains. typecheck 4/4 green / 391 pass / 0 fail (W2-2a baseline 379 + 12 new).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cc65eaf` | (see git log) |
+| `57cc13c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
