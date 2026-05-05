@@ -31,4 +31,6 @@ logs/
 .omx/
 .gstack/
 .claude/worktrees/
+.claude/scheduled_tasks.lock
+.claude/scheduled_tasks.json
 /CodeStable/
