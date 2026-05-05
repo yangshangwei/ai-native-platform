@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
+- **Total Sessions**: 12
 - **Last Active**: 2026-05-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~395 | Active |
+| `journal-1.md` | ~428 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-05-05 | Old-task cleanup: archive 5 completed tasks (W2-4 + 4 sibling) | `7414112` | `main` |
 | 11 | 2026-05-05 | V2 W2-4 smart-router PR2/PR3/PR4 — Wave 2 closeout | `a2e0900`, `0efe3d8`, `c76826f`, `e9cac7d` | `main` |
 | 10 | 2026-05-05 | V2 W2-4 smart-router PR1 shipped + paused for next session | `ddc302d`, `50b6406` | `main` |
 | 9 | 2026-05-05 | V2 W2-2b refactor.standard flow shipped | `cc65eaf`, `57cc13c` | `main` |

@@ -393,3 +393,36 @@ Shipped the remaining 3 PRs of W2-4 smart-router after PR1 (ddc302d). PR2 added 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Old-task cleanup: archive 5 completed tasks (W2-4 + 4 sibling)
+
+**Date**: 2026-05-05
+**Task**: Old-task cleanup: archive 5 completed tasks (W2-4 + 4 sibling)
+**Branch**: `main`
+
+### Summary
+
+Cleanup pass after Wave 2 closeout. Archived 5 in_progress tasks whose code/tests/specs were already merged in earlier sessions: 05-03-fix-coordinator-reply-input-reset (verified via apps/web/src/main.ts coordinatorReplyDrafts + focus restore), 05-04-agent-backend-cli-windows-shim-call (verified via packages/shared/src/utils/agent-backend-cli.ts call-token argv + tests), 05-04-windows-shim-argv-contract (verified via .trellis/spec/{shared,runner}/backend specs documenting cmd.exe /d /s /c call <shim> + shell:false), 05-03-agent-backend-selection-streaming-logs (verified via fail-fast selectAgentBackend, ProjectAgentBackendKind union, preflight + auth status routes, SSE history replay/sinceSeq, 5 backend test files / 56 tests green), 05-04-v2-artifact-kind-expansion (verified via PerRunArtifactKind/KnowledgeArtifactKind split, knowledge_artifacts table + REST + promote transaction, KNOWLEDGE_SUBTYPES + KnowledgeMetadataCore types, 5 artifact test files / 58 tests green). One docs commit (7414112) describing API-managed runner control was committed during this session — listed as the work commit. Remaining in_progress: 00-bootstrap-guidelines (long-running setup), 05-05-end-to-end-business-flow-check (in flight elsewhere), 05-05-readme-runner-doc-update.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7414112` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
