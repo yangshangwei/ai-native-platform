@@ -461,21 +461,48 @@ export function runAcceptanceTraceabilityGate(params: {
   const review = store.artifacts.byKind(params.workflowRunId, 'other').at(-1) ?? null;
   const testGate = store.gateRuns.latestForGate(params.workflowRunId, 'test_gate');
 
+  // V2 W2-2a (PRD ADR Q3): stage-history-aware traceability rules. If the
+  // run never scheduled a `requirement` / `design` step (e.g. issue.standard
+  // or feature.fastforward flows), the corresponding presence rule is "not
+  // applicable" rather than fail. Detection: existence of any StepRun for
+  // the stage on this workflow run. Rationale: traceability rules assert
+  // "the run committed to producing X and did"; runs that never committed
+  // to producing X shouldn't fail. Side effect: also fixes W2-3 R-Risk-2
+  // (fastforward acceptance gate) since fastforward also has no
+  // requirement/design step.
+  const stagesRun = new Set(
+    store.stepRuns.byWorkflow(params.workflowRunId).map((s) => s.stage),
+  );
+
   const results: RuleResult[] = [
-    textRule({
-      ruleId: 'acceptance.requirement_present',
-      ok: Boolean(requirement),
-      pass: 'requirement evidence present',
-      fail: 'missing requirement artifact',
-      evidenceRefs: artifactEvidence(requirement, 'approved requirement candidate'),
-    }),
-    textRule({
-      ruleId: 'acceptance.design_present',
-      ok: Boolean(design),
-      pass: 'design evidence present',
-      fail: 'missing design artifact',
-      evidenceRefs: artifactEvidence(design, 'approved design candidate'),
-    }),
+    stagesRun.has('requirement')
+      ? textRule({
+          ruleId: 'acceptance.requirement_present',
+          ok: Boolean(requirement),
+          pass: 'requirement evidence present',
+          fail: 'missing requirement artifact',
+          evidenceRefs: artifactEvidence(requirement, 'approved requirement candidate'),
+        })
+      : {
+          ruleId: 'acceptance.requirement_present',
+          status: 'pass' as const,
+          message: 'not applicable: requirement stage not in this flow',
+          evidenceRefs: [],
+        },
+    stagesRun.has('design')
+      ? textRule({
+          ruleId: 'acceptance.design_present',
+          ok: Boolean(design),
+          pass: 'design evidence present',
+          fail: 'missing design artifact',
+          evidenceRefs: artifactEvidence(design, 'approved design candidate'),
+        })
+      : {
+          ruleId: 'acceptance.design_present',
+          status: 'pass' as const,
+          message: 'not applicable: design stage not in this flow',
+          evidenceRefs: [],
+        },
     textRule({
       ruleId: 'acceptance.diff_present',
       ok: Boolean(diff),
