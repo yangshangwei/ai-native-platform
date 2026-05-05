@@ -357,3 +357,39 @@ W2-4 (smart-router) brainstormed and started: 5 ADRs locked (Q1=C V1 outputs flo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: V2 W2-4 smart-router PR2/PR3/PR4 — Wave 2 closeout
+
+**Date**: 2026-05-05
+**Task**: V2 W2-4 smart-router PR2/PR3/PR4 — Wave 2 closeout
+**Branch**: `main`
+
+### Summary
+
+Shipped the remaining 3 PRs of W2-4 smart-router after PR1 (ddc302d). PR2 added WorkflowRun.startStage end-to-end (shared type, idempotent workflow_runs.start_stage migration, store row mapping, createWorkflowRun param plumbing, cmdOrchestrate slice via the new pure helper sliceStagesFromStartStage that throws on unknown stage). PR3 wired POST /router/recommend (Hono route with projectId/runType/title validation) and called recommend() from createWorkflowRun() exactly when params.flowId is undefined; the workflow_run.created audit row now carries routerRecommendation iff router fired. PR4 closed Wave 2 with the UI 智能推荐 card on the task creation form (debounced 400ms POST /router/recommend on title blur, displays flowId/startStage/estimates/rules), POST /workflow-runs body.startStage plumbing for direct override, and the spec doc § Smart Router (W2-4) section in flow-registry.md plus a Good case + W2-4 PRD reference. Final tests 425 pass / 0 fail (PR1 baseline 403 + 22 new). typecheck 4/4 green. Wave 2 architecture spine 'Routing over Prescribing' shipped: feature/issue/refactor.standard + feature.fastforward + smart-router.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a2e0900` | (see git log) |
+| `0efe3d8` | (see git log) |
+| `c76826f` | (see git log) |
+| `e9cac7d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
