@@ -254,3 +254,38 @@ Wave 2 second keystone done end-to-end. PR1 = shared FlowId union extended to 'f
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: V2 W2-2a issue.standard flow shipped
+
+**Date**: 2026-05-05
+**Task**: V2 W2-2a issue.standard flow shipped
+**Branch**: `main`
+
+### Summary
+
+3-PR thin extension adding 'issue.standard' FlowDef to FLOW_REGISTRY (6-stage pipeline: report → analyze → implementation → build_test → review → completion). PR1: shared types + registry + dispatchStep + executeReport/executeAnalyze + 2 placeholder SkillSpecs. PR2: gate-engine runAcceptanceTraceabilityGate made stage-history-aware (skips requirement/design rules with N/A note when those stages weren't scheduled) — side benefit closes W2-3 PRD R-Risk-2 (fastforward acceptance gate). PR3: dual KNOWN_FLOW_IDS allow-lists + spec doc append. FlowDef.kind='bugfix' reuses existing WorkflowRunType (Q2 ADR; spec doc explains naming asymmetry). Cross work-kind extensibility test of W2-1 thin abstraction passed. typecheck 4/4 green / 379 pass / 0 fail (W2-3 baseline 365 + 14 new). W2-2b refactor.standard follow-up.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1f480df` | (see git log) |
+| `149bc05` | (see git log) |
+| `9ce6ef3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
