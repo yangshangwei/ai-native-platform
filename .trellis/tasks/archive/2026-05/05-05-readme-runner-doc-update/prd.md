@@ -22,10 +22,10 @@ Update the top-level README so local development instructions match the current 
 
 ## Acceptance Criteria
 
-- [ ] README Quickstart reflects API-managed local Runner startup.
-- [ ] README explains the distinction between Runner as a core component and manual runner startup as fallback.
-- [ ] Existing command examples remain valid where still useful.
-- [ ] No code behavior changes are made.
+- [x] README Quickstart reflects API-managed local Runner startup.
+- [x] README explains the distinction between Runner as a core component and manual runner startup as fallback.
+- [x] Existing command examples remain valid where still useful.
+- [x] No code behavior changes are made.
 
 ## Out of Scope
 
