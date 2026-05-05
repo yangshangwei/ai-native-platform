@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "Runner architecture conventions; Fix 1/2 both touch runner package"}
+{"file": ".trellis/spec/runner/backend/agent-backend-runtime.md", "reason": "Lifecycle contract for Agent Backend stdout streaming + termination semantics — primary spec for Fix 1"}
+{"file": ".trellis/spec/runner/backend/error-handling.md", "reason": "Failure-kind taxonomy used by Fix 2 (invocation_failed vs invalid_json vs unavailable)"}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "Test conventions for new unit tests added by both fixes"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API conventions; touched only if Fix 2 needs to surface failure-kind through any persisted CoordinatorDecision shape"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Coordinator + watch + claude-code spans runner internals; cross-layer guide is the project-wide thinking checklist"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Both fixes should reuse existing parser/config plumbing rather than introduce parallel paths"}
+{"file": "CodeStable/issues/2026-05-05-claude-code-implementation-no-exit/claude-code-implementation-no-exit-report.md", "reason": "Issue 1 root-cause hypotheses, severity, reproduction — Fix 1 contract"}
+{"file": "CodeStable/issues/2026-05-05-coordinator-fallback-pauses-concrete-request/coordinator-fallback-pauses-concrete-request-report.md", "reason": "Issue 2 root-cause hypotheses, severity, reproduction — Fix 2 contract"}
+{"file": ".trellis/tasks/archive/2026-05/05-05-end-to-end-business-flow-check/research/e2e-validation-report.md", "reason": "Validation matrix and confirmed-green/blocked path classifications — defines what L4 must prove after the fixes"}

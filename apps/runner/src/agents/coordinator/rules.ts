@@ -36,6 +36,18 @@ export interface ClassifyOutput {
   /** 0..1; ≥ threshold means rules are confident enough that the LLM fallback is skipped. */
   confidence: number;
   rulesFired: string[];
+  /**
+   * Set by `classifyByLlm` when its `pause_for_human` was caused by a
+   * transient/availability failure (CLI throw, empty output, no backend
+   * available) rather than the LLM judging the input ambiguous. The
+   * coordinator entry uses this to fall back to the rule classifier's
+   * earlier `proceed` instead of asking the user to clarify a request the
+   * rule layer already considered routable.
+   *
+   * `invalid_json` / `unknown_action` are NOT transient — they mean the LLM
+   * answered but the answer was malformed, which is real ambiguity.
+   */
+  failureKind?: 'invocation_failed' | 'empty' | 'unavailable' | null;
 }
 
 function countMatches(

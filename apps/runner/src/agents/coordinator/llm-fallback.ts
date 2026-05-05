@@ -128,6 +128,7 @@ export async function classifyByLlm(
       },
       confidence: 0.5,
       rulesFired: ['llm.unavailable'],
+      failureKind: 'unavailable',
     };
   }
 
@@ -147,13 +148,25 @@ export async function classifyByLlm(
       },
       confidence: 0.5,
       rulesFired: ['llm.invocation_failed'],
+      failureKind: 'invocation_failed',
     };
   }
 
+  const decision = parseDecision(raw, chosen, fallback);
+  // Transient-failure annotation: an `empty` decision means the CLI ran but
+  // produced no usable output, which we treat as availability degradation
+  // (same family as invocation_failed / unavailable). `invalid_json` /
+  // `unknown_action` are NOT transient — the LLM answered, just badly.
+  const failureKind: ClassifyOutput['failureKind'] =
+    decision.action === 'pause_for_human' && decision.reason === 'empty LLM output'
+      ? 'empty'
+      : null;
+
   return {
-    decision: parseDecision(raw, chosen, fallback),
+    decision,
     confidence: 0.7,
     rulesFired: [`llm.classified.${chosen}`],
+    failureKind,
   };
 }
 
@@ -255,12 +268,32 @@ function spawnCandidate(
       env: process.env,
       platform: process.platform,
     });
+    // Same HOME-isolation logic as the production claude-code backend
+    // (apps/runner/src/agents/claude-code.ts): keep the user's interactive
+    // hooks/skills out of the runner-driven CLI spawn. Auth is inherited
+    // through process.env. Set AINP_CLAUDE_NO_HOME_ISOLATION=1 to disable.
+    const isolateHome = process.env.AINP_CLAUDE_NO_HOME_ISOLATION !== '1';
+    const isolatedHome = isolateHome ? mkdtempSync(join(tmpdir(), 'ainp-coord-home-')) : null;
+    const childEnv: NodeJS.ProcessEnv = { ...process.env };
+    if (isolatedHome) {
+      childEnv.HOME = isolatedHome;
+      delete childEnv.CLAUDE_CONFIG_DIR;
+      delete childEnv.XDG_CONFIG_HOME;
+    }
     const child = spawn(invocation.command, invocation.args, {
       stdio: [spawnOpts.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
-      env: { ...process.env },
+      env: childEnv,
       shell: invocation.shell,
       windowsHide: invocation.windowsHide,
     });
+    const cleanupHome = (): void => {
+      if (!isolatedHome) return;
+      try {
+        rmSync(isolatedHome, { recursive: true, force: true });
+      } catch {
+        /* best-effort */
+      }
+    };
     let out = '';
     let errOut = '';
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -276,10 +309,12 @@ function spawnCandidate(
     });
     child.on('error', (err) => {
       if (timer) clearTimeout(timer);
+      cleanupHome();
       reject(err);
     });
     child.on('close', (code) => {
       if (timer) clearTimeout(timer);
+      cleanupHome();
       if (code !== 0) {
         reject(
           new Error(

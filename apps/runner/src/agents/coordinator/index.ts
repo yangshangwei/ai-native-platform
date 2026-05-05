@@ -18,7 +18,7 @@
 import type { CoordinatorDecision, WorkflowRequestId } from '@ainp/shared';
 import { newId, nowIso } from '@ainp/shared';
 import { classifyByRules, type ClassifyInput, type ClassifyOutput } from './rules';
-import { classifyByLlm, type LlmBackendKind } from './llm-fallback';
+import { classifyByLlm, type LlmBackendKind, type LlmFallbackDeps } from './llm-fallback';
 import { getConfig } from '../../config-client';
 
 export interface TriageInput {
@@ -30,6 +30,11 @@ export interface TriageInput {
    * fallback tries the matching CLI first and the other CLI as fallback.
    */
   preferredBackend?: LlmBackendKind;
+  /**
+   * Test-only override for the LLM fallback transport. Production callers
+   * leave this undefined; the real spawn-based deps are used.
+   */
+  llmDeps?: LlmFallbackDeps;
 }
 
 export async function triageRequest(input: TriageInput): Promise<CoordinatorDecision> {
@@ -50,9 +55,32 @@ export async function triageRequest(input: TriageInput): Promise<CoordinatorDeci
   } else {
     const llmResult = await classifyByLlm(ruleInput, {
       preferredBackend: input.preferredBackend,
+      deps: input.llmDeps,
     });
-    final = llmResult;
-    source = 'llm';
+    // Degraded fallback: when the LLM call failed for transient reasons
+    // (CLI throw, no backend available, empty output) but the rule
+    // classifier already produced a `proceed` decision, use the rule's
+    // answer instead of pausing the user. This unblocks Web/queue intake
+    // when LLM availability is intermittent — the rule layer's default
+    // routing is good enough to start a workflow run.
+    //
+    // Malformed LLM output (`invalid_json`, `unknown_action`) does NOT
+    // qualify: the LLM answered, just badly, so the safer move is to
+    // honor the LLM's pause request.
+    if (
+      llmResult.failureKind != null &&
+      llmResult.decision.action === 'pause_for_human' &&
+      ruleResult.decision.action === 'proceed'
+    ) {
+      final = {
+        ...ruleResult,
+        rulesFired: [...ruleResult.rulesFired, `llm.degraded.${llmResult.failureKind}`],
+      };
+      source = 'rules';
+    } else {
+      final = llmResult;
+      source = 'llm';
+    }
   }
 
   return {
@@ -69,4 +97,4 @@ export async function triageRequest(input: TriageInput): Promise<CoordinatorDeci
 
 export { classifyByRules } from './rules';
 export { classifyByLlm } from './llm-fallback';
-export type { LlmBackendKind } from './llm-fallback';
+export type { LlmBackendKind, LlmFallbackDeps } from './llm-fallback';

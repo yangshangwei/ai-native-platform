@@ -15,8 +15,9 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdtempSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
@@ -39,6 +40,14 @@ export interface ClaudeCodeBackendOpts {
   bin?: string;
   /** Per-stage hard timeout. */
   timeoutMs?: number;
+  /**
+   * Grace window after a `result` event arrives before the runner actively
+   * SIGTERMs the CLI. Some Claude Code local configurations (hooks, session
+   * keepalives) keep the process alive after the assistant answer is
+   * complete; without this, the runner waits the full `timeoutMs`. The
+   * grace gives the CLI time to exit on its own first.
+   */
+  postResultGraceMs?: number;
   /** Permission mode passed to the CLI. */
   permissionMode?: 'acceptEdits' | 'bypassPermissions' | 'default';
   /** Spending cap forwarded to the CLI. */
@@ -46,6 +55,7 @@ export interface ClaudeCodeBackendOpts {
 }
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
+const DEFAULT_POST_RESULT_GRACE_MS = 5_000;
 const DEFAULT_BUDGET_USD = 5;
 
 export class ClaudeCodeBackend implements AgentBackend {
@@ -180,25 +190,76 @@ export class ClaudeCodeBackend implements AgentBackend {
       disallowedTools,
     });
 
+    // Isolate the spawned CLI from the user's interactive Claude Code config.
+    // The local `~/.claude/settings.json` typically wires up hooks (OMC, Trellis,
+    // claude-mem) and skills/agents that target the user's editor session.
+    // Letting them fire inside a runner-driven workflow run causes the CLI to
+    // loop on itself (the `2026-05-05-claude-code-implementation-no-exit` issue
+    // documents one variant; in practice the real-CLI surface includes a
+    // hook-induced "Stop." loop that never reaches a `result` event).
+    //
+    // Using a per-invocation empty HOME makes claude treat itself as a fresh
+    // install: no settings.json, no hooks, no plugins. Auth flows through
+    // process.env (`ANTHROPIC_AUTH_TOKEN` etc. are inherited from the parent
+    // shell, which is what Anthropic's CLI uses for non-interactive runs).
+    // Set `AINP_CLAUDE_NO_HOME_ISOLATION=1` to opt out (kept as an env-only
+    // escape hatch for debugging, not a public API).
+    const isolateHome = process.env.AINP_CLAUDE_NO_HOME_ISOLATION !== '1';
+    const isolatedHome = isolateHome ? mkdtempSync(join(tmpdir(), 'ainp-claude-home-')) : null;
+    const childEnv: NodeJS.ProcessEnv = { ...process.env };
+    if (isolatedHome) {
+      childEnv.HOME = isolatedHome;
+      delete childEnv.CLAUDE_CONFIG_DIR;
+      delete childEnv.XDG_CONFIG_HOME;
+    }
+
     const child = spawn(invocation.command, invocation.args, {
       cwd: ctx.workspacePath,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env },
+      env: childEnv,
       shell: invocation.shell,
       windowsHide: invocation.windowsHide,
     });
 
     const timeoutMs = this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const postResultGraceMs = this.opts.postResultGraceMs ?? DEFAULT_POST_RESULT_GRACE_MS;
     let timedOut = false;
-    const timer = setTimeout(() => {
+    let resultSeen = false;
+    let resultSubtype: string | null = null;
+    let graceTimer: ReturnType<typeof setTimeout> | null = null;
+    let graceShutdownInitiated = false;
+    const hardTimer = setTimeout(() => {
       timedOut = true;
       child.kill('SIGTERM');
     }, timeoutMs);
+
+    // Some Claude Code local setups (hooks, session keepalives) keep the
+    // CLI process alive after the `result` event has been emitted. Without
+    // this, the runner blocks on the 10-minute hard timeout. After we see
+    // a `result` event, give the CLI a short grace window to exit on its
+    // own; if it doesn't, SIGTERM it. The original exit code is recorded
+    // verbatim in agent_event/agent_result so postmortem still has the
+    // evidence (per runner error-handling spec).
+    const armPostResultGrace = (): void => {
+      if (graceTimer) return;
+      graceTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          graceShutdownInitiated = true;
+          child.kill('SIGTERM');
+        }
+      }, postResultGraceMs);
+    };
 
     const stdoutDone = consumeLines(child.stdout, async (line) => {
       const parsed = parseStreamLine(line);
       if (parsed.text) process.stdout.write(`${parsed.text}\n`);
       await emitParsed(ctx, parsed);
+      if (parsed.type === 'result' && !resultSeen) {
+        resultSeen = true;
+        const sub = (parsed.payload as { subtype?: unknown }).subtype;
+        resultSubtype = typeof sub === 'string' ? sub : null;
+        armPostResultGrace();
+      }
     });
 
     const stderrDone = consumeLines(child.stderr, async (line) => {
@@ -207,14 +268,42 @@ export class ClaudeCodeBackend implements AgentBackend {
       await emit(ctx, { type: 'stderr', payload: { line: safeLine }, text: safeLine });
     });
 
-    const exitCode: number = await new Promise((resolve) => {
-      child.once('exit', (code) => resolve(code ?? -1));
-    });
+    const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
+      (resolve) => {
+        child.once('exit', (code, signal) => resolve({ code, signal }));
+      },
+    );
     await Promise.allSettled([stdoutDone, stderrDone]);
-    clearTimeout(timer);
+    clearTimeout(hardTimer);
+    if (graceTimer) clearTimeout(graceTimer);
 
-    await emitMeta(ctx, 'finished', { exitCode, timedOut });
-    return { exitCode };
+    // Exit code reconciliation:
+    //   - Natural exit (code !== null) wins regardless of how we got here.
+    //   - Signal exit caused by our post-result grace SIGTERM, when the
+    //     result event reported success and the hard timeout did NOT fire,
+    //     is treated as exit 0. The CLI finished business work; we just
+    //     terminated it because the local setup wouldn't.
+    //   - Anything else (hard timeout, signal without grace) stays -1 and
+    //     surfaces as a failure with the original signal recorded.
+    let effectiveExitCode: number;
+    if (exit.code !== null) {
+      effectiveExitCode = exit.code;
+    } else if (graceShutdownInitiated && resultSubtype === 'success' && !timedOut) {
+      effectiveExitCode = 0;
+    } else {
+      effectiveExitCode = -1;
+    }
+
+    await emitMeta(ctx, 'finished', {
+      exitCode: effectiveExitCode,
+      rawExitCode: exit.code,
+      signal: exit.signal,
+      timedOut,
+      resultSeen,
+      resultSubtype,
+      graceShutdown: graceShutdownInitiated,
+    });
+    return { exitCode: effectiveExitCode };
   }
 }
 

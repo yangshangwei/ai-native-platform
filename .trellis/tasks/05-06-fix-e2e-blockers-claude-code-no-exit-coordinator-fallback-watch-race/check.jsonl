@@ -1,0 +1,10 @@
+{"file": ".trellis/tasks/05-06-fix-e2e-blockers-claude-code-no-exit-coordinator-fallback-watch-race/prd.md", "reason": "Acceptance Criteria are the source of truth for verification"}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "What constitutes adequate test coverage in the runner package"}
+{"file": ".trellis/spec/runner/backend/agent-backend-runtime.md", "reason": "Behavioural contract Fix 1 must continue to honor (stdout streaming, exit semantics)"}
+{"file": ".trellis/spec/runner/backend/error-handling.md", "reason": "Failure classification expected by Fix 2 (invocation_failed/empty/unavailable vs invalid_json/unknown_action)"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "If Fix 2 surfaces failureKind through CoordinatorDecision, API-side quality bar applies"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Cross-layer regression check — make sure runner-side changes don't break API or web contracts"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Verifies fixes reused existing parser/config/api plumbing instead of forking new paths"}
+{"file": "scripts/e2e.ts", "reason": "Reference for how L4 evidence is asserted; check.jsonl reviewers should compare new run shape to this contract"}
+{"file": "CodeStable/issues/2026-05-05-claude-code-implementation-no-exit/claude-code-implementation-no-exit-report.md", "reason": "Issue 1 closure check — needs fix-note added"}
+{"file": "CodeStable/issues/2026-05-05-coordinator-fallback-pauses-concrete-request/coordinator-fallback-pauses-concrete-request-report.md", "reason": "Issue 2 closure check — needs fix-note added"}
