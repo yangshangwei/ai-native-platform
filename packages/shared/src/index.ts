@@ -13,6 +13,9 @@ export * from './types/execution-environment';
 export * from './types/skill';
 export * from './types/coordinator';
 export * from './types/request-message';
+export * from './types/router';
+
+export * from './flows/registry';
 
 export * from './utils/id';
 export * from './utils/whitelist';

@@ -26,7 +26,7 @@ export type CoordinatorAction =
   | {
       action: 'proceed';
       routeCase: RouteCase;
-      runType: 'feature' | 'bugfix' | 'smoke';
+      runType: 'feature' | 'bugfix' | 'smoke' | 'refactor';
       reason: string;
     }
   | {
