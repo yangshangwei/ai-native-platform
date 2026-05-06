@@ -532,3 +532,37 @@ Layered end-to-end business validation: L1 (vitest 425/425, typecheck) + L2 (smo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: Fix Claude local auth and router advisory defaults
+
+**Date**: 2026-05-06
+**Task**: Fix Claude local auth and router advisory defaults
+**Branch**: `main`
+
+### Summary
+
+Fixed the workflow creation path so Smart Router skip recommendations stay advisory unless flowId/startStage is explicit, preventing short feature requests or accepted design knowledge from jumping straight to implementation. Updated Claude Code runtime and coordinator one-shot fallback to inherit the local Claude environment by default, with AINP_CLAUDE_HOME_ISOLATION=1 as opt-in debugging isolation. Added regression tests and updated specs/UI wording; verified 59 targeted tests and typecheck.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `14b9801` | (see git log) |
+| `0b15955` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
