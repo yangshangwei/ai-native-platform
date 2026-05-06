@@ -113,4 +113,49 @@ describe('classifyByRules', () => {
     }
     expect(r.rulesFired).toContain('rule.bug_keywords_dominant');
   });
+
+  it('classifies Chinese refactor requests as refactor with refactor_clear route', async () => {
+    const r = await classifyByRules({
+      userRequest: '重构 user 模块，把 auth 抽离成独立 service',
+      messageHistory: [],
+    });
+    expect(r.decision.action).toBe('proceed');
+    if (r.decision.action === 'proceed') {
+      expect(r.decision.routeCase).toBe('refactor_clear');
+      expect(r.decision.runType).toBe('refactor');
+    }
+    expect(r.rulesFired).toContain('rule.refactor_keywords_dominant');
+  });
+
+  it('classifies English refactor requests as refactor', async () => {
+    const r = await classifyByRules({
+      userRequest: 'refactor the auth flow and extract a helper module',
+      messageHistory: [],
+    });
+    expect(r.decision.action).toBe('proceed');
+    if (r.decision.action === 'proceed') {
+      expect(r.decision.runType).toBe('refactor');
+    }
+    expect(r.rulesFired).toContain('rule.refactor_keywords_dominant');
+  });
+
+  it('refactor branch fires before bug-vs-feature for "优化 query 性能"', async () => {
+    const r = await classifyByRules({
+      userRequest: '优化 query 性能，目标减少 50% 时间',
+      messageHistory: [],
+    });
+    expect(r.decision.action).toBe('proceed');
+    if (r.decision.action === 'proceed') {
+      expect(r.decision.runType).toBe('refactor');
+    }
+  });
+
+  it('refactor keyword in too-short input still triggers too_short (length < 6 wins)', async () => {
+    const r = await classifyByRules({
+      userRequest: '重构',
+      messageHistory: [],
+    });
+    expect(r.decision.action).toBe('pause_for_human');
+    expect(r.rulesFired).toContain('rule.too_short');
+  });
 });

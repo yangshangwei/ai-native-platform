@@ -64,6 +64,22 @@ export const COORDINATOR_LARGE_SCOPE_KEYWORDS_DEFAULT: readonly string[] = [
 /** apps/runner/src/agents/coordinator/rules.ts:83 — regex literal source for "X系统 / Y体系" pattern */
 export const COORDINATOR_LARGE_SCOPE_REGEX_DEFAULT = '(\\S+?\\s*系统|\\S+?\\s*体系)';
 
+/** apps/runner/src/agents/coordinator/rules.ts (refactor branch added 2026-05-06) — refactor-leaning verbs in zh + en */
+export const COORDINATOR_REFACTOR_KEYWORDS_DEFAULT: readonly string[] = [
+  '重构',
+  'refactor',
+  '优化',
+  '拆分',
+  '抽离',
+  '重写',
+  '简化',
+  '清理',
+  'cleanup',
+  'restructure',
+  'extract',
+  'simplify',
+];
+
 // ---- Coordinator: thresholds (apps/runner/src/agents/coordinator/index.ts) ----
 
 /** apps/runner/src/agents/coordinator/index.ts:18 */

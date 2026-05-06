@@ -29,6 +29,8 @@
   - **技术方案 / 执行与演进篇**。Skill / AgentBackend、Local Runner / Worktree、持久化与 Knowledge 反馈环路、SSE 实时事件流、API 接口分类、安全与可观测性、V2 已落地 vs 待办、设计原则速查。
 - `2026-05-06-ui-end-to-end-operations.md`
   - **UI 端到端操作流程梳理**。基于 `apps/web/src/main.ts` 真实代码，覆盖 6 个顶层页面（工作台/项目接入/新建任务/报告/知识库/配置）+ 任务详情页；详述 5 个人工检查点的 UI 入口、Smart Router 预览、Agent Stream SSE 面板、完整 4 分钟 fastforward 鼠标键盘时间线、新人「最少必学」6 件事。面向用户使用 + 客户演示 + UI/UX 评审。
+- `2026-05-06-architecture-pillars-detail.md`
+  - **架构支柱代码级详解**。把 4 Flow / 9 Stage / 10 类 KnowledgeArtifact / 唯一写者契约 / 真命令证据 / 5 个人工 Gate / SSE 流式这 7 块从代码事实出发逐个展开，每条都带 `packages/shared` 与 `apps/api` 的文件路径和行号锚点（FLOW_REGISTRY、ArtifactKind 二族、KNOWLEDGE_SUBTYPES、Workflow Engine 写入函数族、Gate Engine 各 gate 规则、Promote 6 步事务、Agent Stream Bus、SSE 不变量）。文末附速查索引（一页定位代码）。面向新人源码 onboarding + 架构评审。
 
 ## 0.4 一条需求的通俗日程表
 

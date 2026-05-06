@@ -11,6 +11,7 @@ export type RouteCase =
   | 'feature_brainstorm'
   | 'roadmap_needed'
   | 'bugfix'
+  | 'refactor_clear'
   | 'unclear';
 
 /**

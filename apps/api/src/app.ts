@@ -12,6 +12,7 @@ import { commandRuns } from './routes/command-runs';
 import { runnerControl } from './routes/runner-control';
 import { config } from './routes/config';
 import { router as routerRoutes } from './routes/router';
+import { coordinator as coordinatorRoutes } from './routes/coordinator';
 import { store } from './store/store';
 
 export const app = new Hono();
@@ -43,6 +44,7 @@ app.route('/runners', runners);
 app.route('/approvals', approvals);
 app.route('/config', config);
 app.route('/router', routerRoutes);
+app.route('/coordinator', coordinatorRoutes);
 // Coordinator chat thread + decision persistence (Phase B). Mounted at root
 // because its routes already include the full /workflow-requests/:id/messages
 // path so they sit alongside the existing workflow-requests endpoints without

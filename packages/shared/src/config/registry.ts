@@ -1,7 +1,7 @@
 /**
  * Static registry of all runtime-configurable keys exposed via UI.
  *
- * MVP-M scope: 24 keys (14 coordinator + 5 skill_prompts + 5 runtime).
+ * MVP-M scope: 25 keys (15 coordinator + 5 skill_prompts + 5 runtime).
  * Adding / removing a key REQUIRES a code PR; the UI never creates new keys.
  *
  * Source-of-truth defaults live in `./defaults.ts` (byte-for-byte transcribed
@@ -15,6 +15,7 @@ import {
   COORDINATOR_FEATURE_KEYWORDS_DEFAULT,
   COORDINATOR_LARGE_SCOPE_KEYWORDS_DEFAULT,
   COORDINATOR_LARGE_SCOPE_REGEX_DEFAULT,
+  COORDINATOR_REFACTOR_KEYWORDS_DEFAULT,
   COORDINATOR_CONFIDENCE_THRESHOLD_DEFAULT,
   COORDINATOR_SYSTEM_PROMPT_DEFAULT,
   COORDINATOR_FALLBACK_TOO_SHORT_QUESTIONS_DEFAULT,
@@ -56,7 +57,7 @@ export interface ConfigEntry {
 }
 
 export const CONFIG_REGISTRY = {
-  // ============ Tab "coordinator" — 14 keys ============
+  // ============ Tab "coordinator" — 15 keys ============
 
   'coordinator.confidence_threshold': {
     type: 'number',
@@ -94,6 +95,13 @@ export const CONFIG_REGISTRY = {
     description: '匹配 "X系统 / Y体系" 模式的正则字面量（不含 / 分隔符）',
     category: 'coordinator',
     source: 'apps/runner/src/agents/coordinator/rules.ts:83',
+  },
+  'coordinator.refactor_keywords': {
+    type: 'string_array',
+    default: COORDINATOR_REFACTOR_KEYWORDS_DEFAULT,
+    description: '重构倾向关键词；命中 ≥1 且 length > 8 → runType=refactor（替换语义）',
+    category: 'coordinator',
+    source: 'packages/shared/src/coordinator/rules-core.ts (refactor branch)',
   },
   'coordinator.system_prompt': {
     type: 'string',
@@ -257,8 +265,8 @@ export type ConfigKey = keyof typeof CONFIG_REGISTRY;
 /** Resolved type of a key's default value. Use for return-type annotations on getConfig. */
 export type RegistryDefault<K extends ConfigKey> = (typeof CONFIG_REGISTRY)[K]['default'];
 
-/** Total = 14 + 5 + 5 = 24 keys. Asserted by tests. */
-export const CONFIG_REGISTRY_KEY_COUNT = 24 as const;
+/** Total = 15 + 5 + 5 = 25 keys. Asserted by tests. */
+export const CONFIG_REGISTRY_KEY_COUNT = 25 as const;
 
 /** All registered keys in declaration order. */
 export function configKeys(): ConfigKey[] {

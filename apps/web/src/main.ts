@@ -585,6 +585,7 @@ function render(): void {
   captureViewportScrollPosition();
   captureScrollPositionState(root);
   captureCoordinatorReplyComposerState(root);
+  captureNewTaskFormState(root);
   isReplacingAppRootForRender = true;
   try {
     clear(root);
@@ -593,6 +594,7 @@ function render(): void {
     restoreScrollPositionState(root);
     restoreViewportScrollPosition();
     restoreCoordinatorReplyComposerFocus(root);
+    restoreNewTaskFormFocus(root);
   } finally {
     isReplacingAppRootForRender = false;
   }
@@ -2855,8 +2857,20 @@ function renderNewTaskPage(): HTMLElement {
     projectSelect.setAttribute('disabled', 'disabled');
   }
   const typeSelect = el('select', { attrs: { name: 'type' } });
+  // Default to "let AI decide" — the server-side coordinator + smart router
+  // pick runType + flowId from title alone. Users only touch this dropdown
+  // when they want to override the AI judgment (e.g. for refactor / smoke
+  // which the coordinator's rules may not pick up reliably).
+  typeSelect.appendChild(el('option', { text: '(让 AI 自动判定)', attrs: { value: '' } }));
   for (const type of ['feature', 'bugfix', 'smoke', 'refactor']) typeSelect.appendChild(el('option', { text: type, attrs: { value: type } }));
-  const title = el('textarea', { attrs: { name: 'title', rows: '7', placeholder: '描述业务目标、验收标准、约束。例如：为报告页增加导出按钮，并确保 mvn test 通过。' } });
+  const title = el('textarea', { attrs: { name: 'title', rows: '7', 'data-new-task-title': 'true', placeholder: '描述业务目标、验收标准、约束。例如：为报告页增加导出按钮，并确保 mvn test 通过。' } });
+  // Hydrate the user-owned draft fields (see state-management.md).
+  title.value = newTaskFormDraft.title;
+  if (newTaskFormDraft.type) typeSelect.value = newTaskFormDraft.type;
+  if (newTaskFormDraft.projectId) {
+    const hasOption = Array.from(projectSelect.options).some((o) => o.value === newTaskFormDraft.projectId);
+    if (hasOption) projectSelect.value = newTaskFormDraft.projectId;
+  }
   const branchSelect = el('select', { attrs: { name: 'branch' } });
   const branchRefresh = el('button', { class: 'button secondary small', text: '刷新分支', attrs: { type: 'button' } });
   const branchHint = el('p', { class: 'muted compact' });
@@ -2866,15 +2880,22 @@ function renderNewTaskPage(): HTMLElement {
   const clickedBranchProjects = new Set<string>();
   const submit = el('button', { class: 'button primary', text: 'Create Workflow Request', attrs: { type: 'submit' } });
 
-  // V2 W2-4 / PR4: 智能推荐 card.
+  // V2 W2-4 / PR4 + 2026-05-06 router-driven defaults: 智能推荐 card with
+  // two-stage preview pipeline.
   //
-  // On title blur, POST /router/recommend with { projectId, title, runType }
-  // and render the recommendation (flowId / startStage / estimates / reason).
-  // The Coordinator path doesn't yet plumb flowId through workflow_requests
+  // Flow:
+  //   1. If user left Type as "(让 AI 自动判定)" — POST /coordinator/preview
+  //      to get predicted runType + hint, then POST /router/recommend with
+  //      that runType. The card renders both verdicts.
+  //   2. If user picked a specific Type in advanced override — skip the
+  //      coordinator round-trip and call /router/recommend directly with
+  //      the override.
+  //
+  // Cache key reflects whether override is in play so toggling between
+  // "auto" and an explicit Type doesn't return a stale cached card. The
+  // Coordinator path doesn't yet plumb flowId through workflow_requests
   // — auto-pick happens server-side when createWorkflowRun() lands. The
-  // card is informational for now (override is a follow-up that requires
-  // workflow_requests body extension; PR4 ships preview only). Cache by
-  // (projectId, runType, title) so re-blurs don't spam the endpoint.
+  // card is informational; the user can override via the advanced disclosure.
   const recoCard = el('div', { class: 'panel compact' });
   recoCard.style.display = 'none';
   let recoLastKey = '';
@@ -2886,44 +2907,119 @@ function renderNewTaskPage(): HTMLElement {
     reason: string;
     rulesFired: string[];
   };
+  type CoordinatorPreviewResponse = {
+    predictedRunType: 'feature' | 'bugfix' | 'smoke' | 'refactor' | null;
+    confidence: number;
+    rulesFired: string[];
+    hint: 'too_short' | 'large_scope' | null;
+  };
   const fetchRecommendation = async (): Promise<void> => {
     const projectId = projectSelect.value;
-    const runType = typeSelect.value;
     const titleText = title.value.trim();
+    const userOverrideType = typeSelect.value as
+      | ''
+      | 'feature'
+      | 'bugfix'
+      | 'smoke'
+      | 'refactor';
     if (!projectId || !titleText) {
       recoCard.style.display = 'none';
       return;
     }
-    const key = `${projectId}|${runType}|${titleText}`;
+    // 'auto' segment in the cache key marks unchanged AI-judged paths so
+    // toggling between override modes invalidates correctly.
+    const key = `${projectId}|${userOverrideType || 'auto'}|${titleText}`;
     if (key === recoLastKey || recoInFlight) return;
     recoInFlight = true;
     recoCard.style.display = 'block';
     recoCard.replaceChildren(
       panelHeader('智能推荐', '正在加载…'),
-      el('p', { class: 'muted compact', text: 'POST /router/recommend' }),
+      el('p', {
+        class: 'muted compact',
+        text: userOverrideType
+          ? 'POST /router/recommend (按 Type override)'
+          : 'POST /coordinator/preview → /router/recommend',
+      }),
     );
     try {
+      let runTypeForRouter: 'feature' | 'bugfix' | 'smoke' | 'refactor';
+      let coordPreview: CoordinatorPreviewResponse | null = null;
+      if (userOverrideType) {
+        runTypeForRouter = userOverrideType;
+      } else {
+        coordPreview = await api<CoordinatorPreviewResponse>('/coordinator/preview', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ title: titleText }),
+        });
+        // pause_for_human / large_scope returns predictedRunType=null;
+        // fall back to 'feature' for the router call so the user still sees
+        // a recommendation while the hint callout warns them.
+        runTypeForRouter = coordPreview.predictedRunType ?? 'feature';
+      }
       const reco = await api<RecoResponse>('/router/recommend', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ projectId, title: titleText, runType }),
+        body: JSON.stringify({ projectId, title: titleText, runType: runTypeForRouter }),
       });
       recoLastKey = key;
       const stageLabel = reco.startStage ? `从 ${reco.startStage} 开始` : '从头执行';
       const minsApprox = Math.round(reco.estimates.timeSec / 60);
-      recoCard.replaceChildren(
-        panelHeader('智能推荐', '可作为参考；服务器创建任务时会自动应用'),
-        el('p', { class: 'compact', children: [
-          el('strong', { text: `${reco.flowId}` }),
-          el('span', { text: ` · ${stageLabel}` }),
-        ] }),
-        el('p', { class: 'muted compact', text: `预估 ~${minsApprox} 分钟 / ~${reco.estimates.tokens} tokens` }),
-        el('p', { class: 'muted compact', text: `规则: ${reco.rulesFired.join(' / ') || '(none)'}` }),
+      const children: HTMLElement[] = [
+        panelHeader(
+          '智能推荐',
+          userOverrideType
+            ? '使用你在「高级覆盖」里指定的 Type'
+            : '可作为参考；服务器创建任务时会自动应用',
+        ),
+      ];
+      if (coordPreview) {
+        const confPct = Math.round(coordPreview.confidence * 100);
+        const aiVerdictText = coordPreview.predictedRunType
+          ? `AI 判定: ${coordPreview.predictedRunType} · 置信 ${confPct}%`
+          : `AI 判定: 暂无（先看下方 hint）· 置信 ${confPct}%`;
+        children.push(el('p', { class: 'compact', text: aiVerdictText }));
+        if (coordPreview.hint === 'too_short') {
+          children.push(
+            el('p', {
+              class: 'muted compact warn',
+              text: '⚠ 描述太短，提交后 Coordinator 会反问 1-2 句；建议把场景写得更具体。',
+            }),
+          );
+        } else if (coordPreview.hint === 'large_scope') {
+          children.push(
+            el('p', {
+              class: 'muted compact warn',
+              text: '⚠ 范围较大，提交后 Coordinator 会建议先拆 2-3 个子能力做最小闭环。',
+            }),
+          );
+        }
+      }
+      children.push(
+        el('p', {
+          class: 'compact',
+          children: [
+            el('strong', { text: `${reco.flowId}` }),
+            el('span', { text: ` · ${stageLabel}` }),
+          ],
+        }),
+        el('p', {
+          class: 'muted compact',
+          text: `预估 ~${minsApprox} 分钟 / ~${reco.estimates.tokens} tokens`,
+        }),
+        el('p', {
+          class: 'muted compact',
+          text: `规则: ${reco.rulesFired.join(' / ') || '(none)'}`,
+        }),
       );
+      recoCard.replaceChildren(...children);
     } catch (err) {
       recoCard.replaceChildren(
         panelHeader('智能推荐', '获取失败'),
-        el('p', { class: 'muted compact', text: err instanceof Error ? err.message : String(err) }),
+        el('p', {
+          class: 'muted compact',
+          text: err instanceof Error ? err.message : String(err),
+        }),
       );
     } finally {
       recoInFlight = false;
@@ -2937,10 +3033,19 @@ function renderNewTaskPage(): HTMLElement {
   title.onblur = scheduleReco;
   typeSelect.addEventListener('change', () => {
     recoLastKey = '';
+    newTaskFormDraft.type = typeSelect.value as typeof newTaskFormDraft.type;
     scheduleReco();
   });
   projectSelect.addEventListener('change', () => {
     recoLastKey = '';
+    newTaskFormDraft.projectId = projectSelect.value;
+  });
+  title.addEventListener('input', () => {
+    newTaskFormDraft.title = title.value;
+  });
+  title.addEventListener('blur', () => {
+    newTaskFormDraft.title = title.value;
+    if (!isReplacingAppRootForRender) newTaskTitleFocus = null;
   });
   const updateBackendHint = (projectId: string) => {
     const project = projects.find((p) => p.id === projectId) ?? projects[0] ?? null;
@@ -2970,6 +3075,7 @@ function renderNewTaskPage(): HTMLElement {
       branchSelect.appendChild(option);
     }
     branchSelect.value = nextBranch;
+    newTaskFormDraft.branch = nextBranch;
     branchSelect.disabled = !project;
     const refreshing = Boolean(project && projectBranchRefreshInFlight.has(project.id));
     branchRefresh.textContent = refreshing ? '加载中…' : '刷新分支';
@@ -2988,7 +3094,10 @@ function renderNewTaskPage(): HTMLElement {
     updateBranchSelect(projectSelect.value, null);
     refreshBranches(projectSelect.value);
   };
-  branchSelect.onchange = () => updateBranchSelect(projectSelect.value, branchSelect.value);
+  branchSelect.onchange = () => {
+    newTaskFormDraft.branch = branchSelect.value;
+    updateBranchSelect(projectSelect.value, branchSelect.value);
+  };
   const loadBranchesForCurrentProject = () => {
     const projectId = projectSelect.value;
     const firstClickForProject = !clickedBranchProjects.has(projectId);
@@ -3003,15 +3112,33 @@ function renderNewTaskPage(): HTMLElement {
     if (!project?.agentBackend) return;
     void checkAgentBackend(project.agentBackend, project.id).then(() => updateBackendHint(projectSelect.value));
   };
-  updateBranchSelect(projectSelect.value, null);
+  // Initial mount: honor the saved draft branch when it still exists for the
+  // current project (otherwise updateBranchSelect falls back to the project
+  // default). This is the path that survives render() rebuilds.
+  updateBranchSelect(projectSelect.value, newTaskFormDraft.branch || null);
   refreshBranches(projectSelect.value);
   if (!projects.length) submit.setAttribute('disabled', 'disabled');
+  // 2026-05-06 router-driven defaults: Type is no longer prominent in the
+  // main form. Default flow = "let AI judge" (Coordinator + Smart Router
+  // pick). Power users / refactor / smoke / explicit-override paths open
+  // the disclosure. Flow / startStage override is NOT here yet — that
+  // requires extending the /workflow-requests body + WorkflowRequest
+  // schema to plumb flowId / startStage through to createWorkflowRun.
+  // Tracked as a follow-up task; for now Type is the only override dial.
+  const advanced = document.createElement('details');
+  advanced.appendChild(el('summary', { text: '高级覆盖（手动指定 Type；Flow/起始阶段 待后续）' }));
+  advanced.appendChild(
+    el('label', {
+      class: 'input-block',
+      children: [el('span', { text: 'Type（留空让 AI 判定）' }), typeSelect],
+    }),
+  );
   form.append(
     panelHeader('创建任务请求', 'UI 只入队；本地 runner watch 负责认领、建 worktree、执行 gate、等待人工确认。'),
     el('label', { class: 'input-block', children: [el('span', { text: 'Project' }), projectSelect] }),
-    el('label', { class: 'input-block', children: [el('span', { text: 'Type' }), typeSelect] }),
     el('label', { class: 'input-block', children: [el('span', { text: 'Task Title / Intent' }), title] }),
     recoCard,
+    advanced,
     el('div', {
       class: 'input-block',
       children: [
@@ -3066,12 +3193,17 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
     if (!project) throw new Error('请选择一个已接入项目。');
     const ready = await ensureProjectAgentBackendReady(project);
     if (!ready) return;
+    // 2026-05-06: omit `type` when user left it as "(让 AI 自动判定)" so the
+    // server's Coordinator + Smart Router decide. Server defaults to
+    // 'feature' if omitted, but Coordinator runs regardless and may
+    // override (mismatch detector elsewhere flags this case).
+    const typeOverride = String(fd.get('type') ?? '').trim();
     const request = await api<WorkflowRequestDto>('/workflow-requests', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         projectId,
-        type: String(fd.get('type') ?? 'feature'),
+        ...(typeOverride && { type: typeOverride }),
         title,
         branch: String(fd.get('branch') ?? '').trim() || project?.defaultBranch,
         // PR1 atomic intake (PRD §P0-2 / P0-3): API persists the request
@@ -3083,6 +3215,7 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
       }),
     });
     form.reset();
+    clearNewTaskFormDraft();
     await loadData({ render: false });
     activeTaskRequestId = request.id;
     activeRunId = request.workflowRunId;
@@ -3150,6 +3283,27 @@ let coordinatorReplyFocus: {
   selectionEnd: number;
   selectionDirection: 'forward' | 'backward' | 'none';
 } | null = null;
+
+// 2026-05-06 fix(web): preserve new-task-form drafts across render().
+// `checkAgentBackend()` and other server-state events trigger full root
+// rebuilds; without this draft store the title textarea + dropdown
+// selections silently reset, which the user perceives as a page refresh.
+// Spec: .trellis/spec/web/frontend/state-management.md "Preserve user-owned
+// drafts across polling renders".
+const newTaskFormDraft: {
+  projectId: string;
+  type: '' | 'feature' | 'bugfix' | 'smoke' | 'refactor';
+  title: string;
+  branch: string;
+} = { projectId: '', type: '', title: '', branch: '' };
+
+const NEW_TASK_TITLE_SELECTOR = 'textarea[data-new-task-title]';
+
+let newTaskTitleFocus: {
+  selectionStart: number;
+  selectionEnd: number;
+  selectionDirection: 'forward' | 'backward' | 'none';
+} | null = null;
 let isReplacingAppRootForRender = false;
 
 function captureCoordinatorReplyComposerState(root: HTMLElement): void {
@@ -3204,6 +3358,50 @@ function clearCoordinatorReplyComposerState(requestId: string): void {
 
 function normalizeSelectionDirection(direction: string | null): 'forward' | 'backward' | 'none' {
   return direction === 'forward' || direction === 'backward' ? direction : 'none';
+}
+
+function captureNewTaskFormState(root: HTMLElement): void {
+  const titleArea = root.querySelector<HTMLTextAreaElement>(NEW_TASK_TITLE_SELECTOR);
+  if (!titleArea) {
+    newTaskTitleFocus = null;
+    return;
+  }
+  // Sync DOM value into the draft so keystrokes that have not yet fired an
+  // 'input' event (e.g. mid-IME composition) still survive the rebuild.
+  newTaskFormDraft.title = titleArea.value;
+  if (document.activeElement === titleArea) {
+    newTaskTitleFocus = {
+      selectionStart: titleArea.selectionStart,
+      selectionEnd: titleArea.selectionEnd,
+      selectionDirection: normalizeSelectionDirection(titleArea.selectionDirection),
+    };
+  }
+}
+
+function restoreNewTaskFormFocus(root: HTMLElement): void {
+  if (!newTaskTitleFocus) return;
+  const focus = newTaskTitleFocus;
+  const titleArea = root.querySelector<HTMLTextAreaElement>(NEW_TASK_TITLE_SELECTOR);
+  if (!titleArea) {
+    newTaskTitleFocus = null;
+    return;
+  }
+  titleArea.focus({ preventScroll: true });
+  const len = titleArea.value.length;
+  titleArea.setSelectionRange(
+    Math.min(focus.selectionStart, len),
+    Math.min(focus.selectionEnd, len),
+    focus.selectionDirection,
+  );
+  newTaskTitleFocus = null;
+}
+
+function clearNewTaskFormDraft(): void {
+  newTaskFormDraft.projectId = '';
+  newTaskFormDraft.type = '';
+  newTaskFormDraft.title = '';
+  newTaskFormDraft.branch = '';
+  newTaskTitleFocus = null;
 }
 
 async function loadCoordinatorChat(requestId: string): Promise<void> {

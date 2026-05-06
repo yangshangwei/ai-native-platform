@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "Verify the new disclosure + two-stage preview path doesn't introduce XSS via template-literal HTML interpolation; ensure lint/typecheck baseline preserved."}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "Confirm new CoordinatorPreviewResponse / merged preview view-model match shared types; no any casts; DTO boundary respected."}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "Verify POST /coordinator/preview meets api quality bar (logging, error shape, no DB writes, deterministic)."}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "New endpoint must return 400 for malformed body, 500 only for unexpected errors; matches existing routes/router.ts handling."}
+{"file": ".trellis/spec/api/backend/smart-router.md", "reason": "Acceptance check: coordinator/preview endpoint contract matches Smart Router style (read-only, pure function, no side effects, no LLM calls)."}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "rules.ts refactor branch must meet runner quality bar — config-driven keywords, deterministic, returns ClassifyOutput, audited rulesFired."}
+{"file": ".trellis/spec/runner/backend/flow-registry.md", "reason": "Negative check: refactor.standard flow already exists; this task must NOT add new FlowId / WorkflowStage / WorkflowRunType. Use as guard against scope creep."}
+{"file": ".trellis/spec/runtime-config-layer.md", "reason": "Verify coordinator.refactor_keywords default in packages/shared/src/config/defaults.ts mirrors existing bug_keywords / feature_keywords structure exactly."}
