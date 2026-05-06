@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/api/backend/smart-router.md", "reason": "Router defaults and startStage behavior are central to the premature implementation-stage failure."}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "API workflow-engine/router changes must preserve state-writer and test conventions."}
+{"file": ".trellis/spec/runner/backend/agent-backend-runtime.md", "reason": "Claude Code runtime invocation and local auth/config visibility are defined here."}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "Runner backend subprocess changes must follow spawn/test conventions."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Use existing router/backend helpers and avoid new duplicated runtime mechanisms."}

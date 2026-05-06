@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/api/backend/smart-router.md", "reason": "Verify changed default routing still respects explicit router/override contracts."}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "Verify API tests and workflow-engine state-writer conventions."}
+{"file": ".trellis/spec/runner/backend/agent-backend-runtime.md", "reason": "Verify Claude Code runtime invocation preserves local connection by default."}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "Verify subprocess and regression-test coverage for runner changes."}
