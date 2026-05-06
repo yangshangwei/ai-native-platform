@@ -244,9 +244,19 @@
       .stream-panel { max-height: 420px; display: grid; grid-template-rows: auto minmax(140px, 1fr); }
       .stream-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
       .stream-head h2 { margin: 0; font-size: 15px; }
+      .stream-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+      .stream-expand-button { white-space: nowrap; }
       .stream-status { font-size: 12px; font-weight: 800; }
       .stream-status.live { color: var(--good); } .stream-status.error { color: var(--bad); } .stream-status.idle { color: var(--muted); }
       .stream-body { border: 1px solid var(--line); border-radius: 14px; background: #0f172a; color: #e2e8f0; overflow: auto; padding: 12px; font-size: 12px; line-height: 1.5; }
+      .stream-overlay { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: min(4vh, 32px); background: rgba(15, 23, 42, .72); backdrop-filter: blur(8px); }
+      .stream-modal { width: min(1280px, 96vw); height: min(920px, 92vh); border: 1px solid rgba(226, 232, 240, .18); border-radius: 24px; background: #f8fafc; box-shadow: 0 24px 80px rgba(15, 23, 42, .38); padding: 18px; display: grid; grid-template-rows: auto minmax(0, 1fr); }
+      .stream-modal-head { margin-bottom: 14px; }
+      .stream-modal-head h2 { font-size: 22px; }
+      .stream-body-expanded { min-height: 0; font-size: 15px; line-height: 1.65; padding: 18px; }
+      .stream-line { overflow-wrap: anywhere; }
+      .stream-line.assistant-readable { margin: 2px 0 8px; }
+      .stream-line.assistant-readable .stream-text { white-space: pre-wrap; }
       .stream-line.system, .stream-line.meta, .stream-line.raw { color: #94a3b8; }
       .stream-line.user { color: #93c5fd; } .stream-line.result { color: #86efac; } .stream-line.stderr { color: #fca5a5; }
       .stream-prefix { color: #64748b; font-weight: 800; }

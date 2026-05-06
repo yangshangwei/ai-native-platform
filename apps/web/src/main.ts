@@ -25,6 +25,14 @@ import {
   type WorkflowRunDto,
 } from './projection';
 import { buildSettingsViewModel } from './settings-projection';
+import {
+  buildStreamDisplayLines,
+  lastStreamSequenceForRun,
+  rememberStreamEventInCache,
+  streamEventsForRun,
+  type StreamDisplayLine,
+  type StreamEventCache,
+} from './stream-rendering';
 
 const API_BASE = '/api';
 
@@ -703,7 +711,11 @@ function detailsSummaryKey(details: HTMLDetailsElement): string {
 function renderShell(): HTMLElement {
   return el('div', {
     class: 'app-shell',
-    children: [renderSidebar(), el('main', { class: 'main-shell', children: [renderTopbar(), renderPage()] })],
+    children: [
+      renderSidebar(),
+      el('main', { class: 'main-shell', children: [renderTopbar(), renderPage()] }),
+      expandedStreamRunId ? renderExpandedAgentStreamOverlay(expandedStreamRunId) : null,
+    ],
   });
 }
 
@@ -2064,14 +2076,16 @@ function renderAuditRow(item: RunDetail['audit'][number]): HTMLElement {
 
 function renderAgentStreamPanel(): HTMLElement {
   const runId = data.activeDetail?.run.id ?? null;
-  const events = runId ? agentStreamEventsForRun(runId) : [];
-  const backend = activeRunAgentBackend() ?? (events.at(-1)?.agentKind as AgentBackendKind | undefined) ?? selectedProjectBackend();
-  const title = backend === 'claude_code'
-    ? 'Claude Code 执行日志'
-    : backend === 'codex'
-      ? 'Codex 执行日志'
-      : 'Agent 执行日志';
-  const status = streamStatusForRun(runId);
+  const view = buildAgentStreamView(runId);
+  const expandRunId = view.runId;
+  const expandButton = expandRunId ? button('放大录屏', 'button secondary small stream-expand-button') : null;
+  if (expandRunId && expandButton) {
+    expandButton.setAttribute('aria-label', `放大查看 ${view.title}`);
+    expandButton.setAttribute('aria-haspopup', 'dialog');
+    expandButton.setAttribute('aria-expanded', expandedStreamRunId === expandRunId ? 'true' : 'false');
+    expandButton.dataset.streamExpandRunId = expandRunId;
+    expandButton.onclick = () => openExpandedStream(expandRunId);
+  }
   return el('section', {
     class: 'panel side-panel stream-panel',
     children: [
@@ -2080,23 +2094,66 @@ function renderAgentStreamPanel(): HTMLElement {
         children: [
           el('div', {
             children: [
-              el('h2', { text: title }),
-              el('small', { class: 'muted', text: runId ? `Run ${shortId(runId)} · ${events.length} events` : '等待 workflow run' }),
+              renderStreamTitle(view),
+              renderStreamSummary(view),
             ],
           }),
-          el('span', { id: 'stream-status', class: `stream-status ${status.cls}`, text: status.label }),
+          el('div', {
+            class: 'stream-actions',
+            children: [renderStreamStatus(view), expandButton],
+          }),
         ],
       }),
-      el('div', {
-        id: 'stream-body',
-        class: 'stream-body',
-        attrs: runId ? { 'data-scroll-key': `agent-stream:${runId}` } : undefined,
-        children: events.length
-          ? events.flatMap(renderStreamEventLines)
-          : [el('div', { class: 'stream-line meta', text: '等待真实 Agent Backend 输出；连接后会先回放历史事件，再继续 live tail。' })],
+      renderAgentStreamBody(view, { id: 'stream-body', scrollKeyPrefix: 'agent-stream' }),
+    ],
+  });
+}
+
+function renderExpandedAgentStreamOverlay(runId: string): HTMLElement {
+  const view = buildAgentStreamView(runId);
+  const titleId = 'stream-modal-title';
+  const summaryId = 'stream-modal-summary';
+  const closeButton = button('关闭', 'button secondary small');
+  closeButton.dataset.streamClose = 'agent-stream';
+  closeButton.setAttribute('aria-label', `关闭 ${view.title} 放大查看`);
+  closeButton.onclick = closeExpandedStream;
+  const overlay = el('div', {
+    class: 'stream-overlay',
+    attrs: {
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-labelledby': titleId,
+      'aria-describedby': summaryId,
+    },
+    children: [
+      el('section', {
+        class: 'stream-modal',
+        children: [
+          el('div', {
+            class: 'stream-head stream-modal-head',
+            children: [
+              el('div', {
+                children: [
+                  el('span', { class: 'eyebrow', text: 'Recording View' }),
+                  renderStreamTitle(view, titleId),
+                  renderStreamSummary(view, summaryId),
+                ],
+              }),
+              el('div', {
+                class: 'stream-actions',
+                children: [renderStreamStatus(view), closeButton],
+              }),
+            ],
+          }),
+          renderAgentStreamBody(view, { expanded: true, scrollKeyPrefix: 'agent-stream-expanded' }),
+        ],
       }),
     ],
   });
+  overlay.onclick = (event) => {
+    if (event.target === overlay) closeExpandedStream();
+  };
+  return overlay;
 }
 
 function renderProjectsPage(): HTMLElement {
@@ -4325,7 +4382,7 @@ interface AgentStreamEvent {
   id: string;
   workflowRunId: string;
   stepRunId: string | null;
-  agentKind: string;
+  agentKind: AgentBackendKind;
   sequence: number;
   type: 'system' | 'assistant' | 'user' | 'result' | 'stderr' | 'raw' | 'meta';
   payload: Record<string, unknown>;
@@ -4335,7 +4392,8 @@ interface AgentStreamEvent {
 
 let streamES: EventSource | null = null;
 let streamRunId: string | null = null;
-const streamEventsByRun = new Map<string, Map<number, AgentStreamEvent>>();
+let expandedStreamRunId: string | null = null;
+const streamEventsByRun: StreamEventCache<AgentStreamEvent> = new Map();
 let streamConnection: { runId: string | null; label: string; cls: 'live' | 'idle' | 'error' } = {
   runId: null,
   label: 'disconnected',
@@ -4345,79 +4403,202 @@ const STREAM_EVENT_TYPES = ['system', 'assistant', 'user', 'result', 'stderr', '
 
 function setStreamStatus(label: string, cls: 'live' | 'idle' | 'error', runId: string | null = streamRunId): void {
   streamConnection = { runId, label, cls };
-  const node = document.getElementById('stream-status');
-  if (!node) return;
-  node.textContent = label;
-  node.className = `stream-status ${cls}`;
+  updateStreamStatusNodes(runId, label, cls);
 }
 
 function appendStreamEvent(ev: AgentStreamEvent): void {
   if (!rememberStreamEvent(ev)) return;
-  const body = document.getElementById('stream-body');
-  if (!body) return;
   if (ev.workflowRunId !== streamRunId) return;
-  for (const line of renderStreamEventLines(ev)) body.appendChild(line);
-  while (body.childElementCount > 600) body.removeChild(body.firstChild!);
-  body.scrollTop = body.scrollHeight;
+  refreshStreamViewsForRun(ev.workflowRunId);
 }
 
 function rememberStreamEvent(ev: AgentStreamEvent): boolean {
-  let events = streamEventsByRun.get(ev.workflowRunId);
-  if (!events) {
-    events = new Map();
-    streamEventsByRun.set(ev.workflowRunId, events);
-  }
-  if (events.has(ev.sequence)) return false;
-  events.set(ev.sequence, ev);
-  while (events.size > 1_000) {
-    const [first] = [...events.keys()].sort((a, b) => a - b);
-    if (first === undefined) break;
-    events.delete(first);
-  }
-  return true;
+  return rememberStreamEventInCache(streamEventsByRun, ev);
 }
 
 function agentStreamEventsForRun(runId: string): AgentStreamEvent[] {
-  return [...(streamEventsByRun.get(runId)?.values() ?? [])].sort((a, b) => a.sequence - b.sequence);
+  return streamEventsForRun(streamEventsByRun, runId);
 }
 
 function lastStreamSeqForRun(runId: string): number {
-  return agentStreamEventsForRun(runId).at(-1)?.sequence ?? -1;
+  return lastStreamSequenceForRun(streamEventsByRun, runId);
 }
 
-function renderStreamEventLines(ev: AgentStreamEvent): HTMLElement[] {
-  const text = ev.text ?? renderStreamFallbackText(ev);
-  const lines = text.split('\n').map((line) => line.trimEnd()).filter(Boolean);
-  const backend = agentBackendDisplayName(ev.agentKind as AgentBackendKind);
-  return (lines.length ? lines : [`(${ev.type})`]).map((line) =>
-    el('div', {
-      class: `stream-line ${ev.type}`,
-      children: [
-        el('span', { class: 'stream-prefix', text: `[${ev.sequence} ${backend} ${ev.type}]` }),
-        document.createTextNode(` ${line}`),
-      ],
-    }),
-  );
+interface AgentStreamViewModel {
+  runId: string | null;
+  title: string;
+  summary: string;
+  status: { label: string; cls: 'live' | 'idle' | 'error' };
+  events: AgentStreamEvent[];
+  lines: StreamDisplayLine[];
 }
 
-function renderStreamFallbackText(ev: AgentStreamEvent): string {
-  if (ev.type === 'meta') {
-    const event = typeof ev.payload.event === 'string' ? ev.payload.event : 'meta';
-    return `[meta:${event}]`;
+function buildAgentStreamView(runId: string | null): AgentStreamViewModel {
+  const events = runId ? agentStreamEventsForRun(runId) : [];
+  const backend = streamBackendForRun(runId, events);
+  const title = backend === 'claude_code'
+    ? 'Claude Code 执行日志'
+    : backend === 'codex'
+      ? 'Codex 执行日志'
+      : 'Agent 执行日志';
+  return {
+    runId,
+    title,
+    summary: streamSummaryText(runId, streamRunTitle(runId), events.length),
+    status: streamStatusForRun(runId),
+    events,
+    lines: buildStreamDisplayLines(events),
+  };
+}
+
+function streamBackendForRun(runId: string | null, events: readonly AgentStreamEvent[]): AgentBackendKind | null {
+  if (runId && data.activeDetail?.run.id === runId) {
+    return activeRunAgentBackend() ?? events.at(-1)?.agentKind ?? selectedProjectBackend();
   }
-  return JSON.stringify(ev.payload);
+  if (events.length > 0) return events.at(-1)?.agentKind ?? null;
+  const run = runId ? data.runs.find((item) => item.id === runId) : null;
+  return data.projects.find((project) => project.id === run?.projectId)?.agentBackend ?? selectedProjectBackend();
+}
+
+function streamRunTitle(runId: string | null): string | null {
+  if (!runId) return null;
+  if (data.activeDetail?.run.id === runId) return data.activeDetail.run.title;
+  return data.runs.find((run) => run.id === runId)?.title ?? null;
+}
+
+function streamSummaryText(runId: string | null, runTitle: string | null, eventCount: number): string {
+  if (!runId) return '等待 workflow run';
+  return `${runTitle ? `${runTitle} · ` : ''}Run ${shortId(runId)} · ${eventCount} events`;
+}
+
+function renderStreamTitle(view: AgentStreamViewModel, id?: string): HTMLElement {
+  const attrs: Record<string, string> = { 'data-stream-title': 'agent-stream' };
+  if (view.runId) attrs['data-stream-run-id'] = view.runId;
+  return el('h2', { id, text: view.title, attrs });
+}
+
+function renderStreamSummary(view: AgentStreamViewModel, id?: string): HTMLElement {
+  const attrs: Record<string, string> = { 'data-stream-summary': 'agent-stream' };
+  if (view.runId) attrs['data-stream-run-id'] = view.runId;
+  return el('small', { id, class: 'muted', text: view.summary, attrs });
+}
+
+function renderStreamStatus(view: AgentStreamViewModel): HTMLElement {
+  const attrs: Record<string, string> = { 'data-stream-status': 'agent-stream' };
+  if (view.runId) attrs['data-stream-run-id'] = view.runId;
+  return el('span', { class: `stream-status ${view.status.cls}`, text: view.status.label, attrs });
+}
+
+function renderAgentStreamBody(
+  view: AgentStreamViewModel,
+  opts: { id?: string; expanded?: boolean; scrollKeyPrefix: string },
+): HTMLElement {
+  const attrs: Record<string, string> = { 'data-stream-body': 'agent-stream' };
+  if (view.runId) {
+    attrs['data-stream-run-id'] = view.runId;
+    attrs['data-scroll-key'] = `${opts.scrollKeyPrefix}:${view.runId}`;
+    attrs['aria-label'] = `${view.title} ${view.summary}`;
+  }
+  attrs.role = 'log';
+  attrs['aria-live'] = 'polite';
+  attrs['aria-relevant'] = 'additions text';
+  return el('div', {
+    id: opts.id,
+    class: `stream-body${opts.expanded ? ' stream-body-expanded' : ''}`,
+    attrs,
+    children: renderStreamBodyChildren(view),
+  });
+}
+
+function renderStreamBodyChildren(view: AgentStreamViewModel): HTMLElement[] {
+  return view.events.length
+    ? view.lines.map(renderStreamDisplayLine)
+    : [el('div', { class: 'stream-line meta', text: '等待真实 Agent Backend 输出；连接后会先回放历史事件，再继续 live tail。' })];
+}
+
+function renderStreamDisplayLine(line: StreamDisplayLine): HTMLElement {
+  return el('div', {
+    class: line.className,
+    attrs: {
+      'data-stream-sequences': line.sequences.join(','),
+      ...(line.title ? { title: line.title } : {}),
+    },
+    children: [
+      el('span', { class: 'stream-prefix', text: line.prefix }),
+      el('span', { class: 'stream-text', text: ` ${line.text}` }),
+    ],
+  });
+}
+
+function openExpandedStream(runId: string): void {
+  expandedStreamRunId = runId;
+  render();
+  requestAnimationFrame(() => {
+    scrollStreamBodiesToBottom(runId);
+    document.querySelector<HTMLButtonElement>('[data-stream-close="agent-stream"]')?.focus();
+  });
+}
+
+function closeExpandedStream(): void {
+  const closingRunId = expandedStreamRunId;
+  expandedStreamRunId = null;
+  render();
+  if (closingRunId) {
+    requestAnimationFrame(() => focusStreamExpandButton(closingRunId));
+  }
+}
+
+function refreshStreamViewsForRun(runId: string): void {
+  const view = buildAgentStreamView(runId);
+  document.querySelectorAll<HTMLElement>('[data-stream-title="agent-stream"]').forEach((node) => {
+    if (node.dataset.streamRunId === runId) node.textContent = view.title;
+  });
+  document.querySelectorAll<HTMLElement>('[data-stream-summary="agent-stream"]').forEach((node) => {
+    if (node.dataset.streamRunId === runId) node.textContent = view.summary;
+  });
+  document.querySelectorAll<HTMLElement>('[data-stream-body="agent-stream"]').forEach((body) => {
+    if (body.dataset.streamRunId !== runId) return;
+    body.setAttribute('aria-label', `${view.title} ${view.summary}`);
+    body.replaceChildren(...renderStreamBodyChildren(view));
+    body.scrollTop = body.scrollHeight;
+  });
+}
+
+function updateStreamStatusNodes(runId: string | null, label: string, cls: 'live' | 'idle' | 'error'): void {
+  document.querySelectorAll<HTMLElement>('[data-stream-status="agent-stream"]').forEach((node) => {
+    if ((node.dataset.streamRunId ?? null) !== runId) return;
+    node.textContent = label;
+    node.className = `stream-status ${cls}`;
+  });
+}
+
+function scrollStreamBodiesToBottom(runId: string): void {
+  document.querySelectorAll<HTMLElement>('[data-stream-body="agent-stream"]').forEach((body) => {
+    if (body.dataset.streamRunId === runId) body.scrollTop = body.scrollHeight;
+  });
+}
+
+function focusStreamExpandButton(runId: string): void {
+  document.querySelectorAll<HTMLButtonElement>('[data-stream-expand-run-id]').forEach((button) => {
+    if (button.dataset.streamExpandRunId === runId) button.focus();
+  });
 }
 
 function detachStream(): void {
+  const detachedRunId = streamRunId;
   if (streamES) streamES.close();
   streamES = null;
   streamRunId = null;
-  setStreamStatus('disconnected', 'idle', null);
+  setStreamStatus('disconnected', 'idle', detachedRunId);
 }
 
 function attachStream(runId: string): void {
   if (streamRunId === runId && streamES && streamES.readyState !== EventSource.CLOSED) return;
-  if (streamES) streamES.close();
+  const previousRunId = streamRunId;
+  if (streamES) {
+    streamES.close();
+    setStreamStatus('disconnected', 'idle', previousRunId);
+  }
   streamRunId = runId;
   setStreamStatus('connecting…', 'idle', runId);
 
@@ -4455,6 +4636,9 @@ window.addEventListener('hashchange', async () => {
   maybeAutoStartRunnerForActiveTask();
 });
 window.addEventListener('beforeunload', detachStream);
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && expandedStreamRunId) closeExpandedStream();
+});
 
 parseHash();
 await loadData({ render: true });

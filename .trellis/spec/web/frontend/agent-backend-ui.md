@@ -24,6 +24,18 @@
 - The project card owns persistent backend selection; task creation only displays the current project default and status.
 - Creating a task must be disabled or rejected until a project backend is configured and preflight is connected.
 - The stream panel title should be backend-specific when known: `Claude Code 执行日志` or `Codex 执行日志`.
+- The stream panel should expose a clear recording/expanded-view action when a
+  run is available. The expanded view is UI-only: reuse the same
+  `streamEventsByRun` cache, status state, and readable renderer; never open a
+  second SSE connection, clear cached events, or change the Runner/API stream
+  protocol just to enlarge the log.
+- Compact and expanded stream views must show the same backend-specific title,
+  run title/short id, live status, event count, and readable aggregated lines.
+- The stream panel defaults to a readable view for Claude Code partial text:
+  consecutive assistant text deltas rendered as `[claude…] ...` are grouped
+  into one visible prose block, labelled with the merged raw sequence range.
+  Tool calls, tool input, tool results, stderr, result, system, meta, and raw
+  events remain visible boundaries and must not be merged into prose blocks.
 - SSE reconnect uses `sinceSeq` from the last displayed event and dedupes by monotonic `sequence`.
 - Cached preflight status is valid only when its `backend` matches the current project backend.
 
@@ -47,6 +59,11 @@
 - Projection/render tests for backend label/status helpers where practical.
 - Route-level tests should cover task creation blocking without backend.
 - Stream behavior should be verified with stored history plus live events so replay/live races do not drop lines.
+- Stream rendering tests should cover Claude Code readable aggregation,
+  boundary preservation, and sequence-based replay/live dedupe.
+- Expanded/recording stream UI should be protected by either DOM tests or a
+  pure renderer/cache test proving multiple views read identical snapshots from
+  one cached event stream.
 - Manual smoke: open Web UI, configure backend, run a workflow, and confirm live logs show real CLI output.
 
 ### 7. Wrong vs Correct
