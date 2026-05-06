@@ -249,7 +249,7 @@ async function runFirstCandidate(
   let lastError: Error | null = null;
   for (const candidate of candidates) {
     try {
-      return await spawnCandidate(candidate, args, timeoutMs, spawnOpts);
+      return await spawnCandidate(backend, candidate, args, timeoutMs, spawnOpts);
     } catch (err) {
       lastError = err as Error;
     }
@@ -258,6 +258,7 @@ async function runFirstCandidate(
 }
 
 function spawnCandidate(
+  backend: LlmBackendKind,
   bin: string,
   args: string[],
   timeoutMs: number,
@@ -268,11 +269,10 @@ function spawnCandidate(
       env: process.env,
       platform: process.platform,
     });
-    // Same HOME-isolation logic as the production claude-code backend
-    // (apps/runner/src/agents/claude-code.ts): keep the user's interactive
-    // hooks/skills out of the runner-driven CLI spawn. Auth is inherited
-    // through process.env. Set AINP_CLAUDE_NO_HOME_ISOLATION=1 to disable.
-    const isolateHome = process.env.AINP_CLAUDE_NO_HOME_ISOLATION !== '1';
+    // Match the production claude-code backend: inherit the user's local
+    // Claude Code environment by default so OAuth/keychain login and config
+    // remain visible. Empty-HOME isolation is an explicit debugging opt-in.
+    const isolateHome = backend === 'claude_code' && process.env.AINP_CLAUDE_HOME_ISOLATION === '1';
     const isolatedHome = isolateHome ? mkdtempSync(join(tmpdir(), 'ainp-coord-home-')) : null;
     const childEnv: NodeJS.ProcessEnv = { ...process.env };
     if (isolatedHome) {

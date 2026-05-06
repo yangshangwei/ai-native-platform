@@ -1,14 +1,25 @@
 /**
  * Coordinator LLM fallback selection-strategy tests (PR3, PRD §P0-1).
  *
- * Covers the new project-aware backend ordering without spawning real
- * `claude` or `codex` processes by injecting `LlmFallbackDeps`.
+ * Most tests cover the project-aware backend ordering without spawning real
+ * `claude` or `codex` processes by injecting `LlmFallbackDeps`; the final
+ * block uses a fake CLI to lock the real spawn environment contract.
  */
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { classifyByLlm, type LlmFallbackDeps } from '../src/agents/coordinator/llm-fallback';
 import { invalidateConfigCache } from '../src/config-client';
 
 const realFetch = globalThis.fetch;
+const ORIGINAL_CLAUDE_BIN = process.env.AINP_CLAUDE_BIN;
+const ORIGINAL_CODEX_BIN = process.env.AINP_CODEX_BIN;
+const ORIGINAL_CAPTURE_COORD_ENV = process.env.CAPTURE_COORD_ENV;
+const ORIGINAL_HOME = process.env.HOME;
+const ORIGINAL_CLAUDE_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR;
+const ORIGINAL_XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME;
+const ORIGINAL_HOME_ISOLATION = process.env.AINP_CLAUDE_HOME_ISOLATION;
 
 const BLANK_INPUT = {
   userRequest: 'do the thing',
@@ -35,6 +46,13 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = realFetch;
+  restoreEnv('AINP_CLAUDE_BIN', ORIGINAL_CLAUDE_BIN);
+  restoreEnv('AINP_CODEX_BIN', ORIGINAL_CODEX_BIN);
+  restoreEnv('CAPTURE_COORD_ENV', ORIGINAL_CAPTURE_COORD_ENV);
+  restoreEnv('HOME', ORIGINAL_HOME);
+  restoreEnv('CLAUDE_CONFIG_DIR', ORIGINAL_CLAUDE_CONFIG_DIR);
+  restoreEnv('XDG_CONFIG_HOME', ORIGINAL_XDG_CONFIG_HOME);
+  restoreEnv('AINP_CLAUDE_HOME_ISOLATION', ORIGINAL_HOME_ISOLATION);
 });
 
 function makeDeps(opts: {
@@ -186,3 +204,111 @@ describe('classifyByLlm selection strategy (PR3)', () => {
     expect(r.decision.action).toBe('abort');
   });
 });
+
+describe('classifyByLlm real Claude spawn environment', () => {
+  it('inherits local Claude Code HOME and config env by default', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ainp-coord-claude-home-'));
+    const localHome = join(root, 'local-home');
+    const claudeConfigDir = join(root, 'claude-config');
+    const xdgConfigHome = join(root, 'xdg-config');
+    mkdirSync(localHome, { recursive: true });
+    mkdirSync(claudeConfigDir, { recursive: true });
+    mkdirSync(xdgConfigHome, { recursive: true });
+
+    const capturePath = join(root, 'env.json');
+    process.env.AINP_CLAUDE_BIN = fakeClaudeCoordinatorBin(root);
+    process.env.AINP_CODEX_BIN = missingCliBin(root, 'codex');
+    process.env.CAPTURE_COORD_ENV = capturePath;
+    process.env.HOME = localHome;
+    process.env.CLAUDE_CONFIG_DIR = claudeConfigDir;
+    process.env.XDG_CONFIG_HOME = xdgConfigHome;
+    delete process.env.AINP_CLAUDE_HOME_ISOLATION;
+
+    const result = await classifyByLlm(BLANK_INPUT, { preferredBackend: 'claude_code' });
+
+    expect(result.decision.action).toBe('proceed');
+    const env = JSON.parse(readFileSync(capturePath, 'utf8')) as {
+      HOME?: string;
+      CLAUDE_CONFIG_DIR?: string;
+      XDG_CONFIG_HOME?: string;
+    };
+    expect(env.HOME).toBe(localHome);
+    expect(env.CLAUDE_CONFIG_DIR).toBe(claudeConfigDir);
+    expect(env.XDG_CONFIG_HOME).toBe(xdgConfigHome);
+  });
+
+  it('isolates Claude Code HOME only when explicitly opted in', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ainp-coord-claude-isolated-'));
+    const localHome = join(root, 'local-home');
+    const claudeConfigDir = join(root, 'claude-config');
+    const xdgConfigHome = join(root, 'xdg-config');
+    mkdirSync(localHome, { recursive: true });
+    mkdirSync(claudeConfigDir, { recursive: true });
+    mkdirSync(xdgConfigHome, { recursive: true });
+
+    const capturePath = join(root, 'env.json');
+    process.env.AINP_CLAUDE_BIN = fakeClaudeCoordinatorBin(root);
+    process.env.AINP_CODEX_BIN = missingCliBin(root, 'codex');
+    process.env.CAPTURE_COORD_ENV = capturePath;
+    process.env.HOME = localHome;
+    process.env.CLAUDE_CONFIG_DIR = claudeConfigDir;
+    process.env.XDG_CONFIG_HOME = xdgConfigHome;
+    process.env.AINP_CLAUDE_HOME_ISOLATION = '1';
+
+    const result = await classifyByLlm(BLANK_INPUT, { preferredBackend: 'claude_code' });
+
+    expect(result.decision.action).toBe('proceed');
+    const env = JSON.parse(readFileSync(capturePath, 'utf8')) as {
+      HOME?: string;
+      CLAUDE_CONFIG_DIR?: string;
+      XDG_CONFIG_HOME?: string;
+    };
+    expect(env.HOME).not.toBe(localHome);
+    expect(env.HOME).toContain('ainp-coord-home-');
+    expect(env.CLAUDE_CONFIG_DIR).toBeUndefined();
+    expect(env.XDG_CONFIG_HOME).toBeUndefined();
+  });
+});
+
+function restoreEnv(key: string, original: string | undefined): void {
+  if (original === undefined) delete process.env[key];
+  else process.env[key] = original;
+}
+
+function fakeClaudeCoordinatorBin(dir: string): string {
+  const bin = join(dir, 'claude.mjs');
+  const assistantEvent = JSON.stringify({
+    type: 'assistant',
+    message: { content: [{ type: 'text', text: FAKE_PROCEED_JSON }] },
+  });
+  writeFileSync(bin, [
+    '#!/usr/bin/env node',
+    'import { writeFileSync } from "node:fs";',
+    'if (process.argv[2] === "--version") {',
+    '  console.log("claude 2.1.117");',
+    '  process.exit(0);',
+    '}',
+    'if (process.env.CAPTURE_COORD_ENV) {',
+    '  writeFileSync(process.env.CAPTURE_COORD_ENV, JSON.stringify({',
+    '    HOME: process.env.HOME,',
+    '    CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,',
+    '    XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,',
+    '  }));',
+    '}',
+    `console.log(${JSON.stringify(assistantEvent)});`,
+    '',
+  ].join('\n'), 'utf8');
+  chmodSync(bin, 0o755);
+  return bin;
+}
+
+function missingCliBin(dir: string, name: string): string {
+  const bin = join(dir, name);
+  writeFileSync(bin, [
+    '#!/bin/sh',
+    'exit 127',
+    '',
+  ].join('\n'), 'utf8');
+  chmodSync(bin, 0o755);
+  return bin;
+}

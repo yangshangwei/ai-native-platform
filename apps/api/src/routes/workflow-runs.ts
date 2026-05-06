@@ -85,8 +85,8 @@ workflowRuns.post('/', async (c) => {
   if (!body.title) return c.json({ error: 'title required' }, 400);
 
   // V2 W2-3: optional flowId in body. If supplied, must be a registered
-  // FlowId; otherwise createWorkflowRun() applies the 'feature.standard'
-  // default at the API layer (PRD W2-1 ADR Q3, W2-3 ADR Q3).
+  // FlowId; otherwise createWorkflowRun() applies the conservative default for
+  // the run type at the API layer (PRD W2-1 ADR Q3, W2-3 ADR Q3).
   let flowId: FlowId | undefined;
   if (body.flowId !== undefined) {
     if (!isFlowId(body.flowId)) {

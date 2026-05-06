@@ -9,8 +9,9 @@ import { store } from '../store/store';
 // `POST /router/recommend` is a pure read-only endpoint exposing the
 // rule engine in `../router.ts` so the UI can dry-run a recommendation
 // before creating a workflow run. The same `recommend()` is also called
-// server-side from `createWorkflowRun()` when `body.flowId` is missing
-// (auto-pick path); user-supplied `body.flowId` always wins.
+// server-side from `createWorkflowRun()` when `body.flowId` is missing for
+// audit/preview parity; ordinary run creation does not silently apply the
+// preview's skip recommendation. User-supplied `body.flowId` always wins.
 //
 // Trust-boundary validation lives here: projectId must reference an
 // existing project, and runType must be a known WorkflowRunType. Any

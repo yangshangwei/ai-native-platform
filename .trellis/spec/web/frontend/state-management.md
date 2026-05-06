@@ -156,8 +156,8 @@ client just needs to fetch history first, then attach.
 
 This SPA is **not** optimistic. After a `POST /workflow-runs`, wait for
 the response (the new run object) and then update local state from that
-response. Reason: backend rules (Smart Router auto-pick, validation,
-status setting) may differ from what the client sent.
+response. Reason: backend rules (router recommendation audit, conservative
+defaults, validation, status setting) may differ from what the client sent.
 
 ---
 

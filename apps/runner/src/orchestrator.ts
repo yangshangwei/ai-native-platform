@@ -39,8 +39,8 @@ export interface OrchestrateOpts {
   runType?: WorkflowRunType;
   /**
    * V2 W2-3: optional flow id (e.g. 'feature.fastforward'). Forwarded to
-   * `api.createWorkflowRun`; omitting it lets the API default to
-   * 'feature.standard'. PRD W2-3 ADR Q4.
+   * `api.createWorkflowRun`; omitting it lets the API use the conservative
+   * default for the Coordinator-decided runType. PRD W2-3 ADR Q4.
    */
   flowId?: FlowId;
   /** Default true — auto-clean worktree at the end. */

@@ -2,7 +2,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, expect, test } from 'vitest';
-import { newId, nowIso, type Project, type WorkflowRun } from '@ainp/shared';
+import { newId, nowIso, type KnowledgeArtifact, type Project, type WorkflowRun } from '@ainp/shared';
 
 process.env.AINP_DB_PATH = join(
   mkdtempSync(join(tmpdir(), 'ainp-workflow-runs-route-test-')),
@@ -49,7 +49,7 @@ function registerProject(name: string): Project {
 // PRD W2-3 AC-9 / AC-10 (HTTP route plumbing).
 // ---------------------------------------------------------------------------
 
-test('POST /workflow-runs without flowId routes via smart-router (W2-4 AC-13)', async () => {
+test('POST /workflow-runs without flowId creates a full standard feature run', async () => {
   const project = registerProject('ff-route-default');
 
   const res = await app.request('/workflow-runs', {
@@ -64,8 +64,45 @@ test('POST /workflow-runs without flowId routes via smart-router (W2-4 AC-13)', 
 
   expect(res.status).toBe(201);
   const run = (await res.json()) as WorkflowRun;
-  // PR3 swap: short feature title → router picks feature.fastforward.
-  expect(run.flowId).toBe('feature.fastforward');
+  expect(run.flowId).toBe('feature.standard');
+  expect(run.startStage).toBeNull();
+});
+
+test('POST /workflow-runs without flowId ignores accepted-design startStage skips', async () => {
+  const project = registerProject('route-knowledge-skip-default');
+  storeMod.store.knowledgeArtifacts.insert(
+    fakeKnowledgeArtifact({
+      projectId: project.id,
+      kind: 'design',
+      entityId: 'DSN-login-captcha-switch',
+      metadata: { title: 'login captcha switch design' },
+    }),
+  );
+
+  const res = await app.request('/workflow-runs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      type: 'feature',
+      title: 'implement login captcha switch from accepted design knowledge',
+    }),
+  });
+
+  expect(res.status).toBe(201);
+  const run = (await res.json()) as WorkflowRun;
+  expect(run.flowId).toBe('feature.standard');
+  expect(run.startStage).toBeNull();
+
+  const created = storeMod.store.auditLog
+    .byWorkflow(run.id)
+    .find((entry) => entry.kind === 'workflow_run.created');
+  const rec = created!.payload.routerRecommendation as
+    | { flowId: string; startStage: string | null; rulesFired: string[] }
+    | undefined;
+  expect(rec).toBeDefined();
+  expect(rec!.startStage).toBe('implementation');
+  expect(rec!.rulesFired).toContain('startStage.has_accepted_design');
 });
 
 test('POST /workflow-runs honors body.flowId = feature.fastforward (W2-3 AC-9)', async () => {
@@ -184,6 +221,31 @@ test('POST /workflow-runs rejects an unknown flowId with 400 (trust-boundary val
   expect(body.error).toContain('issue.standard');
   expect(body.error).toContain('refactor.standard');
 });
+
+function fakeKnowledgeArtifact(args: {
+  projectId: string;
+  kind: KnowledgeArtifact['kind'];
+  entityId: string;
+  status?: KnowledgeArtifact['status'];
+  metadata?: Record<string, unknown>;
+}): KnowledgeArtifact {
+  return {
+    id: newId('kart'),
+    kind: args.kind,
+    uri: `mem://${args.entityId}.md`,
+    projectId: args.projectId,
+    size: 1,
+    contentType: 'text/markdown',
+    status: args.status ?? 'accepted',
+    version: 1,
+    entityId: args.entityId,
+    derivedFromArtifactId: null,
+    subtype: null,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    metadata: args.metadata ?? {},
+  };
+}
 
 // ---------------------------------------------------------------------------
 // V2 W2-4 / PR4 — body.startStage plumbing for direct UI override path.

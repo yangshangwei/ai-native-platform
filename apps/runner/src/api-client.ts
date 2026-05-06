@@ -57,7 +57,7 @@ export const api = {
     title: string;
     type?: 'smoke' | 'feature' | 'bugfix' | 'refactor';
     sourceBranch?: string;
-    /** V2 W2-3: optional flow id; defaults server-side to 'feature.standard'. */
+    /** V2 W2-3: optional flow id; omitted values use server-side conservative defaults. */
     flowId?: FlowId;
   }) =>
     request<WorkflowRun>('POST', '/workflow-runs', { ...params, type: params.type ?? 'smoke' }),

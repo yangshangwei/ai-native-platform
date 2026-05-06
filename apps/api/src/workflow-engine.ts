@@ -64,19 +64,17 @@ export function createWorkflowRun(params: {
   title: string;
   sourceBranch?: string;
   /**
-   * V2 W2-1 / PR3: optional flow id. Defaults to `'feature.standard'` so
-   * existing callers (API routes, runner triggers) need no changes for
-   * V1-equivalent runs. Future flows (`feature.fastforward`, etc.) pass
-   * an explicit flowId from the route layer.
+   * V2 W2-1 / PR3: optional flow id. Defaults ordinary feature creation to
+   * `'feature.standard'` so lifecycle stages are not silently skipped. Future
+   * flows (`feature.fastforward`, etc.) pass an explicit flowId from the route
+   * layer after the user accepts a router preview.
    */
   flowId?: FlowId;
   /**
    * V2 W2-4 / PR2: optional starting stage. `null` (or omitted) means
-   * "start from the flow's first stage" — V1-equivalent default. Set
-   * via the smart-router auto-pick path (PR3) or explicit UI override
-   * (PR4); orchestrator slices `FLOW_REGISTRY[flowId].stages` from the
-   * matching index. Validation that the stage is present in the chosen
-   * flow lives in the orchestrator dispatcher (R-Risk-1).
+   * "start from the flow's first stage" — V1-equivalent default. Only explicit
+   * UI overrides set this during run creation; router preview knowledge skips
+   * are advisory unless the caller sends startStage.
    */
   startStage?: WorkflowStage | null;
 }): WorkflowRun {
@@ -93,8 +91,8 @@ export function createWorkflowRun(params: {
     title: params.title,
     status: 'pending',
     currentStage: 'init',
-    flowId: params.flowId ?? routerRecommendation?.flowId ?? 'feature.standard',
-    startStage: params.startStage ?? routerRecommendation?.startStage ?? null,
+    flowId: params.flowId ?? defaultFlowIdForType(params.type),
+    startStage: params.startStage ?? null,
     configSnapshotId: null,
     sourceBranch: params.sourceBranch?.trim() || 'main',
     branch,
@@ -120,6 +118,12 @@ export function createWorkflowRun(params: {
       : {}),
   });
   return run;
+}
+
+function defaultFlowIdForType(type: WorkflowRunType): FlowId {
+  if (type === 'bugfix') return 'issue.standard';
+  if (type === 'refactor') return 'refactor.standard';
+  return 'feature.standard';
 }
 
 // ---- Workflow request queue --------------------------------------------------

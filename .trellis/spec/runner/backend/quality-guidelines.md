@@ -133,11 +133,10 @@ through `buildResolvedAgentBackendCliSpawn()`.
 
 > Reference: end-to-end validation report (this task's research).
 
-`scripts/e2e.ts` historically claimed full 9-stage coverage but, after
-Smart Router went live, short titles route to `feature.fastforward` which
-skips `context_pack`/`requirement`/`design`/`knowledge`. Lesson: when an
-e2e script claims a specific path, **pass `--flow-id <flowId>` explicitly**
-or assert the recommendation, don't trust defaults.
+`scripts/e2e.ts` historically claimed full 9-stage coverage while relying on
+implicit routing defaults. Lesson: when an e2e script claims a specific path,
+**pass `--flow-id <flowId>` explicitly** or assert the recommendation, don't
+trust defaults.
 
 ### 3. Missing project agentBackend
 

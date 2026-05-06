@@ -190,21 +190,10 @@ export class ClaudeCodeBackend implements AgentBackend {
       disallowedTools,
     });
 
-    // Isolate the spawned CLI from the user's interactive Claude Code config.
-    // The local `~/.claude/settings.json` typically wires up hooks (OMC, Trellis,
-    // claude-mem) and skills/agents that target the user's editor session.
-    // Letting them fire inside a runner-driven workflow run causes the CLI to
-    // loop on itself (the `2026-05-05-claude-code-implementation-no-exit` issue
-    // documents one variant; in practice the real-CLI surface includes a
-    // hook-induced "Stop." loop that never reaches a `result` event).
-    //
-    // Using a per-invocation empty HOME makes claude treat itself as a fresh
-    // install: no settings.json, no hooks, no plugins. Auth flows through
-    // process.env (`ANTHROPIC_AUTH_TOKEN` etc. are inherited from the parent
-    // shell, which is what Anthropic's CLI uses for non-interactive runs).
-    // Set `AINP_CLAUDE_NO_HOME_ISOLATION=1` to opt out (kept as an env-only
-    // escape hatch for debugging, not a public API).
-    const isolateHome = process.env.AINP_CLAUDE_NO_HOME_ISOLATION !== '1';
+    // Default to the user's local Claude Code environment so OAuth/keychain
+    // login and ~/.claude config remain visible. HOME isolation is still useful
+    // for debugging hook/config loops, but it is now explicit opt-in.
+    const isolateHome = process.env.AINP_CLAUDE_HOME_ISOLATION === '1';
     const isolatedHome = isolateHome ? mkdtempSync(join(tmpdir(), 'ainp-claude-home-')) : null;
     const childEnv: NodeJS.ProcessEnv = { ...process.env };
     if (isolatedHome) {

@@ -22,6 +22,8 @@
   - `claude_code` checks local process/auth only: `claude --version` plus `claude auth status` JSON with `loggedIn === true`. It must not spend or hang on a model prompt just to check connection.
   - `codex` checks local process/auth only: `codex --version` plus `codex login status` output that clearly reports logged in. It must not spend or hang on a model prompt just to check connection.
 - Runtime `claude_code` execution uses `claude --print --output-format stream-json ...` and must not pass `--bare`, so the local Claude Code OAuth/keychain login remains visible.
+- Runtime `claude_code` execution must inherit the parent process `HOME`, `CLAUDE_CONFIG_DIR`, and `XDG_CONFIG_HOME` by default so the local user's Claude Code OAuth/keychain login and config remain visible.
+- `AINP_CLAUDE_HOME_ISOLATION=1` is the explicit opt-in debugging flag for Claude Code HOME isolation. When set, runtime execution uses a temporary empty `HOME` and removes `CLAUDE_CONFIG_DIR` / `XDG_CONFIG_HOME` from the child environment. Do not restore default isolation under another negative flag.
 - Runtime `codex` execution uses `codex exec --json ... -` and must not pass `--ask-for-approval` to `exec` for Codex CLI 0.128.0 compatibility.
 - Runner CLI command resolution must be shared with preflight:
   - macOS/Linux use ordinary `claude` / `codex` or the matching env override.
@@ -54,6 +56,7 @@
 - Codex `login status` logged out or failed auth -> `needs_login`; unrecognized login-status output -> `not_runnable` with masked, compact diagnostics.
 - CLI stderr line during runtime -> emit `stderr` event and keep consuming unless process exits non-zero.
 - Timeout -> mark preflight/runtime as not runnable/failed and surface concise timeout text.
+- Claude Code reports `Not logged in` during runtime while local `claude` is logged in -> check for accidental default HOME isolation or env stripping. Default runtime should see the same local login as the runner parent process.
 
 ### 5. Good/Base/Bad Cases
 
@@ -67,6 +70,7 @@
 - Unit tests for `selectAgentBackend()` missing backend, preflight fail, and both backend success paths.
 - Tests must include fake CLIs proving Claude Code auth-status handling and Codex login-status logged-in/logged-out/unrecognized handling.
 - Runtime tests for Claude Code must assert args include `--print`, `--output-format stream-json`, `--no-session-persistence`, and do not include `--bare`.
+- Runtime tests for Claude Code must assert default child env inherits `HOME` / Claude config env, and setting `AINP_CLAUDE_HOME_ISOLATION=1` switches to an isolated temporary `HOME` with Claude config env removed.
 - Runtime tests for Codex must assert args include `--json`, `--sandbox workspace-write`, `--cd`, `--ephemeral`, `--skip-git-repo-check`, `--output-last-message`, and do not include `--ask-for-approval`.
 - Cross-platform resolver tests must cover Windows candidate order, env override
   expansion, `.cmd` shim spawn wrapping, `.exe` direct spawn, and runtime env

@@ -2857,8 +2857,9 @@ function renderNewTaskPage(): HTMLElement {
     projectSelect.setAttribute('disabled', 'disabled');
   }
   const typeSelect = el('select', { attrs: { name: 'type' } });
-  // Default to "let AI decide" — the server-side coordinator + smart router
-  // pick runType + flowId from title alone. Users only touch this dropdown
+  // Default to "let AI decide" — the server-side coordinator picks runType
+  // from title alone; smart-router output is preview/audit unless explicitly
+  // plumbed through a future override. Users only touch this dropdown
   // when they want to override the AI judgment (e.g. for refactor / smoke
   // which the coordinator's rules may not pick up reliably).
   typeSelect.appendChild(el('option', { text: '(让 AI 自动判定)', attrs: { value: '' } }));
@@ -2893,9 +2894,9 @@ function renderNewTaskPage(): HTMLElement {
   //
   // Cache key reflects whether override is in play so toggling between
   // "auto" and an explicit Type doesn't return a stale cached card. The
-  // Coordinator path doesn't yet plumb flowId through workflow_requests
-  // — auto-pick happens server-side when createWorkflowRun() lands. The
-  // card is informational; the user can override via the advanced disclosure.
+  // Coordinator path doesn't yet plumb flowId/startStage through
+  // workflow_requests. The card is informational: ordinary task creation uses
+  // conservative server defaults unless a future explicit override is sent.
   const recoCard = el('div', { class: 'panel compact' });
   recoCard.style.display = 'none';
   let recoLastKey = '';
@@ -2970,7 +2971,7 @@ function renderNewTaskPage(): HTMLElement {
           '智能推荐',
           userOverrideType
             ? '使用你在「高级覆盖」里指定的 Type'
-            : '可作为参考；服务器创建任务时会自动应用',
+            : '仅作参考；创建任务默认从完整流程开始',
         ),
       ];
       if (coordPreview) {
@@ -3118,12 +3119,12 @@ function renderNewTaskPage(): HTMLElement {
   updateBranchSelect(projectSelect.value, newTaskFormDraft.branch || null);
   refreshBranches(projectSelect.value);
   if (!projects.length) submit.setAttribute('disabled', 'disabled');
-  // 2026-05-06 router-driven defaults: Type is no longer prominent in the
-  // main form. Default flow = "let AI judge" (Coordinator + Smart Router
-  // pick). Power users / refactor / smoke / explicit-override paths open
-  // the disclosure. Flow / startStage override is NOT here yet — that
-  // requires extending the /workflow-requests body + WorkflowRequest
-  // schema to plumb flowId / startStage through to createWorkflowRun.
+  // 2026-05-06 router advisory defaults: Type is no longer prominent in the
+  // main form. The Coordinator still decides runType, while Smart Router output
+  // is preview/audit only. Power users / refactor / smoke paths open the
+  // disclosure. Flow / startStage override is NOT here yet — that requires
+  // extending the /workflow-requests body + WorkflowRequest schema to plumb
+  // flowId / startStage through to createWorkflowRun.
   // Tracked as a follow-up task; for now Type is the only override dial.
   const advanced = document.createElement('details');
   advanced.appendChild(el('summary', { text: '高级覆盖（手动指定 Type；Flow/起始阶段 待后续）' }));
@@ -3194,9 +3195,8 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
     const ready = await ensureProjectAgentBackendReady(project);
     if (!ready) return;
     // 2026-05-06: omit `type` when user left it as "(让 AI 自动判定)" so the
-    // server's Coordinator + Smart Router decide. Server defaults to
-    // 'feature' if omitted, but Coordinator runs regardless and may
-    // override (mismatch detector elsewhere flags this case).
+    // server-side Coordinator can classify runType. Smart Router output is
+    // advisory until a future request override path sends flowId/startStage.
     const typeOverride = String(fd.get('type') ?? '').trim();
     const request = await api<WorkflowRequestDto>('/workflow-requests', {
       method: 'POST',

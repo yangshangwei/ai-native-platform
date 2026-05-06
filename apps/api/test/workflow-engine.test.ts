@@ -2,6 +2,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, expect, test } from 'vitest';
+import type { KnowledgeArtifact } from '@ainp/shared';
 
 process.env.AINP_DB_PATH = join(mkdtempSync(join(tmpdir(), 'ainp-api-test-')), 'ainp.sqlite');
 
@@ -100,17 +101,15 @@ test('completeWorkflowRun preserves the failed stage instead of jumping to compl
 // runner reads it via FLOW_REGISTRY.
 // ---------------------------------------------------------------------------
 
-test('createWorkflowRun defaults flowId via smart-router auto-pick when omitted (W2-4 AC-12)', () => {
-  // PR3 changes the omitted-flowId path from a static 'feature.standard'
-  // default to smart-router auto-pick. Short title + type=feature → router
-  // picks feature.fastforward.
+test('createWorkflowRun defaults feature runs to the full standard lifecycle when flowId is omitted', () => {
   const run = workflow.createWorkflowRun({
     projectId: 'proj_default_flowid',
     type: 'feature',
     title: 'default flow',
     sourceBranch: 'main',
   });
-  expect(run.flowId).toBe('feature.fastforward');
+  expect(run.flowId).toBe('feature.standard');
+  expect(run.startStage).toBeNull();
 });
 
 test('createWorkflowRun honors an explicit flowId in params (AC-12)', () => {
@@ -191,13 +190,44 @@ test('createWorkflowRun preserves null startStage round-trip (NULL column read)'
   expect(reloaded!.startStage).toBeNull();
 });
 
+test('createWorkflowRun ignores router knowledge skip unless startStage is explicit', () => {
+  const projectId = 'proj_default_knowledge_skip';
+  storeMod.store.knowledgeArtifacts.insert(
+    fakeKnowledgeArtifact({
+      projectId,
+      kind: 'design',
+      entityId: 'DSN-payment-export',
+      metadata: { title: 'payment export design' },
+    }),
+  );
+
+  const run = workflow.createWorkflowRun({
+    projectId,
+    type: 'feature',
+    title: 'implement the payment export feature according to existing design',
+    sourceBranch: 'main',
+  });
+
+  expect(run.flowId).toBe('feature.standard');
+  expect(run.startStage).toBeNull();
+
+  const audits = storeMod.store.auditLog.byWorkflow(run.id);
+  const created = audits.find((a) => a.kind === 'workflow_run.created');
+  const rec = created!.payload.routerRecommendation as
+    | { flowId: string; startStage: string | null; rulesFired: string[] }
+    | undefined;
+  expect(rec).toBeDefined();
+  expect(rec!.startStage).toBe('implementation');
+  expect(rec!.rulesFired).toContain('startStage.has_accepted_design');
+});
+
 // ---------------------------------------------------------------------------
-// V2 W2-4 / PR3 — createWorkflowRun smart-router auto-pick + audit payload.
-// PRD AC-15 + R-Risk-3 / R-Risk-4 (auto-pick path; explicit override skips
-// router; audit log carries routerRecommendation iff router fired).
+// V2 W2-4 / PR3 — createWorkflowRun smart-router preview + audit payload.
+// PRD AC-15 + R-Risk-3 / R-Risk-4 (omitted-flowId path; explicit override
+// skips router; audit log carries routerRecommendation iff router fired).
 // ---------------------------------------------------------------------------
 
-test('omitting flowId triggers smart-router auto-pick (bugfix → issue.standard)', () => {
+test('omitting flowId maps bugfix runs to issue.standard', () => {
   const run = workflow.createWorkflowRun({
     projectId: 'proj_autopick_bugfix',
     type: 'bugfix',
@@ -208,7 +238,7 @@ test('omitting flowId triggers smart-router auto-pick (bugfix → issue.standard
   expect(run.startStage).toBeNull();
 });
 
-test('omitting flowId on a long feature title → router picks feature.standard', () => {
+test('omitting flowId on a long feature title uses feature.standard', () => {
   const run = workflow.createWorkflowRun({
     projectId: 'proj_autopick_feature_long',
     type: 'feature',
@@ -218,6 +248,31 @@ test('omitting flowId on a long feature title → router picks feature.standard'
   });
   expect(run.flowId).toBe('feature.standard');
 });
+
+function fakeKnowledgeArtifact(args: {
+  projectId: string;
+  kind: KnowledgeArtifact['kind'];
+  entityId: string;
+  status?: KnowledgeArtifact['status'];
+  metadata?: Record<string, unknown>;
+}): KnowledgeArtifact {
+  return {
+    id: `kart_${args.entityId}_${Math.random().toString(16).slice(2, 8)}`,
+    kind: args.kind,
+    uri: `mem://${args.entityId}.md`,
+    projectId: args.projectId,
+    size: 1,
+    contentType: 'text/markdown',
+    status: args.status ?? 'accepted',
+    version: 1,
+    entityId: args.entityId,
+    derivedFromArtifactId: null,
+    subtype: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    metadata: args.metadata ?? {},
+  };
+}
 
 test('explicit body.flowId always wins (router NOT consulted; no routerRecommendation in audit)', () => {
   const run = workflow.createWorkflowRun({
@@ -234,7 +289,7 @@ test('explicit body.flowId always wins (router NOT consulted; no routerRecommend
   expect(created!.payload.routerRecommendation).toBeUndefined();
 });
 
-test('auto-pick path attaches routerRecommendation to workflow_run.created audit', () => {
+test('omitted-flowId path attaches routerRecommendation to workflow_run.created audit', () => {
   const run = workflow.createWorkflowRun({
     projectId: 'proj_autopick_audit',
     type: 'refactor',

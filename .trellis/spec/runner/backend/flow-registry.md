@@ -5,13 +5,13 @@
 ### 1. Scope / Trigger
 
 - Trigger: changes to `apps/runner/src/flows/registry.ts`, `apps/runner/src/orchestrator.ts` (the `cmdOrchestrate` body, `dispatchStep`, or any `executeXxx` step implementation), or the `FlowId` / `FlowDef` / `StageStep` types in `packages/shared/src/types/workflow.ts`.
-- Adding a new flow variant (W2-3 shipped `feature.fastforward`; future: `issue.standard` / `refactor.standard` in W2-2) — the new entry must land in `FLOW_REGISTRY` and the new id must be added to the `FlowId` literal union AND to the `KNOWN_FLOW_IDS` validation lists at the trust boundaries.
+- Adding a new flow variant — the new entry must land in `FLOW_REGISTRY` and the new id must be added to the `FlowId` literal union AND to the `KNOWN_FLOW_IDS` validation lists at the trust boundaries.
 - Schema/type changes touching `workflow_runs.flow_id` or `WorkflowRun.flowId`.
 - Changes to the trust-boundary FlowId validation lists in `apps/api/src/routes/workflow-runs.ts` and `apps/runner/src/index.ts`.
 
 ### 2. Signatures
 
-- `FlowId` (`@ainp/shared`) — string-literal union, **not** a free `string`. Today: `'feature.standard' | 'feature.fastforward'`. Future entries documented at the type definition.
+- `FlowId` (`@ainp/shared`) — string-literal union, **not** a free `string`. Today: `'feature.standard' | 'feature.fastforward' | 'issue.standard' | 'refactor.standard'`.
 - `StageStep` (`@ainp/shared`) — `{ stage: WorkflowStage; kind: StageStepKind; skillId?: string }`. `kind` is `'agent' | 'gate' | 'human' | 'engine'`.
 - `FlowDef` (`@ainp/shared`) — `{ id: FlowId; kind: WorkflowRunType; description: string; stages: readonly StageStep[] }`.
 - `FLOW_REGISTRY` (`apps/runner/src/flows/registry.ts`) — `Readonly<Record<FlowId, FlowDef>>`. Single source of truth for V2 flow definitions.
@@ -105,7 +105,7 @@ Knowledge promotion: identical handling to `issue.standard` — `c.draftsToPromo
 `apps/api/src/router.ts:recommend(input)` is a pure function that maps a `RouterInput` (`{ projectId, title, runType }`) to a `RouterRecommendation` (`{ flowId, startStage, relevantKnowledge[], estimates, reason, rulesFired, confidence }`). The full canonical contract — rule list R10-R13, audit + UI surfaces, Wave 3 follow-up — lives in `.trellis/spec/api/backend/smart-router.md`. This section captures only the FLOW_REGISTRY-facing semantics.
 
 Trigger paths (W2-4 PR3):
-- `createWorkflowRun({ projectId, type, title })` with no `flowId` calls `recommend()` and auto-fills `run.flowId` + `run.startStage`. The `workflow_run.created` audit row carries a `routerRecommendation: { flowId, startStage, rulesFired }` field; explicit-flowId callers get the field absent.
+- `createWorkflowRun({ projectId, type, title })` with no `flowId` calls `recommend()` for audit/preview parity, but created runs use conservative defaults (`feature.standard` for feature/smoke, `issue.standard` for bugfix, `refactor.standard` for refactor) and `startStage = null` unless explicitly supplied. The `workflow_run.created` audit row carries a `routerRecommendation: { flowId, startStage, rulesFired }` field; explicit-flowId callers get the field absent.
 - `POST /router/recommend` (`apps/api/src/routes/router.ts`) is the read-only HTTP surface. UI / automation can dry-run the recommendation without creating a run. Validates `projectId` (must be registered) + `runType` (must be a known `WorkflowRunType`); rejects unknown values with HTTP 400.
 
 `startStage` semantics (W2-4 PR2):
@@ -118,13 +118,13 @@ Trigger paths (W2-4 PR3):
 - Only `feature.standard` carries non-null `startStage` recommendations today; the other three flows are short and run head-to-tail. Adding a new long flow that supports skip-prefix means: (1) verifying `recommendStartStage` in `apps/api/src/router.ts` actually emits non-null for it; (2) updating router unit tests; (3) optionally extending the spec doc here.
 
 UI override (W2-4 PR4):
-- The 智能推荐 card on the task creation form posts `/router/recommend` on title blur (debounced 400ms) and renders the recommendation as a preview. The Coordinator → workflow_request → workflow_run pipeline currently picks up the recommendation server-side; UI override of `(flowId, startStage)` is a follow-up that requires extending the workflow_request body (out of W2-4 scope per PRD).
+- The 智能推荐 card on the task creation form posts `/router/recommend` on title blur (debounced 400ms) and renders the recommendation as a preview. The Coordinator → workflow_request → workflow_run pipeline does **not** silently apply preview `(flowId, startStage)` skips; UI override of `(flowId, startStage)` is a follow-up that requires extending the workflow_request body (out of W2-4 scope per PRD).
 - `POST /workflow-runs` body now accepts an optional `startStage?: string` field, validated against `WorkflowStage`. Direct CLI / runner triggers (skipping the Coordinator queue) can already plumb the override end-to-end.
 
 #### Entry contract — `flowId` plumbing
 
 - `WorkflowRun.flowId: FlowId` is **required** in TypeScript and **NOT NULL** in the `workflow_runs.flow_id` column with `DEFAULT 'feature.standard'` (PRD ADR Q2 — explicit backfill, no NULL state).
-- `createWorkflowRun(params)` accepts optional `flowId?: FlowId`; default `'feature.standard'` is applied at the API layer when omitted. Existing call sites (API routes, runner triggers) need no changes for V1-equivalent runs (PRD AC-14).
+- `createWorkflowRun(params)` accepts optional `flowId?: FlowId`; when omitted, the API applies conservative run-type defaults (`feature.standard` for feature/smoke, `issue.standard` for bugfix, `refactor.standard` for refactor). Existing call sites (API routes, runner triggers) need no changes for V1-equivalent feature runs (PRD AC-14).
 - `runWorkflow` reads `run.flowId` and looks up `FLOW_REGISTRY[run.flowId]`. If the entry is missing the run aborts with a clear error rather than falling back — defensive `?? 'feature.standard'` shortcuts in the orchestrator are forbidden (PRD ADR Q2 consequence).
 - **Trust-boundary validation (W2-3 PR2)**: each external entry into the system that accepts a flowId carries its own `KNOWN_FLOW_IDS` allow-list. There are two:
   - `apps/api/src/routes/workflow-runs.ts` — `isFlowId(value)` rejects unknown bodies with HTTP 400.
@@ -133,7 +133,7 @@ UI override (W2-4 PR4):
 - **Trigger paths**:
   - HTTP: `POST /workflow-runs` body `{ ..., flowId: 'feature.fastforward' }` → route forwards → engine writes `workflow_runs.flow_id` → runner reads `run.flowId`.
   - Runner CLI: `runner orchestrate --project foo --title bar --flow-id feature.fastforward` → `parseFlowIdFlag` validates → `cmdOrchestrate({ flowId })` → `api.createWorkflowRun({ flowId })` → same body path.
-  - Runner watch loop (`cmdWatch`): currently does NOT supply flowId; defaults to `'feature.standard'`. Smart routing (auto-pick fastforward based on diff size, etc.) is W2-4's job.
+  - Runner watch loop (`cmdWatch`): currently does NOT supply flowId; feature requests default to `'feature.standard'`. Applying a fastforward/startStage recommendation requires an explicit future override path.
   - Runner smoke (`cmdRun`): does NOT use FLOW_REGISTRY at all (it runs a single whitelisted command, not a pipeline).
 
 #### `executeXxx(ctx: RunCtx)` invariants
@@ -189,7 +189,7 @@ Verify: `bun test` should grow by the new flow's tests; `bun run --filter '*' ty
 - W2-3 PRD: `.trellis/tasks/archive/2026-05/05-05-v2-w2-3-fastforward-channel/prd.md` — ADRs Q1–Q4 (4-stage subset / union extension / body.flowId / CLI --flow-id), R1–R17, AC-1–AC-14.
 - W2-2a PRD: `.trellis/tasks/archive/2026-05/05-05-v2-w2-2a-issue-standard-flow/prd.md` — ADRs Q0–Q5 (split / stages / 'bugfix' kind / stage-history acceptance / placeholder SkillSpecs / no knowledge promotion), R1–R26, AC-1–AC-25.
 - W2-2b PRD: `.trellis/tasks/05-05-v2-w2-2b-refactor-standard-flow/prd.md` — ADRs Q1 (stages: scan / plan / implementation reuse) / Q2 (`WorkflowRunType += 'refactor'`); inherits Q0/Q3/Q4/Q5 from W2-2a. R1–R28, AC-1–AC-23.
-- W2-4 PRD: `.trellis/tasks/05-05-v2-w2-4-smart-router/prd.md` — ADRs Q1–Q5 (recommendation shape / server-side endpoint / startStage column + slice / auto-pick on missing flowId / rules-only V1). R1–R35, AC-1–AC-23.
+- W2-4 PRD: `.trellis/tasks/05-05-v2-w2-4-smart-router/prd.md` — ADRs Q1–Q5 (recommendation shape / server-side endpoint / startStage column + slice / original auto-pick scope later narrowed to advisory creation / rules-only V1). R1–R35, AC-1–AC-23.
 - Smart Router spec: `.trellis/spec/api/backend/smart-router.md` — canonical R10–R13 rule reference + audit/UI surface.
 - Wave 2 roadmap: `.trellis/tasks/archive/2026-05/05-04-v2-wave2-workflow-polymorphism/prd.md` — locks shared conventions across all Wave 2 child tasks.
 - V2 design notes: `docs/2026-05-04-ai-native-platform-v2-design-notes.md` § 1.3 (V1 short-list — fastforward motivation), § 2.1 (work-type polymorphism), § 5 (Wave 2 estimates).

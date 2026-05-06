@@ -29,8 +29,9 @@ import { store } from './store/store';
 //   R12 relevantKnowledge: top-5 accepted KnowledgeArtifact ids by keyword overlap
 //   R13 estimates: per-stage static (agent: 90s/8K tokens, engine: 30s/0)
 //
-// Triggered by `createWorkflowRun()` when body.flowId is missing (auto-pick
-// path) AND exposed via `POST /router/recommend` for UI dry-run preview.
+// Called by `createWorkflowRun()` when body.flowId is missing for audit/preview
+// parity, but conservative run creation does not silently apply skip
+// recommendations. Also exposed via `POST /router/recommend` for UI dry-run.
 // User-supplied flowId always wins (W2-1 ADR Q3 contract preserved).
 //
 // Non-goals (Wave 3 follow-up):

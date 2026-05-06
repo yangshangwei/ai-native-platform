@@ -112,11 +112,9 @@ async function main(): Promise<void> {
 
   const title = `e2e ${new Date().toISOString()}`;
   log(`spawning orchestrator with title=${title}`);
-  // The script's assertions require a full 9-stage feature.standard run.
-  // Without `--flow-id`, the API's Smart Router routes short titles to
-  // `feature.fastforward`, which skips context_pack / requirement / design
-  // / knowledge and breaks the assertions below. Pass the flow explicitly
-  // so the harness proves what it claims to prove.
+  // The script's assertions require a full feature.standard run. Pass the
+  // flow explicitly so the harness proves what it claims to prove even if
+  // routing defaults change again.
   const runner = spawnRunner([
     'orchestrate',
     '--project', 'java-sample',
