@@ -566,3 +566,69 @@ Fixed the workflow creation path so Smart Router skip recommendations stay advis
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: 修复 Claude Code 上下文准备 stop-hook 死循环
+
+**Date**: 2026-05-07
+**Task**: 修复 Claude Code 上下文准备 stop-hook 死循环
+**Package**: runner
+**Branch**: `main`
+
+### Summary
+
+用户反馈 context_pack 失败 + UI 实时日志一直刷。Chrome DevTools MCP 端到端走查 wreq_d7451fb4063c 定位根因：用户全局 ~/.claude/settings.json 的 Stop hook 在 worktree 路径下找不到 transcript，每次 message_stop 触发→hook 失败→Claude Code 把错回灌为 isSynthetic user→模型再答 'Done.'→死循环→10 分钟硬超时 SIGTERM (exit 143)。用 --setting-sources project,local 跳 user-level settings + 手动读用户 env 块转发到 spawn 子进程保留第三方 ANTHROPIC_AUTH_TOKEN auth；同步加 CONTEXT-PACK CONSTRAINTS prompt 防模型过度发挥。E2E 验证 run_4c1a113d0216：context_pack 1m23s 通过、exitCode=0、resultSeen=true、零 hook 事件、推进到 requirement_gate 成功。
+
+### Main Changes
+
+## 会话流水
+
+1. **诊断阶段** — Chrome DevTools MCP 接 5173 UI，跳进失败 task wreq_d7451fb4063c，展开 stage panels，抽出 Agent Audit + Live Log 末尾事件流。在 sequence 2860 处找到关键一行：`[user] Stop hook feedback: Hook error: Transcript path missing or file does not exist: ...workspace/40af23d0-...jsonl  isSynthetic:true`。后面 100+ 个事件都是 message_start → "Done." → message_stop → 同样错回灌。timestamp 14:26:45 - 14:16:39 ≈ 整 10 分钟，对上 claude-code.ts:57 DEFAULT_TIMEOUT_MS=10*60*1000。
+
+2. **方案探索** — 试过 4 种屏蔽 hook 思路：
+   - `CLAUDE_DISABLE_HOOKS=1` env var：`claude --help` 实测不存在
+   - `--bare`：连 keychain 一起跳，丢 OAuth
+   - isolated HOME：同样丢登录
+   - `--settings '{"hooks":{...all-empty}}'`：interactive shell 看似工作，但 E2E 起 runner 真跑时 SessionStart hook 仍 fire 4 次，证明 additional settings 是 merge 不是 replace
+   
+   最终采用：`--setting-sources project,local` + 读用户 settings.json 的 env 块手动转发到 childEnv。
+
+3. **实现** — 改 5 文件：
+   - apps/runner/src/agents/claude-code.ts: spawn 加 setting-sources flag、新增 readUserSettingsEnv() helper、childEnv 合入 user env、emitMeta:started 加 userHooksOverridden 字段、buildPrompts produce_file 模式针对 stage='context_pack' 加 CONTEXT-PACK CONSTRAINTS
+   - apps/runner/src/agents/coordinator/llm-fallback.ts: 镜像同样修复（runClaudeOneShot + spawnCandidate env propagation），import readUserSettingsEnv 复用
+   - apps/runner/test/claude-code-backend.test.ts: +3 测试（默认 / opt-in / context-pack prompt）
+   - apps/runner/test/coordinator-llm-fallback.test.ts: +2 测试，fakeClaudeCoordinatorBin 加 CAPTURE_COORD_ARGS 捕 args
+   - .trellis/spec/runner/backend/agent-backend-runtime.md: 同步契约 + Tests Required
+
+4. **E2E 验证** —
+   - run_4c1a113d0216 (uom2026): context_pack 1m23s 通过 (vs. 修复前 10 分钟), exitCode=0, timedOut=false, resultSeen=true, context_pack.md=2444 字节, 推进到 requirement_gate (额外 2m02s 也通过)
+   - 全 vitest 461/461 pass, typecheck 4 包全过
+
+5. **附带** — 把诊断事件 4 分类（partial delta / meta / system status / isSynthetic user / tool_use+result）作为 Diagnostic Note 注入姐妹任务 05-06-optimize-claude-code-live-log-output 的 PRD（那条任务在另一个会话的 commit 16007e0 已实现，本次会话末尾归档）。
+
+## 关键学习点
+
+- **CLI flag 一手实测优于猜测**：研究子代理两次 500 panic，转头跑 `claude --help` 直接拿到 `--setting-sources` / `--bare` / `--settings` 三个候选的精确语义，省下半小时调研。
+- **Interactive shell 测试 ≠ 子进程实际行为**：interactive `claude --settings '{"hooks":{}}'` 看似工作，但 hook 是否真触发要看 E2E。事件流证据是真理。
+- **`--setting-sources` 是粗粒度开关**：跳掉的不只是 hooks，还有用户 env 块。第三方 router（anyrouter 等）依赖 settings.json env 注入 token，必须手动转发。
+- **Chrome DevTools MCP 适合做 UI 端到端诊断**：直接把任务 wreq 的事件流抽出来比读代码快。但 page-closed 错误恢复差，备选方案直接打 API。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6d864f1` | (see git log) |
+| `5a61db2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
