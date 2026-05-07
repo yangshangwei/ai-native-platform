@@ -13,6 +13,7 @@ const ORIGINAL_HOME = process.env.HOME;
 const ORIGINAL_CLAUDE_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR;
 const ORIGINAL_XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME;
 const ORIGINAL_HOME_ISOLATION = process.env.AINP_CLAUDE_HOME_ISOLATION;
+const ORIGINAL_LOAD_USER_SETTINGS = process.env.AINP_CLAUDE_LOAD_USER_SETTINGS;
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -30,6 +31,8 @@ afterEach(() => {
   else process.env.XDG_CONFIG_HOME = ORIGINAL_XDG_CONFIG_HOME;
   if (ORIGINAL_HOME_ISOLATION === undefined) delete process.env.AINP_CLAUDE_HOME_ISOLATION;
   else process.env.AINP_CLAUDE_HOME_ISOLATION = ORIGINAL_HOME_ISOLATION;
+  if (ORIGINAL_LOAD_USER_SETTINGS === undefined) delete process.env.AINP_CLAUDE_LOAD_USER_SETTINGS;
+  else process.env.AINP_CLAUDE_LOAD_USER_SETTINGS = ORIGINAL_LOAD_USER_SETTINGS;
 });
 
 describe('ClaudeCodeBackend runtime invocation', () => {
@@ -171,6 +174,93 @@ describe('ClaudeCodeBackend runtime invocation', () => {
     expect(env.CLAUDE_CONFIG_DIR).toBeUndefined();
     expect(env.XDG_CONFIG_HOME).toBeUndefined();
   });
+
+  it('passes --setting-sources project,local by default to skip user-level hooks', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ainp-claude-backend-settings-'));
+    const workspacePath = join(root, 'workspace');
+    const artifactsDir = join(root, 'artifacts');
+    mkdirSync(workspacePath, { recursive: true });
+    mkdirSync(artifactsDir, { recursive: true });
+
+    const capturePath = join(root, 'args.bin');
+    process.env.CAPTURE_CLAUDE_ARGS = capturePath;
+    delete process.env.AINP_CLAUDE_LOAD_USER_SETTINGS;
+    vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
+
+    await new ClaudeCodeBackend({ bin: fakeClaudeBin(root), timeoutMs: 3_000 }).run(implementationSkill(), {
+      workflowRunId: 'run_claude_settings_default',
+      stepRunId: 'step_claude_settings_default',
+      workspacePath,
+      branch: 'main',
+      title: 'exercise default setting-sources',
+      artifactsDir,
+      inputs: {},
+    });
+
+    const args = readFileSync(capturePath).toString('utf8').split('\0').filter(Boolean);
+    const idx = args.indexOf('--setting-sources');
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(args[idx + 1]).toBe('project,local');
+  });
+
+  it('keeps user-level settings when AINP_CLAUDE_LOAD_USER_SETTINGS=1', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ainp-claude-backend-settings-on-'));
+    const workspacePath = join(root, 'workspace');
+    const artifactsDir = join(root, 'artifacts');
+    mkdirSync(workspacePath, { recursive: true });
+    mkdirSync(artifactsDir, { recursive: true });
+
+    const capturePath = join(root, 'args.bin');
+    process.env.CAPTURE_CLAUDE_ARGS = capturePath;
+    process.env.AINP_CLAUDE_LOAD_USER_SETTINGS = '1';
+    vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
+
+    await new ClaudeCodeBackend({ bin: fakeClaudeBin(root), timeoutMs: 3_000 }).run(implementationSkill(), {
+      workflowRunId: 'run_claude_settings_opt_in',
+      stepRunId: 'step_claude_settings_opt_in',
+      workspacePath,
+      branch: 'main',
+      title: 'exercise opt-in setting-sources',
+      artifactsDir,
+      inputs: {},
+    });
+
+    const args = readFileSync(capturePath).toString('utf8').split('\0').filter(Boolean);
+    expect(args).not.toContain('--setting-sources');
+  });
+
+  it('injects context-pack constraints into the system prompt for context_pack stage', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ainp-claude-backend-ctxpack-'));
+    const workspacePath = join(root, 'workspace');
+    const artifactsDir = join(root, 'artifacts');
+    mkdirSync(workspacePath, { recursive: true });
+    mkdirSync(artifactsDir, { recursive: true });
+
+    const capturePath = join(root, 'args.bin');
+    process.env.CAPTURE_CLAUDE_ARGS = capturePath;
+    vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
+
+    await new ClaudeCodeBackend({ bin: fakeClaudeBinThatProducesArtifact(root, artifactsDir, 'context_pack.md'), timeoutMs: 3_000 }).run(
+      contextPackSkill(),
+      {
+        workflowRunId: 'run_claude_ctxpack_prompt',
+        stepRunId: 'step_claude_ctxpack_prompt',
+        workspacePath,
+        branch: 'main',
+        title: 'add login captcha switch',
+        artifactsDir,
+        inputs: {},
+      },
+    );
+
+    const args = readFileSync(capturePath).toString('utf8').split('\0').filter(Boolean);
+    const promptIdx = args.indexOf('--append-system-prompt');
+    expect(promptIdx).toBeGreaterThanOrEqual(0);
+    const systemPrompt = args[promptIdx + 1];
+    expect(systemPrompt).toContain('CONTEXT-PACK CONSTRAINTS');
+    expect(systemPrompt).toContain('DO NOT plan changes');
+    expect(systemPrompt).toContain('≤ 2 KB');
+  });
 });
 
 function implementationSkill(): SkillSpec {
@@ -191,6 +281,24 @@ function implementationSkill(): SkillSpec {
   };
 }
 
+function contextPackSkill(): SkillSpec {
+  return {
+    id: 'test-context-pack',
+    version: '1.0.0',
+    stage: 'context_pack',
+    instructions: 'Summarize reusable repo facts.',
+    inputs: [],
+    outputs: [{ name: 'context_pack.md', kind: 'artifact', required: true }],
+    toolPolicy: {
+      allowedCommands: [],
+      writableGlobs: [],
+      networkAllowed: false,
+    },
+    requiredGates: [],
+    compatibleBackends: ['claude_code'],
+  };
+}
+
 function fakeClaudeBin(dir: string): string {
   const bin = join(dir, 'claude');
   writeFileSync(bin, [
@@ -202,6 +310,24 @@ function fakeClaudeBin(dir: string): string {
     'if [ -n "$CAPTURE_CLAUDE_ENV" ]; then',
     '  node -e "require(\'fs\').writeFileSync(process.env.CAPTURE_CLAUDE_ENV, JSON.stringify({ HOME: process.env.HOME, CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME }))"',
     'fi',
+    'printf "%s\\n" \'{"type":"result","subtype":"success","result":"done"}\'',
+    'exit 0',
+    '',
+  ].join('\n'), 'utf8');
+  chmodSync(bin, 0o755);
+  return bin;
+}
+
+function fakeClaudeBinThatProducesArtifact(dir: string, artifactsDir: string, outputName: string): string {
+  const bin = join(dir, 'claude-produce');
+  const targetPath = join(artifactsDir, outputName);
+  writeFileSync(bin, [
+    '#!/bin/sh',
+    'if [ -n "$CAPTURE_CLAUDE_ARGS" ]; then',
+    '  : > "$CAPTURE_CLAUDE_ARGS"',
+    '  for arg in "$@"; do printf "%s\\0" "$arg" >> "$CAPTURE_CLAUDE_ARGS"; done',
+    'fi',
+    `printf "%s\\n" "fake context pack body" > "${targetPath}"`,
     'printf "%s\\n" \'{"type":"result","subtype":"success","result":"done"}\'',
     'exit 0',
     '',

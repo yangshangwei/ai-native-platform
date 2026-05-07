@@ -15,7 +15,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -160,12 +160,40 @@ export class ClaudeCodeBackend implements AgentBackend {
   ): Promise<{ exitCode: number }> {
     const allowedTools = computeAllowedTools(skill);
     const disallowedTools = ['WebFetch', 'WebSearch'];
+    // User-level `~/.claude/settings.json` may register hooks (Stop,
+    // PreToolUse, ...) that don't make sense in a runner-driven session — most
+    // notably a Stop hook that reads a per-session transcript file. Inside our
+    // worktree path the transcript is at a different location than the user's
+    // normal setup, so the hook fails, Claude Code re-injects the failure as a
+    // synthetic user message, the model answers again, the hook fires again,
+    // and the loop only ends at the 10-minute hard timeout (exit 143).
+    //
+    // Fix: pass `--setting-sources project,local` so the user-level
+    // settings.json (with its hooks) is not loaded by the CLI. Trying to
+    // override `hooks` via `--settings <json>` does NOT work — additional
+    // settings merge with user settings instead of replacing them, so the
+    // user hooks still fire.
+    //
+    // Side effect: skipping user settings also skips its `env` block (e.g.
+    // `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` for third-party routers
+    // like anyrouter), which would break runtime auth. We compensate by
+    // reading the user `env` block ourselves and merging it into the child
+    // process environment below, so auth keeps working without re-introducing
+    // user hooks.
+    //
+    // Escape hatch: AINP_CLAUDE_LOAD_USER_SETTINGS=1 keeps user settings
+    // active (hooks fire too), for debugging hook behavior.
+    const keepUserHooks = process.env.AINP_CLAUDE_LOAD_USER_SETTINGS === '1';
+    const settingSourcesArgs = keepUserHooks
+      ? []
+      : ['--setting-sources', 'project,local'];
     const args = [
       '--print',
       '--output-format', 'stream-json',
       '--verbose',
       '--include-partial-messages',
       '--no-session-persistence',
+      ...settingSourcesArgs,
       '--permission-mode', this.opts.permissionMode ?? 'acceptEdits',
       '--max-budget-usd', String(this.opts.maxBudgetUsd ?? DEFAULT_BUDGET_USD),
       '--add-dir', ctx.workspacePath,
@@ -188,6 +216,7 @@ export class ClaudeCodeBackend implements AgentBackend {
       skillId: skill.id,
       allowedTools,
       disallowedTools,
+      userHooksOverridden: !keepUserHooks,
     });
 
     // Default to the user's local Claude Code environment so OAuth/keychain
@@ -200,6 +229,16 @@ export class ClaudeCodeBackend implements AgentBackend {
       childEnv.HOME = isolatedHome;
       delete childEnv.CLAUDE_CONFIG_DIR;
       delete childEnv.XDG_CONFIG_HOME;
+    } else if (!keepUserHooks) {
+      // We told the CLI to skip user-level settings.json (above) so its hooks
+      // don't fire. But that also skips the user's `env` block — which on
+      // anyrouter-style setups carries `ANTHROPIC_AUTH_TOKEN` /
+      // `ANTHROPIC_BASE_URL`. Read those here ourselves and forward them so
+      // auth keeps working without restoring the hooks.
+      const userEnv = readUserSettingsEnv(process.env.CLAUDE_CONFIG_DIR, process.env.HOME);
+      for (const [k, v] of Object.entries(userEnv)) {
+        if (childEnv[k] === undefined) childEnv[k] = v;
+      }
     }
 
     const child = spawn(invocation.command, invocation.args, {
@@ -342,6 +381,17 @@ function buildPrompts(
       'After writing, reply with one short confirmation line and stop.',
       '',
     );
+    if (skill.stage === 'context_pack') {
+      sysLines.push(
+        'CONTEXT-PACK CONSTRAINTS (overrides any general instinct to "be helpful"):',
+        '- Your job is ONLY to summarize reusable repo facts for downstream stages.',
+        '- DO NOT plan changes, propose variable names, list edit sites, or describe how to implement the request.',
+        '- DO NOT walk every file. Read at most a handful of likely-reusable entry points (build, config, main entry).',
+        '- Output: bullet points; ≤ 2 KB total; if you wrote >300 lines you went too deep.',
+        '- After writing the file, reply with ONE short confirmation line and stop.',
+        '',
+      );
+    }
   } else {
     sysLines.push(
       'OUTPUT REQUIREMENT:',
@@ -408,6 +458,37 @@ function pickFileOutput(skill: SkillSpec): { name: string; contentType: string }
 }
 
 // ---- streaming helpers ----------------------------------------------------
+
+/**
+ * Read the `env` block from `~/.claude/settings.json` (or `$CLAUDE_CONFIG_DIR/settings.json`).
+ * Used to forward user-defined environment variables — e.g.
+ * `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_BASE_URL` for third-party routers — into
+ * the spawned Claude CLI process when we have to skip the user-level setting
+ * source for hook isolation. See `invokeCli` above for the rationale.
+ *
+ * Returns an empty object on any read/parse error; the runner is responsible
+ * for surfacing auth failures via the CLI's own error stream.
+ */
+export function readUserSettingsEnv(
+  claudeConfigDir: string | undefined,
+  home: string | undefined,
+): Record<string, string> {
+  const dir = claudeConfigDir ?? (home ? join(home, '.claude') : null);
+  if (!dir) return {};
+  const path = join(dir, 'settings.json');
+  try {
+    const raw = readFileSync(path, 'utf8');
+    const parsed = JSON.parse(raw) as { env?: Record<string, string> };
+    if (!parsed.env || typeof parsed.env !== 'object') return {};
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(parsed.env)) {
+      if (typeof v === 'string') out[k] = v;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
 
 async function consumeLines(
   stream: NodeJS.ReadableStream | null,

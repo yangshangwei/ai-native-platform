@@ -16,10 +16,12 @@ const realFetch = globalThis.fetch;
 const ORIGINAL_CLAUDE_BIN = process.env.AINP_CLAUDE_BIN;
 const ORIGINAL_CODEX_BIN = process.env.AINP_CODEX_BIN;
 const ORIGINAL_CAPTURE_COORD_ENV = process.env.CAPTURE_COORD_ENV;
+const ORIGINAL_CAPTURE_COORD_ARGS = process.env.CAPTURE_COORD_ARGS;
 const ORIGINAL_HOME = process.env.HOME;
 const ORIGINAL_CLAUDE_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR;
 const ORIGINAL_XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME;
 const ORIGINAL_HOME_ISOLATION = process.env.AINP_CLAUDE_HOME_ISOLATION;
+const ORIGINAL_LOAD_USER_SETTINGS = process.env.AINP_CLAUDE_LOAD_USER_SETTINGS;
 
 const BLANK_INPUT = {
   userRequest: 'do the thing',
@@ -49,10 +51,12 @@ afterEach(() => {
   restoreEnv('AINP_CLAUDE_BIN', ORIGINAL_CLAUDE_BIN);
   restoreEnv('AINP_CODEX_BIN', ORIGINAL_CODEX_BIN);
   restoreEnv('CAPTURE_COORD_ENV', ORIGINAL_CAPTURE_COORD_ENV);
+  restoreEnv('CAPTURE_COORD_ARGS', ORIGINAL_CAPTURE_COORD_ARGS);
   restoreEnv('HOME', ORIGINAL_HOME);
   restoreEnv('CLAUDE_CONFIG_DIR', ORIGINAL_CLAUDE_CONFIG_DIR);
   restoreEnv('XDG_CONFIG_HOME', ORIGINAL_XDG_CONFIG_HOME);
   restoreEnv('AINP_CLAUDE_HOME_ISOLATION', ORIGINAL_HOME_ISOLATION);
+  restoreEnv('AINP_CLAUDE_LOAD_USER_SETTINGS', ORIGINAL_LOAD_USER_SETTINGS);
 });
 
 function makeDeps(opts: {
@@ -268,6 +272,38 @@ describe('classifyByLlm real Claude spawn environment', () => {
     expect(env.CLAUDE_CONFIG_DIR).toBeUndefined();
     expect(env.XDG_CONFIG_HOME).toBeUndefined();
   });
+
+  it('passes --setting-sources project,local by default to skip user-level hooks', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ainp-coord-claude-settings-'));
+    const capturePath = join(root, 'args.bin');
+    process.env.AINP_CLAUDE_BIN = fakeClaudeCoordinatorBin(root);
+    process.env.AINP_CODEX_BIN = missingCliBin(root, 'codex');
+    process.env.CAPTURE_COORD_ARGS = capturePath;
+    delete process.env.AINP_CLAUDE_LOAD_USER_SETTINGS;
+
+    const result = await classifyByLlm(BLANK_INPUT, { preferredBackend: 'claude_code' });
+
+    expect(result.decision.action).toBe('proceed');
+    const args = readFileSync(capturePath, 'utf8').split('\0').filter(Boolean);
+    const idx = args.indexOf('--setting-sources');
+    expect(idx).toBeGreaterThanOrEqual(0);
+    expect(args[idx + 1]).toBe('project,local');
+  });
+
+  it('omits --setting-sources when AINP_CLAUDE_LOAD_USER_SETTINGS=1', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ainp-coord-claude-settings-on-'));
+    const capturePath = join(root, 'args.bin');
+    process.env.AINP_CLAUDE_BIN = fakeClaudeCoordinatorBin(root);
+    process.env.AINP_CODEX_BIN = missingCliBin(root, 'codex');
+    process.env.CAPTURE_COORD_ARGS = capturePath;
+    process.env.AINP_CLAUDE_LOAD_USER_SETTINGS = '1';
+
+    const result = await classifyByLlm(BLANK_INPUT, { preferredBackend: 'claude_code' });
+
+    expect(result.decision.action).toBe('proceed');
+    const args = readFileSync(capturePath, 'utf8').split('\0').filter(Boolean);
+    expect(args).not.toContain('--setting-sources');
+  });
 });
 
 function restoreEnv(key: string, original: string | undefined): void {
@@ -294,6 +330,9 @@ function fakeClaudeCoordinatorBin(dir: string): string {
     '    CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,',
     '    XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,',
     '  }));',
+    '}',
+    'if (process.env.CAPTURE_COORD_ARGS) {',
+    '  writeFileSync(process.env.CAPTURE_COORD_ARGS, process.argv.slice(2).join("\\u0000"));',
     '}',
     `console.log(${JSON.stringify(assistantEvent)});`,
     '',
