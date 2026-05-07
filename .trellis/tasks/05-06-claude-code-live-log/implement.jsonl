@@ -1,0 +1,6 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "runner backend 入口指引（必读）"}
+{"file": ".trellis/spec/runner/backend/agent-backend-runtime.md", "reason": "Agent backend runtime 契约：Claude Code spawn / stream / 退出码"}
+{"file": ".trellis/spec/runner/backend/error-handling.md", "reason": "exitCode/timeout/SIGTERM 处理规范"}
+{"file": ".trellis/spec/runner/backend/logging-guidelines.md", "reason": "stream-json 事件 emit 规范"}
+{"file": ".trellis/spec/guides/index.md", "reason": "共享指南"}
