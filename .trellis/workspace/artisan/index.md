@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 18
+- **Total Sessions**: 19
 - **Last Active**: 2026-05-08
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~733 | Active |
+| `journal-1.md` | ~766 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 19 | 2026-05-08 | new-task-form 高级覆盖补 Flow + Start Stage：跨 4 层端到端打通用户 flowId override | `806078b` | `main` |
 | 18 | 2026-05-08 | 归档 new-task-form-router-driven-defaults：验证 73ccd26 已落地状态后清理 | `73ccd26` | `main` |
 | 17 | 2026-05-08 | live-log 任务收尾：把 R2 prompt 收紧从 inline 提到 SkillSpec 层 | `e4c7e52` | `main` |
 | 16 | 2026-05-08 | reject 强制理由输入闭环：web 弹窗 + api 双校验 + runner 持久化 rejection_feedback | `918f43c` | `main` |

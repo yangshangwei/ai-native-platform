@@ -731,3 +731,36 @@ Fixed the workflow creation path so Smart Router skip recommendations stay advis
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: new-task-form 高级覆盖补 Flow + Start Stage：跨 4 层端到端打通用户 flowId override
+
+**Date**: 2026-05-08
+**Task**: new-task-form 高级覆盖补 Flow + Start Stage：跨 4 层端到端打通用户 flowId override
+**Branch**: `main`
+
+### Summary
+
+实现 05-08-new-task-form-flow-startstage-override 任务全部 AC：高级覆盖 disclosure 增加 Flow + Start Stage 两个下拉，端到端透传到 createWorkflowRun。Auto-context 校核发现下游 /workflow-runs 路径 V2 W2-4/PR4 时早已支持 flowId+startStage，本次只需补 request 一侧 + UI——比种子 PRD 想象的轻一截。锁定 Q1=A：用户显式 flowId 时 runner watch 跳过 Coordinator + Router，从 FLOW_REGISTRY[flowId].kind 直接派生 runType（避免 'AI vs user' mismatch 噪音）。改动跨 shared 类型 / api 路由+DB+store / runner watch+orchestrator+api-client / web UI 共 16 文件 +520 -43；新增 9 测试（7 个 /workflow-requests 校验 + 2 个 watch fastpath），全量 481/481 测试 + tsc x4 全绿、0 回归。startStage 仅在 flowSelect=feature.standard 时可见，切换非 feature.standard 时自动清空避免 stale 字段偷渡到 submit。后端 4 路 400 校验全部覆盖（unknown flowId / unknown startStage / startStage on non-feature.standard / startStage without flowId）。session 启动时该任务在 planning，本次会话完成 brainstorm 锁 Q1=A → curate jsonl → start → 4 轮 inline 实现 → tests → commit → archive 全流程。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `806078b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
