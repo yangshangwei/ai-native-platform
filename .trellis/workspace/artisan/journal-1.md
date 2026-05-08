@@ -698,3 +698,36 @@ Fixed the workflow creation path so Smart Router skip recommendations stay advis
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: 归档 new-task-form-router-driven-defaults：验证 73ccd26 已落地状态后清理
+
+**Date**: 2026-05-08
+**Task**: 归档 new-task-form-router-driven-defaults：验证 73ccd26 已落地状态后清理
+**Branch**: `main`
+
+### Summary
+
+本会话对 05-06-new-task-form-router-driven-defaults 没有新代码提交——任务的实质工作早在 commit 73ccd26 (2026-05-06) 完成。这次切回任务后做了最终验证：32 测试 (coordinator-rules 11 + coordinator-preview 8 + config-routes 13) 全绿；mismatch detector 仍在 main.ts:3673；docs (coordinator-preview.md + ui-end-to-end-operations.md) 已更新。AC 自动可测项全部满足；唯一未自动验证的是 e2e fastforward 烟囱（需 5173 UI 手测）。PRD Implementation Deviations #1 把 Flow / StartStage override UI 切到后续任务 new-task-form-flow-startstage-override（在归档后由本会话顺手创建为 planning 占位，承载 deviation 上下文）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `73ccd26` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
