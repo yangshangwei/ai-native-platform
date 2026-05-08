@@ -269,6 +269,8 @@ interface WorkflowRequestRow {
   error: string | null;
   created_at: string;
   updated_at: string;
+  flow_id: string | null;
+  start_stage: string | null;
 }
 
 function rowToWorkflowRequest(r: WorkflowRequestRow): WorkflowRequest {
@@ -284,6 +286,8 @@ function rowToWorkflowRequest(r: WorkflowRequestRow): WorkflowRequest {
     error: r.error,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
+    flowId: r.flow_id as WorkflowRequest['flowId'],
+    startStage: r.start_stage as WorkflowRequest['startStage'],
   };
 }
 
@@ -301,6 +305,8 @@ const workflowRequests = {
       error: req.error,
       created_at: req.createdAt,
       updated_at: req.updatedAt,
+      flow_id: req.flowId,
+      start_stage: req.startStage,
     });
   },
   get(id: string): WorkflowRequest | undefined {

@@ -1,12 +1,19 @@
-import type { CoordinatorDecision, WorkflowRequest, WorkflowRunType } from '@ainp/shared';
+import type { CoordinatorDecision, FlowDef, WorkflowRequest, WorkflowRunType } from '@ainp/shared';
+import { FLOW_REGISTRY } from '@ainp/shared';
 import { api } from '../api-client';
 import { sendHeartbeat } from '../heartbeat';
 import { cmdOrchestrate } from '../orchestrator';
 import { triageRequest, type LlmBackendKind } from '../agents/coordinator';
 import { getConfig } from '../config-client';
 
-type PendingRequest = Pick<WorkflowRequest, 'id' | 'projectId' | 'title' | 'branch'>;
-type ClaimedRequest = Pick<WorkflowRequest, 'id' | 'projectId' | 'title' | 'branch'>;
+type PendingRequest = Pick<
+  WorkflowRequest,
+  'id' | 'projectId' | 'title' | 'branch' | 'flowId' | 'startStage'
+>;
+type ClaimedRequest = Pick<
+  WorkflowRequest,
+  'id' | 'projectId' | 'title' | 'branch' | 'flowId' | 'startStage'
+>;
 
 export type TriageOutcome =
   | { action: 'proceed'; runType: WorkflowRunType; decision: CoordinatorDecision }
@@ -48,15 +55,30 @@ export async function processNextWorkflowRequest(
   const [next] = await deps.listPending();
   if (!next) return 'idle';
 
-  const triage = await deps.triage(next);
-  if (triage.action === 'paused') return 'paused';
-  if (triage.action === 'aborted') return 'aborted';
+  // 05-08 new-task-form-flow-startstage-override (PRD Q1=A): when the user
+  // explicitly pinned a flowId in the New Task form's 高级覆盖 disclosure,
+  // the request is the source of truth — skip Coordinator + Router entirely
+  // and derive runType from the FlowDef's `kind`. Saves a Coordinator round
+  // trip and avoids "AI vs user" mismatch noise (the user already decided).
+  let runType: WorkflowRunType;
+  if (next.flowId) {
+    const flowDef: FlowDef = FLOW_REGISTRY[next.flowId];
+    runType = flowDef.kind;
+    console.log(
+      `[runner] skipping Coordinator: request.flowId=${next.flowId} -> runType=${runType}`,
+    );
+  } else {
+    const triage = await deps.triage(next);
+    if (triage.action === 'paused') return 'paused';
+    if (triage.action === 'aborted') return 'aborted';
+    runType = triage.runType;
+  }
 
   const claimed = await deps.claim(next.id, deps.runnerId);
   if (!claimed) return 'lost';
 
   try {
-    const result = await deps.orchestrate(claimed, triage.runType);
+    const result = await deps.orchestrate(claimed, runType);
     await deps.complete(claimed.id, {
       workflowRunId: result.workflowRunId,
       ok: result.ok,
@@ -157,6 +179,8 @@ export async function cmdWatch(opts: WatchOpts = {}): Promise<void> {
           sourceBranch: request.branch,
           workflowRequestId: request.id,
           runType,
+          flowId: request.flowId ?? undefined,
+          startStage: request.startStage ?? undefined,
           cleanup: !opts.keepWorktree,
           setExitCode: false,
         }),

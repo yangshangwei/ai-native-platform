@@ -59,6 +59,13 @@ export const api = {
     sourceBranch?: string;
     /** V2 W2-3: optional flow id; omitted values use server-side conservative defaults. */
     flowId?: FlowId;
+    /**
+     * 05-08 new-task-form-flow-startstage-override: optional UI override of
+     * the run's first stage. Server validates membership in
+     * `FLOW_REGISTRY[flowId].stages`; null/undefined falls back to the
+     * flow's first stage.
+     */
+    startStage?: WorkflowStage | null;
   }) =>
     request<WorkflowRun>('POST', '/workflow-runs', { ...params, type: params.type ?? 'smoke' }),
 

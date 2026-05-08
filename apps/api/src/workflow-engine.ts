@@ -140,6 +140,10 @@ export function createWorkflowRequest(params: {
    * between request creation and the initial chat turn (PRD P0-2 / P0-3).
    */
   firstMessage?: { role: MessageRole; content: string };
+  /** Optional UI override pinning the FLOW_REGISTRY entry (PRD 05-08). */
+  flowId?: WorkflowRequest['flowId'];
+  /** Optional UI override pinning the run's first stage (PRD 05-08). */
+  startStage?: WorkflowRequest['startStage'];
 }): WorkflowRequest {
   const now = nowIso();
   const request: WorkflowRequest = {
@@ -154,6 +158,8 @@ export function createWorkflowRequest(params: {
     error: null,
     createdAt: now,
     updatedAt: now,
+    flowId: params.flowId ?? null,
+    startStage: params.startStage ?? null,
   };
   if (params.firstMessage) {
     const message: RequestMessage = {

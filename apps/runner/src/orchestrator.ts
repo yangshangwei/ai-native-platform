@@ -12,6 +12,7 @@ import type {
   StageStep,
   WorkflowRun,
   WorkflowRunType,
+  WorkflowStage,
   WorkspaceRef,
 } from '@ainp/shared';
 import { api } from './api-client';
@@ -43,6 +44,13 @@ export interface OrchestrateOpts {
    * default for the Coordinator-decided runType. PRD W2-3 ADR Q4.
    */
   flowId?: FlowId;
+  /**
+   * 05-08 new-task-form-flow-startstage-override: optional UI override of
+   * the run's first stage. Only meaningful when `flowId === 'feature.standard'`
+   * (other flows are short, head-to-tail). The orchestrator slices
+   * `FLOW_REGISTRY[flowId].stages` at this stage on the API side.
+   */
+  startStage?: WorkflowStage | null;
   /** Default true — auto-clean worktree at the end. */
   cleanup?: boolean;
   /** Default true for CLI mode; watch mode keeps the daemon alive on failed jobs. */
@@ -117,6 +125,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     type: opts.runType ?? 'feature',
     sourceBranch: opts.sourceBranch ?? project.defaultBranch,
     flowId: opts.flowId,
+    startStage: opts.startStage,
   });
   console.log(`[runner] workflow-run ${run.id} created (flow=${run.flowId})`);
   if (opts.workflowRequestId) {

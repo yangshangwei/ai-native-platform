@@ -132,4 +132,95 @@ describe('runner watch workflow request processing', () => {
     expect(result).toBe('aborted');
     expect(calls).toEqual([]);
   });
+
+  // 05-08 new-task-form-flow-startstage-override (PRD Q1=A): explicit user
+  // flowId in the request makes the runner skip the Coordinator round-trip
+  // and derive runType from FLOW_REGISTRY[flowId].kind.
+  it('skips triage and derives runType from FlowDef.kind when request.flowId is set', async () => {
+    const { processNextWorkflowRequest } = await import('../src/cmd/watch');
+    const calls: string[] = [];
+
+    const result = await processNextWorkflowRequest({
+      runnerId: 'runner@test',
+      listPending: async () => [
+        {
+          id: 'wreq_pinned',
+          projectId: 'proj_1',
+          title: 'refactor entity layer',
+          branch: 'main',
+          flowId: 'refactor.standard',
+          startStage: null,
+        },
+      ],
+      triage: async () => {
+        calls.push('triage:should-not-run');
+        return { action: 'proceed', runType: 'feature', decision: fakeDecision() };
+      },
+      claim: async (requestId, runnerId) => {
+        calls.push(`claim:${requestId}:${runnerId}`);
+        return {
+          id: requestId,
+          projectId: 'proj_1',
+          title: 'refactor entity layer',
+          branch: 'main',
+          flowId: 'refactor.standard',
+          startStage: null,
+        };
+      },
+      orchestrate: async (request, runType) => {
+        calls.push(
+          `orchestrate:${request.projectId}:${request.flowId}:${request.startStage}:${runType}`,
+        );
+        return { workflowRunId: 'run_pinned', ok: true };
+      },
+      complete: async (requestId, completion) => {
+        calls.push(`complete:${requestId}:${completion.ok}`);
+      },
+    });
+
+    expect(result).toBe('processed');
+    // Triage MUST NOT have run.
+    expect(calls).not.toContain('triage:should-not-run');
+    // runType must come from FLOW_REGISTRY['refactor.standard'].kind = 'refactor'.
+    expect(calls).toContain('orchestrate:proj_1:refactor.standard:null:refactor');
+    expect(calls).toContain('complete:wreq_pinned:true');
+  });
+
+  it('forwards both flowId and startStage from a pinned feature.standard request', async () => {
+    const { processNextWorkflowRequest } = await import('../src/cmd/watch');
+    const calls: string[] = [];
+
+    await processNextWorkflowRequest({
+      runnerId: 'runner@test',
+      listPending: async () => [
+        {
+          id: 'wreq_resume',
+          projectId: 'proj_1',
+          title: 'resume from review',
+          branch: 'develop',
+          flowId: 'feature.standard',
+          startStage: 'review',
+        },
+      ],
+      triage: async () => {
+        throw new Error('triage should not run when flowId is pinned');
+      },
+      claim: async (requestId) => ({
+        id: requestId,
+        projectId: 'proj_1',
+        title: 'resume from review',
+        branch: 'develop',
+        flowId: 'feature.standard',
+        startStage: 'review',
+      }),
+      orchestrate: async (request, runType) => {
+        calls.push(`orchestrate:${request.flowId}:${request.startStage}:${runType}`);
+        return { workflowRunId: 'run_resume', ok: true };
+      },
+      complete: async () => {},
+    });
+
+    // FLOW_REGISTRY['feature.standard'].kind === 'feature'.
+    expect(calls).toEqual(['orchestrate:feature.standard:review:feature']);
+  });
 });

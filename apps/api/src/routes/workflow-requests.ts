@@ -1,9 +1,11 @@
 import { Hono } from 'hono';
 import type {
+  FlowId,
   MessageRole,
   Project,
   WorkflowRequestStatus,
   WorkflowRunType,
+  WorkflowStage,
 } from '@ainp/shared';
 import { store } from '../store/store';
 import {
@@ -12,6 +14,12 @@ import {
   createWorkflowRequest,
   markWorkflowRequestRunStarted,
 } from '../workflow-engine';
+import {
+  KNOWN_FLOW_IDS,
+  KNOWN_WORKFLOW_STAGES,
+  isFlowId,
+  isWorkflowStage,
+} from './workflow-runs';
 
 export const workflowRequests = new Hono();
 
@@ -49,6 +57,8 @@ workflowRequests.post('/', async (c) => {
     title?: string;
     branch?: string;
     firstMessage?: { role?: MessageRole; content?: string };
+    flowId?: string | null;
+    startStage?: string | null;
   };
 
   let project = body.projectId ? store.projects.get(body.projectId) : undefined;
@@ -77,12 +87,54 @@ workflowRequests.post('/', async (c) => {
     firstMessage = { role, content };
   }
 
+  // Optional UI overrides from the New Task form 高级覆盖 disclosure.
+  // null/undefined/'' all collapse to "no override" so the runner watch loop
+  // falls back to Coordinator + Router. Validate the trust-boundary mirroring
+  // /workflow-runs POST behaviour (PRD 05-08 Q2 = 400 hard error).
+  let flowId: FlowId | null | undefined;
+  if (body.flowId !== undefined && body.flowId !== null && body.flowId !== '') {
+    if (!isFlowId(body.flowId)) {
+      return c.json(
+        { error: `unknown flowId: ${body.flowId} (known: ${KNOWN_FLOW_IDS.join(', ')})` },
+        400,
+      );
+    }
+    flowId = body.flowId;
+  }
+
+  let startStage: WorkflowStage | null | undefined;
+  if (body.startStage !== undefined && body.startStage !== null && body.startStage !== '') {
+    if (!isWorkflowStage(body.startStage)) {
+      return c.json(
+        { error: `unknown startStage: ${body.startStage} (known: ${KNOWN_WORKFLOW_STAGES.join(', ')})` },
+        400,
+      );
+    }
+    // Per FlowDef.startStage docstring: only `feature.standard` carries
+    // non-null startStage values; other flows are short and run head-to-tail.
+    if (flowId !== undefined && flowId !== 'feature.standard') {
+      return c.json(
+        { error: `startStage is only allowed when flowId is 'feature.standard'` },
+        400,
+      );
+    }
+    if (flowId === undefined) {
+      return c.json(
+        { error: `startStage requires flowId='feature.standard'` },
+        400,
+      );
+    }
+    startStage = body.startStage;
+  }
+
   const request = createWorkflowRequest({
     projectId: project.id,
     type: body.type ?? 'feature',
     title: body.title.trim(),
     branch: body.branch?.trim() || project.defaultBranch,
     firstMessage,
+    flowId: flowId ?? null,
+    startStage: startStage ?? null,
   });
   return c.json(request, 201);
 });

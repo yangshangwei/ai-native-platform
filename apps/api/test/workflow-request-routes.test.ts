@@ -256,3 +256,128 @@ test('POST /workflow-requests rejects firstMessage with unknown role', async () 
   });
   expect(res.status).toBe(400);
 });
+
+// 05-08 new-task-form-flow-startstage-override: validate the new flowId /
+// startStage body fields piggyback onto POST /workflow-requests. Empty / null
+// = "no override" (server treats as null). Non-empty must be a registered
+// FlowId / WorkflowStage (`isFlowId` / `isWorkflowStage`) plus the rule that
+// startStage is only meaningful when flowId === 'feature.standard'.
+
+test('POST /workflow-requests accepts a valid flowId override', async () => {
+  const project = seedProject(`flow-override-${Date.now()}`);
+  const res = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      title: 'refactor entity layer',
+      flowId: 'refactor.standard',
+    }),
+  });
+  expect(res.status).toBe(201);
+  const created = (await res.json()) as { id: string; flowId: string | null; startStage: string | null };
+  expect(created.flowId).toBe('refactor.standard');
+  expect(created.startStage).toBeNull();
+});
+
+test('POST /workflow-requests accepts flowId+startStage when flow is feature.standard', async () => {
+  const project = seedProject(`flow-startstage-${Date.now()}`);
+  const res = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      title: 'resume from review',
+      flowId: 'feature.standard',
+      startStage: 'review',
+    }),
+  });
+  expect(res.status).toBe(201);
+  const created = (await res.json()) as { id: string; flowId: string | null; startStage: string | null };
+  expect(created.flowId).toBe('feature.standard');
+  expect(created.startStage).toBe('review');
+});
+
+test('POST /workflow-requests treats empty flowId/startStage as no override', async () => {
+  const project = seedProject(`flow-empty-${Date.now()}`);
+  const res = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      title: 'auto-routed task',
+      flowId: '',
+      startStage: '',
+    }),
+  });
+  expect(res.status).toBe(201);
+  const created = (await res.json()) as { flowId: string | null; startStage: string | null };
+  expect(created.flowId).toBeNull();
+  expect(created.startStage).toBeNull();
+});
+
+test('POST /workflow-requests rejects an unknown flowId with 400', async () => {
+  const project = seedProject(`flow-unknown-${Date.now()}`);
+  const res = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      title: 'bad flow',
+      flowId: 'nonsense.flow',
+    }),
+  });
+  expect(res.status).toBe(400);
+  const body = (await res.json()) as { error: string };
+  expect(body.error).toMatch(/unknown flowId/i);
+});
+
+test('POST /workflow-requests rejects startStage on a non-feature.standard flow', async () => {
+  const project = seedProject(`startstage-bad-flow-${Date.now()}`);
+  const res = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      title: 'fastforward with stage',
+      flowId: 'feature.fastforward',
+      startStage: 'review',
+    }),
+  });
+  expect(res.status).toBe(400);
+  const body = (await res.json()) as { error: string };
+  expect(body.error).toMatch(/feature\.standard/i);
+});
+
+test('POST /workflow-requests rejects startStage without a flowId', async () => {
+  const project = seedProject(`startstage-no-flow-${Date.now()}`);
+  const res = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      title: 'orphan stage',
+      startStage: 'review',
+    }),
+  });
+  expect(res.status).toBe(400);
+  const body = (await res.json()) as { error: string };
+  expect(body.error).toMatch(/feature\.standard/i);
+});
+
+test('POST /workflow-requests rejects an unknown startStage with 400', async () => {
+  const project = seedProject(`startstage-unknown-${Date.now()}`);
+  const res = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      title: 'bad stage',
+      flowId: 'feature.standard',
+      startStage: 'no_such_stage',
+    }),
+  });
+  expect(res.status).toBe(400);
+  const body = (await res.json()) as { error: string };
+  expect(body.error).toMatch(/unknown startStage/i);
+});

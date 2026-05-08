@@ -1,1 +1,18 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Always-include shared guides bundle"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务横跨 web (modal disclosure) + api (POST /workflow-requests + DB) + runner (watch + cmdOrchestrate + api-client) + shared (WorkflowRequest type)，关键跨层契约：request.flowId/startStage 字段一路从 UI submit body → DB → runner watch → cmdOrchestrate → /workflow-runs"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "isFlowId/isWorkflowStage 校验函数已在 routes/workflow-runs.ts 中存在，POST /workflow-requests 应直接复用而不是再写一份；FLOW_REGISTRY['feature.standard'].stages 决定 startStageSelect 选项时也是直接读，不复制"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "web 前端入口约定（vanilla TS SPA + render diff 风格）"}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "Renderer 函数形状、wholesale-replace 焦点丢失警告（L121）——advanced disclosure toggle 时不能整段重建表单，flowSelect/startStageSelect 必须 element.value 局部更新"}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "advanced disclosure draft state 保留模式（73ccd26 已落地的 newTaskFormDraft pattern），新加的 flowId/startStage 字段同样需要在 render() 重建时保留"}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "submit body 新加 flowId/startStage 可选字段需符合 DTO 约定；与 @ainp/shared 的 WorkflowRequest 类型同步"}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "前端 TS 质量条 + lint，新 select 与 onchange 联动需符合"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "Hono 路由约定；POST /workflow-requests 校验加固按现行 400 响应模式"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "idempotent ALTER TABLE 模式（参 workflow_runs.flow_id 既有迁移）；NULL 列 + NULL 默认值的回退兼容契约"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "请求体校验失败 400 返回模式：未知 flowId / startStage 不在该 flow stages 列表中需 400，与 /workflow-runs 同步"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "API 端 TS / 测试质量条；新增校验需配 unit test"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "runner 后端入口；cmd/watch.ts + orchestrator.ts + api-client.ts 改动须遵循"}
+{"file": ".trellis/spec/runner/backend/flow-registry.md", "reason": "FLOW_REGISTRY SoT 与 flowId/startStage 在 runner 端的消费契约——必读"}
+{"file": ".trellis/spec/runner/backend/error-handling.md", "reason": "watch 在 claim 后发现非法 flowId（理论不应发生但防御）应 fail-fast 还是降级；与既有 cmdOrchestrate 错误路径一致"}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "runner TS 质量条；cmdOrchestrate 签名扩展需更新所有 caller"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "WorkflowRequest 类型住在 packages/shared/src/types/workflow.ts，新增 flowId?/startStage? 字段必须在此处扩展且向后兼容（optional）"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "shared 类型 JSDoc 要求；新加字段的语义说明（哪一层是 source of truth、何时为 null）需文档化"}

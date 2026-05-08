@@ -1,1 +1,15 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Always-include shared guides bundle"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "审查 flowId/startStage 字段从 web submit body → /workflow-requests POST → DB row → runner watch read → cmdOrchestrate opts → /workflow-runs body 是否一路无损；类型契约（optional vs required vs null）四层一致"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "审 isFlowId/isWorkflowStage/KNOWN_FLOW_IDS 是否被复用而非复制；FLOW_REGISTRY 直接读 stages 列表而非硬编码"}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "审 advanced disclosure 切换 flowSelect 时是否使用 element.value 局部更新，不整段重建表单；textarea/input 焦点不丢"}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "审 newTaskFormDraft 是否含新字段并在 render() 重建时正确保留；空字符串 vs undefined 的语义区分"}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "审 submit body 类型与 @ainp/shared 的 WorkflowRequest / FlowId 类型一致性"}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "审 web 端 lint/typecheck；advanced disclosure 切换时副作用（清空 startStageSelect）是否有 unit/integration 覆盖"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "审 ALTER TABLE 是否 idempotent（IF NOT EXISTS / 类似的 try-catch 包裹）；新列是否 NULLABLE 不破坏旧 row 读取"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "审 400 响应：未知 flowId / startStage 不在选定 flow.stages 中 / startStage on non-feature.standard 三种边界都要 400 + 明确 error 文案"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "审 routes/workflow-requests.ts 新增校验是否配套 unit test，覆盖：合法 flowId only / 合法 flowId+startStage / 非法 flowId / startStage on flowId=fastforward 四条边界"}
+{"file": ".trellis/spec/runner/backend/flow-registry.md", "reason": "审 runner 端是否仍把 FLOW_REGISTRY 当作 SoT，没绕过它直接硬编码 stage 列表；fastpath 跳 Coordinator 时 runType 来源 = FLOW_REGISTRY[flowId].kind"}
+{"file": ".trellis/spec/runner/backend/error-handling.md", "reason": "审 watch fastpath（Q1=A）：request.flowId 非空时跳 Coordinator 是否符合 fail-fast 原则；非法 flowId 在 watch 这一层应该已经被 API 拦截，runner 信任契约即可"}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "审 cmdOrchestrate / api-client.createWorkflowRun 签名扩展是否所有 caller 同步（cmd/run.ts、cmd/watch.ts、orchestrator 内部）"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "审 WorkflowRequest 字段扩展是否单一 SoT；@ainp/shared 包导出索引同步"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "审 flowId?/startStage? optional 字段的 JSDoc 说明：何为 null 何为 undefined（语义区分） + 哪一层负责填写"}

@@ -3055,10 +3055,69 @@ function renderNewTaskPage(): HTMLElement {
   // which the coordinator's rules may not pick up reliably).
   typeSelect.appendChild(el('option', { text: '(让 AI 自动判定)', attrs: { value: '' } }));
   for (const type of ['feature', 'bugfix', 'smoke', 'refactor']) typeSelect.appendChild(el('option', { text: type, attrs: { value: type } }));
+
+  // 05-08 new-task-form-flow-startstage-override: explicit Flow override.
+  // Mirrors the FLOW_REGISTRY entries in `packages/shared/src/flows/registry.ts`
+  // (FlowId union). Empty value = "(让 router 推荐)" — runner Coordinator
+  // + Router still drive flow selection. Non-empty value bypasses Coordinator
+  // entirely (PRD Q1 = A): runner watch derives runType from FlowDef.kind.
+  const flowSelect = el('select', { attrs: { name: 'flowId' } });
+  flowSelect.appendChild(el('option', { text: '(让 router 推荐)', attrs: { value: '' } }));
+  for (const fid of [
+    'feature.standard',
+    'feature.fastforward',
+    'issue.standard',
+    'refactor.standard',
+  ]) {
+    flowSelect.appendChild(el('option', { text: fid, attrs: { value: fid } }));
+  }
+
+  // Start Stage override is only meaningful for `feature.standard`; the other
+  // three flows are short and run head-to-tail per FlowDef.startStage docstring.
+  // Stages mirror FLOW_REGISTRY['feature.standard'].stages 1:1.
+  const startStageSelect = el('select', { attrs: { name: 'startStage' } });
+  startStageSelect.appendChild(el('option', { text: '(从第一阶段开始)', attrs: { value: '' } }));
+  for (const st of [
+    'context_pack',
+    'requirement',
+    'design',
+    'implementation',
+    'build_test',
+    'review',
+    'completion',
+    'knowledge',
+  ]) {
+    startStageSelect.appendChild(el('option', { text: st, attrs: { value: st } }));
+  }
+  const startStageRow = el('label', {
+    class: 'input-block',
+    children: [el('span', { text: 'Start Stage（仅 feature.standard 可用）' }), startStageSelect],
+  });
   const title = el('textarea', { attrs: { name: 'title', rows: '7', 'data-new-task-title': 'true', placeholder: '描述业务目标、验收标准、约束。例如：为报告页增加导出按钮，并确保 mvn test 通过。' } });
   // Hydrate the user-owned draft fields (see state-management.md).
   title.value = newTaskFormDraft.title;
   if (newTaskFormDraft.type) typeSelect.value = newTaskFormDraft.type;
+  if (newTaskFormDraft.flowId) flowSelect.value = newTaskFormDraft.flowId;
+  if (newTaskFormDraft.startStage) startStageSelect.value = newTaskFormDraft.startStage;
+  // startStageSelect is only relevant for feature.standard; toggle visibility
+  // on initial render and on every flowSelect change. When hidden the select
+  // also has its value cleared so a stale draft can't sneak through submit.
+  const syncStartStageVisibility = (): void => {
+    const visible = flowSelect.value === 'feature.standard';
+    startStageRow.style.display = visible ? '' : 'none';
+    if (!visible) {
+      startStageSelect.value = '';
+      newTaskFormDraft.startStage = '';
+    }
+  };
+  syncStartStageVisibility();
+  flowSelect.addEventListener('change', () => {
+    newTaskFormDraft.flowId = flowSelect.value as typeof newTaskFormDraft.flowId;
+    syncStartStageVisibility();
+  });
+  startStageSelect.addEventListener('change', () => {
+    newTaskFormDraft.startStage = startStageSelect.value as typeof newTaskFormDraft.startStage;
+  });
   if (newTaskFormDraft.projectId) {
     const hasOption = Array.from(projectSelect.options).some((o) => o.value === newTaskFormDraft.projectId);
     if (hasOption) projectSelect.value = newTaskFormDraft.projectId;
@@ -3313,18 +3372,28 @@ function renderNewTaskPage(): HTMLElement {
   // 2026-05-06 router advisory defaults: Type is no longer prominent in the
   // main form. The Coordinator still decides runType, while Smart Router output
   // is preview/audit only. Power users / refactor / smoke paths open the
-  // disclosure. Flow / startStage override is NOT here yet — that requires
-  // extending the /workflow-requests body + WorkflowRequest schema to plumb
-  // flowId / startStage through to createWorkflowRun.
-  // Tracked as a follow-up task; for now Type is the only override dial.
+  // disclosure. 05-08 task added Flow + Start Stage overrides; when Flow is
+  // pinned the runner skips Coordinator entirely and derives runType from
+  // FlowDef.kind (PRD Q1=A). Start Stage is only meaningful for
+  // `feature.standard` and is auto-hidden otherwise.
   const advanced = document.createElement('details');
-  advanced.appendChild(el('summary', { text: '高级覆盖（手动指定 Type；Flow/起始阶段 待后续）' }));
+  advanced.appendChild(el('summary', { text: '高级覆盖（手动指定 Type / Flow / 起始阶段）' }));
   advanced.appendChild(
     el('label', {
       class: 'input-block',
       children: [el('span', { text: 'Type（留空让 AI 判定）' }), typeSelect],
     }),
   );
+  advanced.appendChild(
+    el('label', {
+      class: 'input-block',
+      children: [
+        el('span', { text: 'Flow（留空让 router 推荐；指定 = 跳过 Coordinator）' }),
+        flowSelect,
+      ],
+    }),
+  );
+  advanced.appendChild(startStageRow);
   form.append(
     panelHeader('创建任务请求', 'UI 只入队；本地 runner watch 负责认领、建 worktree、执行 gate、等待人工确认。'),
     el('label', { class: 'input-block', children: [el('span', { text: 'Project' }), projectSelect] }),
@@ -3388,13 +3457,20 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
     // 2026-05-06: omit `type` when user left it as "(让 AI 自动判定)" so the
     // server-side Coordinator can classify runType. Smart Router output is
     // advisory until a future request override path sends flowId/startStage.
+    // 2026-05-08 (this task): plumb flowId / startStage from 高级覆盖. Empty
+    // string = no override (server treats as null). When flowId is non-empty
+    // the runner watch loop bypasses Coordinator + Router (PRD Q1=A).
     const typeOverride = String(fd.get('type') ?? '').trim();
+    const flowOverride = String(fd.get('flowId') ?? '').trim();
+    const startStageOverride = String(fd.get('startStage') ?? '').trim();
     const request = await api<WorkflowRequestDto>('/workflow-requests', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         projectId,
         ...(typeOverride && { type: typeOverride }),
+        ...(flowOverride && { flowId: flowOverride }),
+        ...(startStageOverride && { startStage: startStageOverride }),
         title,
         branch: String(fd.get('branch') ?? '').trim() || project?.defaultBranch,
         // PR1 atomic intake (PRD §P0-2 / P0-3): API persists the request
@@ -3486,7 +3562,18 @@ const newTaskFormDraft: {
   type: '' | 'feature' | 'bugfix' | 'smoke' | 'refactor';
   title: string;
   branch: string;
-} = { projectId: '', type: '', title: '', branch: '' };
+  flowId: '' | 'feature.standard' | 'feature.fastforward' | 'issue.standard' | 'refactor.standard';
+  startStage:
+    | ''
+    | 'context_pack'
+    | 'requirement'
+    | 'design'
+    | 'implementation'
+    | 'build_test'
+    | 'review'
+    | 'completion'
+    | 'knowledge';
+} = { projectId: '', type: '', title: '', branch: '', flowId: '', startStage: '' };
 
 const NEW_TASK_TITLE_SELECTOR = 'textarea[data-new-task-title]';
 
@@ -3592,6 +3679,8 @@ function clearNewTaskFormDraft(): void {
   newTaskFormDraft.type = '';
   newTaskFormDraft.title = '';
   newTaskFormDraft.branch = '';
+  newTaskFormDraft.flowId = '';
+  newTaskFormDraft.startStage = '';
   newTaskTitleFocus = null;
 }
 

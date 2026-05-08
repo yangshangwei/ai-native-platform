@@ -189,6 +189,19 @@ export interface WorkflowRequest {
   error: string | null;
   createdAt: Iso8601;
   updatedAt: Iso8601;
+  /**
+   * Optional UI override pointing into `FLOW_REGISTRY`. When non-null the
+   * runner watch loop bypasses Coordinator + Router and starts the run with
+   * this exact flow (PRD 05-08 Q1=A). When null/absent the run is
+   * Coordinator-then-Router driven as before.
+   */
+  flowId: FlowId | null;
+  /**
+   * Optional UI override of the run's first stage. Only meaningful when
+   * `flowId === 'feature.standard'` (other flows are short, head-to-tail).
+   * The orchestrator slices `FLOW_REGISTRY[flowId].stages` at this stage.
+   */
+  startStage: WorkflowStage | null;
 }
 
 export type StepRunStatus =

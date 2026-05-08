@@ -29,41 +29,40 @@
 - `apps/web/src/main.ts` 高级覆盖 disclosure 已搭好（line ~3050 起 typeSelect），框架在；新增两个 select 是局部添加，不需要重写表单。
 - mismatch detector (`main.ts:3673`) 不影响这次改动。
 
-### 待做（本任务范围）
+### Auto-context 校核（2026-05-08 brainstorm 阶段实测）
 
-#### 1. Schema + DB
+更精细的实情，比初稿设想轻一截 —— **下游 `/workflow-runs` 路径已全打通，只需补 request 一侧**：
 
-- `WorkflowRequest` 类型扩 `flowId?: FlowId | null` + `startStage?: WorkflowStage | null`。
-- DB migration: `workflow_requests` 表加 `flow_id TEXT NULL` 和 `start_stage TEXT NULL` 两列（idempotent ALTER TABLE，参 V2 W2-1 的 PR 模式）。
-- 类型存活在 `packages/shared/src/types/workflow.ts`。
+- `POST /workflow-runs`（`apps/api/src/routes/workflow-runs.ts:67-128`）**已经接受 `flowId` + `startStage`** + isFlowId / isWorkflowStage 校验 + 400 错误（V2 W2-4/PR4 落地）。 **不需改。**
+- 引擎层 `createWorkflowRun`（`apps/api/src/workflow-engine.ts`）已支持 startStage / flowId 透传到 `workflow_runs` 行。 **不需改。**
+- `apps/runner/src/api-client.ts:55-63 createWorkflowRun`：接受 `flowId?: FlowId`，但**没有** `startStage`。 **需补 `startStage?: WorkflowStage | null`。**
+- `apps/runner/src/orchestrator.ts:114-120 cmdOrchestrate`：把 `opts.flowId` 透传给 `api.createWorkflowRun`，但**没有** `opts.startStage`。 **需补。**
+- `apps/runner/src/cmd/watch.ts:148-158 cmdWatch`：调 `cmdOrchestrate({ project, title, sourceBranch, workflowRequestId, runType, ... })` —— **完全不读 `request.flowId / request.startStage`**。 **需补。**
+- `WorkflowRequest` 接口（`packages/shared/src/types/workflow.ts:180-193`）：12 个字段，**没有** `flowId / startStage`。 **需补。**
+- `workflow_requests` DB 表（`apps/api/src/store/db.ts:53-66`）：12 列，**没有** `flow_id / start_stage` 列。 **需补 idempotent ALTER TABLE。**
+- `POST /workflow-requests`（`apps/api/src/routes/workflow-requests.ts:46-95`）：body 解析 projectId / projectName / title / type / branch / firstMessage，**不接受** `flowId / startStage`。 **需补 + 校验。**
+- `apps/web/src/main.ts` 新建任务表单：高级覆盖里仅有 typeSelect。 **需加 `flowSelect` + `startStageSelect`（仅 feature.standard 时可见）。**
 
-#### 2. API 路由
+### FLOW_REGISTRY 各 flow 的 stages（决定 startStage 选项）
 
-- `apps/api/src/routes/workflow-requests.ts` POST handler 解析 `body.flowId` / `body.startStage`，落到 `WorkflowRequest` row。
-- 校验：flowId 必须在 `FLOW_REGISTRY` 里（`packages/shared/src/flows/registry.ts`）；startStage 必须在选定 flow 的 stages 里（且仅当 `flow_id === 'feature.standard'` 时允许）；其他组合 400。
+- `feature.standard`：8 stages（context_pack → requirement → design → implementation → build_test → review → completion → knowledge）
+- `feature.fastforward`：4 stages（implementation → build_test → review → completion）
+- `issue.standard`：6 stages（PRD 见参考）
+- `refactor.standard`：（待查；看测试 fixture）
 
-#### 3. Runner watch
+`FlowDef.startStage` 文档明确："Currently only `feature.standard` carries non-null values; other flows are short and run head-to-tail." → **startStage select 只在 `flowSelect.value === 'feature.standard'` 时显示** 是符合既有设计意图的。
 
-- `apps/runner/src/watch.ts`（或对应 watch 路径）在认领 request 后 `createWorkflowRun({ flowId: request.flowId ?? coordinatorDecided, startStage: request.startStage ?? null, ... })`，把用户覆盖优先于 Coordinator 决策。
-- 行为契约：用户覆盖 > Coordinator 决策 > Router 默认。
+### 待做（本任务范围 —— 收窄后的实际清单）
 
-#### 4. Web UI
+1. **shared types**：`WorkflowRequest` 加 `flowId?: FlowId | null` + `startStage?: WorkflowStage | null`。
+2. **DB**：`workflow_requests` idempotent ALTER TABLE 加 `flow_id TEXT NULL` + `start_stage TEXT NULL`（参考 `workflow_runs.flow_id` 的迁移模式：`apps/api/src/store/db.ts` 现有的 idempotent ALTER 块）。
+3. **api/routes/workflow-requests.ts** POST：解析 + 校验 `body.flowId / body.startStage`（重用 `isFlowId / isWorkflowStage` from `routes/workflow-runs.ts`）；落到 `WorkflowRequest` row。
+4. **runner watch**（`apps/runner/src/cmd/watch.ts:148-158`）：把 `request.flowId / request.startStage` 透到 `cmdOrchestrate({ ..., flowId, startStage })`。
+5. **runner cmdOrchestrate**（`apps/runner/src/orchestrator.ts:114-120`）：扩 `opts.startStage`，透传给 `api.createWorkflowRun`。
+6. **runner api-client createWorkflowRun**（`apps/runner/src/api-client.ts:55`）：扩 `startStage?: WorkflowStage | null` 字段。
+7. **web UI**（`apps/web/src/main.ts`）：高级覆盖加 `flowSelect`（4 选 1 + 「(让 router 推荐)」空选项） + `startStageSelect`（仅 `feature.standard` 时可见，options 来自 `FLOW_REGISTRY['feature.standard'].stages`）；submit body 透传非空字段；flowSelect 切换非 feature.standard 时自动清 startStageSelect。
+8. **Tests**：`apps/api/test/workflow-requests*.test.ts` 加 4 路测试（合法 / flowId 非法 / startStage on non-feature 拒绝 / 都传 happy）；`apps/runner/test/watch*.test.ts` 加 1 路（request.flowId 透传到 cmdOrchestrate）。
 
-- `apps/web/src/main.ts` 高级覆盖 disclosure 内：
-  - 加 `flowSelect`（4 选 1：`issue.standard` / `feature.standard` / `feature.fastforward` / `refactor.standard`，外加「(让 router 推荐)」空选项）。
-  - 加 `startStageSelect`（仅在 `flowSelect.value === 'feature.standard'` 时 visible，selectoptions 来自 `feature.standard` 的 stages 列表）。
-  - submit body：`flowSelect.value && (body.flowId = flowSelect.value)`、startStage 同理；空选项 = 不传。
-  - 不动既有 typeSelect / Type 下拉、Coordinator preview 渲染。
-  - Renderer idempotent：用 `element.value` 局部更新，不整段重建（参 `.trellis/spec/web/frontend/component-guidelines.md` L121 wholesale-replace focus-loss 警告）。
-
-#### 5. 测试
-
-- `apps/api/test/workflow-requests.test.ts`（或新文件）：
-  - flowId 合法 / 非法 / 缺省（不传）三路。
-  - startStage 在非 `feature.standard` flow 下被拒 400。
-  - flowId + startStage 都传时正确落库。
-- `apps/runner/test/`：
-  - watch 在 request 含 flowId 时把它透到 `createWorkflowRun`，不被 Coordinator 决策覆盖。
 
 ## Acceptance Criteria
 
@@ -91,3 +90,13 @@
 ## Open Questions
 
 （implementation 阶段进入 brainstorm 时再填——本 PRD 只是 placeholder，承载从父任务带过来的 deviation 上下文。）
+
+## Decisions (locked 2026-05-08)
+
+- **Q1（Coordinator interaction when user overrides flowId）= A**：`request.flowId` 非空 → `runType = FLOW_REGISTRY[flowId].kind`，**完全跳过 Coordinator + Router**；audit 中 `routerRecommendation` 写 `null`；mismatch detector 不触发（没东西可对比）。
+  - **Why**：用户显式覆盖 = source of truth，再花 LLM 调用复核浪费且引入歧义。
+  - **How**：runner watch 在 claim 之后判 `request.flowId` 是否非空——非空走 fast-path（derive runType + skip Coordinator）；为空保持现有 Coordinator → Router 链路。
+- **Q2（验证严格性）= 400 hard error**（与 `/workflow-runs` POST 现行做法一致）：不合法 flowId / startStage 在 `/workflow-requests` POST 阶段就返回 400，不让脏数据落 DB。
+- **Q3（UI 切换 flowSelect 时 startStage 行为）= 自动清空**：`flowSelect.value` 切到非 `feature.standard` → `startStageSelect` 隐藏 + `startStageSelect.value = ''`，避免 stale 选项偷渡到 submit body。
+- **Q4（user-override 审计事件）= 不发新 event**（MVP）：现有 audit_log 已记录 `request.flowId` / `request.startStage` 字段，足够回溯；引入新 event 类型属 over-engineering，留待 history-based learning 任务再做。
+

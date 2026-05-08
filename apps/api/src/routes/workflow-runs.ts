@@ -24,6 +24,7 @@ const KNOWN_FLOW_IDS: readonly FlowId[] = ['feature.standard', 'feature.fastforw
 function isFlowId(value: unknown): value is FlowId {
   return typeof value === 'string' && (KNOWN_FLOW_IDS as readonly string[]).includes(value);
 }
+export { KNOWN_FLOW_IDS, isFlowId };
 
 /**
  * V2 W2-4 / PR4: trust-boundary guard for `WorkflowStage`. Mirrors the
@@ -49,6 +50,7 @@ const KNOWN_WORKFLOW_STAGES: readonly WorkflowStage[] = [
 function isWorkflowStage(value: unknown): value is WorkflowStage {
   return typeof value === 'string' && (KNOWN_WORKFLOW_STAGES as readonly string[]).includes(value);
 }
+export { KNOWN_WORKFLOW_STAGES, isWorkflowStage };
 
 workflowRuns.get('/', (c) => {
   const projectId = c.req.query('projectId');

@@ -376,3 +376,16 @@ if (!workflowRunColumns.has('flow_id')) {
 if (!workflowRunColumns.has('start_stage')) {
   runSql(`ALTER TABLE workflow_runs ADD COLUMN start_stage TEXT`);
 }
+
+// 05-08 new-task-form-flow-startstage-override: workflow_requests.flow_id
+// + start_stage — optional UI overrides carried from the New Task form's
+// 高级覆盖 disclosure. NULL means "let Coordinator + Router decide" (the
+// V1-equivalent default). Both columns are NULLABLE so historical rows
+// stay valid without backfill. Idempotent.
+const workflowRequestColumns = columnNames('workflow_requests');
+if (!workflowRequestColumns.has('flow_id')) {
+  runSql(`ALTER TABLE workflow_requests ADD COLUMN flow_id TEXT`);
+}
+if (!workflowRequestColumns.has('start_stage')) {
+  runSql(`ALTER TABLE workflow_requests ADD COLUMN start_stage TEXT`);
+}
