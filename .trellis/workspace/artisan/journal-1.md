@@ -632,3 +632,36 @@ Fixed the workflow creation path so Smart Router skip recommendations stay advis
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: reject 强制理由输入闭环：web 弹窗 + api 双校验 + runner 持久化 rejection_feedback
+
+**Date**: 2026-05-08
+**Task**: reject 强制理由输入闭环：web 弹窗 + api 双校验 + runner 持久化 rejection_feedback
+**Branch**: `main`
+
+### Summary
+
+为 workbench 三处 Reject 入口（sensitive_change_gate 要求修改 / 通用 Reject / acceptance 拒绝验收）补齐人机闭环。前端新增 promptRejectReason 模态（复用 stream-overlay 模式 + 完整 a11y），强制 trim 非空理由后才能提交；后端在 POST /approvals (approved=false) 与 POST /workflow-runs/:id/acceptance-decision (decision=reject) 加 400 校验防绕过；runner 端 findApproval/awaitApproval 透出 comment，三处 reject throw 之前持久化为 PerRunArtifactKind 'rejection_feedback' artifact（持久化失败降级为 warn 不阻 throw），日志加 200 字摘要。共 15 文件 +699 -32，全量 472 测试 + tsc x4 全绿。L3 (reject 后自动重跑) 拆独立任务后续追。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `918f43c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
