@@ -665,3 +665,36 @@ Fixed the workflow creation path so Smart Router skip recommendations stay advis
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: live-log 任务收尾：把 R2 prompt 收紧从 inline 提到 SkillSpec 层
+
+**Date**: 2026-05-08
+**Task**: live-log 任务收尾：把 R2 prompt 收紧从 inline 提到 SkillSpec 层
+**Branch**: `main`
+
+### Summary
+
+归档 05-06-claude-code-live-log 任务前的 follow-on 强化提交。原 R2 fix (commit 6d864f1) 把 context_pack prompt 收紧 inline 注入到 buildPrompts 的 produce_file 分支，但仅对 Claude Code backend 生效；codex / native backend 仍读 SkillSpec.instructions 一行老指令，留有 drift 入口。本次把 6 条硬规则（不做实现规划 / 不做根因分析 / 不建议代码改动 / 不跑测试构建 / 偏好浅搜索）移到 SkillSpec.instructions 层 + 同步 SKILL_CONTEXT_PACK_INSTRUCTIONS_DEFAULT 常量，让所有 backend 共享同一份 orientation-not-implementation 契约。无控制流改动，纯指令文本。tsc x4 + 472/472 测试全绿。完成后任务 PRD 的 R1+R2 AC 全部覆盖（R3 早已切到姐妹任务）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e4c7e52` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

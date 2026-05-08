@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
+- **Total Sessions**: 17
 - **Last Active**: 2026-05-08
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~667 | Active |
+| `journal-1.md` | ~700 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-05-08 | live-log 任务收尾：把 R2 prompt 收紧从 inline 提到 SkillSpec 层 | `e4c7e52` | `main` |
 | 16 | 2026-05-08 | reject 强制理由输入闭环：web 弹窗 + api 双校验 + runner 持久化 rejection_feedback | `918f43c` | `main` |
 | 15 | 2026-05-07 | 修复 Claude Code 上下文准备 stop-hook 死循环 | `6d864f1`, `5a61db2` | `main` |
 | 14 | 2026-05-06 | Fix Claude local auth and router advisory defaults | `14b9801`, `0b15955` | `main` |
