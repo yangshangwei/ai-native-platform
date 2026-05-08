@@ -16,8 +16,26 @@ export const SKILLS: SkillSpec[] = [
     id: 'skill.context_pack',
     version: '0.1.0',
     stage: 'context_pack',
-    instructions:
-      'Assemble a Context Pack tying the user request to repo evidence: project_profile excerpt, relevant code refs (paths + line hits), and accepted knowledge from prior runs. Output must cite each evidence as a list item.',
+    instructions: `Create a lightweight Context Pack that only locates likely relevant repository areas for the user request.
+
+Your job is repository orientation, not implementation analysis.
+
+Output must include:
+- A short summary of what the request appears to concern.
+- Relevant files, modules, routes, commands, or config keys, with path references.
+- Minimal line-hit evidence when useful.
+- Any obvious upstream/downstream areas that later stages may need to inspect.
+
+Hard rules:
+- Do NOT propose an implementation plan.
+- Do NOT diagnose root cause unless it is directly obvious from file names or comments.
+- Do NOT trace full call chains unless needed to identify the correct entry point.
+- Do NOT recommend code changes.
+- Do NOT run tests, builds, or mutation commands.
+- Prefer shallow search and file mapping over deep source analysis.
+- Keep the output concise and evidence-oriented.
+
+The goal is to help later stages know where to look, not decide how to change the code.`,
     inputs: [
       { name: 'user_request', kind: 'text', required: true, description: 'one-liner' },
       {
