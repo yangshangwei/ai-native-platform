@@ -339,19 +339,18 @@ export const api = {
 
   listApprovals: (workflowRunId: string) =>
     request<{
-      items: Array<{ gateId: string; decision: 'approved' | 'rejected' }>;
+      items: Array<{ gateId: string; decision: 'approved' | 'rejected'; comment: string | null }>;
     }>('GET', `/approvals?workflowRunId=${encodeURIComponent(workflowRunId)}`),
 
   findApproval: async (
     workflowRunId: string,
     gateId: GateRun['gateId'],
-  ): Promise<'approved' | 'rejected' | null> => {
-    const r = await request<{ items: Array<{ gateId: string; decision: 'approved' | 'rejected' }> }>(
-      'GET',
-      `/approvals?workflowRunId=${encodeURIComponent(workflowRunId)}`,
-    );
+  ): Promise<{ decision: 'approved' | 'rejected'; comment: string | null } | null> => {
+    const r = await request<{
+      items: Array<{ gateId: string; decision: 'approved' | 'rejected'; comment: string | null }>;
+    }>('GET', `/approvals?workflowRunId=${encodeURIComponent(workflowRunId)}`);
     const found = [...r.items].reverse().find((a) => a.gateId === gateId);
-    return found ? found.decision : null;
+    return found ? { decision: found.decision, comment: found.comment ?? null } : null;
   },
 
   /** Push a single agent stream event so the API can persist + broadcast it. */

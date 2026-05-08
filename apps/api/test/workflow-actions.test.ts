@@ -62,6 +62,53 @@ test('acceptance decision persists risk decision and records manual approval whe
   expect(body.approval).toMatchObject({ gateId: 'acceptance_gate', decision: 'approved' });
 });
 
+test('acceptance decision: accept_risk does not require comment', async () => {
+  const run = seedRun();
+  const res = await app.request(`/workflow-runs/${run.id}/acceptance-decision`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ decision: 'accept_risk', actor: 'web' }),
+  });
+  expect(res.status).toBe(201);
+});
+
+test('acceptance decision: reject persists when comment is provided', async () => {
+  const run = seedRun();
+  const res = await app.request(`/workflow-runs/${run.id}/acceptance-decision`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ decision: 'reject', actor: 'web', comment: 'needs more evidence on AC-2' }),
+  });
+  expect(res.status).toBe(201);
+  const body = await res.json() as { action: { action: string }; approval: { gateId: string; decision: string } };
+  expect(body.action.action).toBe('reject');
+  expect(body.approval).toMatchObject({ gateId: 'acceptance_gate', decision: 'rejected' });
+});
+
+test('acceptance decision: reject without comment returns 400', async () => {
+  const run = seedRun();
+  const res = await app.request(`/workflow-runs/${run.id}/acceptance-decision`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ decision: 'reject', actor: 'web' }),
+  });
+  expect(res.status).toBe(400);
+  const body = (await res.json()) as { error: string };
+  expect(body.error).toMatch(/comment/i);
+});
+
+test('acceptance decision: reject with whitespace-only comment returns 400', async () => {
+  const run = seedRun();
+  const res = await app.request(`/workflow-runs/${run.id}/acceptance-decision`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ decision: 'reject', actor: 'web', comment: '   \n\t' }),
+  });
+  expect(res.status).toBe(400);
+  const body = (await res.json()) as { error: string };
+  expect(body.error).toMatch(/comment/i);
+});
+
 test('records knowledge suggestion accept/edit/ignore decisions as persisted workflow actions', async () => {
   const run = seedRun();
   const res = await app.request(`/workflow-runs/${run.id}/knowledge-actions`, {

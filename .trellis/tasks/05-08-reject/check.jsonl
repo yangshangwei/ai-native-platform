@@ -1,0 +1,14 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Always-include shared guides bundle"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "审查 comment 字段从 web → /approvals + /acceptance-decision → store → rejection_feedback artifact metadata 是否一路无损；ArtifactKind 联合是否在 shared 增量后被 web/api/runner 全部消费方同步"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "审查模态实现是否复用 stream-overlay/stream-modal 而不是新建一套 dialog；promptRejectReason 是否抽成单一 helper 而非三处复制"}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "审 a11y：role=dialog、aria-modal=true、首次聚焦 textarea、ESC/backdrop 关闭、焦点陷阱、按钮 disabled 状态在 trim 后空时是否正确反映"}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "审 approvalInFlight 在模态打开/取消/提交失败三种路径下的解锁是否正确；模态生命周期内不得让 render() 把模态从 DOM 中冲掉"}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "审 submitApproval / submitAcceptanceDecision 签名扩展是否破坏既有 caller；comment 参数 optional 但 reject 路径必传的契约是否在类型层有所体现"}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "审 web 端 lint/typecheck/测试覆盖；模态 helper 是否有单元测试或至少 DOM 集成测试"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "审 reject 时 comment 空的 400 返回是否符合现有错误体格式（error: '...' 字段）；不应吞错或返回 500"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "审 routes/approvals.ts + routes/workflow-runs.ts 新增校验是否配套 unit test，覆盖 approved=false+空 comment、approved=true 不强校验、decision=accept_risk 不强校验三条边界"}
+{"file": ".trellis/spec/runner/backend/error-handling.md", "reason": "审 createArtifact('rejection_feedback') 失败时是否降级为日志而非把 reject throw 链路本身搞挂；保持 reject 仍抛 'xxx_gate rejected' 不被改"}
+{"file": ".trellis/spec/runner/backend/logging-guidelines.md", "reason": "审 rejected 日志的 comment 摘要是否截断（避免超长 comment 撑爆终端）+ 不泄漏敏感信息"}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "审 findApproval 返回类型变更后所有 caller 是否同步更新；awaitApproval/awaitApprovalDetail 选型是否在保持现有签名兼容前提下完成"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "审 ArtifactKind 联合是否在 packages/shared/src 单一 source of truth 处扩展；@ainp/shared 包导出索引同步"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "审 'rejection_feedback' 字面量是否带 JSDoc 说明用途、生产侧（runner）/消费侧（context_pack 由 L3 任务）"}

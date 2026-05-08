@@ -22,6 +22,12 @@ approvals.post('/', async (c) => {
   if (!body.workflowRunId || !body.gateId || typeof body.approved !== 'boolean' || !body.actor) {
     return c.json({ error: 'workflowRunId, gateId, approved, actor required' }, 400);
   }
+  if (body.approved === false) {
+    const trimmed = typeof body.comment === 'string' ? body.comment.trim() : '';
+    if (trimmed.length === 0) {
+      return c.json({ error: 'comment required and must be non-empty when approved is false' }, 400);
+    }
+  }
   const result = recordApproval({
     workflowRunId: body.workflowRunId,
     gateId: body.gateId,

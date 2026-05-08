@@ -31,6 +31,13 @@ export type PerRunArtifactKind =
   | 'failsafe_report'
   | 'completion_report'
   | 'knowledge_candidate'
+  /**
+   * Captures the human reviewer's rejection reason at a manual gate.
+   * Produced by the runner just before the reject-throw; consumed by a
+   * later context-pack stage (handled in a follow-up L3 task) to seed
+   * prompt revision context for a re-run.
+   */
+  | 'rejection_feedback'
   | 'other';
 
 /**
@@ -74,6 +81,7 @@ const PER_RUN_KIND_SET: ReadonlySet<PerRunArtifactKind> = new Set<PerRunArtifact
   'failsafe_report',
   'completion_report',
   'knowledge_candidate',
+  'rejection_feedback',
   'other',
 ]);
 

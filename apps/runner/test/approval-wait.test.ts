@@ -11,13 +11,13 @@ describe('runner approval waiting', () => {
       gateId: 'requirement_gate',
       findApproval: async () => {
         polls += 1;
-        return polls < 3 ? null : 'approved';
+        return polls < 3 ? null : { decision: 'approved', comment: null };
       },
       sleep: async () => {},
       timeoutMs: null,
     });
 
-    expect(decision).toBe(true);
+    expect(decision).toEqual({ approved: true, comment: null });
     expect(polls).toBe(3);
   });
 });

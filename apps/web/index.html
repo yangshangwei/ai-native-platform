@@ -253,6 +253,11 @@
       .stream-modal { width: min(1280px, 96vw); height: min(920px, 92vh); border: 1px solid rgba(226, 232, 240, .18); border-radius: 24px; background: #f8fafc; box-shadow: 0 24px 80px rgba(15, 23, 42, .38); padding: 18px; display: grid; grid-template-rows: auto minmax(0, 1fr); }
       .stream-modal-head { margin-bottom: 14px; }
       .stream-modal-head h2 { font-size: 22px; }
+      .stream-modal.reject-modal { height: auto; max-height: 80vh; width: min(560px, 96vw); display: grid; grid-template-rows: auto auto auto; gap: 12px; padding: 22px; }
+      .stream-modal.reject-modal .stream-head { margin-bottom: 4px; align-items: center; }
+      .reject-textarea { width: 100%; min-height: 160px; padding: 12px; border-radius: 12px; border: 1px solid rgba(15, 23, 42, .14); background: #fff; color: #0f172a; font: inherit; font-size: 14px; line-height: 1.55; resize: vertical; box-sizing: border-box; }
+      .reject-textarea:focus { outline: 2px solid rgba(220, 38, 38, .45); outline-offset: 1px; }
+      .stream-modal.reject-modal .button-row { display: flex; justify-content: flex-end; gap: 8px; }
       .stream-body-expanded { min-height: 0; font-size: 15px; line-height: 1.65; padding: 18px; }
       .stream-line { overflow-wrap: anywhere; }
       .stream-line.assistant-readable { margin: 2px 0 8px; }

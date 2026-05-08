@@ -1892,7 +1892,17 @@ function renderApprovalPanel(detail: RunDetail, pendingGate: string | null, curr
     const approveBtn = button('批准敏感变更继续', 'button primary');
     const rejectBtn = button('要求修改', 'button danger');
     approveBtn.onclick = () => void submitApproval(detail.run.id, 'sensitive_change_gate', true);
-    rejectBtn.onclick = () => void submitApproval(detail.run.id, 'sensitive_change_gate', false);
+    rejectBtn.onclick = () => {
+      void (async () => {
+        const reason = await promptRejectReason({
+          title: '要求修改 — 请说明原因',
+          placeholder: '描述要修改的内容、风险点或证据缺失，提交后将作为反馈传给下一轮模型修订。',
+          submitLabel: '提交并打回',
+        });
+        if (reason === null) return;
+        await submitApproval(detail.run.id, 'sensitive_change_gate', false, reason);
+      })();
+    };
     return el('section', {
       class: 'panel side-panel checkpoint',
       children: [
@@ -1926,10 +1936,23 @@ function renderApprovalPanel(detail: RunDetail, pendingGate: string | null, curr
     void (isAcceptance
       ? submitAcceptanceDecision(detail.run.id, 'accept_risk')
       : submitApproval(detail.run.id, pendingGate, true));
-  rejectBtn.onclick = () =>
-    void (isAcceptance
-      ? submitAcceptanceDecision(detail.run.id, 'reject')
-      : submitApproval(detail.run.id, pendingGate, false));
+  rejectBtn.onclick = () => {
+    void (async () => {
+      const reason = await promptRejectReason({
+        title: isAcceptance ? '拒绝验收 — 请说明原因' : `Reject ${pendingGate} — 请说明原因`,
+        placeholder: isAcceptance
+          ? '请逐条说明 AC 哪些项证据不足或不达标，模型会据此修订重跑。'
+          : '请说明该阶段评审为何不通过、需要补充的证据或修改方向。',
+        submitLabel: isAcceptance ? '提交并拒绝验收' : '提交并打回',
+      });
+      if (reason === null) return;
+      if (isAcceptance) {
+        await submitAcceptanceDecision(detail.run.id, 'reject', reason);
+      } else {
+        await submitApproval(detail.run.id, pendingGate, false, reason);
+      }
+    })();
+  };
 
   return el('section', {
     class: 'panel side-panel checkpoint',
@@ -2154,6 +2177,117 @@ function renderExpandedAgentStreamOverlay(runId: string): HTMLElement {
     if (event.target === overlay) closeExpandedStream();
   };
   return overlay;
+}
+
+/**
+ * Prompts the user for a rejection reason via a modal dialog.
+ *
+ * Resolves with the trimmed non-empty reason on submit, or `null` on cancel
+ * (close button, ESC, or backdrop click). The Promise stays pending until
+ * the user submits or cancels — there is no timeout.
+ *
+ * Mounts the overlay directly under `document.body`, outside the main render
+ * tree, so a re-render driven by `render()` cannot wipe the modal mid-flow.
+ */
+function promptRejectReason(opts: {
+  title: string;
+  placeholder?: string;
+  submitLabel?: string;
+  cancelLabel?: string;
+}): Promise<string | null> {
+  return new Promise((resolve) => {
+    let resolved = false;
+    const titleId = `reject-modal-title-${Math.random().toString(16).slice(2, 8)}`;
+
+    const settle = (value: string | null): void => {
+      if (resolved) return;
+      resolved = true;
+      document.removeEventListener('keydown', handleKey);
+      overlay.remove();
+      resolve(value);
+    };
+
+    const handleKey = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        settle(null);
+        return;
+      }
+      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+        const trimmed = textarea.value.trim();
+        if (trimmed.length > 0) {
+          event.preventDefault();
+          settle(trimmed);
+        }
+      }
+    };
+
+    const textarea = el('textarea', {
+      class: 'reject-textarea',
+      attrs: {
+        placeholder: opts.placeholder ?? '请说明拒绝的具体原因…',
+        maxlength: '2000',
+        rows: '6',
+        'aria-label': opts.title,
+      },
+    });
+
+    const cancelBtn = button(opts.cancelLabel ?? '取消', 'button secondary');
+    cancelBtn.onclick = () => settle(null);
+
+    const submitBtn = button(opts.submitLabel ?? '提交并打回', 'button danger');
+    submitBtn.disabled = true;
+    submitBtn.onclick = () => {
+      const trimmed = textarea.value.trim();
+      if (trimmed.length === 0) return;
+      settle(trimmed);
+    };
+
+    textarea.addEventListener('input', () => {
+      submitBtn.disabled = textarea.value.trim().length === 0;
+    });
+
+    const closeBtn = button('×', 'button secondary small');
+    closeBtn.setAttribute('aria-label', '关闭并取消');
+    closeBtn.onclick = () => settle(null);
+
+    const overlay = el('div', {
+      class: 'stream-overlay reject-overlay',
+      attrs: {
+        role: 'dialog',
+        'aria-modal': 'true',
+        'aria-labelledby': titleId,
+      },
+      children: [
+        el('section', {
+          class: 'stream-modal reject-modal',
+          children: [
+            el('div', {
+              class: 'stream-head stream-modal-head',
+              children: [
+                el('h2', { id: titleId, class: 'stream-title', text: opts.title }),
+                closeBtn,
+              ],
+            }),
+            textarea,
+            el('div', {
+              class: 'button-row',
+              children: [cancelBtn, submitBtn],
+            }),
+          ],
+        }),
+      ],
+    });
+
+    overlay.onclick = (event) => {
+      if (event.target === overlay) settle(null);
+    };
+
+    document.addEventListener('keydown', handleKey);
+    document.body.appendChild(overlay);
+
+    requestAnimationFrame(() => textarea.focus());
+  });
 }
 
 function renderProjectsPage(): HTMLElement {
@@ -4263,7 +4397,12 @@ function actionLink(label: string, page: Page): HTMLButtonElement {
   return btn;
 }
 
-async function submitApproval(workflowRunId: string, gateId: string, approved: boolean): Promise<void> {
+async function submitApproval(
+  workflowRunId: string,
+  gateId: string,
+  approved: boolean,
+  comment?: string,
+): Promise<void> {
   const key = `${workflowRunId}:${gateId}`;
   const now = Date.now();
   const last = approvalLastSubmittedAt.get(key) ?? 0;
@@ -4272,6 +4411,12 @@ async function submitApproval(workflowRunId: string, gateId: string, approved: b
   approvalLastSubmittedAt.set(key, now);
   render();
   try {
+    const userComment = comment?.trim();
+    const finalComment = userComment && userComment.length > 0
+      ? userComment
+      : approved
+        ? 'approved via workbench UI'
+        : 'rejected via workbench UI';
     await api('/approvals', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -4280,7 +4425,7 @@ async function submitApproval(workflowRunId: string, gateId: string, approved: b
         gateId,
         approved,
         actor: 'web',
-        comment: approved ? 'approved via workbench UI' : 'rejected via workbench UI',
+        comment: finalComment,
       }),
     });
     await loadRunDetail(workflowRunId, false);
@@ -4294,19 +4439,26 @@ async function submitApproval(workflowRunId: string, gateId: string, approved: b
 async function submitAcceptanceDecision(
   workflowRunId: string,
   decision: 'accept_risk' | 'reject',
+  comment?: string,
 ): Promise<void> {
   const key = `${workflowRunId}:acceptance_gate`;
   if (approvalInFlight.has(key)) return;
   approvalInFlight.add(key);
   render();
   try {
+    const userComment = comment?.trim();
+    const finalComment = userComment && userComment.length > 0
+      ? userComment
+      : decision === 'accept_risk'
+        ? 'risk accepted via workbench UI'
+        : 'acceptance rejected via workbench UI';
     await api(`/workflow-runs/${encodeURIComponent(workflowRunId)}/acceptance-decision`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         decision,
         actor: 'web',
-        comment: decision === 'accept_risk' ? 'risk accepted via workbench UI' : 'acceptance rejected via workbench UI',
+        comment: finalComment,
         payload: { source: 'acceptance-checklist' },
       }),
     });

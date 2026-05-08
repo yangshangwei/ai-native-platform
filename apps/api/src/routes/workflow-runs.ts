@@ -198,6 +198,12 @@ workflowRuns.post('/:id/acceptance-decision', async (c) => {
     payload?: Record<string, unknown>;
   };
   if (!body.decision) return c.json({ error: 'decision required' }, 400);
+  if (body.decision === 'reject') {
+    const trimmed = typeof body.comment === 'string' ? body.comment.trim() : '';
+    if (trimmed.length === 0) {
+      return c.json({ error: 'comment required and must be non-empty when decision is reject' }, 400);
+    }
+  }
   const result = recordAcceptanceDecision({
     workflowRunId: id,
     decision: body.decision,

@@ -330,6 +330,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
         awaitHuman: api.awaitHuman,
         stepFinished: api.stepFinished,
         awaitApproval,
+        postRejectionFeedback,
       },
     });
     await api.stepFinished({ stepRunId: stepId, status: 'passed' });
@@ -411,9 +412,25 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     }
     await api.awaitHuman({ workflowRunId: c.run.id, stage: 'review' });
     console.log(`[runner] awaiting acceptance_gate approval…`);
-    const accepted = await awaitApproval(c.run.id, 'acceptance_gate');
-    console.log(`[runner]   acceptance_gate -> ${accepted ? 'approved' : 'rejected'}`);
+    const { approved: accepted, comment: acceptanceComment } = await awaitApproval(
+      c.run.id,
+      'acceptance_gate',
+    );
+    const acceptanceRejectSummary = !accepted && acceptanceComment
+      ? `: ${acceptanceComment.slice(0, 200)}${acceptanceComment.length > 200 ? '…' : ''}`
+      : '';
+    console.log(
+      `[runner]   acceptance_gate -> ${accepted ? 'approved' : 'rejected'}${acceptanceRejectSummary}`,
+    );
     if (!accepted) {
+      if (acceptanceComment) {
+        await postRejectionFeedback({
+          workflowRunId: c.run.id,
+          stepRunId: null,
+          gateId: 'acceptance_gate',
+          comment: acceptanceComment,
+        });
+      }
       c.ok.value = false;
       throw new Error('acceptance_gate rejected');
     }
@@ -627,7 +644,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
 
     await api.awaitHuman({ workflowRunId: c.run.id, stage: 'knowledge' });
     console.log(`[runner] awaiting knowledge_gate approval…`);
-    const promoted = await awaitApproval(c.run.id, 'knowledge_gate');
+    const { approved: promoted } = await awaitApproval(c.run.id, 'knowledge_gate');
     console.log(`[runner]   knowledge_gate -> ${promoted ? 'approved' : 'rejected'}`);
     if (!promoted) {
       // V1 quirk: knowledge gate rejection sets ok but does NOT throw —
@@ -814,9 +831,22 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
           : stage === 'design'
             ? 'design_gate'
             : 'acceptance_gate';
-      const approved = await awaitApproval(run.id, approverGateId);
-      console.log(`[runner]   ${approverGateId} -> ${approved ? 'approved' : 'rejected'}`);
+      const { approved, comment: approvalComment } = await awaitApproval(run.id, approverGateId);
+      const approverRejectSummary = !approved && approvalComment
+        ? `: ${approvalComment.slice(0, 200)}${approvalComment.length > 200 ? '…' : ''}`
+        : '';
+      console.log(
+        `[runner]   ${approverGateId} -> ${approved ? 'approved' : 'rejected'}${approverRejectSummary}`,
+      );
       if (!approved) {
+        if (approvalComment) {
+          await postRejectionFeedback({
+            workflowRunId: run.id,
+            stepRunId: null,
+            gateId: approverGateId,
+            comment: approvalComment,
+          });
+        }
         ok.value = false;
         throw new Error(`${approverGateId} rejected`);
       }
@@ -977,10 +1007,47 @@ async function collectReports(
   return out;
 }
 
+/**
+ * Persist a `rejection_feedback` artifact carrying the human reviewer's
+ * comment, just before a manual gate's reject-throw. Failures here MUST NOT
+ * block the throw — the original gate-rejected error must still surface,
+ * otherwise the reject signal is masked.
+ *
+ * Producer-only: a follow-up L3 task wires up the consumer (context_pack
+ * stage reads the latest `rejection_feedback` to seed prompt revision).
+ */
+async function postRejectionFeedback(input: {
+  workflowRunId: string;
+  stepRunId: string | null;
+  gateId: GateRun['gateId'];
+  comment: string;
+}): Promise<void> {
+  try {
+    await api.postArtifact({
+      workflowRunId: input.workflowRunId,
+      stepRunId: input.stepRunId,
+      kind: 'rejection_feedback',
+      uri: `mem://rejection_feedback/${input.workflowRunId}/${input.gateId}`,
+      size: Buffer.byteLength(input.comment, 'utf8'),
+      contentType: 'text/plain',
+      metadata: {
+        gateId: input.gateId,
+        comment: input.comment,
+        rejectedAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.warn(
+      `[runner] rejection_feedback artifact persist failed for ${input.gateId} on ${input.workflowRunId}:`,
+      err instanceof Error ? err.message : String(err),
+    );
+  }
+}
+
 async function awaitApproval(
   workflowRunId: string,
   gateId: GateRun['gateId'],
-): Promise<boolean> {
+): Promise<{ approved: boolean; comment: string | null }> {
   return waitForApprovalDecision({
     workflowRunId,
     gateId,
@@ -993,16 +1060,19 @@ async function awaitApproval(
 export async function waitForApprovalDecision(params: {
   workflowRunId: string;
   gateId: GateRun['gateId'];
-  findApproval(workflowRunId: string, gateId: GateRun['gateId']): Promise<'approved' | 'rejected' | null>;
+  findApproval(
+    workflowRunId: string,
+    gateId: GateRun['gateId'],
+  ): Promise<{ decision: 'approved' | 'rejected'; comment: string | null } | null>;
   sleep(ms: number): Promise<void>;
   timeoutMs?: number | null;
   pollMs?: number;
-}): Promise<boolean> {
+}): Promise<{ approved: boolean; comment: string | null }> {
   const startedAt = Date.now();
   const pollMs = params.pollMs ?? 500;
   while (params.timeoutMs == null || Date.now() - startedAt < params.timeoutMs) {
     const decision = await params.findApproval(params.workflowRunId, params.gateId);
-    if (decision) return decision === 'approved';
+    if (decision) return { approved: decision.decision === 'approved', comment: decision.comment };
     await params.sleep(pollMs);
   }
   throw new Error(`approval timeout for ${params.gateId} on ${params.workflowRunId}`);
@@ -1021,7 +1091,21 @@ export interface SensitiveChangeCheckpointDeps {
     stepRunId: string;
     status: 'passed' | 'failed' | 'cancelled' | 'skipped';
   }): Promise<unknown>;
-  awaitApproval(workflowRunId: string, gateId: 'sensitive_change_gate'): Promise<boolean>;
+  awaitApproval(
+    workflowRunId: string,
+    gateId: 'sensitive_change_gate',
+  ): Promise<{ approved: boolean; comment: string | null }>;
+  /**
+   * Optional. Called just before the reject-throw when a non-empty comment
+   * was supplied, to persist a `rejection_feedback` artifact. Failures here
+   * MUST NOT prevent the throw — implementations should swallow + log.
+   */
+  postRejectionFeedback?: (input: {
+    workflowRunId: string;
+    stepRunId: string | null;
+    gateId: GateRun['gateId'];
+    comment: string;
+  }) => Promise<void>;
 }
 
 export async function enforceSensitiveChangeCheckpoint(params: {
@@ -1037,9 +1121,25 @@ export async function enforceSensitiveChangeCheckpoint(params: {
     stage: 'implementation',
   });
   console.log('[runner] awaiting sensitive_change_gate approval…');
-  const approved = await params.deps.awaitApproval(params.workflowRunId, 'sensitive_change_gate');
-  console.log(`[runner]   sensitive_change_gate -> ${approved ? 'approved' : 'rejected'}`);
+  const { approved, comment } = await params.deps.awaitApproval(
+    params.workflowRunId,
+    'sensitive_change_gate',
+  );
+  const rejectSummary = !approved && comment
+    ? `: ${comment.slice(0, 200)}${comment.length > 200 ? '…' : ''}`
+    : '';
+  console.log(
+    `[runner]   sensitive_change_gate -> ${approved ? 'approved' : 'rejected'}${rejectSummary}`,
+  );
   if (!approved) {
+    if (comment && params.deps.postRejectionFeedback) {
+      await params.deps.postRejectionFeedback({
+        workflowRunId: params.workflowRunId,
+        stepRunId: params.stepRunId,
+        gateId: 'sensitive_change_gate',
+        comment,
+      });
+    }
     await params.deps.stepFinished({ stepRunId: params.stepRunId, status: 'failed' });
     throw new Error('sensitive_change_gate rejected');
   }

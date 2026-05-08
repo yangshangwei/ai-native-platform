@@ -1,0 +1,17 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "Always-include shared guides bundle"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务横跨 web (modal) + api (校验) + runner (api-client + orchestrator) + shared (ArtifactKind union)，需要遵循跨层契约一致性原则"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "L1 模态必须复用 stream-overlay/stream-modal 现有 a11y 模式 (apps/web/src/main.ts:2112)，不得另起一套 dialog；promptRejectReason helper 抽公共函数避免三处复制"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "web 前端入口约定 (TS state-of-truth + render diff 风格)"}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "Renderer 函数形状、focus-loss 注意、wholesale HTML replace 时的焦点保留——直接关系到模态 textarea 的焦点陷阱与初始聚焦"}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "promptRejectReason 必须以 Promise 而非全局可变 state 驱动；模态生命周期内的取消/提交状态如何隔离 approvalInFlight"}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "submitApproval/submitAcceptanceDecision 签名扩展 comment? 参数；与后端 ArtifactKind 联合的同步要按 DTO 约定"}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "前端 TS 质量条与 lint 规则，模态 helper 抽函数后需符合"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "Hono 路由约定；Q3 校验加固在 routes/approvals.ts 与 routes/workflow-runs.ts 中按现行 400 响应模式实现"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "请求体校验失败的 400 返回模式：reject 时 comment 空必须按现有错误格式抛 400"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "API 端 TS / 测试质量条；新增校验需配 unit test"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "runner 后端入口；orchestrator + api-client 改动须遵循"}
+{"file": ".trellis/spec/runner/backend/error-handling.md", "reason": "L2 保留 reject throw 行为不属于错误处理改造；createArtifact 失败必须降级为日志而非阻塞 throw 路径"}
+{"file": ".trellis/spec/runner/backend/logging-guidelines.md", "reason": "rejected 日志加上 comment 摘要必须符合 stream-json/console 行格式约定"}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "runner TS 质量条；findApproval 返回类型变更需更新所有 caller"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "ArtifactKind 联合类型住在 packages/shared/src，新增 'rejection_feedback' 必须在此处扩展并同步导出"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "新 ArtifactKind 字面量联合的 TS 质量条 + JSDoc 要求"}
