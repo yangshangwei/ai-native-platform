@@ -99,6 +99,18 @@ context_request:
 4. 继续同一个 Agent step 或重新调度下一轮。
 5. 在 AgentResult 中记录本次补充链路。
 
+## 14.1 需求阶段准确性验收
+
+需求阶段的 Context Pack 不追求“看完所有资料”，而追求对当前任务的可用准确性。每次 Requirement Gate 或人工确认前，平台应记录一组轻量指标：
+
+- `impactCoverage`：Context Manifest 是否覆盖候选业务域、受影响模块、相关接口、测试和已知风险。
+- `evidenceTraceability`：Requirement Draft 中的关键事实是否能回链到 sourceRefs / Artifact / CommandRun / Confirmed Knowledge。
+- `irrelevantContextRatio`：被注入但未被 Agent 输出、问题、设计依据使用的上下文比例。
+- `clarifyingQuestionQuality`：问题是否聚焦用户意图、验收标准和业务边界，而不是向用户索要平台已能检索的工程事实。
+- `downstreamReworkRate`：后续 Design / Implementation 因需求上下文遗漏导致的返工、打回或补充检索次数。
+
+这些指标把“上下文够不够”从主观 prompt 调参，转成可以在 WorkflowRun / GateRun / Completion Report 中持续观察的闭环质量信号。
+
 ## 15. AgentBackend 适配
 
 平台定义统一接口：

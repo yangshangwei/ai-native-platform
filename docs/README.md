@@ -35,7 +35,9 @@
 - `2026-05-09-ai-native-platform-project-lifecycle-context-injection-design.md`
   - **项目生命周期上下文注入机制设计 / 机制与协议篇**。把新项目、成长中项目、遗留项目的上下文问题统一落成平台级 Context Injection Layer：Project Maturity Profile、Seed / Recovered / Confirmed 知识、Context Manifest / Context Pack 协议、注入分层和上下文预算。
 - `2026-05-09-ai-native-platform-project-lifecycle-context-injection-execution.md`
-  - **项目生命周期上下文注入机制设计 / 执行与治理篇**。承接机制篇，覆盖新项目 Bootstrap、遗留项目 Recovery、成长项目持续校准、按需补充协议、Claude Code / Codex adapter、安全信任边界、MVP 路线和后续优化检查清单。
+  - **项目生命周期上下文注入机制设计 / 执行与治理篇**。承接机制篇，覆盖新项目 Bootstrap、遗留项目 Recovery、成长项目持续校准、按需补充协议、需求阶段准确性度量、Claude Code / Codex adapter、安全信任边界、MVP 路线和后续优化检查清单。
+- `2026-05-09-ai-native-platform-context-injection-handoff.md`
+  - **Context Injection Layer 下一会话交接文档**。总结当前决策、已沉淀文档、推荐实现顺序、MVP 分期、风险和下一轮开发优先检查的代码模块。
 
 ## 0.4 一条需求的通俗日程表
 
@@ -152,9 +154,11 @@
     - 按业务流程汇总所有讨论，用于后续写 PRD、技术设计和开发防漏。
 
 24. `2026-05-09-ai-native-platform-project-lifecycle-context-injection-design.md`
-    - 项目生命周期上下文注入机制设计（机制与协议篇）；用于后续优化 Context Pack / Knowledge / AgentBackend 注入链路，并覆盖 greenfield / growing / legacy 三类成熟度。
+    - 项目生命周期上下文注入机制设计（机制与协议篇）；用于后续优化 Context Manifest / Context Pack / Knowledge / AgentBackend 注入闭环，并覆盖 greenfield / growing / legacy 三类成熟度。
 25. `2026-05-09-ai-native-platform-project-lifecycle-context-injection-execution.md`
-    - 项目生命周期上下文注入执行设计（执行与治理篇）；用于落地 Bootstrap / Recovery / Calibration 流程、Claude Code / Codex backend adapter、安全和 MVP 路线。
+    - 项目生命周期上下文注入执行设计（执行与治理篇）；用于落地 Bootstrap / Recovery / Calibration 流程、需求阶段准确性度量、Claude Code / Codex backend adapter、安全和 MVP 路线。
+26. `2026-05-09-ai-native-platform-context-injection-handoff.md`
+    - 下一会话交接文档；用于从文档设计切到 MVP 实现，包含推荐实现顺序、分期、风险和首批检查模块。
 
 ## 2. 业务流程主线
 
@@ -163,10 +167,11 @@
   ↓
 项目接入 / 初始化
   ↓
-Context Injection Layer：按项目成熟度生成 Context Pack
+Context Injection Layer：按项目成熟度生成 Context Manifest + Context Pack
   - Greenfield：播种产品意图、架构约束、团队规范
   - Growing：校准 Seed / Recovered / Confirmed 知识冲突
   - Legacy：恢复影响面、历史坑和证据链
+  - 闭环：Evidence → Knowledge Capture → Context Request → 下一轮 Pack
   ↓
 需求梳理：Requirement Draft + Requirement Gate + Human Confirm
   ↓
@@ -197,6 +202,7 @@ Knowledge Capture：经验候选、确认、入库
 8. 当前 Build MVP 只覆盖 Java + Maven，并且必须在本地 git worktree 中使用本机 JDK/Maven/Git 跑 compile/test；不追求沙箱级强制。
 9. 配置需要 UI 化、版本化、可发布、可回滚、运行时可追溯。
 10. 每次交付必须生成 Completion Report，并把有效经验沉淀为 Knowledge Candidate。
+11. 上下文注入是闭环系统，不是 prompt 模板；需求阶段准确性要用影响面覆盖、证据可追溯、无关上下文比例、澄清问题质量和下游返工率衡量。
 
 ## 4. 已发现并处理的文档问题
 

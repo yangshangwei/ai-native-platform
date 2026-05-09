@@ -118,6 +118,36 @@ Knowledge Capture
   - 候选知识 → 人工确认 / 自动规则校验 → 长期知识库
 ```
 
+## 5.1 最新结论：需求阶段准确性来自闭环，而不是更长 prompt
+
+按本文的计划推进，需求阶段的上下文注入可以做到**足够准确**：不是让 Agent 一次获得项目全貌，而是在 Requirement Draft 前后持续收敛到足以提出好问题、定位影响面、形成可验收需求的上下文。
+
+这里的“准确”必须按交付影响衡量，而不是按注入 token 数或 prompt 长度衡量：
+
+| 指标 | 衡量问题 | 目标倾向 |
+|---|---|---|
+| Impact coverage | 是否覆盖本需求真正会影响的业务域、模块、接口、测试和风险点？ | 高风险影响面不漏掉 |
+| Evidence traceability | 关键背景是否能追溯到 sourceRefs、命令、文档、历史任务或人工确认？ | 结论可回放 |
+| Irrelevant-context ratio | 注入内容中有多少与当前需求无关、会稀释注意力？ | 越低越好 |
+| Clarifying-question quality | Agent 问的是业务 / 验收缺口，还是把已知工程事实重复问用户？ | 少问、问准、可决策 |
+| Downstream rework rate | 设计 / 实现阶段是否因需求上下文缺失而返工？ | 持续下降 |
+
+因此 Context Injection Layer 是闭环系统，而不是 prompt 模板集合：
+
+```text
+Context Manifest → Context Pack → Agent Output / Evidence
+        ↑                              ↓
+Context Request ← Knowledge Capture ← Completion / Gate Result
+```
+
+- `Context Manifest` 记录为什么选择这些上下文。
+- `Context Pack` 把经过预算、信任等级和来源标注的上下文交给 backend。
+- `Evidence` 证明 Agent 的判断是否来自真实代码、文档、命令或人工确认。
+- `Knowledge Capture` 把本次交付验证过的新知识回写为候选或 Confirmed Knowledge。
+- `Context Request` 允许 Agent 在缺信息时结构化请求补充，而不是凭空猜测或把问题直接抛给用户。
+
+需求阶段的成功标准是：Agent 能基于闭环中的证据提出更少但更高质量的问题，并为后续 Design / Implementation 留下可追溯的 Technical View。
+
 ## 6. 平台自有知识结构
 
 平台可把知识存在数据库、对象存储或仓库内目录。若采用文件形态，建议使用自有 `.ai/`，不要绑定 `.trellis`：
