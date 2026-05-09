@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 19
-- **Last Active**: 2026-05-08
+- **Total Sessions**: 20
+- **Last Active**: 2026-05-09
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~766 | Active |
+| `journal-1.md` | ~800 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 20 | 2026-05-09 | 上下文注入机制设计文档收尾 | `53769f2`, `f962b64` | `main` |
 | 19 | 2026-05-08 | new-task-form 高级覆盖补 Flow + Start Stage：跨 4 层端到端打通用户 flowId override | `806078b` | `main` |
 | 18 | 2026-05-08 | 归档 new-task-form-router-driven-defaults：验证 73ccd26 已落地状态后清理 | `73ccd26` | `main` |
 | 17 | 2026-05-08 | live-log 任务收尾：把 R2 prompt 收紧从 inline 提到 SkillSpec 层 | `e4c7e52` | `main` |
