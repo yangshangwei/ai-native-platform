@@ -17,9 +17,9 @@
 - `user/requirement-workflow.md`
   - 面向终端用户解释需求录入前准备、开始执行的基本条件，以及录入后从 Workflow Request 到 Report / Knowledge 的端到端 Pipeline。
 
-## 0.3 2026-05-06 端到端梳理（最新）
+## 0.3 2026-05-06 / 2026-05-09 平台核心梳理（最新）
 
-基于 V1 已落地 + V2 4 条 Flow / Smart Router / 知识实体化的最新代码现状，重新整理的端到端业务流程与技术方案：
+基于 V1 已落地 + V2 4 条 Flow / Smart Router / 知识实体化的最新代码现状，以及后续项目生命周期上下文注入设计，重新整理的端到端业务流程、技术方案与 Context Injection Layer：
 
 - `2026-05-06-end-to-end-business-flow.md`
   - **业务流程梳理**。覆盖项目接入、Coordinator 分诊、Smart Router、四种 Flow 的 stage 详述、人工 Gate 触发点、报告与知识沉淀、用户视角时间线。建议作为新人理解全流程的第一入口。
@@ -31,6 +31,11 @@
   - **UI 端到端操作流程梳理**。基于 `apps/web/src/main.ts` 真实代码，覆盖 6 个顶层页面（工作台/项目接入/新建任务/报告/知识库/配置）+ 任务详情页；详述 5 个人工检查点的 UI 入口、Smart Router 预览、Agent Stream SSE 面板、完整 4 分钟 fastforward 鼠标键盘时间线、新人「最少必学」6 件事。面向用户使用 + 客户演示 + UI/UX 评审。
 - `2026-05-06-architecture-pillars-detail.md`
   - **架构支柱代码级详解**。把 4 Flow / 9 Stage / 10 类 KnowledgeArtifact / 唯一写者契约 / 真命令证据 / 5 个人工 Gate / SSE 流式这 7 块从代码事实出发逐个展开，每条都带 `packages/shared` 与 `apps/api` 的文件路径和行号锚点（FLOW_REGISTRY、ArtifactKind 二族、KNOWLEDGE_SUBTYPES、Workflow Engine 写入函数族、Gate Engine 各 gate 规则、Promote 6 步事务、Agent Stream Bus、SSE 不变量）。文末附速查索引（一页定位代码）。面向新人源码 onboarding + 架构评审。
+
+- `2026-05-09-ai-native-platform-project-lifecycle-context-injection-design.md`
+  - **项目生命周期上下文注入机制设计 / 机制与协议篇**。把新项目、成长中项目、遗留项目的上下文问题统一落成平台级 Context Injection Layer：Project Maturity Profile、Seed / Recovered / Confirmed 知识、Context Manifest / Context Pack 协议、注入分层和上下文预算。
+- `2026-05-09-ai-native-platform-project-lifecycle-context-injection-execution.md`
+  - **项目生命周期上下文注入机制设计 / 执行与治理篇**。承接机制篇，覆盖新项目 Bootstrap、遗留项目 Recovery、成长项目持续校准、按需补充协议、Claude Code / Codex adapter、安全信任边界、MVP 路线和后续优化检查清单。
 
 ## 0.4 一条需求的通俗日程表
 
@@ -146,6 +151,11 @@
 23. `2026-05-01-ai-native-platform-docs-process-summary.md`
     - 按业务流程汇总所有讨论，用于后续写 PRD、技术设计和开发防漏。
 
+24. `2026-05-09-ai-native-platform-project-lifecycle-context-injection-design.md`
+    - 项目生命周期上下文注入机制设计（机制与协议篇）；用于后续优化 Context Pack / Knowledge / AgentBackend 注入链路，并覆盖 greenfield / growing / legacy 三类成熟度。
+25. `2026-05-09-ai-native-platform-project-lifecycle-context-injection-execution.md`
+    - 项目生命周期上下文注入执行设计（执行与治理篇）；用于落地 Bootstrap / Recovery / Calibration 流程、Claude Code / Codex backend adapter、安全和 MVP 路线。
+
 ## 2. 业务流程主线
 
 ```text
@@ -153,7 +163,10 @@
   ↓
 项目接入 / 初始化
   ↓
-Context Pack：工程背景、已有实现、历史决策、历史 bug
+Context Injection Layer：按项目成熟度生成 Context Pack
+  - Greenfield：播种产品意图、架构约束、团队规范
+  - Growing：校准 Seed / Recovered / Confirmed 知识冲突
+  - Legacy：恢复影响面、历史坑和证据链
   ↓
 需求梳理：Requirement Draft + Requirement Gate + Human Confirm
   ↓
