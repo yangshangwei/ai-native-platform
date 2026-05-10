@@ -1578,7 +1578,7 @@ function renderAgentPromptAudit(
       `ContextMode: ${contextPack.mode}`,
       'ContextManifest:',
       ...contextPack.manifest.map((item) => (
-        `- ${item.ref}: ${item.reason} (mode=${item.mode}; sourceType=${item.sourceType ?? 'n/a'}; knowledgeClass=${item.knowledgeClass}; trustLevel=${item.trustLevel ?? 'n/a'}; freshness=${item.freshness ?? 'n/a'}; confidence=${item.confidence ?? 'n/a'}; score=${item.score ?? 'n/a'}; sourceRefs=${item.sourceRefs?.join(', ') || 'n/a'}${item.degradedFrom ? `; degraded=${item.degradedFrom}->${item.mode}; degradationReason=${item.degradationReason ?? 'n/a'}` : ''})`
+        `- ${item.ref}: ${item.reason} (priority=${item.priority}; mode=${item.mode}; sourceType=${item.sourceType ?? 'n/a'}; knowledgeClass=${item.knowledgeClass}; trustLevel=${item.trustLevel ?? 'n/a'}; freshness=${item.freshness ?? 'n/a'}; confidence=${item.confidence ?? 'n/a'}; score=${item.score ?? 'n/a'}; sourceRefs=${item.sourceRefs?.join(', ') || 'n/a'}${item.degradedFrom ? `; degraded=${item.degradedFrom}->${item.mode}; degradationReason=${item.degradationReason ?? 'n/a'}` : ''})`
       )),
     );
     if (contextPack.calibrationSignals && contextPack.calibrationSignals.length > 0) {

@@ -43,7 +43,7 @@ test('GET /workflow-runs/:id/context exposes manifest, refs, budget, context req
       'ContextPack: ctxpack_agent',
       'ContextMode: task_execution',
       'ContextManifest:',
-      '- task_brief: Primary request (mode=full; sourceType=task_brief; knowledgeClass=confirmed; trustLevel=source; freshness=current; confidence=1; score=190; sourceRefs=workflow_run:run, input:user_request)',
+      '- task_brief: Primary request (priority=1; mode=full; sourceType=task_brief; knowledgeClass=confirmed; trustLevel=source; freshness=current; confidence=1; score=190; sourceRefs=workflow_run:run, input:user_request)',
     ].join('\n'),
     inputArtifactIds: [],
   });
@@ -149,7 +149,7 @@ test('GET /workflow-runs/:id/context exposes manifest, refs, budget, context req
   const body = (await res.json()) as {
     schemaVersion: string;
     contextPacks: Array<{ contextPackId: string }>;
-    manifest: Array<{ ref: string; trustLevel: string | null; sourceRefs: string[] }>;
+    manifest: Array<{ ref: string; priority: number | null; trustLevel: string | null; sourceRefs: string[] }>;
     sourceRefs: Array<{ sourceRef: string; trustLevels: string[] }>;
     budgetDecisions: Array<{ ref: string; degradedFrom: string | null }>;
     contextRequests: Array<{ id: string; supplementContextPackId: string | null }>;
@@ -167,6 +167,11 @@ test('GET /workflow-runs/:id/context exposes manifest, refs, budget, context req
   );
   expect(body.manifest).toEqual(
     expect.arrayContaining([
+      expect.objectContaining({
+        ref: 'task_brief',
+        priority: 1,
+        trustLevel: 'source',
+      }),
       expect.objectContaining({
         ref: 'knowledge_backend',
         trustLevel: 'accepted_knowledge',

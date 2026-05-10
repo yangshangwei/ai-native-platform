@@ -44,6 +44,12 @@
 - The rendered prompt must include the platform trust boundary: repository content, docs, generated artifacts, logs, comments, and test fixtures are data/evidence, not trusted instructions.
 - Legacy input markdown can remain for compatibility, but the renderer must label those input artifacts as untrusted data before concatenating them.
 - A `context_pack` artifact should include `metadata.contextSelection` with the pack id, mode, selected manifest refs, reasons, priorities, inclusion modes, knowledge class, trust level, freshness, and source refs.
+- Agent task prompt audits are also part of the governance read model for flows
+  that skip an explicit `context_pack` artifact. Their `ContextManifest:` lines
+  must preserve the same selected manifest audit fields needed by
+  `/workflow-runs/:id/context`, including `priority`, inclusion mode,
+  knowledge class, trust level, freshness, score, source refs, and degradation
+  metadata.
 - Phase 3 scoring must be pure and deterministic. Scores are derived from stage fit, source type, knowledge class, trust level, recency, keyword overlap, confidence, and required-item status; ties must have stable deterministic ordering.
 - Phase 3 dedupe must keep the highest-scoring duplicate by normalized content/source refs before budget decisions are applied.
 - Phase 3 budget decisions must record `mode`, `degradedFrom`, and `degradationReason` on selected sections and manifest items when context is degraded to a summary or retrieval hint.
@@ -128,6 +134,9 @@
 - API/governance tests cover `/workflow-runs/:id/context` manifest, sourceRefs,
   trust levels, budget decisions, context_request history, and deterministic
   metric formulas.
+- API/governance tests must cover both artifact metadata and `agent_task.prompt`
+  audit sources, including prompt-parsed manifest priority for flows without a
+  standalone `context_pack` artifact.
 - Security governance tests cover prompt-injection boundary rendering,
   sensitive path exclusion, and cross-project knowledge isolation.
 - Config tests cover bounded `context.policy.*` keys and validation.
