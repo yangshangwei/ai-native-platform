@@ -15,6 +15,7 @@ import { store } from './store/store';
 import {
   createKnowledgeArtifact,
   KnowledgeArtifactValidationError,
+  setKnowledgeArtifactStatus,
 } from './workflow-engine';
 import {
   ensureCodestableDir,
@@ -173,7 +174,7 @@ export async function promoteDraftInTransaction(
 
     // Step 5: supersede prior accepted rows.
     for (const e of sameEntity.filter((e) => e.status === 'accepted')) {
-      store.knowledgeArtifacts.updateStatus(e.id, 'superseded', new Date().toISOString());
+      setKnowledgeArtifactStatus(e.id, 'superseded');
     }
 
     // Step 6a: INSERT new accepted knowledge_artifacts row via the canonical

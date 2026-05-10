@@ -163,6 +163,46 @@ describe('router.recommend()', () => {
     expect(rec.rulesFired).toContain('startStage.has_accepted_requirement');
   });
 
+  test('calibration: stale or conflict-marked accepted knowledge is not used for skip or relevantKnowledge', () => {
+    const projectId = 'proj_router_stale_knowledge';
+    storeMod.store.knowledgeArtifacts.insert(
+      fakeKnowledgeArtifact({
+        projectId,
+        kind: 'design',
+        entityId: 'DSN-stale-export',
+        metadata: {
+          title: 'stale export design',
+          freshness: 'historical',
+        },
+      }),
+    );
+    storeMod.store.knowledgeArtifacts.insert(
+      fakeKnowledgeArtifact({
+        projectId,
+        kind: 'requirement',
+        entityId: 'REQ-conflict-export',
+        metadata: {
+          title: 'conflict export requirement',
+          reviewStatus: 'Conflict',
+        },
+      }),
+    );
+
+    const rec = router.recommend(
+      makeInput({
+        projectId,
+        runType: 'feature',
+        title:
+          'implement the stale export design and conflict export requirement with enough detail for standard flow',
+      }),
+    );
+
+    expect(rec.flowId).toBe('feature.standard');
+    expect(rec.startStage).toBeNull();
+    expect(rec.rulesFired).toContain('startStage.no_skip');
+    expect(rec.relevantKnowledge).toEqual([]);
+  });
+
   test('AC-7g: project has no matching knowledge → startStage=null', () => {
     const projectId = 'proj_empty_g';
     const rec = router.recommend(

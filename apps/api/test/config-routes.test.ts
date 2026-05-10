@@ -20,15 +20,15 @@ beforeAll(async () => {
 });
 
 describe('GET /config/registry', () => {
-  it('returns all 25 keys with type / default / category metadata', async () => {
+  it('returns all 29 keys with type / default / category metadata', async () => {
     const res = await app.request('/config/registry');
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       keys: string[];
       entries: Record<string, { type: string; category: string; default: unknown; min?: number; max?: number }>;
     };
-    expect(body.keys).toHaveLength(25);
-    expect(new Set(body.keys).size).toBe(25);
+    expect(body.keys).toHaveLength(29);
+    expect(new Set(body.keys).size).toBe(29);
     expect(body.entries['coordinator.confidence_threshold']).toMatchObject({
       type: 'number',
       category: 'coordinator',
@@ -44,6 +44,16 @@ describe('GET /config/registry', () => {
       type: 'number',
       category: 'runtime',
       default: 2000,
+    });
+    expect(body.entries['context.policy.max_tokens']).toMatchObject({
+      type: 'number',
+      category: 'context_policy',
+      default: 12000,
+      min: 1000,
+    });
+    expect(body.entries['context.policy.sensitive_path_patterns']).toMatchObject({
+      type: 'string_array',
+      category: 'context_policy',
     });
   });
 });
@@ -135,6 +145,30 @@ describe('PUT /config/overrides/:key', () => {
     expect(JSON.parse(allBody.overrides['coordinator.bug_keywords']!.valueJson)).toEqual([
       'panic',
       'oops',
+    ]);
+  });
+
+  it('accepts bounded context policy overrides', async () => {
+    const maxTokens = await app.request('/config/overrides/context.policy.max_tokens', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ value: 8000, updatedBy: 'context-policy-test' }),
+    });
+    expect(maxTokens.status).toBe(200);
+
+    const sensitivePatterns = await app.request('/config/overrides/context.policy.sensitive_path_patterns', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ value: ['.env', 'private.key'], updatedBy: 'context-policy-test' }),
+    });
+    expect(sensitivePatterns.status).toBe(200);
+
+    const all = await app.request('/config/overrides');
+    const allBody = (await all.json()) as { overrides: Record<string, { valueJson: string }> };
+    expect(JSON.parse(allBody.overrides['context.policy.max_tokens']!.valueJson)).toBe(8000);
+    expect(JSON.parse(allBody.overrides['context.policy.sensitive_path_patterns']!.valueJson)).toEqual([
+      '.env',
+      'private.key',
     ]);
   });
 

@@ -116,6 +116,16 @@ test('promoting the same entity_id again advances version and supersedes the pri
   // Prior accepted row is now superseded.
   const v1Row = store.knowledgeArtifacts.get(v1.knowledgeArtifactId);
   expect(v1Row?.status).toBe('superseded');
+  expect(v1Row?.metadata).toMatchObject({
+    knowledgeClass: 'recovered',
+    trustLevel: 'summary',
+    freshness: 'historical',
+    confidence: 0.4,
+  });
+  expect(v1Row?.metadata.sourceRefs).toEqual(
+    expect.arrayContaining(['knowledge:superseded', 'uri:file:///tmp/draft.md']),
+  );
+  expect(v1Row?.metadata.sourceRefs).not.toContain('knowledge:accepted');
   // New row is accepted.
   const v2Row = store.knowledgeArtifacts.get(v2.knowledgeArtifactId);
   expect(v2Row?.status).toBe('accepted');

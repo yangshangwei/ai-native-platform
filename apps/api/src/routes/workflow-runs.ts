@@ -9,6 +9,7 @@ import {
   recordRequirementAction,
 } from '../workflow-engine';
 import { generateCompletionReport, generateKnowledgeCandidate } from '../reports';
+import { buildContextGovernanceReadModel } from '../context-governance';
 import { subscribe } from '../agent-stream-bus';
 
 export const workflowRuns = new Hono();
@@ -58,6 +59,17 @@ workflowRuns.get('/', (c) => {
     ? store.workflowRunsByProject(projectId)
     : [...store.workflowRuns.values()];
   return c.json({ items });
+});
+
+workflowRuns.get('/:id/context', (c) => {
+  const id = c.req.param('id');
+  try {
+    return c.json(buildContextGovernanceReadModel(id));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const status = message.includes('not found') ? 404 : 400;
+    return c.json({ error: message }, status);
+  }
 });
 
 workflowRuns.post('/', async (c) => {

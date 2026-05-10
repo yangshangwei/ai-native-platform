@@ -7,8 +7,9 @@ import type {
   AgentStreamEventInput,
   AgentBackendKind,
   AgentTaskKind,
+  ContextRequest,
 } from '@ainp/shared';
-import { isPerRunArtifactKind } from '@ainp/shared';
+import { isContextRequestStatus, isPerRunArtifactKind } from '@ainp/shared';
 import {
   finishStep,
   recordCommandRun,
@@ -23,6 +24,7 @@ import {
   recordAgentEvent,
   recordAgentTask,
   recordAgentResult,
+  recordContextRequestAction,
   type MavenBuildEvent,
 } from '../workflow-engine';
 import {
@@ -162,6 +164,138 @@ runnerEvents.post('/agent-task-finished', async (c) => {
   });
   return c.json({ ok: true, result }, 201);
 });
+
+runnerEvents.post('/context-request', async (c) => {
+  const body = (await c.req.json()) as {
+    workflowRunId: string;
+    request: ContextRequest;
+    sourceName?: string;
+    taskId?: string;
+    baseContextPackId?: string;
+    supplementContextPackId?: string;
+    requestArtifactId?: string;
+    supplementArtifactId?: string;
+  };
+  if (
+    !body.workflowRunId
+    || !body.request?.id
+    || !body.taskId
+    || !body.baseContextPackId
+    || !body.supplementContextPackId
+    || !body.requestArtifactId
+    || !body.supplementArtifactId
+  ) {
+    return c.json({
+      error: 'workflowRunId, request.id, taskId, baseContextPackId, supplementContextPackId, requestArtifactId, supplementArtifactId required',
+    }, 400);
+  }
+  if (!store.workflowRuns.has(body.workflowRunId)) {
+    return c.json({ error: `workflow run not found: ${body.workflowRunId}` }, 404);
+  }
+  const chainError = validateContextRequestChain(body.workflowRunId, {
+    taskId: body.taskId,
+    requestArtifactId: body.requestArtifactId,
+    supplementArtifactId: body.supplementArtifactId,
+  });
+  if (chainError) return c.json({ error: chainError }, 400);
+  const requestError = validateContextRequestPayload(body.workflowRunId, body.request);
+  if (requestError) {
+    return c.json({ error: requestError }, 400);
+  }
+  const action = recordContextRequestAction({
+    workflowRunId: body.workflowRunId,
+    request: body.request,
+    sourceName: body.sourceName ?? 'unknown',
+    taskId: body.taskId,
+    baseContextPackId: body.baseContextPackId,
+    supplementContextPackId: body.supplementContextPackId,
+    requestArtifactId: body.requestArtifactId,
+    supplementArtifactId: body.supplementArtifactId,
+  });
+  return c.json({ ok: true, action }, 201);
+});
+
+function validateContextRequestChain(
+  workflowRunId: string,
+  ids: {
+    taskId: string;
+    requestArtifactId: string;
+    supplementArtifactId: string;
+  },
+): string | null {
+  const task = store.agentTasks.get(ids.taskId);
+  if (!task || task.workflowRunId !== workflowRunId) {
+    return 'taskId must reference an agent task on this workflow run';
+  }
+  const requestArtifact = store.artifacts.get(ids.requestArtifactId);
+  if (!requestArtifact || requestArtifact.workflowRunId !== workflowRunId) {
+    return 'requestArtifactId must reference an artifact on this workflow run';
+  }
+  const supplementArtifact = store.artifacts.get(ids.supplementArtifactId);
+  if (!supplementArtifact || supplementArtifact.workflowRunId !== workflowRunId) {
+    return 'supplementArtifactId must reference an artifact on this workflow run';
+  }
+  return null;
+}
+
+function validateContextRequestPayload(
+  workflowRunId: string,
+  request: ContextRequest,
+): string | null {
+  if (request.workflowRunId !== workflowRunId) {
+    return 'request.workflowRunId must match workflowRunId';
+  }
+  if (typeof request.reason !== 'string' || request.reason.trim().length === 0) {
+    return 'request.reason required';
+  }
+  if (!isWorkflowStageValue(request.stage)) {
+    return 'request.stage invalid';
+  }
+  if (!Array.isArray(request.requestedRefs) || !request.requestedRefs.every(isNonEmptyString)) {
+    return 'request.requestedRefs must be an array of non-empty strings';
+  }
+  if (!Array.isArray(request.questions) || !request.questions.every(isNonEmptyString)) {
+    return 'request.questions must be an array of non-empty strings';
+  }
+  if (request.requestedRefs.length === 0 && request.questions.length === 0) {
+    return 'request must include requestedRefs or questions';
+  }
+  if (request.priority !== 1 && request.priority !== 2 && request.priority !== 3) {
+    return 'request.priority must be 1, 2, or 3';
+  }
+  if (!isContextRequestStatus(request.status)) {
+    return 'request.status invalid';
+  }
+  if (typeof request.createdAt !== 'string' || Number.isNaN(Date.parse(request.createdAt))) {
+    return 'request.createdAt must be an ISO timestamp';
+  }
+  return null;
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+const WORKFLOW_STAGE_VALUES = [
+  'init',
+  'context_pack',
+  'requirement',
+  'design',
+  'implementation',
+  'build_test',
+  'review',
+  'completion',
+  'knowledge',
+  'report',
+  'analyze',
+  'scan',
+  'plan',
+] as const satisfies readonly WorkflowStage[];
+
+function isWorkflowStageValue(value: unknown): value is WorkflowStage {
+  return typeof value === 'string'
+    && (WORKFLOW_STAGE_VALUES as readonly string[]).includes(value);
+}
 
 runnerEvents.post('/maven-build', async (c) => {
   const body = (await c.req.json()) as MavenBuildEvent;

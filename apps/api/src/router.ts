@@ -1,11 +1,12 @@
 import type {
   ArtifactId,
   FlowId,
+  KnowledgeArtifact,
   RouterInput,
   RouterRecommendation,
   WorkflowStage,
 } from '@ainp/shared';
-import { FLOW_REGISTRY } from '@ainp/shared';
+import { FLOW_REGISTRY, normalizeKnowledgeContextMetadata } from '@ainp/shared';
 import { store } from './store/store';
 
 // ---------------------------------------------------------------------------
@@ -124,7 +125,7 @@ function recommendStartStage(
 
   const accepted = store.knowledgeArtifacts
     .byProject(input.projectId)
-    .filter((a) => a.status === 'accepted');
+    .filter(isUsableAcceptedKnowledge);
 
   if (matchesAnyKnowledge(input.title, accepted, 'design')) {
     rulesFired.push('startStage.has_accepted_design');
@@ -143,7 +144,7 @@ function recommendStartStage(
 function recommendKnowledge(input: RouterInput): ArtifactId[] {
   const accepted = store.knowledgeArtifacts
     .byProject(input.projectId)
-    .filter((a) => a.status === 'accepted');
+    .filter(isUsableAcceptedKnowledge);
 
   const titleWords = extractKeywords(input.title);
   if (titleWords.length === 0) return [];
@@ -153,7 +154,7 @@ function recommendKnowledge(input: RouterInput): ArtifactId[] {
     const score = titleWords.filter((w) => haystack.includes(w)).length;
     return { id: a.id, score };
   });
-  scored.sort((a, b) => b.score - a.score);
+  scored.sort((a, b) => (b.score - a.score) || a.id.localeCompare(b.id));
   return scored
     .filter((s) => s.score > 0)
     .slice(0, KNOWLEDGE_LIMIT)
@@ -204,4 +205,36 @@ function matchesAnyKnowledge(
     const haystack = `${a.entityId ?? ''} ${JSON.stringify(a.metadata ?? {})}`.toLowerCase();
     return words.some((w) => haystack.includes(w));
   });
+}
+
+function isUsableAcceptedKnowledge(artifact: KnowledgeArtifact): boolean {
+  if (artifact.status !== 'accepted') return false;
+  const metadata = normalizeKnowledgeContextMetadata(artifact.metadata, {
+    status: artifact.status,
+  });
+  if (metadata.freshness === 'historical') return false;
+  const reviewStatus = reviewStatusForMetadata(artifact.metadata);
+  return reviewStatus !== 'conflict'
+    && reviewStatus !== 'stale'
+    && reviewStatus !== 'needs_review'
+    && reviewStatus !== 'review_required'
+    && reviewStatus !== 'superseded'
+    && reviewStatus !== 'downgrade_candidate';
+}
+
+function metadataString(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadata[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function reviewStatusForMetadata(metadata: Record<string, unknown>): string | null {
+  return normalizeReviewStatus(
+    metadataString(metadata, 'reviewStatus')
+      ?? metadataString(metadata, 'knowledgeReviewStatus')
+      ?? metadataString(metadata, 'calibrationStatus'),
+  );
+}
+
+function normalizeReviewStatus(value: string | null): string | null {
+  return value?.trim().toLowerCase().replace(/[\s-]+/g, '_') || null;
 }

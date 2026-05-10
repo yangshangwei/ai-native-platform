@@ -11,7 +11,15 @@
 
 import { Hono } from 'hono';
 import {
+  isContextFreshness,
+  isContextTrustLevel,
+  isKnowledgeClass,
   isKnowledgeArtifactKind,
+  isKnowledgeArtifactStatus,
+  normalizeKnowledgeContextMetadata,
+  type ContextFreshness,
+  type ContextTrustLevel,
+  type KnowledgeArtifact,
   type KnowledgeArtifactKind,
   type KnowledgeArtifactStatus,
   type PromoteRequest,
@@ -27,6 +35,75 @@ import { promoteDraftInTransaction } from '../promote';
 export const knowledgeArtifacts = new Hono();
 
 // ---- write -----------------------------------------------------------------
+
+knowledgeArtifacts.post('/projects/:projectId/seed', async (c) => {
+  const projectId = c.req.param('projectId');
+  const body = (await c.req.json()) as {
+    kind?: KnowledgeArtifactKind;
+    title?: string;
+    text?: string;
+    uri?: string;
+    size?: number;
+    contentType?: string;
+    status?: KnowledgeArtifactStatus;
+    version?: number;
+    entityId?: string | null;
+    derivedFromArtifactId?: string | null;
+    subtype?: string | null;
+    sourceRefs?: string[];
+    trustLevel?: ContextTrustLevel;
+    freshness?: ContextFreshness;
+    confidence?: number;
+    metadata?: Record<string, unknown>;
+  };
+  const text = typeof body.text === 'string' ? body.text.trim() : '';
+  if (!text) return c.json({ error: 'text required for seed knowledge' }, 400);
+  const kind = body.kind ?? 'dev_guide';
+  if (!isKnowledgeArtifactKind(kind)) {
+    return c.json({ error: `kind '${String(kind)}' is not a KnowledgeArtifactKind` }, 400);
+  }
+  if (body.trustLevel !== undefined && !isContextTrustLevel(body.trustLevel)) {
+    return c.json({ error: `invalid trustLevel: '${String(body.trustLevel)}'` }, 400);
+  }
+  if (body.freshness !== undefined && !isContextFreshness(body.freshness)) {
+    return c.json({ error: `invalid freshness: '${String(body.freshness)}'` }, 400);
+  }
+  if (body.status !== undefined && !isKnowledgeArtifactStatus(body.status)) {
+    return c.json({ error: `invalid status: '${String(body.status)}'` }, 400);
+  }
+
+  try {
+    const artifact = createKnowledgeArtifact({
+      projectId,
+      kind,
+      uri: body.uri
+        ?? `mem://seed/${encodeURIComponent(body.entityId ?? body.title ?? 'project-seed')}.md`,
+      size: body.size ?? Buffer.byteLength(text, 'utf8'),
+      contentType: body.contentType ?? 'text/markdown',
+      status: body.status ?? 'accepted',
+      version: body.version,
+      entityId: body.entityId,
+      derivedFromArtifactId: body.derivedFromArtifactId,
+      subtype: body.subtype,
+      metadata: {
+        ...(body.metadata ?? {}),
+        title: body.title,
+        text,
+        knowledgeClass: 'seed',
+        trustLevel: body.trustLevel ?? 'summary',
+        freshness: body.freshness ?? 'current',
+        sourceRefs: body.sourceRefs ?? ['seed:api'],
+        confidence: body.confidence ?? 0.6,
+      },
+    });
+    return c.json({ ok: true, artifact }, 201);
+  } catch (err) {
+    if (err instanceof KnowledgeArtifactValidationError) {
+      return c.json({ error: err.message, field: err.field }, 400);
+    }
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+  }
+});
 
 knowledgeArtifacts.post('/projects/:projectId', async (c) => {
   const projectId = c.req.param('projectId');
@@ -51,6 +128,9 @@ knowledgeArtifacts.post('/projects/:projectId', async (c) => {
       },
       400,
     );
+  }
+  if (body.status !== undefined && !isKnowledgeArtifactStatus(body.status)) {
+    return c.json({ error: `invalid status: '${String(body.status)}'` }, 400);
   }
 
   try {
@@ -141,18 +221,39 @@ knowledgeArtifacts.post('/promote', async (c) => {
 knowledgeArtifacts.get('/projects/:projectId', (c) => {
   const projectId = c.req.param('projectId');
   const kindFilter = c.req.query('kind');
+  const knowledgeClassFilter = c.req.query('knowledgeClass');
+  if (knowledgeClassFilter !== undefined && !isKnowledgeClass(knowledgeClassFilter)) {
+    return c.json({ error: `invalid knowledgeClass filter: '${knowledgeClassFilter}'` }, 400);
+  }
+  let artifacts: KnowledgeArtifact[];
   if (kindFilter !== undefined) {
     if (!isKnowledgeArtifactKind(kindFilter)) {
       return c.json({ error: `invalid kind filter: '${kindFilter}'` }, 400);
     }
-    return c.json({
-      ok: true,
-      artifacts: store.knowledgeArtifacts.byKind(projectId, kindFilter),
-    });
+    artifacts = store.knowledgeArtifacts.byKind(projectId, kindFilter);
+  } else {
+    artifacts = store.knowledgeArtifacts.byProject(projectId);
   }
+  if (knowledgeClassFilter) {
+    artifacts = artifacts.filter((artifact) => (
+      normalizeKnowledgeContextMetadata(artifact.metadata, {
+        status: artifact.status,
+      }).knowledgeClass === knowledgeClassFilter
+    ));
+  }
+  return c.json({ ok: true, artifacts });
+});
+
+knowledgeArtifacts.get('/projects/:projectId/seed', (c) => {
+  const projectId = c.req.param('projectId');
+  const artifacts = store.knowledgeArtifacts.byProject(projectId).filter((artifact) => (
+    normalizeKnowledgeContextMetadata(artifact.metadata, {
+      status: artifact.status,
+    }).knowledgeClass === 'seed'
+  ));
   return c.json({
     ok: true,
-    artifacts: store.knowledgeArtifacts.byProject(projectId),
+    artifacts,
   });
 });
 
@@ -177,7 +278,7 @@ knowledgeArtifacts.get('/:id', (c) => {
 knowledgeArtifacts.patch('/:id/status', async (c) => {
   const id = c.req.param('id');
   const body = (await c.req.json()) as { status: KnowledgeArtifactStatus };
-  if (!body.status || !['draft', 'accepted', 'superseded'].includes(body.status)) {
+  if (!isKnowledgeArtifactStatus(body.status)) {
     return c.json({ error: `invalid status: '${String(body.status)}'` }, 400);
   }
   try {

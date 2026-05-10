@@ -740,10 +740,21 @@ const knowledgeArtifacts = {
       .get(projectId, entityId) as KnowledgeArtifactRow | null;
     return r ? rowToKnowledgeArtifact(r) : undefined;
   },
-  updateStatus(id: string, status: KnowledgeArtifactStatus, updatedAt: string): void {
+  updateStatus(
+    id: string,
+    status: KnowledgeArtifactStatus,
+    updatedAt: string,
+    metadata?: Record<string, unknown>,
+  ): void {
+    if (metadata === undefined) {
+      db.prepare(
+        'UPDATE knowledge_artifacts SET status = ?, updated_at = ? WHERE id = ?',
+      ).run(status, updatedAt, id);
+      return;
+    }
     db.prepare(
-      'UPDATE knowledge_artifacts SET status = ?, updated_at = ? WHERE id = ?',
-    ).run(status, updatedAt, id);
+      'UPDATE knowledge_artifacts SET status = ?, metadata_json = ?, updated_at = ? WHERE id = ?',
+    ).run(status, JSON.stringify(metadata), updatedAt, id);
   },
 };
 

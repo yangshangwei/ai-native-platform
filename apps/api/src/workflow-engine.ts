@@ -3,7 +3,11 @@ import {
   nowIso,
   slugify,
   isKnowledgeArtifactKind,
+  isKnowledgeArtifactStatus,
   isValidKnowledgeSubtype,
+  defaultKnowledgeContextMetadataForStatus,
+  knowledgeContextMetadataValidationErrors,
+  withNormalizedKnowledgeContextMetadata,
   type Artifact,
   type ArtifactKind,
   type AgentBackendKind,
@@ -16,6 +20,7 @@ import {
   type BuildRun,
   type CommandRun,
   type CommandRunId,
+  type ContextRequest,
   type FlowId,
   type GateRun,
   type KnowledgeArtifact,
@@ -398,6 +403,34 @@ export function recordKnowledgeAction(input: {
   });
 }
 
+export function recordContextRequestAction(input: {
+  workflowRunId: WorkflowRunId;
+  request: ContextRequest;
+  sourceName: string;
+  taskId: string;
+  baseContextPackId: string;
+  supplementContextPackId: string;
+  requestArtifactId: ArtifactId;
+  supplementArtifactId: ArtifactId;
+}): WorkflowAction {
+  return recordWorkflowAction({
+    workflowRunId: input.workflowRunId,
+    kind: 'context_request',
+    targetId: input.request.id,
+    action: 'opened',
+    actor: 'runner',
+    payload: {
+      request: input.request,
+      sourceName: input.sourceName,
+      taskId: input.taskId,
+      baseContextPackId: input.baseContextPackId,
+      supplementContextPackId: input.supplementContextPackId,
+      requestArtifactId: input.requestArtifactId,
+      supplementArtifactId: input.supplementArtifactId,
+    },
+  });
+}
+
 export function recordAcceptanceDecision(input: {
   workflowRunId: WorkflowRunId;
   decision: string;
@@ -499,22 +532,44 @@ export function createKnowledgeArtifact(
       'subtype',
     );
   }
+  if (input.status !== undefined && !isKnowledgeArtifactStatus(input.status)) {
+    throw new KnowledgeArtifactValidationError(
+      `status '${String(input.status)}' is not a KnowledgeArtifactStatus`,
+      'status',
+    );
+  }
+  const metadataErrors = knowledgeContextMetadataValidationErrors(input.metadata);
+  if (metadataErrors.length > 0) {
+    throw new KnowledgeArtifactValidationError(metadataErrors.join('; '), 'metadata');
+  }
   const ts = nowIso();
+  const id = newId('kart');
+  const status = input.status ?? 'draft';
+  const fallbackSourceRefs = fallbackSourceRefsForKnowledgeArtifact({
+    id,
+    status,
+    uri: input.uri,
+    derivedFromArtifactId: input.derivedFromArtifactId ?? null,
+    entityId: input.entityId ?? null,
+  });
   const a: KnowledgeArtifact = {
-    id: newId('kart'),
+    id,
     kind: input.kind,
     uri: input.uri,
     projectId: input.projectId,
     size: input.size,
     contentType: input.contentType,
-    status: input.status ?? 'draft',
+    status,
     version: input.version ?? 1,
     entityId: input.entityId ?? null,
     derivedFromArtifactId: input.derivedFromArtifactId ?? null,
     subtype: input.subtype ?? null,
     createdAt: ts,
     updatedAt: ts,
-    metadata: input.metadata ?? {},
+    metadata: withNormalizedKnowledgeContextMetadata(input.metadata, {
+      status,
+      fallbackSourceRefs,
+    }),
   };
   store.knowledgeArtifacts.insert(a);
   return a;
@@ -524,12 +579,86 @@ export function setKnowledgeArtifactStatus(
   id: string,
   status: KnowledgeArtifactStatus,
 ): KnowledgeArtifact {
+  if (!isKnowledgeArtifactStatus(status)) {
+    throw new KnowledgeArtifactValidationError(
+      `status '${String(status)}' is not a KnowledgeArtifactStatus`,
+      'status',
+    );
+  }
   const existing = store.knowledgeArtifacts.get(id);
   if (!existing) throw new Error(`knowledge artifact not found: ${id}`);
-  store.knowledgeArtifacts.updateStatus(id, status, nowIso());
+  const metadata = knowledgeMetadataForStatusTransition(existing, status);
+  store.knowledgeArtifacts.updateStatus(id, status, nowIso(), metadata);
   const updated = store.knowledgeArtifacts.get(id);
   if (!updated) throw new Error(`knowledge artifact disappeared after update: ${id}`);
   return updated;
+}
+
+function knowledgeMetadataForStatusTransition(
+  artifact: KnowledgeArtifact,
+  nextStatus: KnowledgeArtifactStatus,
+): Record<string, unknown> {
+  const metadata = { ...artifact.metadata };
+  const previousDefault = defaultKnowledgeContextMetadataForStatus(artifact.status);
+  const previousFallbackSourceRefs = fallbackSourceRefsForKnowledgeArtifact(artifact);
+  const baseMetadata = omitStatusDerivedContextDefaults(
+    metadata,
+    previousDefault,
+    previousFallbackSourceRefs,
+  );
+  return withNormalizedKnowledgeContextMetadata(baseMetadata, {
+    status: nextStatus,
+    fallbackSourceRefs: fallbackSourceRefsForKnowledgeArtifact({
+      ...artifact,
+      status: nextStatus,
+    }),
+  });
+}
+
+function omitStatusDerivedContextDefaults(
+  metadata: Record<string, unknown>,
+  defaults: ReturnType<typeof defaultKnowledgeContextMetadataForStatus>,
+  fallbackSourceRefs: readonly string[],
+): Record<string, unknown> {
+  const next = { ...metadata };
+  const hasExplicitClassOverride =
+    metadata.knowledgeClass !== undefined
+    && metadata.knowledgeClass !== defaults.knowledgeClass;
+  if (metadata.knowledgeClass === defaults.knowledgeClass) delete next.knowledgeClass;
+  if (!hasExplicitClassOverride && metadata.trustLevel === defaults.trustLevel) delete next.trustLevel;
+  if (!hasExplicitClassOverride && metadata.freshness === defaults.freshness) delete next.freshness;
+  if (!hasExplicitClassOverride && metadata.confidence === defaults.confidence) delete next.confidence;
+  if (sourceRefsEqual(metadata.sourceRefs, fallbackSourceRefs)) delete next.sourceRefs;
+  return next;
+}
+
+function fallbackSourceRefsForKnowledgeArtifact(input: {
+  id: string;
+  status?: KnowledgeArtifactStatus;
+  uri: string;
+  derivedFromArtifactId?: string | null;
+  entityId?: string | null;
+}): string[] {
+  return [
+    `knowledge_artifact:${input.id}`,
+    input.status ? `knowledge:${input.status}` : '',
+    `uri:${input.uri}`,
+    input.derivedFromArtifactId ? `artifact:${input.derivedFromArtifactId}` : '',
+    input.entityId ? `entity:${input.entityId}` : '',
+  ].filter(Boolean);
+}
+
+function sourceRefsEqual(value: unknown, expected: readonly string[]): boolean {
+  if (!Array.isArray(value)) return false;
+  const normalized = [...new Set(value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean))]
+    .sort();
+  const expectedNormalized = [...new Set(expected.map((item) => item.trim()).filter(Boolean))]
+    .sort();
+  return normalized.length === expectedNormalized.length
+    && normalized.every((item, index) => item === expectedNormalized[index]);
 }
 
 // ---- Maven build ingest ---------------------------------------------------
