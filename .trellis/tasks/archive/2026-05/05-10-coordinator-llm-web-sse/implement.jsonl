@@ -1,0 +1,14 @@
+{"file":".trellis/spec/runner/backend/index.md","reason":"Runner backend guideline index entry — entry point for runner spec navigation."}
+{"file":".trellis/spec/runner/backend/agent-backend-runtime.md","reason":"Coordinator runtime/Skill compatibility, stream-json line-level parsing, and Coordinator parser tolerance rules — this task extends it with the streaming-must-be-realtime constraint for Coordinator triage."}
+{"file":".trellis/spec/runner/backend/error-handling.md","reason":"Defines that emit failures must not stop the LLM process — Coordinator's new emit path follows the same rule."}
+{"file":".trellis/spec/api/backend/index.md","reason":"API backend guideline index entry."}
+{"file":".trellis/spec/api/backend/coordinator-preview.md","reason":"Critical: /coordinator/preview is rules-only by design (no LLM, zero-token). Implementers must NOT confuse the runner-side coordinator with the preview endpoint and must not introduce LLM calls into preview."}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"agent_events table migration (adding workflow_request_id column + index) must follow project DB migration conventions."}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"SSE route error handling, malformed event tolerance, abort semantics for the new /workflow-requests/:id/agent-stream route."}
+{"file":".trellis/spec/shared/backend/index.md","reason":"Shared backend guideline index entry."}
+{"file":".trellis/spec/shared/backend/agent-backend-contract.md","reason":"AgentStreamEvent schema contract and channel-ID model — this task extends it from workflowRunId-only to (workflowRunId | workflowRequestId)."}
+{"file":".trellis/spec/web/frontend/index.md","reason":"Web frontend guideline index entry."}
+{"file":".trellis/spec/web/frontend/agent-backend-ui.md","reason":"Stream rendering contract: SSE reconnect with sinceSeq, dedupe by sequence, readable assistant-delta aggregation, expanded view reuse — Coordinator chat panel subscription follows this contract."}
+{"file":".trellis/spec/web/frontend/state-management.md","reason":"Subscription lifecycle, EventSource cleanup, channel-switch state management for the new request→run channel handoff."}
+{"file":".trellis/spec/web/frontend/component-guidelines.md","reason":"renderCoordinatorChatPanel internal increment rendering must follow component conventions."}
+{"file":".trellis/tasks/05-10-coordinator-llm-skill-prefix-json-compat/prd.md","reason":"Concurrent task: defines user-friendly natural-language fallback when JSON parse fails. UI Coordinator main bubble must keep showing that fallback even while raw assistant text is now visible in the dev fold-out."}

@@ -1,0 +1,13 @@
+{"file":".trellis/spec/runner/backend/quality-guidelines.md","reason":"Runner test/typecheck expectations for the new Coordinator streaming code paths."}
+{"file":".trellis/spec/runner/backend/agent-backend-runtime.md","reason":"Verify Coordinator triage no longer buffers; verify stream-json line-level parsing and updated streaming-required spec entry are reflected in code + tests."}
+{"file":".trellis/spec/runner/backend/error-handling.md","reason":"Verify Coordinator's new emit failures do not abort the LLM run."}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"API test/typecheck expectations for the new SSE route + bus + recordAgentEvent changes."}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"Verify agent_events migration (workflow_request_id column + index) follows DB conventions."}
+{"file":".trellis/spec/api/backend/coordinator-preview.md","reason":"Regression check: /coordinator/preview must remain rules-only (no LLM, no DB writes, no streaming) — verify nothing accidentally touched preview."}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"Verify new SSE route handles malformed events, disconnects, and history+live races correctly."}
+{"file":".trellis/spec/shared/backend/quality-guidelines.md","reason":"Shared types test/typecheck expectations."}
+{"file":".trellis/spec/shared/backend/agent-backend-contract.md","reason":"Verify AgentStreamEvent schema extension (workflowRequestId + workflowRunId nullability + mutual-exclusion validation) is reflected in spec + types + runtime guards."}
+{"file":".trellis/spec/web/frontend/quality-guidelines.md","reason":"Web test/typecheck expectations for the new Coordinator panel subscription + channel-switch."}
+{"file":".trellis/spec/web/frontend/agent-backend-ui.md","reason":"Verify Coordinator chat panel subscribes/dedupes/reconnects per the stream rendering contract; channel-switch from request→run channel does not lose realtime; readable aggregation works for partial assistant text."}
+{"file":".trellis/spec/web/frontend/state-management.md","reason":"Verify subscription lifecycle, EventSource cleanup on panel teardown, no leaked listeners across request→run handoff."}
+{"file":".trellis/spec/runtime-config-layer.md","reason":"Verify no new config keys were added without registry entry; this task is not expected to add new keys but check ensures Coordinator fallback question defaults remain consistent."}
