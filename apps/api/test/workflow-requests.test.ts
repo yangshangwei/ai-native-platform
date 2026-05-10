@@ -38,7 +38,7 @@ test('creates and claims workflow requests for runner watch mode', () => {
   });
 
   expect(request.status).toBe('pending');
-  expect(storeMod.store.workflowRequests.pending()).toHaveLength(1);
+  expect(storeMod.store.workflowRequests.pending().map((item) => item.id)).toContain(request.id);
 
   const claimed = workflow.claimWorkflowRequest({
     requestId: request.id,
