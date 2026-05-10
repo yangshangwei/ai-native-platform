@@ -1973,12 +1973,41 @@ function renderRuleList(title: string, gate: GateRunDto): HTMLElement {
         ? el('div', {
             class: 'stack',
             children: gate.ruleResults.map((rule) =>
-              el('div', { class: 'mini-row', children: [el('span', { text: rule.ruleId }), pill(rule.status)] }),
+              el('div', {
+                class: 'mini-row',
+                children: [
+                  el('span', { text: `${ruleLabel(rule.ruleId)}`, attrs: { title: rule.ruleId } }),
+                  pill(rule.status),
+                ],
+              }),
             ),
           })
         : el('p', { class: 'muted compact', text: '无规则详情。' }),
     ],
   });
+}
+
+const RULE_LABELS: Record<string, string> = {
+  'design.doc_present': '设计文档存在',
+  'design.requirement_coverage_present': '需求覆盖矩阵',
+  'design.test_strategy_present': '测试策略',
+  'design.risks_present': '风险记录',
+  'design.context_grounding_present': '上下文引用',
+  'design.dsn_id_present': 'DSN 编号',
+  'design.current_state_section_present': '现状章节',
+  'design.changes_section_present': '变化章节',
+  'design.mount_points_count_in_range': '挂载点数量 (3-5)',
+  'design.rollout_section_present': '推进策略章节',
+  'requirement.doc_present': '需求文档存在',
+  'requirement.pitch_present': 'Pitch 摘要',
+  'requirement.four_sections_present': '四段式结构',
+  'requirement.user_stories_min_2': '用户故事 ≥2',
+  'requirement.boundary_present': '边界说明',
+};
+
+function ruleLabel(ruleId: string): string {
+  const cn = RULE_LABELS[ruleId];
+  return cn ? `${cn} (${ruleId})` : ruleId;
 }
 
 const retryInFlight = new Set<string>();
