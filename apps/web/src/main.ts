@@ -798,6 +798,9 @@ function restoreDetailsOpenState(root: HTMLElement): void {
 }
 
 function detailsStateKey(details: HTMLDetailsElement): string {
+  const explicitKey = details.dataset.detailsKey;
+  if (explicitKey) return [window.location.hash || activePage, explicitKey].join(' > ');
+
   const path: string[] = [];
   let current: HTMLElement | null = details;
   while (current) {
@@ -1030,7 +1033,7 @@ function renderTaskDetailPage(): HTMLElement {
         children: [
           renderTaskNextActionPanel(request, detail, projection),
           renderRunnerControlPanel(),
-          detail ? renderEvidencePanel(detail) : renderRequestDebugPanel(request),
+          detail ? renderEvidencePanel(detail) : renderRequestDebugPanel(request, 'side-panel'),
           detail ? renderAgentStreamPanel() : null,
         ],
       }),
@@ -1264,7 +1267,7 @@ function renderCurrentStagePanel(
               ? '页面已经尝试启动本地 Runner；Runner 启动后会自动认领这个任务。'
               : 'Runner 正在准备执行环境，稍后这里会切换到 Requirement / Design / Implementation 等阶段。',
         }),
-        renderRequestDebugPanel(request),
+        renderRequestDebugPanel(request, 'current-stage'),
       ],
     });
   }
@@ -1565,9 +1568,10 @@ function renderAgentBackendSetupPrompt(project: ProjectDto | null, message: stri
   });
 }
 
-function renderRequestDebugPanel(request: WorkflowRequestDto): HTMLElement {
+function renderRequestDebugPanel(request: WorkflowRequestDto, detailsScope: string): HTMLElement {
   return el('details', {
     class: 'raw-details',
+    attrs: { 'data-details-key': `request-debug-${detailsScope}:${request.id}` },
     children: [
       el('summary', { text: '查看 Workflow Request 后端细节' }),
       field('Request ID', el('code', { text: request.id })),
@@ -1585,7 +1589,7 @@ function renderQueuedBackendDetails(request: WorkflowRequestDto): HTMLElement {
     class: 'panel',
     children: [
       panelHeader('后端细节', '队列阶段可见的信息'),
-      renderRequestDebugPanel(request),
+      renderRequestDebugPanel(request, 'backend-panel'),
       data.runnerControl
         ? el('details', {
             class: 'raw-details',

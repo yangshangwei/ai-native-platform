@@ -58,6 +58,44 @@ replyArea.oninput = () => drafts.set(requestId, replyArea.value);
 Also add capture/restore hooks around the root rebuild when focus or cursor
 position must survive the render.
 
+### Convention: Preserve user-owned disclosure state across polling renders
+
+**What**: `<details>` panels that users can open while automatic polling calls
+`render()` must keep their open/closed state across the root rebuild.
+
+**Why**: Disclosure state is user-owned UI state. Polling refreshes server data,
+but they must not collapse a panel the user just opened.
+
+**Required contract**:
+
+- Capture each `<details>` open state immediately before `clear(root)`.
+- Restore the state after the new root subtree is mounted.
+- Prefer an explicit `data-details-key` when a panel is rendered from reusable
+  helpers, has generic summary text, or can appear more than once on the same
+  page.
+- Include the stable entity id in explicit keys when the panel is entity-scoped
+  (for example `request-debug-current-stage:${request.id}`).
+- Keep the existing summary-path fallback only for panels whose page position
+  and summary path are unique.
+
+**Wrong**:
+
+```typescript
+// Two copies of this helper on the same page share the same fallback key.
+el('details', {
+  children: [el('summary', { text: '查看 Workflow Request 后端细节' })],
+});
+```
+
+**Correct**:
+
+```typescript
+el('details', {
+  attrs: { 'data-details-key': `request-debug-current-stage:${request.id}` },
+  children: [el('summary', { text: '查看 Workflow Request 后端细节' })],
+});
+```
+
 ---
 
 ## State Categories
