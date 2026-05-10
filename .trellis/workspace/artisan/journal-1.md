@@ -798,3 +798,40 @@ Fixed the workflow creation path so Smart Router skip recommendations stay advis
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: Fix Workflow Request details disclosure state
+
+**Date**: 2026-05-10
+**Task**: Fix Workflow Request details disclosure state
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Fixed duplicate Workflow Request backend details keys so polling refreshes no longer collapse user-opened panels; stabilized the workflow request queue test.
+
+### Main Changes
+
+- Fixed duplicate `<details>` open-state keys on the Workflow Request task detail page.
+- Added a frontend state-management convention for explicit `data-details-key` values on reusable disclosure panels.
+- Stabilized the workflow request queue test by asserting membership by request id instead of global queue length.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `227578f` | (see git log) |
+| `7f2d024` | (see git log) |
+
+### Testing
+
+- [OK] `bun run typecheck`
+- [OK] `bun test` (529 pass, 0 fail)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
