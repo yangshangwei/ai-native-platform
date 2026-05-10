@@ -1,12 +1,14 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
-import type { AgentStreamEvent, FlowId, Project, WorkflowRunType, WorkflowStage } from '@ainp/shared';
+import type { AgentStreamEvent, FlowId, GateRun, Project, WorkflowRunType, WorkflowStage } from '@ainp/shared';
 import { store } from '../store/store';
 import {
   createWorkflowRun,
   recordAcceptanceDecision,
   recordKnowledgeAction,
   recordRequirementAction,
+  retryStage,
+  reEvaluateGate,
 } from '../workflow-engine';
 import { generateCompletionReport, generateKnowledgeCandidate } from '../reports';
 import { buildContextGovernanceReadModel } from '../context-governance';
@@ -255,6 +257,43 @@ workflowRuns.post('/:id/completion-report', async (c) => {
   if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
   const report = await generateCompletionReport(id);
   return c.json({ ok: true, ...report }, 201);
+});
+
+workflowRuns.post('/:id/retry-step', async (c) => {
+  const id = c.req.param('id');
+  if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
+  const body = (await c.req.json()) as { stage?: string; actor?: string };
+  if (!body.stage) return c.json({ error: 'stage required' }, 400);
+  if (!isWorkflowStage(body.stage)) {
+    return c.json({ error: `unknown stage: ${body.stage}` }, 400);
+  }
+  try {
+    const result = retryStage({
+      workflowRunId: id,
+      stage: body.stage,
+      actor: body.actor ?? 'web',
+    });
+    return c.json({ ok: true, run: result.run, step: result.step }, 200);
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
+});
+
+workflowRuns.post('/:id/re-evaluate-gate', async (c) => {
+  const id = c.req.param('id');
+  if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
+  const body = (await c.req.json()) as { gateId?: string; actor?: string };
+  if (!body.gateId) return c.json({ error: 'gateId required' }, 400);
+  try {
+    const gate = reEvaluateGate({
+      workflowRunId: id,
+      gateId: body.gateId as GateRun['gateId'],
+      actor: body.actor ?? 'web',
+    });
+    return c.json({ ok: true, gate }, 200);
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
 });
 
 workflowRuns.post('/:id/knowledge-candidate', async (c) => {

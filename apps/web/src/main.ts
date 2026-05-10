@@ -1876,6 +1876,7 @@ function renderRequirementPanel(detail: RunDetail): HTMLElement {
       renderTextList('非目标', req.nonGoals),
       renderTextList('待确认', req.openQuestions),
       gate ? renderRuleList('Requirement Gate', gate) : el('p', { class: 'muted compact', text: 'Requirement Gate 尚未运行。' }),
+      gate?.status === 'fail' ? renderStageRetryActions(detail.run.id, 'requirement', 'requirement_gate') : null,
       renderRawFallback(detail, 'requirement_draft'),
     ],
   });
@@ -1893,6 +1894,7 @@ function renderDesignPanel(detail: RunDetail): HTMLElement {
       renderTextList('风险', design.risks),
       renderTextList('影响文件', design.filesTouched),
       gate ? renderRuleList('Design Gate', gate) : el('p', { class: 'muted compact', text: 'Design Gate 尚未运行。' }),
+      gate?.status === 'fail' ? renderStageRetryActions(detail.run.id, 'design', 'design_gate') : null,
       renderRawFallback(detail, 'design_doc'),
     ],
   });
@@ -1975,6 +1977,65 @@ function renderRuleList(title: string, gate: GateRunDto): HTMLElement {
             ),
           })
         : el('p', { class: 'muted compact', text: '无规则详情。' }),
+    ],
+  });
+}
+
+const retryInFlight = new Set<string>();
+
+function renderStageRetryActions(workflowRunId: string, stage: string, gateId: string): HTMLElement {
+  const retryKey = `${workflowRunId}:${stage}`;
+  const reEvalKey = `${workflowRunId}:${gateId}:re-eval`;
+  const isRetrying = retryInFlight.has(retryKey);
+  const isReEvaluating = retryInFlight.has(reEvalKey);
+
+  const retryBtn = button(isRetrying ? '正在重试…' : '重试该阶段', 'button primary small');
+  retryBtn.disabled = isRetrying || isReEvaluating;
+  retryBtn.onclick = async () => {
+    retryInFlight.add(retryKey);
+    render();
+    try {
+      await api(`/workflow-runs/${encodeURIComponent(workflowRunId)}/retry-step`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ stage, actor: 'web' }),
+      });
+      await loadRunDetail(workflowRunId, false);
+      await loadData({ render: false, keepDetail: true });
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    } finally {
+      retryInFlight.delete(retryKey);
+      render();
+    }
+  };
+
+  const reEvalBtn = button(isReEvaluating ? '正在评估…' : '仅重新评估 Gate', 'button secondary small');
+  reEvalBtn.disabled = isRetrying || isReEvaluating;
+  reEvalBtn.onclick = async () => {
+    retryInFlight.add(reEvalKey);
+    render();
+    try {
+      await api(`/workflow-runs/${encodeURIComponent(workflowRunId)}/re-evaluate-gate`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ gateId, actor: 'web' }),
+      });
+      await loadRunDetail(workflowRunId, false);
+      await loadData({ render: false, keepDetail: true });
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+    } finally {
+      retryInFlight.delete(reEvalKey);
+      render();
+    }
+  };
+
+  return el('div', {
+    class: 'stage-retry-actions',
+    children: [
+      el('p', { class: 'muted compact', text: '该阶段未通过质量门禁，可以重试或重新评估。' }),
+      el('div', { class: 'button-row', children: [retryBtn, reEvalBtn] }),
     ],
   });
 }

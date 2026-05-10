@@ -52,6 +52,8 @@ import {
   runCompileGate,
   runTestGate,
   runManualGate,
+  runDesignGate,
+  runRequirementGate,
 } from './gate-engine';
 import { publish as publishAgentEvent } from './agent-stream-bus';
 import { recommend } from './router';
@@ -334,6 +336,105 @@ export function completeWorkflowRun(workflowRunId: string, ok: boolean): Workflo
 
 export function awaitHuman(workflowRunId: string, stage: WorkflowStage): WorkflowRun {
   return transitionStage(workflowRunId, stage, 'awaiting_human');
+}
+
+// ---- Stage retry ----------------------------------------------------------
+
+/**
+ * Reset a failed stage so the runner can re-execute it. Transitions the run
+ * back to `running` at the given stage and marks the latest step for that
+ * stage as `pending` (or creates a fresh one if none exists). The runner's
+ * watch loop will pick it up on the next poll.
+ */
+export function retryStage(params: {
+  workflowRunId: WorkflowRunId;
+  stage: WorkflowStage;
+  actor: string;
+}): { run: WorkflowRun; step: StepRun } {
+  const run = store.workflowRuns.get(params.workflowRunId);
+  if (!run) throw new Error(`workflow run not found: ${params.workflowRunId}`);
+  if (run.status === 'cancelled') throw new Error('cannot retry a cancelled run');
+
+  // Find the latest step for this stage and reset it, or create a new one.
+  const existingSteps = store.stepRuns.byWorkflow(params.workflowRunId)
+    .filter((s) => s.stage === params.stage);
+  let step: StepRun;
+  if (existingSteps.length > 0) {
+    step = existingSteps.at(-1)!;
+    step.status = 'pending';
+    step.completedAt = null;
+    store.stepRuns.set(step.id, step);
+  } else {
+    step = {
+      id: newId('step'),
+      workflowRunId: params.workflowRunId,
+      stage: params.stage,
+      name: `${params.stage} (retry)`,
+      status: 'pending',
+      startedAt: nowIso(),
+      completedAt: null,
+    };
+    store.stepRuns.set(step.id, step);
+  }
+
+  // Transition the run back to running at this stage.
+  run.currentStage = params.stage;
+  run.status = 'running';
+  run.updatedAt = nowIso();
+  store.workflowRuns.set(run.id, run);
+
+  audit(params.workflowRunId, 'stage.retry', {
+    stage: params.stage,
+    stepId: step.id,
+    actor: params.actor,
+  });
+  return { run, step };
+}
+
+/**
+ * Re-evaluate a gate against the latest artifact without re-running the
+ * agent stage. Useful when the user manually edits an artifact and wants
+ * to check if it now passes.
+ */
+export function reEvaluateGate(params: {
+  workflowRunId: WorkflowRunId;
+  gateId: GateRun['gateId'];
+  actor: string;
+}): GateRun {
+  const run = store.workflowRuns.get(params.workflowRunId);
+  if (!run) throw new Error(`workflow run not found: ${params.workflowRunId}`);
+
+  let gate: GateRun;
+  switch (params.gateId) {
+    case 'design_gate': {
+      const artifact = store.artifacts.byKind(params.workflowRunId, 'design_doc').at(-1) ?? null;
+      gate = runDesignGate({ workflowRunId: params.workflowRunId, stepRunId: null, artifact });
+      break;
+    }
+    case 'requirement_gate': {
+      const artifact = store.artifacts.byKind(params.workflowRunId, 'requirement_draft').at(-1) ?? null;
+      gate = runRequirementGate({ workflowRunId: params.workflowRunId, stepRunId: null, artifact });
+      break;
+    }
+    default:
+      throw new Error(`re-evaluate not supported for gate: ${params.gateId}`);
+  }
+
+  audit(params.workflowRunId, 'gate.re_evaluated', {
+    gateId: params.gateId,
+    status: gate.status,
+    actor: params.actor,
+  });
+
+  // If the gate now passes and the run was failed/awaiting_human, transition
+  // it back to running so the orchestrator can continue.
+  if (gate.status === 'pass' && (run.status === 'failed' || run.status === 'awaiting_human')) {
+    run.status = 'running';
+    run.updatedAt = nowIso();
+    store.workflowRuns.set(run.id, run);
+  }
+
+  return gate;
 }
 
 // ---- Workflow actions -----------------------------------------------------
