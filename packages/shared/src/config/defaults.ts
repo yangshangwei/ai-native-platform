@@ -145,7 +145,7 @@ export const COORDINATOR_FALLBACK_LLM_EMPTY_DEFAULT = 'LLM 返回为空，能换
 
 /** apps/runner/src/agents/coordinator/llm-fallback.ts:147 */
 export const COORDINATOR_FALLBACK_LLM_INVALID_JSON_DEFAULT =
-  'LLM 返回不是合法 JSON，能否再描述一下？';
+  '我还需要确认一下需求范围：这是新增能力、修复现有问题，还是一次性验证/冒烟检查？';
 
 /** apps/runner/src/agents/coordinator/llm-fallback.ts:179 */
 export const COORDINATOR_FALLBACK_LLM_UNKNOWN_ACTION_DEFAULT =

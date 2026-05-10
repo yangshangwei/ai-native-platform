@@ -393,6 +393,113 @@ interface RawDecision {
   questions?: unknown;
 }
 
+type ProceedDecision = Extract<CoordinatorAction, { action: 'proceed' }>;
+
+const KNOWN_DECISION_ACTIONS = new Set(['proceed', 'pause_for_human', 'abort']);
+const KNOWN_ROUTE_CASES = new Set([
+  'feature_clear',
+  'feature_brainstorm',
+  'roadmap_needed',
+  'bugfix',
+  'refactor_clear',
+  'unclear',
+]);
+const KNOWN_RUN_TYPES = new Set(['feature', 'bugfix', 'smoke', 'refactor']);
+
+function stripOuterMarkdownFence(value: string): string {
+  const match = value.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/i);
+  return match ? match[1]!.trim() : value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasDecisionShape(value: unknown): value is RawDecision {
+  return isRecord(value) && Object.prototype.hasOwnProperty.call(value, 'action');
+}
+
+function hasKnownDecisionAction(value: RawDecision): boolean {
+  return typeof value.action === 'string' && KNOWN_DECISION_ACTIONS.has(value.action);
+}
+
+function normalizeRouteCase(value: unknown): ProceedDecision['routeCase'] {
+  return typeof value === 'string' && KNOWN_ROUTE_CASES.has(value)
+    ? (value as ProceedDecision['routeCase'])
+    : 'feature_clear';
+}
+
+function normalizeRunType(value: unknown): ProceedDecision['runType'] {
+  return typeof value === 'string' && KNOWN_RUN_TYPES.has(value)
+    ? (value as ProceedDecision['runType'])
+    : 'feature';
+}
+
+function parseRawDecision(value: string): RawDecision | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return hasDecisionShape(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function* jsonObjectCandidates(value: string): Generator<string> {
+  for (let start = 0; start < value.length; start++) {
+    if (value[start] !== '{') continue;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let end = start; end < value.length; end++) {
+      const ch = value[end]!;
+
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (ch === '\\') {
+          escaped = true;
+        } else if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+      if (ch === '{') {
+        depth++;
+        continue;
+      }
+      if (ch !== '}') continue;
+
+      depth--;
+      if (depth === 0) {
+        yield value.slice(start, end + 1);
+        break;
+      }
+    }
+  }
+}
+
+function extractDecisionObject(finalText: string): RawDecision | null {
+  const cleaned = stripOuterMarkdownFence(finalText.trim());
+  const direct = parseRawDecision(cleaned);
+  if (direct) return direct;
+
+  let firstUnknownActionCandidate: RawDecision | null = null;
+  for (const candidate of jsonObjectCandidates(finalText)) {
+    const obj = parseRawDecision(candidate);
+    if (!obj) continue;
+    if (hasKnownDecisionAction(obj)) return obj;
+    firstUnknownActionCandidate ??= obj;
+  }
+  return firstUnknownActionCandidate;
+}
+
 function parseDecision(
   raw: string,
   source: LlmBackendKind,
@@ -409,24 +516,20 @@ function parseDecision(
     };
   }
 
-  const cleaned = finalText.replace(/```(?:json)?\n?/g, '').replace(/```/g, '').trim();
-
-  let obj: RawDecision;
-  try {
-    obj = JSON.parse(cleaned) as RawDecision;
-  } catch {
+  const obj = extractDecisionObject(finalText);
+  if (!obj) {
     return {
       action: 'pause_for_human',
       questions: [fallback.invalidJson],
-      reason: `failed to parse LLM JSON: ${cleaned.slice(0, 100)}`,
+      reason: `failed to parse LLM JSON: ${finalText.trim().slice(0, 100)}`,
     };
   }
 
   if (obj.action === 'proceed') {
     return {
       action: 'proceed',
-      routeCase: typeof obj.routeCase === 'string' ? (obj.routeCase as never) : 'feature_clear',
-      runType: typeof obj.runType === 'string' ? (obj.runType as never) : 'feature',
+      routeCase: normalizeRouteCase(obj.routeCase),
+      runType: normalizeRunType(obj.runType),
       reason: typeof obj.reason === 'string' ? obj.reason : 'llm decided',
     };
   }
@@ -436,7 +539,7 @@ function parseDecision(
       : [];
     return {
       action: 'pause_for_human',
-      questions,
+      questions: questions.length > 0 ? questions : [fallback.invalidJson],
       reason: typeof obj.reason === 'string' ? obj.reason : 'llm requested clarification',
     };
   }

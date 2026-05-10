@@ -193,6 +193,138 @@ describe('classifyByLlm selection strategy (PR3)', () => {
     }
   });
 
+  it('extracts codex JSON after a Skill session notice prefix', async () => {
+    const deps = makeDeps({
+      claudeAvailable: false,
+      codexAvailable: true,
+      output: {
+        codex: [
+          'Trellis SessionStart 已注入：workflow、当前任务状态、开发者身份、git 状态、active tasks、spec 索引已加载。',
+          JSON.stringify({
+            action: 'pause_for_human',
+            questions: ['这是新增能力、修复现有问题，还是一次性验证？'],
+            reason: 'need route',
+          }),
+        ].join('\n'),
+      },
+    });
+    const r = await classifyByLlm(BLANK_INPUT, { deps });
+    expect(r.decision.action).toBe('pause_for_human');
+    if (r.decision.action === 'pause_for_human') {
+      expect(r.decision.questions).toEqual(['这是新增能力、修复现有问题，还是一次性验证？']);
+    }
+  });
+
+  it('extracts codex JSON from fenced markdown surrounded by prose', async () => {
+    const deps = makeDeps({
+      claudeAvailable: false,
+      codexAvailable: true,
+      output: {
+        codex: [
+          '我会先给出分诊结果：',
+          '```json',
+          JSON.stringify({
+            action: 'proceed',
+            routeCase: 'bugfix',
+            runType: 'bugfix',
+            reason: 'broken existing behavior',
+          }),
+          '```',
+          '以上是机器可读结果。',
+        ].join('\n'),
+      },
+    });
+    const r = await classifyByLlm(BLANK_INPUT, { deps });
+    expect(r.decision.action).toBe('proceed');
+    if (r.decision.action === 'proceed') {
+      expect(r.decision.routeCase).toBe('bugfix');
+      expect(r.decision.runType).toBe('bugfix');
+    }
+  });
+
+  it('skips non-decision JSON before the first valid coordinator JSON object', async () => {
+    const deps = makeDeps({
+      claudeAvailable: false,
+      codexAvailable: true,
+      output: {
+        codex: [
+          'debug metadata {"source":"skill","nested":{"ignored":true}}',
+          JSON.stringify({
+            action: 'abort',
+            reason: 'off-topic',
+          }),
+        ].join('\n'),
+      },
+    });
+    const r = await classifyByLlm(BLANK_INPUT, { deps });
+    expect(r.decision.action).toBe('abort');
+  });
+
+  it('skips unknown-action JSON before a valid coordinator JSON object', async () => {
+    const deps = makeDeps({
+      claudeAvailable: false,
+      codexAvailable: true,
+      output: {
+        codex: [
+          'tool metadata {"action":"SessionStart","note":"not a coordinator decision"}',
+          JSON.stringify({
+            action: 'pause_for_human',
+            questions: ['请确认是修复、功能还是验证？'],
+            reason: 'valid later decision',
+          }),
+        ].join('\n'),
+      },
+    });
+    const r = await classifyByLlm(BLANK_INPUT, { deps });
+    expect(r.decision.action).toBe('pause_for_human');
+    if (r.decision.action === 'pause_for_human') {
+      expect(r.decision.questions).toEqual(['请确认是修复、功能还是验证？']);
+    }
+  });
+
+  it('normalizes invalid proceed route fields to safe defaults', async () => {
+    const deps = makeDeps({
+      claudeAvailable: false,
+      codexAvailable: true,
+      output: {
+        codex: JSON.stringify({
+          action: 'proceed',
+          routeCase: 'not-a-route',
+          runType: 'not-a-run-type',
+          reason: 'malformed enum values',
+        }),
+      },
+    });
+    const r = await classifyByLlm(BLANK_INPUT, { deps });
+    expect(r.decision.action).toBe('proceed');
+    if (r.decision.action === 'proceed') {
+      expect(r.decision.routeCase).toBe('feature_clear');
+      expect(r.decision.runType).toBe('feature');
+    }
+  });
+
+  it('falls back to a user-friendly question when pause_for_human has no usable questions', async () => {
+    const deps = makeDeps({
+      claudeAvailable: false,
+      codexAvailable: true,
+      output: {
+        codex: JSON.stringify({
+          action: 'pause_for_human',
+          questions: [null, 123],
+          reason: 'malformed questions',
+        }),
+      },
+    });
+    const r = await classifyByLlm(BLANK_INPUT, { deps });
+    expect(r.decision.action).toBe('pause_for_human');
+    if (r.decision.action === 'pause_for_human') {
+      expect(r.decision.questions).toEqual([
+        '我还需要确认一下需求范围：这是新增能力、修复现有问题，还是一次性验证/冒烟检查？',
+      ]);
+      expect(r.decision.questions[0]).not.toMatch(/JSON|parse|LLM/i);
+    }
+  });
+
   it('parses claude stream-json wrapped JSON output', async () => {
     const deps = makeDeps({
       claudeAvailable: true,
@@ -206,6 +338,48 @@ describe('classifyByLlm selection strategy (PR3)', () => {
     });
     const r = await classifyByLlm(BLANK_INPUT, { deps });
     expect(r.decision.action).toBe('abort');
+  });
+
+  it('extracts claude stream-json assistant text when Skill text precedes JSON', async () => {
+    const deps = makeDeps({
+      claudeAvailable: true,
+      codexAvailable: false,
+      output: {
+        claude: [
+          'Trellis SessionStart 已注入：workflow、当前任务状态、开发者身份、git 状态、active tasks、spec 索引已加载。',
+          JSON.stringify({
+            action: 'pause_for_human',
+            questions: ['请确认最小闭环是什么？'],
+            reason: 'needs scope',
+          }),
+        ].join('\n'),
+      },
+    });
+    const r = await classifyByLlm(BLANK_INPUT, { deps });
+    expect(r.decision.action).toBe('pause_for_human');
+    if (r.decision.action === 'pause_for_human') {
+      expect(r.decision.questions).toEqual(['请确认最小闭环是什么？']);
+    }
+  });
+
+  it('keeps invalid JSON diagnostics in reason while showing a user-friendly question', async () => {
+    const deps = makeDeps({
+      claudeAvailable: false,
+      codexAvailable: true,
+      output: {
+        codex: 'Trellis SessionStart 已注入。\n{"action":"pause_for_human","questions":["missing close"]',
+      },
+    });
+    const r = await classifyByLlm(BLANK_INPUT, { deps });
+    expect(r.decision.action).toBe('pause_for_human');
+    if (r.decision.action === 'pause_for_human') {
+      expect(r.decision.questions).toEqual([
+        '我还需要确认一下需求范围：这是新增能力、修复现有问题，还是一次性验证/冒烟检查？',
+      ]);
+      expect(r.decision.questions[0]).not.toMatch(/JSON|parse|LLM/i);
+      expect(r.decision.reason).toContain('failed to parse LLM JSON');
+      expect(r.decision.reason).toContain('Trellis SessionStart');
+    }
   });
 });
 
