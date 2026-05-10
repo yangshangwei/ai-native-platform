@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Web frontend guideline index for coordinator clarification UI changes."}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Preserve coordinator reply drafts, focus, and IME composition across polling renders."}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Coordinator clarification panel ordering, text-rendering safety, and stream/detail behavior contracts."}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "Web quality gate, DOM safety, test placement, and known coordinator reply pitfalls."}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "TypeScript strictness and runtime-boundary/type-safety conventions for apps/web."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking guide index for reuse and cross-layer checks."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Search-first guidance before adding parser/helper logic."}
