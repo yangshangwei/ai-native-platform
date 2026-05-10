@@ -6,11 +6,22 @@
  *   ctx.artifactsDir;
  * - implementation edits the worktree only; runner captures git diff itself;
  * - gates, command execution, and approvals remain outside the agent.
+ *
+ * Codex sandbox note: `codex_core::tools::router` hard-blocks any `apply_patch`
+ * whose target is outside the run's project root (the value passed to `--cd`),
+ * regardless of `--add-dir` or `approval_policy = "never"`. This is a safety
+ * check independent of OS sandboxing, and the error surfaces as
+ *   `patch rejected: writing outside of the project;
+ *    rejected by user approval settings`
+ * For produce-file stages we therefore stage the target artifact inside the
+ * workspace (at `<workspace>/.ainp-artifacts/<stage>/<name>`), let Codex write
+ * it as an in-project edit, then copy the produced file back to the canonical
+ * `ctx.artifactsDir` that the rest of the runner/API expects.
  */
 
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
@@ -56,33 +67,39 @@ export class CodexBackend implements AgentBackend {
     ctx: AgentTaskContext,
   ): Promise<AgentRunResult> {
     const expected = pickFileOutput(skill);
-    const targetPath = join(ctx.artifactsDir, expected.name);
-    if (!existsSync(targetPath)) await writeFile(targetPath, '', 'utf8');
+    const finalPath = join(ctx.artifactsDir, expected.name);
+    // Stage the target file inside the workspace so Codex's apply_patch sees
+    // it as "inside the project". Keep the final artifact location unchanged
+    // for downstream consumers (orchestrator, API artifact server).
+    const stagedDir = codexStageDir(ctx.workspacePath, skill.stage);
+    const stagedPath = join(stagedDir, expected.name);
+    await mkdir(stagedDir, { recursive: true });
+    await writeFile(stagedPath, '', 'utf8');
 
     const prompt = buildPrompt(skill, ctx, {
       mode: 'produce_file',
-      targetPath,
+      targetPath: stagedPath,
       outputName: expected.name,
     });
     const { exitCode, lastMessage } = await this.invokeCli(prompt, ctx, skill);
     if (exitCode !== 0) throw new Error(`codex exited ${exitCode} for stage ${skill.stage}`);
 
-    if (!existsSync(targetPath)) {
+    const produced = await adoptStagedArtifact(stagedPath, finalPath);
+    if (!produced) {
       if (isStructuredContextRequest(lastMessage, ctx, skill)) return { outputs: [], lastMessage };
-      throw new Error(`codex did not write expected artifact at ${targetPath}`);
+      throw new Error(`codex did not write expected artifact at ${stagedPath}`);
     }
-    const buf = await readFile(targetPath);
-    if (buf.byteLength === 0) {
+    if (produced.size === 0) {
       if (isStructuredContextRequest(lastMessage, ctx, skill)) return { outputs: [], lastMessage };
-      throw new Error(`codex produced empty artifact at ${targetPath}`);
+      throw new Error(`codex produced empty artifact at ${stagedPath}`);
     }
     return {
       outputs: [
         {
           name: expected.name,
-          path: targetPath,
+          path: finalPath,
           contentType: expected.contentType,
-          size: buf.byteLength,
+          size: produced.size,
         },
       ],
       lastMessage,
@@ -129,26 +146,26 @@ export class CodexBackend implements AgentBackend {
     ctx: AgentTaskContext,
     skill: SkillSpec,
   ): Promise<{ exitCode: number; lastMessage: string | null }> {
-    const lastMessagePath = join(ctx.artifactsDir, '.codex-last-message.txt');
+    // Keep Codex's sidecar write inside the workspace so the router's
+    // "inside project" check succeeds — same reason we stage produce-file
+    // artifacts there.
+    const stagedDir = codexStageDir(ctx.workspacePath, skill.stage);
+    await mkdir(stagedDir, { recursive: true });
+    const lastMessagePath = join(stagedDir, '.codex-last-message.txt');
     const args = [
       'exec',
       '--json',
       '--ephemeral',
       '--skip-git-repo-check',
-      // Force approval policy to `never` for runner-driven sessions. `codex exec`
-      // is non-interactive, so any prompt (including a user's default
-      // `approval_policy = "on-request"` from ~/.codex/config.toml) becomes an
-      // automatic reject. That surfaces as `patch rejected: writing outside of
-      // the project; rejected by user approval settings` whenever Codex tries
-      // to apply_patch to files under `ctx.artifactsDir`, even though that path
-      // is already on the sandbox's writable roots via `--add-dir`. Pinning the
-      // approval policy here keeps the sandbox as the only gate.
+      // Pin approval_policy=never so non-interactive runner sessions aren't
+      // silently rejected by a user's default `on-request` policy. This is
+      // still needed even after in-workspace staging because exec has no
+      // human to answer on-request prompts for other tool calls (shell,
+      // web_search, MCP).
       '-c',
       'approval_policy="never"',
       '--cd',
       ctx.workspacePath,
-      '--add-dir',
-      ctx.artifactsDir,
       '--sandbox',
       'workspace-write',
       '--output-last-message',
@@ -335,4 +352,37 @@ function isStructuredContextRequest(
     sources: [{ name: 'last_message', text: message }],
     idFactory: () => 'ctxreq_probe',
   }) !== null;
+}
+
+/**
+ * Per-stage staging directory inside the workspace. Codex's tool router hard-
+ * blocks apply_patch writes outside `--cd`, so we stage artifact targets here
+ * and copy them out to the canonical `ctx.artifactsDir` after the CLI exits.
+ * The `.ainp-artifacts` name is intentionally distinctive so it's easy to
+ * grep/ignore and, for implementation stages, trivially excluded from git
+ * diffs (we reset the worktree to HEAD before diffing in practice; for
+ * produce-file stages the staging dir is cleaned up after the copy).
+ */
+function codexStageDir(workspacePath: string, stage: string): string {
+  return join(workspacePath, '.ainp-artifacts', stage);
+}
+
+/**
+ * Copy a staged artifact out to its final location under `ctx.artifactsDir`
+ * and clean up the staging file. Returns null when the staged file is
+ * missing, or the byte size of the produced file.
+ */
+async function adoptStagedArtifact(
+  stagedPath: string,
+  finalPath: string,
+): Promise<{ size: number } | null> {
+  if (!existsSync(stagedPath)) return null;
+  const buf = await readFile(stagedPath);
+  await writeFile(finalPath, buf);
+  try {
+    await rm(stagedPath, { force: true });
+  } catch {
+    // Best-effort; leftover staged files don't affect correctness.
+  }
+  return { size: buf.byteLength };
 }
