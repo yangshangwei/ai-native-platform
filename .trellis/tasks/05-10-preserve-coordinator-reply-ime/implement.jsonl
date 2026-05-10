@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Frontend package entry point + pre-development checklist for apps/web changes."}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "The 'Preserve user-owned drafts across polling renders' convention — IME preservation must extend this pattern, not contradict it."}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "Renderer function shape + textarea/event-handling conventions for the vanilla SPA."}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "Anti-pattern catalogue already references the May 3 Coordinator reply fix; IME handling belongs in the same family."}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "Keep the new composition-tracking module-scope state and event handlers strictly typed; no any / ts-ignore."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Cross-layer + code-reuse thinking triggers (state that survives render, existing drafts pattern)."}

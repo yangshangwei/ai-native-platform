@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Check web frontend changes against the package guidelines index."}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Verify the composition-defer behavior composes cleanly with existing draft/focus/selection preservation."}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "Verify textarea renderer still follows vanilla-SPA event-handling conventions."}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "Verify no forbidden patterns (any, @ts-ignore, inline handler strings); run typecheck + tests."}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "Verify new state/handlers are typed properly."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Check cross-layer + render-edge-case triggers."}
