@@ -361,7 +361,7 @@ export function runDesignGate(params: {
   const hasTestStrategy = /test strategy|测试策略|\bAC-\d{3}\b[\s\S]{0,200}(test|mvn|测试)/i.test(text);
   const hasRisk = /risks?|风险/i.test(text);
   const hasContextGrounding =
-    /context evidence|context pack|existing implementation|现有工程|`src\//i.test(text);
+    /context evidence|context pack|existing implementation|现有工程|`[a-z][\w\-]*\/[^\s`]+`/i.test(text);
   // cs-feat-design (Phase A.5): explicit DSN id, 现状/变化 two-段式,
   // 挂载点 count in 3-5, 推进策略 section.
   const hasDsnId = /^design_id:\s*DSN-\d{3}/m.test(text);
