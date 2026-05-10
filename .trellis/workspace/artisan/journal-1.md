@@ -910,3 +910,36 @@ Archived the completed Coordinator parser compatibility task that tolerates Code
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: Context Injection Layer MVP governance audit
+
+**Date**: 2026-05-10
+**Task**: Context Injection Layer MVP governance audit
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Completed Context Injection Layer task: preserved ContextManifest priority in agent prompt audits, updated governance route test and context-injection spec, verified targeted context-governance test, typecheck, and trellis-check/full bun test evidence, then archived task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `27d52d4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
