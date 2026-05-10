@@ -244,11 +244,17 @@ function assistantTextSegments(event: StreamDisplayEvent, text: string): StreamT
 }
 
 function parseAssistantProseLine(line: string): { text: string; flavor: AssistantTextFlavor } | null {
-  const delta = /^\[claude…\]\s?(.*)$/.exec(line);
-  if (delta) return { text: delta[1] ?? '', flavor: 'delta' };
+  const claudeDelta = /^\[claude…\]\s?(.*)$/.exec(line);
+  if (claudeDelta) return { text: claudeDelta[1] ?? '', flavor: 'delta' };
 
-  const message = /^\[claude\]\s?(.*)$/.exec(line);
-  if (message) return { text: message[1] ?? '', flavor: 'message' };
+  const claudeMessage = /^\[claude\]\s?(.*)$/.exec(line);
+  if (claudeMessage) return { text: claudeMessage[1] ?? '', flavor: 'message' };
+
+  const codexDelta = /^\[codex…\]\s?(.*)$/.exec(line);
+  if (codexDelta) return { text: codexDelta[1] ?? '', flavor: 'delta' };
+
+  const codexMessage = /^\[codex\]\s?(.*)$/.exec(line);
+  if (codexMessage) return { text: codexMessage[1] ?? '', flavor: 'message' };
 
   return null;
 }

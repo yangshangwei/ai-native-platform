@@ -38,6 +38,24 @@
   into one visible prose block, labelled with the merged raw sequence range.
   Tool calls, tool input, tool results, stderr, result, system, meta, and raw
   events remain visible boundaries and must not be merged into prose blocks.
+- The same readable-prose aggregation applies to Codex output. Codex assistant
+  text arrives either as `[codex…] ...` deltas (`item.updated` with
+  `agent_message`, or the legacy `response.output_text.delta`) or as a single
+  final `[codex] ...` message (`item.completed` with `agent_message`). Parsers
+  must preserve those prefixes so the web stream renderer can merge
+  consecutive deltas into one prose block, alongside Claude prose.
+- Codex JSONL events `thread.started`, `turn.started`, and `item.started` for
+  `agent_message` or `reasoning` carry no user-visible content and must render
+  as silent meta events (no text line). Do not map them to `[system] …` or
+  stream prefixes such as `item.started`; that floods the log and breaks the
+  "as if I were in the CLI" reading experience.
+- Codex `item.completed` events must be rendered by item type rather than the
+  outer event name: `agent_message` → `[codex] ...`, `reasoning` →
+  `[think] ...`, `command_execution` → `[tool← ok|ERR] exec exit=<n> — <cmd>`
+  with trailing aggregated output when present, `file_change` / `mcp_tool_call`
+  / `web_search` → matching `[tool← …]` lines, and `turn.completed` →
+  `[result:turn] in=<n> cache=<n> out=<n> reason=<n>`. Unknown item types are
+  surfaced as a single `[item:<type>] …` meta line rather than raw JSON.
 - SSE reconnect uses `sinceSeq` from the last displayed event and dedupes by monotonic `sequence`.
 - Stream cache keys must include channel kind (`run:<id>` / `request:<id>`). Never dedupe by sequence alone because request and run channels have independent sequence counters.
 - The Coordinator conversation panel subscribes to the request channel while `workflowRunId` is absent, renders partial Coordinator output in a developer/details area, and keeps the main chat bubbles reserved for persisted user-friendly Coordinator messages.

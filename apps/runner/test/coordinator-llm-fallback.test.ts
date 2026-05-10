@@ -599,7 +599,7 @@ describe('classifyByLlm real Claude spawn environment', () => {
       workflowRequestId: 'wreq_codex_stream_test',
       agentKind: 'codex',
       type: 'assistant',
-      text: 'streaming partial',
+      text: '[codex…] streaming partial',
     });
   });
 });
