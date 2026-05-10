@@ -246,4 +246,59 @@ describe('web agent stream rendering', () => {
       'Continuing live',
     ]);
   });
+
+  it('merges consecutive Codex assistant deltas using [codex…] prefix', () => {
+    const lines = buildStreamDisplayLines([
+      { ...event(1, 'assistant', '[codex…] Sum'), agentKind: 'codex' },
+      { ...event(2, 'assistant', '[codex…] marizing'), agentKind: 'codex' },
+      { ...event(3, 'assistant', '[codex…]  repo'), agentKind: 'codex' },
+    ]);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      className: 'stream-line assistant assistant-readable',
+      prefix: '[1–3 Codex assistant]',
+      text: 'Summarizing repo',
+      sequences: [1, 2, 3],
+    });
+  });
+
+  it('keeps Codex tool and result events as boundaries between prose blocks', () => {
+    const lines = buildStreamDisplayLines([
+      { ...event(10, 'assistant', '[codex…] Planning'), agentKind: 'codex' },
+      { ...event(11, 'assistant', '[tool→ exec…] bash -lc ls'), agentKind: 'codex' },
+      { ...event(12, 'user', '[tool← ok] exec exit=0 — bash -lc ls'), agentKind: 'codex' },
+      { ...event(13, 'assistant', '[codex] Repo has README.'), agentKind: 'codex' },
+      { ...event(14, 'result', '[result:turn] in=100 cache=40 out=12'), agentKind: 'codex' },
+    ]);
+
+    expect(lines.map((line) => line.prefix)).toEqual([
+      '[10 Codex assistant]',
+      '[11 Codex assistant]',
+      '[12 Codex user]',
+      '[13 Codex assistant]',
+      '[14 Codex result]',
+    ]);
+    expect(lines.map((line) => line.text)).toEqual([
+      'Planning',
+      '[tool→ exec…] bash -lc ls',
+      '[tool← ok] exec exit=0 — bash -lc ls',
+      'Repo has README.',
+      '[result:turn] in=100 cache=40 out=12',
+    ]);
+    expect(lines[0]?.className).toContain('assistant-readable');
+    expect(lines[1]?.className).not.toContain('assistant-readable');
+    expect(lines[3]?.className).toContain('assistant-readable');
+  });
+
+  it('does not merge Claude and Codex prose blocks across backends', () => {
+    const lines = buildStreamDisplayLines([
+      { ...event(1, 'assistant', '[claude…] Claude speaking'), agentKind: 'claude_code' },
+      { ...event(2, 'assistant', '[codex…] Codex speaking'), agentKind: 'codex' },
+    ]);
+
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toMatchObject({ prefix: '[1 Claude Code assistant]', text: 'Claude speaking' });
+    expect(lines[1]).toMatchObject({ prefix: '[2 Codex assistant]', text: 'Codex speaking' });
+  });
 });
