@@ -24,8 +24,10 @@ import {
 } from '@ainp/shared';
 import { api } from '../api-client';
 import { sh } from '../sh';
-import type { AgentArtifactOutput, AgentBackend, AgentTaskContext } from './native';
+import type { AgentArtifactOutput, AgentBackend, AgentRunResult, AgentTaskContext } from './native';
 import { parseCodexJsonLine } from './codex-parser';
+import { renderAgentPrompt, renderCombinedAgentPrompt } from '../context/renderer';
+import { parseContextRequestFromAgentOutput } from '../context/request';
 
 export interface CodexBackendOpts {
   bin?: string;
@@ -43,7 +45,7 @@ export class CodexBackend implements AgentBackend {
   async run(
     skill: SkillSpec,
     ctx: AgentTaskContext,
-  ): Promise<{ outputs: AgentArtifactOutput[] }> {
+  ): Promise<AgentRunResult> {
     await mkdir(ctx.artifactsDir, { recursive: true });
     if (skill.stage === 'implementation') return this.runImplementation(skill, ctx);
     return this.runProducingFile(skill, ctx);
@@ -52,7 +54,7 @@ export class CodexBackend implements AgentBackend {
   private async runProducingFile(
     skill: SkillSpec,
     ctx: AgentTaskContext,
-  ): Promise<{ outputs: AgentArtifactOutput[] }> {
+  ): Promise<AgentRunResult> {
     const expected = pickFileOutput(skill);
     const targetPath = join(ctx.artifactsDir, expected.name);
     if (!existsSync(targetPath)) await writeFile(targetPath, '', 'utf8');
@@ -62,12 +64,18 @@ export class CodexBackend implements AgentBackend {
       targetPath,
       outputName: expected.name,
     });
-    const { exitCode } = await this.invokeCli(prompt, ctx, skill);
+    const { exitCode, lastMessage } = await this.invokeCli(prompt, ctx, skill);
     if (exitCode !== 0) throw new Error(`codex exited ${exitCode} for stage ${skill.stage}`);
 
-    if (!existsSync(targetPath)) throw new Error(`codex did not write expected artifact at ${targetPath}`);
+    if (!existsSync(targetPath)) {
+      if (isStructuredContextRequest(lastMessage, ctx, skill)) return { outputs: [], lastMessage };
+      throw new Error(`codex did not write expected artifact at ${targetPath}`);
+    }
     const buf = await readFile(targetPath);
-    if (buf.byteLength === 0) throw new Error(`codex produced empty artifact at ${targetPath}`);
+    if (buf.byteLength === 0) {
+      if (isStructuredContextRequest(lastMessage, ctx, skill)) return { outputs: [], lastMessage };
+      throw new Error(`codex produced empty artifact at ${targetPath}`);
+    }
     return {
       outputs: [
         {
@@ -77,15 +85,16 @@ export class CodexBackend implements AgentBackend {
           size: buf.byteLength,
         },
       ],
+      lastMessage,
     };
   }
 
   private async runImplementation(
     skill: SkillSpec,
     ctx: AgentTaskContext,
-  ): Promise<{ outputs: AgentArtifactOutput[] }> {
+  ): Promise<AgentRunResult> {
     const prompt = buildPrompt(skill, ctx, { mode: 'implementation' });
-    const { exitCode } = await this.invokeCli(prompt, ctx, skill);
+    const { exitCode, lastMessage } = await this.invokeCli(prompt, ctx, skill);
     if (exitCode !== 0) throw new Error(`codex exited ${exitCode} during implementation`);
 
     const diff = await sh('git', ['diff'], { cwd: ctx.workspacePath });
@@ -111,6 +120,7 @@ export class CodexBackend implements AgentBackend {
           size: Buffer.byteLength(namesOnly.stdout, 'utf8'),
         },
       ],
+      lastMessage,
     };
   }
 
@@ -118,7 +128,7 @@ export class CodexBackend implements AgentBackend {
     prompt: string,
     ctx: AgentTaskContext,
     skill: SkillSpec,
-  ): Promise<{ exitCode: number }> {
+  ): Promise<{ exitCode: number; lastMessage: string | null }> {
     const lastMessagePath = join(ctx.artifactsDir, '.codex-last-message.txt');
     const args = [
       'exec',
@@ -179,8 +189,9 @@ export class CodexBackend implements AgentBackend {
     await Promise.allSettled([stdoutDone, stderrDone]);
     clearTimeout(timer);
 
+    const lastMessage = await readOptionalText(lastMessagePath);
     await emitMeta(ctx, 'finished', { exitCode, timedOut, lastMessagePath });
-    return { exitCode };
+    return { exitCode, lastMessage };
   }
 }
 
@@ -230,53 +241,20 @@ interface BuildPromptArgs {
 }
 
 function buildPrompt(skill: SkillSpec, ctx: AgentTaskContext, args: BuildPromptArgs): string {
-  const writableGlobs = skill.toolPolicy.writableGlobs.length > 0
-    ? skill.toolPolicy.writableGlobs.join(', ')
-    : '(none)';
-  const lines = [
-    'You are an AI software engineer running inside the AI Native Platform workflow.',
-    `Skill: ${skill.id} (stage=${skill.stage})`,
-    `Workflow run: ${ctx.workflowRunId}`,
-    `Branch: ${ctx.branch}`,
-    `Working directory: ${ctx.workspacePath}`,
-    `Artifacts directory: ${ctx.artifactsDir}`,
-    `Title: ${ctx.title}`,
-    '',
-    'SKILL INSTRUCTIONS:',
-    skill.instructions,
-    '',
-    'TOOL POLICY:',
-    `- Allowed commands hint: ${skill.toolPolicy.allowedCommands.join(', ') || '(none specific)'}`,
-    `- Writable globs: ${writableGlobs}`,
-    `- Network: ${skill.toolPolicy.networkAllowed ? 'allowed' : 'forbidden'}`,
-    '- Do not run build/test commands. The runner owns compile/test.',
-    '',
-  ];
-
-  if (args.mode === 'produce_file' && args.targetPath && args.outputName) {
-    lines.push(
-      'OUTPUT REQUIREMENT:',
-      `Write the final ${args.outputName} markdown to this exact absolute path:`,
-      args.targetPath,
-      'Do not modify source files for this stage.',
-      '',
-    );
-  } else {
-    lines.push(
-      'OUTPUT REQUIREMENT:',
-      `Edit files inside the worktree (${ctx.workspacePath}) only.`,
-      'Stay within the writable globs above. Do not run git, mvn, or build commands.',
-      'The runner will capture git diff after you finish.',
-      '',
-    );
-  }
-
-  lines.push('USER REQUEST:', ctx.title, '');
-  for (const [name, value] of Object.entries(ctx.inputs)) {
-    if (name === 'user_request' || !value) continue;
-    lines.push(`--- ${name} ---`, value, '');
-  }
-  return lines.join('\n');
+  return renderCombinedAgentPrompt(renderAgentPrompt({
+    skill,
+    workflowRunId: ctx.workflowRunId,
+    workspacePath: ctx.workspacePath,
+    artifactsDir: ctx.artifactsDir,
+    branch: ctx.branch,
+    title: ctx.title,
+    inputs: ctx.inputs,
+    mode: args.mode,
+    targetPath: args.targetPath,
+    outputName: args.outputName,
+    contextPack: ctx.contextPack,
+    sensitivePathPatterns: ctx.sensitivePathPatterns,
+  }));
 }
 
 function pickFileOutput(skill: SkillSpec): { name: string; contentType: string } {
@@ -322,4 +300,29 @@ async function emitMeta(
   payload: Record<string, unknown>,
 ): Promise<void> {
   await emit(ctx, { type: 'meta', payload: { event, ...payload }, text: `[codex:${event}]` });
+}
+
+async function readOptionalText(path: string): Promise<string | null> {
+  try {
+    const text = await readFile(path, 'utf8');
+    const trimmed = text.trim();
+    return trimmed ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isStructuredContextRequest(
+  message: string | null,
+  ctx: AgentTaskContext,
+  skill: SkillSpec,
+): boolean {
+  if (!message) return false;
+  return parseContextRequestFromAgentOutput({
+    workflowRunId: ctx.workflowRunId,
+    stepRunId: ctx.stepRunId ?? null,
+    stage: skill.stage,
+    sources: [{ name: 'last_message', text: message }],
+    idFactory: () => 'ctxreq_probe',
+  }) !== null;
 }

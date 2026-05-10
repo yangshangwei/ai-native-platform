@@ -33,7 +33,9 @@ import {
 import { sh } from '../sh';
 import { api } from '../api-client';
 import { parseStreamLine } from './claude-code-parser';
-import type { AgentArtifactOutput, AgentBackend, AgentTaskContext } from './native';
+import type { AgentArtifactOutput, AgentBackend, AgentRunResult, AgentTaskContext } from './native';
+import { renderAgentPrompt } from '../context/renderer';
+import { parseContextRequestFromAgentOutput } from '../context/request';
 
 export interface ClaudeCodeBackendOpts {
   /** Override binary path; defaults to `AINP_CLAUDE_BIN` env or `claude`. */
@@ -57,6 +59,16 @@ export interface ClaudeCodeBackendOpts {
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const DEFAULT_POST_RESULT_GRACE_MS = 5_000;
 const DEFAULT_BUDGET_USD = 5;
+export const CLAUDE_HOOK_EVENTS = [
+  'PreToolUse',
+  'PostToolUse',
+  'PostToolUseFailure',
+  'UserPromptSubmit',
+  'Stop',
+  'SessionStart',
+  'Notification',
+  'SubagentStop',
+] as const;
 
 export class ClaudeCodeBackend implements AgentBackend {
   kind: AgentBackendKind = 'claude_code';
@@ -66,7 +78,7 @@ export class ClaudeCodeBackend implements AgentBackend {
   async run(
     skill: SkillSpec,
     ctx: AgentTaskContext,
-  ): Promise<{ outputs: AgentArtifactOutput[] }> {
+  ): Promise<AgentRunResult> {
     await mkdir(ctx.artifactsDir, { recursive: true });
 
     if (skill.stage === 'implementation') {
@@ -78,7 +90,7 @@ export class ClaudeCodeBackend implements AgentBackend {
   private async runProducingFile(
     skill: SkillSpec,
     ctx: AgentTaskContext,
-  ): Promise<{ outputs: AgentArtifactOutput[] }> {
+  ): Promise<AgentRunResult> {
     const expected = pickFileOutput(skill);
     const targetPath = join(ctx.artifactsDir, expected.name);
     // Pre-create an empty target file so the model has a clear write target;
@@ -91,16 +103,18 @@ export class ClaudeCodeBackend implements AgentBackend {
       outputName: expected.name,
     });
 
-    const { exitCode } = await this.invokeCli(systemPrompt, userPrompt, ctx, skill);
+    const { exitCode, lastMessage } = await this.invokeCli(systemPrompt, userPrompt, ctx, skill);
     if (exitCode !== 0) {
       throw new Error(`claude exited ${exitCode} for stage ${skill.stage}`);
     }
 
     if (!existsSync(targetPath)) {
+      if (isStructuredContextRequest(lastMessage, ctx, skill)) return { outputs: [], lastMessage };
       throw new Error(`claude did not write expected artifact at ${targetPath}`);
     }
     const buf = await readFile(targetPath);
     if (buf.byteLength === 0) {
+      if (isStructuredContextRequest(lastMessage, ctx, skill)) return { outputs: [], lastMessage };
       throw new Error(`claude produced empty artifact at ${targetPath}`);
     }
     return {
@@ -112,16 +126,17 @@ export class ClaudeCodeBackend implements AgentBackend {
           size: buf.byteLength,
         },
       ],
+      lastMessage,
     };
   }
 
   private async runImplementation(
     skill: SkillSpec,
     ctx: AgentTaskContext,
-  ): Promise<{ outputs: AgentArtifactOutput[] }> {
+  ): Promise<AgentRunResult> {
     const { systemPrompt, userPrompt } = buildPrompts(skill, ctx, { mode: 'implementation' });
 
-    const { exitCode } = await this.invokeCli(systemPrompt, userPrompt, ctx, skill);
+    const { exitCode, lastMessage } = await this.invokeCli(systemPrompt, userPrompt, ctx, skill);
     if (exitCode !== 0) {
       throw new Error(`claude exited ${exitCode} during implementation`);
     }
@@ -149,6 +164,7 @@ export class ClaudeCodeBackend implements AgentBackend {
           size: Buffer.byteLength(namesOnly.stdout, 'utf8'),
         },
       ],
+      lastMessage,
     };
   }
 
@@ -157,7 +173,7 @@ export class ClaudeCodeBackend implements AgentBackend {
     userPrompt: string,
     ctx: AgentTaskContext,
     skill: SkillSpec,
-  ): Promise<{ exitCode: number }> {
+  ): Promise<{ exitCode: number; lastMessage: string | null }> {
     const allowedTools = computeAllowedTools(skill);
     const disallowedTools = ['WebFetch', 'WebSearch'];
     // User-level `~/.claude/settings.json` may register hooks (Stop,
@@ -168,32 +184,25 @@ export class ClaudeCodeBackend implements AgentBackend {
     // synthetic user message, the model answers again, the hook fires again,
     // and the loop only ends at the 10-minute hard timeout (exit 143).
     //
-    // Fix: pass `--setting-sources project,local` so the user-level
-    // settings.json (with its hooks) is not loaded by the CLI. Trying to
-    // override `hooks` via `--settings <json>` does NOT work — additional
-    // settings merge with user settings instead of replacing them, so the
-    // user hooks still fire.
-    //
-    // Side effect: skipping user settings also skips its `env` block (e.g.
-    // `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` for third-party routers
-    // like anyrouter), which would break runtime auth. We compensate by
-    // reading the user `env` block ourselves and merging it into the child
-    // process environment below, so auth keeps working without re-introducing
-    // user hooks.
+    // Fix: pass a local `--settings` JSON with every known hook event set to
+    // an empty array. Do NOT use `--setting-sources project,local`: that also
+    // hides the user's env block and breaks third-party-router auth. The
+    // explicit settings overlay keeps user config visible while neutralizing
+    // hooks for runner-driven sessions.
     //
     // Escape hatch: AINP_CLAUDE_LOAD_USER_SETTINGS=1 keeps user settings
     // active (hooks fire too), for debugging hook behavior.
     const keepUserHooks = process.env.AINP_CLAUDE_LOAD_USER_SETTINGS === '1';
-    const settingSourcesArgs = keepUserHooks
+    const settingsArgs = keepUserHooks
       ? []
-      : ['--setting-sources', 'project,local'];
+      : ['--settings', JSON.stringify({ hooks: emptyClaudeHooksSettings() })];
     const args = [
       '--print',
       '--output-format', 'stream-json',
       '--verbose',
       '--include-partial-messages',
       '--no-session-persistence',
-      ...settingSourcesArgs,
+      ...settingsArgs,
       '--permission-mode', this.opts.permissionMode ?? 'acceptEdits',
       '--max-budget-usd', String(this.opts.maxBudgetUsd ?? DEFAULT_BUDGET_USD),
       '--add-dir', ctx.workspacePath,
@@ -230,11 +239,10 @@ export class ClaudeCodeBackend implements AgentBackend {
       delete childEnv.CLAUDE_CONFIG_DIR;
       delete childEnv.XDG_CONFIG_HOME;
     } else if (!keepUserHooks) {
-      // We told the CLI to skip user-level settings.json (above) so its hooks
-      // don't fire. But that also skips the user's `env` block — which on
-      // anyrouter-style setups carries `ANTHROPIC_AUTH_TOKEN` /
-      // `ANTHROPIC_BASE_URL`. Read those here ourselves and forward them so
-      // auth keeps working without restoring the hooks.
+      // Forward the user settings `env` block as process env as well. The CLI
+      // still loads user config by default; this duplicate forwarding keeps
+      // auth stable for router setups that expect env variables before plugin
+      // initialization while hooks remain disabled by the settings overlay.
       const userEnv = readUserSettingsEnv(process.env.CLAUDE_CONFIG_DIR, process.env.HOME);
       for (const [k, v] of Object.entries(userEnv)) {
         if (childEnv[k] === undefined) childEnv[k] = v;
@@ -254,6 +262,7 @@ export class ClaudeCodeBackend implements AgentBackend {
     let timedOut = false;
     let resultSeen = false;
     let resultSubtype: string | null = null;
+    let lastMessage: string | null = null;
     let graceTimer: ReturnType<typeof setTimeout> | null = null;
     let graceShutdownInitiated = false;
     const hardTimer = setTimeout(() => {
@@ -286,6 +295,8 @@ export class ClaudeCodeBackend implements AgentBackend {
         resultSeen = true;
         const sub = (parsed.payload as { subtype?: unknown }).subtype;
         resultSubtype = typeof sub === 'string' ? sub : null;
+        const result = (parsed.payload as { result?: unknown }).result;
+        lastMessage = typeof result === 'string' && result.trim() ? result.trim() : parsed.text;
         armPostResultGrace();
       }
     });
@@ -331,8 +342,15 @@ export class ClaudeCodeBackend implements AgentBackend {
       resultSubtype,
       graceShutdown: graceShutdownInitiated,
     });
-    return { exitCode: effectiveExitCode };
+    return { exitCode: effectiveExitCode, lastMessage };
   }
+}
+
+export function emptyClaudeHooksSettings(): Record<(typeof CLAUDE_HOOK_EVENTS)[number], []> {
+  return Object.fromEntries(CLAUDE_HOOK_EVENTS.map((event) => [event, []])) as Record<
+    (typeof CLAUDE_HOOK_EVENTS)[number],
+    []
+  >;
 }
 
 // ---- prompt assembly ------------------------------------------------------
@@ -348,91 +366,20 @@ function buildPrompts(
   ctx: AgentTaskContext,
   args: BuildPromptArgs,
 ): { systemPrompt: string; userPrompt: string } {
-  const writableGlobs = skill.toolPolicy.writableGlobs.length > 0
-    ? skill.toolPolicy.writableGlobs.join(', ')
-    : '(none)';
-
-  const sysLines: string[] = [
-    'You are an AI software engineer running inside the AI Native Platform workflow.',
-    `Skill: ${skill.id} (stage=${skill.stage})`,
-    '',
-    'SKILL INSTRUCTIONS:',
-    skill.instructions,
-    '',
-    `Working directory (worktree): ${ctx.workspacePath}`,
-    `Artifacts directory: ${ctx.artifactsDir}`,
-    `Workflow run: ${ctx.workflowRunId}`,
-    `Branch: ${ctx.branch}`,
-    `Title: ${ctx.title}`,
-    '',
-    'TOOL POLICY:',
-    `- Allowed commands hint: ${skill.toolPolicy.allowedCommands.join(', ') || '(none specific)'}`,
-    `- Writable globs (relative to worktree): ${writableGlobs}`,
-    `- Network: ${skill.toolPolicy.networkAllowed ? 'allowed' : 'forbidden'}`,
-    '',
-  ];
-
-  if (args.mode === 'produce_file' && args.targetPath && args.outputName) {
-    sysLines.push(
-      'OUTPUT REQUIREMENT:',
-      `You MUST write the final ${args.outputName} as Markdown to this absolute path:`,
-      `  ${args.targetPath}`,
-      'Use the Write tool to create or overwrite that file. Do not write any other files.',
-      'After writing, reply with one short confirmation line and stop.',
-      '',
-    );
-    if (skill.stage === 'context_pack') {
-      sysLines.push(
-        'CONTEXT-PACK CONSTRAINTS (overrides any general instinct to "be helpful"):',
-        '- Your job is ONLY to summarize reusable repo facts for downstream stages.',
-        '- DO NOT plan changes, propose variable names, list edit sites, or describe how to implement the request.',
-        '- DO NOT walk every file. Read at most a handful of likely-reusable entry points (build, config, main entry).',
-        '- Output: bullet points; ≤ 2 KB total; if you wrote >300 lines you went too deep.',
-        '- After writing the file, reply with ONE short confirmation line and stop.',
-        '',
-      );
-    }
-  } else {
-    sysLines.push(
-      'OUTPUT REQUIREMENT:',
-      `Edit files inside the worktree (${ctx.workspacePath}) only. Stay within the writable globs above.`,
-      'The runner will capture `git diff` after you finish — do NOT run git, mvn, or any build commands yourself.',
-      'After your edits are complete, reply with one short confirmation line and stop.',
-      '',
-    );
-  }
-
-  const systemPrompt = sysLines.join('\n');
-
-  const userLines: string[] = [];
-  if (args.mode === 'produce_file' && args.targetPath && args.outputName) {
-    userLines.push(
-      `STAGE ROLE: ${skill.stage} (DOCUMENT-ONLY)`,
-      `Your job in this stage is to PRODUCE A MARKDOWN DOCUMENT at ${args.targetPath}.`,
-      'You are NOT implementing the request. You are NOT writing code. You are NOT modifying any existing source file.',
-      `The ONLY file you may write is ${args.targetPath}. Do not create or modify any other file.`,
-      'The user intent below describes what the FINISHED system should do — your task is to capture it as a requirement, not to build it.',
-      '',
-      'USER INTENT:',
-      ctx.title,
-      '',
-    );
-  } else {
-    userLines.push('USER REQUEST:');
-    userLines.push(ctx.title);
-    userLines.push('');
-  }
-
-  for (const [name, value] of Object.entries(ctx.inputs)) {
-    if (name === 'user_request') continue;
-    if (!value) continue;
-    userLines.push(`--- ${name} ---`);
-    userLines.push(value);
-    userLines.push('');
-  }
-
-  const userPrompt = userLines.join('\n');
-  return { systemPrompt, userPrompt };
+  return renderAgentPrompt({
+    skill,
+    workflowRunId: ctx.workflowRunId,
+    workspacePath: ctx.workspacePath,
+    artifactsDir: ctx.artifactsDir,
+    branch: ctx.branch,
+    title: ctx.title,
+    inputs: ctx.inputs,
+    mode: args.mode,
+    targetPath: args.targetPath,
+    outputName: args.outputName,
+    contextPack: ctx.contextPack,
+    sensitivePathPatterns: ctx.sensitivePathPatterns,
+  });
 }
 
 function computeAllowedTools(skill: SkillSpec): string[] {
@@ -578,4 +525,19 @@ function exitsZero(bin: string, args: string[]): Promise<boolean> {
       resolve(code === 0);
     });
   });
+}
+
+function isStructuredContextRequest(
+  message: string | null,
+  ctx: AgentTaskContext,
+  skill: SkillSpec,
+): boolean {
+  if (!message) return false;
+  return parseContextRequestFromAgentOutput({
+    workflowRunId: ctx.workflowRunId,
+    stepRunId: ctx.stepRunId ?? null,
+    stage: skill.stage,
+    sources: [{ name: 'last_message', text: message }],
+    idFactory: () => 'ctxreq_probe',
+  }) !== null;
 }

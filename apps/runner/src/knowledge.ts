@@ -89,6 +89,28 @@ function renderCuratedKnowledge(runId: string, actions: KnowledgePromotionAction
     })
     .filter((item) => item.text.length > 0);
 
+  const reviewSignals = [...latestByTarget.entries()]
+    .filter(([, action]) => isKnowledgeReviewAction(action.action))
+    .map(([targetId, action]) => {
+      const reason =
+        typeof action.payload.reason === 'string' ? action.payload.reason.trim() : '';
+      const evidence =
+        typeof action.payload.evidence === 'string' ? action.payload.evidence.trim() : '';
+      const targetKnowledgeId =
+        typeof action.payload.targetKnowledgeId === 'string'
+          ? action.payload.targetKnowledgeId.trim()
+          : '';
+      const text = typeof action.payload.text === 'string' ? action.payload.text.trim() : '';
+      return {
+        targetId,
+        action: action.action,
+        reason,
+        evidence,
+        targetKnowledgeId,
+        text,
+      };
+    });
+
   const lines = [
     '# Accepted Knowledge',
     '',
@@ -117,5 +139,35 @@ function renderCuratedKnowledge(runId: string, actions: KnowledgePromotionAction
     }
   }
 
+  lines.push('', '## Knowledge review signals');
+
+  if (reviewSignals.length === 0) {
+    lines.push('', '_No upgrade/downgrade/supersede/stale review signals were recorded._');
+  } else {
+    for (const signal of reviewSignals) {
+      lines.push(
+        '',
+        `### ${signal.targetId}`,
+        '',
+        `- **Action:** ${signal.action}`,
+      );
+      if (signal.targetKnowledgeId) lines.push(`- **Target knowledge:** ${signal.targetKnowledgeId}`);
+      if (signal.reason) lines.push(`- **Reason:** ${signal.reason}`);
+      if (signal.evidence) lines.push(`- **Evidence:** ${signal.evidence}`);
+      if (signal.text) lines.push(`- **Review note:** ${signal.text}`);
+      lines.push('- **Effect:** review signal only; no destructive overwrite was applied by the runner.');
+    }
+  }
+
   return `${lines.join('\n')}\n`;
+}
+
+function isKnowledgeReviewAction(action: string): boolean {
+  return action === 'upgrade'
+    || action === 'downgrade'
+    || action === 'supersede'
+    || action === 'mark_stale'
+    || action === 'needs_review'
+    || action === 'upgrade_candidate'
+    || action === 'downgrade_candidate';
 }

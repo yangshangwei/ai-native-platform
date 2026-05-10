@@ -137,4 +137,46 @@ describe('knowledge feedback loop', () => {
     expect(acc).not.toContain('This ignored lesson must not be promoted.');
     expect(acc).not.toContain('keep all of this only as fallback');
   });
+
+  it('records stale/supersede-style knowledge actions as non-destructive review signals', async () => {
+    const { persistKnowledgeCandidate, collectAcceptedKnowledge } = await import('../src/knowledge');
+
+    const candidatePath = join(TMP, 'candidate-review-signal.md');
+    writeFileSync(candidatePath, '# Knowledge Candidate\n\n- Review: check backend policy.\n', 'utf8');
+
+    const dest = await persistKnowledgeCandidate({
+      projectId: 'proj_k_review_signals',
+      runId: 'run_review_signals',
+      candidateUri: `file://${candidatePath}`,
+      actions: [
+        {
+          targetId: 'KS-010',
+          action: 'mark_stale',
+          payload: {
+            targetKnowledgeId: 'kart_backend',
+            reason: 'Current diff shows Codex/Claude Code only; old native backend note is stale.',
+            evidence: 'artifact:diff_backend',
+            text: 'Review before using backend policy in prompts.',
+          },
+        },
+        {
+          targetId: 'KS-011',
+          action: 'supersede',
+          payload: {
+            targetKnowledgeId: 'kart_old_renderer',
+            reason: 'Renderer contract moved to shared ContextPack renderer.',
+            evidence: 'contextSelection:ctxpack_1',
+          },
+        },
+      ],
+    });
+
+    expect(dest).toBeTruthy();
+    const acc = await collectAcceptedKnowledge('proj_k_review_signals');
+    expect(acc).toContain('## Knowledge review signals');
+    expect(acc).toContain('Action:** mark_stale');
+    expect(acc).toContain('Action:** supersede');
+    expect(acc).toContain('review signal only; no destructive overwrite');
+    expect(acc).not.toContain('check backend policy');
+  });
 });

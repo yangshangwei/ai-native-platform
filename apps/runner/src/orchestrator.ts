@@ -1,12 +1,15 @@
 import { join } from 'node:path';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import type {
   AgentTaskKind,
   ArtifactKind,
+  ContextPack,
+  ContextRequest,
   FlowId,
   GateRun,
+  KnowledgeArtifact,
   Project,
   SkillSpec,
   StageStep,
@@ -19,17 +22,29 @@ import { api } from './api-client';
 import { runWhitelistedCommand } from './command-runner';
 import { TrustedLocalWorktreeEnvironment } from './worktree';
 import { DEFAULT_MAX_LOG_BYTES, DEFAULT_TIMEOUT_MS, WORKTREES_DIR } from './config';
+import { getConfig } from './config-client';
 import { sendHeartbeat } from './heartbeat';
 import { findSkillForStage } from './skills';
 import type { AgentBackend } from './agents/native';
 import { selectAgentBackend } from './backend-selection';
-import { generateProjectProfile } from './profile';
+import { generateProjectProfile, type ProjectProfileResult } from './profile';
 import { FLOW_REGISTRY } from './flows/registry';
 import {
   collectAcceptedKnowledge,
   persistKnowledgeCandidate,
   type KnowledgePromotionAction,
 } from './knowledge';
+import {
+  buildContextPack,
+  contextSelectionAudit,
+  sanitizeContextRequestForContextInjection,
+} from './context/builder';
+import { buildIncrementalContextPack } from './context/builder';
+import {
+  CONTEXT_REQUEST_SCHEMA_VERSION,
+  parseContextRequestFromAgentOutput,
+  type ParsedContextRequest,
+} from './context/request';
 
 export interface OrchestrateOpts {
   project: string;
@@ -96,8 +111,63 @@ interface RunCtx {
   runArtifactsDir: string;
   inputs: Record<string, string>;
   inputArtifactIds: Record<string, string>;
+  contextFoundation: {
+    projectProfileResult: ProjectProfileResult | null;
+    acceptedKnowledge: string | null;
+    knowledgeArtifacts: KnowledgeArtifact[] | null;
+    runHistory: WorkflowRun[] | null;
+  };
+  contextPolicy: ContextPolicy;
+  contextRequestChain: ContextRequestCapture[];
   draftsToPromote: PromoteDraftInput[];
   ok: OkRef;
+}
+
+interface ContextPolicy {
+  budget: {
+    maxTokens: number;
+    reservedForReasoning: number;
+    reservedForOutput: number;
+  };
+  sensitivePathPatterns: readonly string[];
+}
+
+interface ContextRequestCapture {
+  request: ContextRequest;
+  sourceName: string;
+  requestArtifactId: string;
+  supplementArtifactId: string;
+  supplementContextPackId: string;
+  baseContextPackId: string;
+}
+
+interface InvokedAgent {
+  taskId: string;
+  outputs: Awaited<ReturnType<AgentBackend['run']>>['outputs'];
+  contextPack: ContextPack;
+  contextRequest: ContextRequestCapture | null;
+}
+
+async function loadContextPolicy(): Promise<ContextPolicy> {
+  const [
+    maxTokens,
+    reservedForReasoning,
+    reservedForOutput,
+    sensitivePathPatterns,
+  ] = await Promise.all([
+    getConfig('context.policy.max_tokens'),
+    getConfig('context.policy.reserved_for_reasoning'),
+    getConfig('context.policy.reserved_for_output'),
+    getConfig('context.policy.sensitive_path_patterns'),
+  ]);
+  return {
+    budget: {
+      maxTokens,
+      reservedForReasoning,
+      reservedForOutput,
+    },
+    sensitivePathPatterns,
+  };
 }
 
 /**
@@ -145,6 +215,14 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
 
   const inputs: Record<string, string> = { user_request: opts.title };
   const inputArtifactIds: Record<string, string> = {};
+  const contextFoundation: RunCtx['contextFoundation'] = {
+    projectProfileResult: null,
+    acceptedKnowledge: null,
+    knowledgeArtifacts: null,
+    runHistory: null,
+  };
+  const contextRequestChain: ContextRequestCapture[] = [];
+  const contextPolicy = await loadContextPolicy();
   /**
    * V2 P0-1 / PR3: drafts captured for promoteToKnowledge after acceptance.
    * Each entry is the markdown draft of a `requirement_draft` / `design_doc`
@@ -164,6 +242,9 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     runArtifactsDir,
     inputs,
     inputArtifactIds,
+    contextFoundation,
+    contextPolicy,
+    contextRequestChain,
     draftsToPromote,
     ok,
   };
@@ -304,7 +385,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       .filter(Boolean);
     c.inputs['diff'] = await Bun.file(diffOut.path).text();
     await finishAgentSuccess(
-      agent.taskId,
+      agent,
       [diffArtifact.id],
       `implementation produced ${changedFiles.length} changed file(s)`,
     );
@@ -491,7 +572,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       console.log(`[runner] report artifact ${a.id} (${out.name})`);
     }
     await finishAgentSuccess(
-      agent.taskId,
+      agent,
       artifactIds,
       `report produced ${artifactIds.length} artifact(s)`,
     );
@@ -533,7 +614,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       console.log(`[runner] analyze artifact ${a.id} (${out.name})`);
     }
     await finishAgentSuccess(
-      agent.taskId,
+      agent,
       artifactIds,
       `analyze produced ${artifactIds.length} artifact(s)`,
     );
@@ -581,7 +662,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       console.log(`[runner] scan artifact ${a.id} (${out.name})`);
     }
     await finishAgentSuccess(
-      agent.taskId,
+      agent,
       artifactIds,
       `scan produced ${artifactIds.length} artifact(s)`,
     );
@@ -623,7 +704,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       console.log(`[runner] plan artifact ${a.id} (${out.name})`);
     }
     await finishAgentSuccess(
-      agent.taskId,
+      agent,
       artifactIds,
       `plan produced ${artifactIds.length} artifact(s)`,
     );
@@ -690,6 +771,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       localPath: project.localPath,
       reuseIfPresent: true,
     });
+    ctx.contextFoundation.projectProfileResult = profileResult;
 
     const { step } = await api.stepStarted({
       workflowRunId: run.id,
@@ -719,6 +801,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
 
     // b. accepted knowledge from prior runs (knowledge → context loop).
     const acceptedKnowledge = await collectAcceptedKnowledge(project.id);
+    ctx.contextFoundation.acceptedKnowledge = acceptedKnowledge;
     inputs['accepted_knowledge.md'] = acceptedKnowledge;
     if (acceptedKnowledge) {
       console.log(`[runner] accepted_knowledge: ${acceptedKnowledge.length} bytes`);
@@ -745,7 +828,12 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
         uri: `file://${out.path}`,
         size: out.size,
         contentType: out.contentType,
-        metadata: { skill: skill.id, output: out.name, stage: 'context_pack' },
+        metadata: {
+          skill: skill.id,
+          output: out.name,
+          stage: 'context_pack',
+          contextSelection: contextSelectionAudit(agent.contextPack),
+        },
       });
       inputs[out.name] = await Bun.file(out.path).text();
       inputArtifactIds[out.name] = a.id;
@@ -753,7 +841,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       console.log(`[runner] context_pack artifact ${a.id} (${out.name})`);
     }
     await finishAgentSuccess(
-      agent.taskId,
+      agent,
       artifactIds,
       `context_pack produced ${artifactIds.length} artifact(s)`,
     );
@@ -814,7 +902,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       console.log(`[runner] ${stage} artifact ${a.kind} -> ${a.uri}`);
     }
     await finishAgentSuccess(
-      agent.taskId,
+      agent,
       artifactIds,
       `${stage} produced ${artifactIds.length} artifact(s)`,
     );
@@ -865,20 +953,57 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
   async function invokeSkill(
     skill: SkillSpec,
     skillCtx: Parameters<AgentBackend['run']>[1],
-  ): Promise<{ taskId: string; outputs: Awaited<ReturnType<AgentBackend['run']>>['outputs'] }> {
+  ): Promise<InvokedAgent> {
+    const foundation = await ensureContextFoundation(ctx);
+    const contextPack = buildContextPack({
+      project,
+      run,
+      stage: skill.stage,
+      stepRunId: skillCtx.stepRunId ?? null,
+      workspacePath: skillCtx.workspacePath,
+      branch: skillCtx.branch,
+      taskBrief: skillCtx.title,
+      projectProfile: foundation.projectProfileResult?.profile ?? null,
+      projectProfileMarkdown: foundation.projectProfileResult?.markdown ?? skillCtx.inputs['project_profile.md'],
+      acceptedKnowledgeMarkdown: foundation.acceptedKnowledge ?? skillCtx.inputs['accepted_knowledge.md'],
+      knowledgeArtifacts: foundation.knowledgeArtifacts ?? [],
+      runHistory: foundation.runHistory ?? [],
+      inputNames: Object.keys(skillCtx.inputs),
+      inputArtifacts: Object.entries(skillCtx.inputs).map(([name, content]) => ({
+        name,
+        content,
+        artifactId: inputArtifactIds[name] ?? null,
+      })),
+      budget: ctx.contextPolicy.budget,
+      sensitivePathPatterns: ctx.contextPolicy.sensitivePathPatterns,
+    });
+    const enrichedCtx = {
+      ...skillCtx,
+      contextPack,
+      sensitivePathPatterns: ctx.contextPolicy.sensitivePathPatterns,
+    };
     const task = await api.agentTaskStarted({
       workflowRunId: skillCtx.workflowRunId,
       stepRunId: skillCtx.stepRunId ?? null,
       kind: taskKindForSkill(skill),
       backend: backend.kind,
-      prompt: renderAgentPromptAudit(skill, skillCtx.inputs),
+      prompt: renderAgentPromptAudit(skill, enrichedCtx.inputs, contextPack),
       inputArtifactIds: skill.inputs
         .map((i) => inputArtifactIds[i.name])
         .filter((id): id is string => Boolean(id)),
     });
+    await recordKnowledgeReviewSignals(contextPack, task.task.id);
     try {
-      const result = await backend.run(skill, skillCtx);
-      return { taskId: task.task.id, outputs: result.outputs };
+      const result = await backend.run(skill, enrichedCtx);
+      const contextRequest = await captureContextRequest({
+        skill,
+        skillCtx,
+        result,
+        foundation,
+        baseContextPack: contextPack,
+        taskId: task.task.id,
+      });
+      return { taskId: task.task.id, outputs: result.outputs, contextPack, contextRequest };
     } catch (err) {
       await api.agentTaskFinished({
         taskId: task.task.id,
@@ -890,18 +1015,271 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     }
   }
 
-  async function finishAgentSuccess(
+  async function recordKnowledgeReviewSignals(
+    contextPack: ContextPack,
     taskId: string,
+  ): Promise<void> {
+    const signals = contextPack.calibrationSignals ?? [];
+    if (signals.length === 0) return;
+    for (const signal of signals) {
+      try {
+        await api.recordKnowledgeAction({
+          workflowRunId: contextPack.workflowRunId,
+          targetId: signal.id,
+          action: knowledgeReviewActionForSignal(signal.recommendedAction),
+          actor: 'runner',
+          payload: {
+            reason: signal.message,
+            signalKind: signal.kind,
+            severity: signal.severity,
+            subjectRefs: signal.subjectRefs,
+            evidenceRefs: signal.evidenceRefs,
+            recommendedAction: signal.recommendedAction,
+            contextPackId: contextPack.id,
+            taskId,
+          },
+        });
+      } catch (err) {
+        console.warn(
+          `[runner] knowledge review signal ${signal.id} was not recorded: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
+
+  async function captureContextRequest(input: {
+    skill: SkillSpec;
+    skillCtx: Parameters<AgentBackend['run']>[1];
+    result: Awaited<ReturnType<AgentBackend['run']>>;
+    foundation: RunCtx['contextFoundation'];
+    baseContextPack: ContextPack;
+    taskId: string;
+  }): Promise<ContextRequestCapture | null> {
+    const parsed = await parseContextRequestFromRunResult(input);
+    if (!parsed) return null;
+
+    const request = sanitizeContextRequestForContextInjection(
+      parsed.request,
+      ctx.contextPolicy.sensitivePathPatterns,
+    );
+    if (request.requestedRefs.length === 0 && request.questions.length === 0) {
+      console.warn(
+        `[runner] context_request ${parsed.request.id} was ignored after sensitive path filtering removed all requested context`,
+      );
+      return null;
+    }
+
+    const supplementPack = buildIncrementalContextPack({
+      project,
+      run,
+      stage: input.skill.stage,
+      stepRunId: input.skillCtx.stepRunId ?? null,
+      workspacePath: input.skillCtx.workspacePath,
+      branch: input.skillCtx.branch,
+      taskBrief: input.skillCtx.title,
+      projectProfile: input.foundation.projectProfileResult?.profile ?? null,
+      projectProfileMarkdown: input.foundation.projectProfileResult?.markdown
+        ?? input.skillCtx.inputs['project_profile.md'],
+      acceptedKnowledgeMarkdown: input.foundation.acceptedKnowledge
+        ?? input.skillCtx.inputs['accepted_knowledge.md'],
+      knowledgeArtifacts: input.foundation.knowledgeArtifacts ?? [],
+      runHistory: input.foundation.runHistory ?? [],
+      inputNames: Object.keys(input.skillCtx.inputs),
+      inputArtifacts: Object.entries(input.skillCtx.inputs).map(([name, content]) => ({
+        name,
+        content,
+        artifactId: inputArtifactIds[name] ?? null,
+      })),
+      budget: ctx.contextPolicy.budget,
+      sensitivePathPatterns: ctx.contextPolicy.sensitivePathPatterns,
+      contextRequest: request,
+      baseContextPack: input.baseContextPack,
+    });
+
+    const requestInputName = `context_request.${request.id}.json`;
+    const supplementInputName = `context_supplement.${request.id}.json`;
+    const requestBody = `${JSON.stringify({
+      schemaVersion: CONTEXT_REQUEST_SCHEMA_VERSION,
+      sourceName: parsed.sourceName,
+      taskId: input.taskId,
+      baseContextPackId: input.baseContextPack.id,
+      request,
+    }, null, 2)}\n`;
+    const supplementBody = `${JSON.stringify({
+      schemaVersion: 'ainp.context_supplement.v1',
+      contextRequestId: request.id,
+      baseContextPackId: input.baseContextPack.id,
+      contextPack: supplementPack,
+    }, null, 2)}\n`;
+
+    const contextRequestDir = join(input.skillCtx.artifactsDir, 'context-requests');
+    await mkdir(contextRequestDir, { recursive: true });
+    const requestPath = join(contextRequestDir, requestInputName);
+    const supplementPath = join(contextRequestDir, supplementInputName);
+    await writeFile(requestPath, requestBody, 'utf8');
+    await writeFile(supplementPath, supplementBody, 'utf8');
+
+    const requestArtifact = await api.postArtifact({
+      workflowRunId: input.skillCtx.workflowRunId,
+      stepRunId: input.skillCtx.stepRunId ?? null,
+      kind: 'other',
+      uri: `file://${requestPath}`,
+      size: Buffer.byteLength(requestBody, 'utf8'),
+      contentType: 'application/json',
+      metadata: {
+        schemaVersion: CONTEXT_REQUEST_SCHEMA_VERSION,
+        output: requestInputName,
+        stage: input.skill.stage,
+        contextRequestId: request.id,
+        baseContextPackId: input.baseContextPack.id,
+        sourceName: parsed.sourceName,
+      },
+    });
+    const supplementArtifact = await api.postArtifact({
+      workflowRunId: input.skillCtx.workflowRunId,
+      stepRunId: input.skillCtx.stepRunId ?? null,
+      kind: 'context_pack',
+      uri: `file://${supplementPath}`,
+      size: Buffer.byteLength(supplementBody, 'utf8'),
+      contentType: 'application/json',
+      metadata: {
+        schemaVersion: 'ainp.context_supplement.v1',
+        output: supplementInputName,
+        stage: input.skill.stage,
+        contextRequestId: request.id,
+        baseContextPackId: input.baseContextPack.id,
+        contextSelection: contextSelectionAudit(supplementPack),
+      },
+    });
+
+    inputs[requestInputName] = requestBody;
+    inputs[supplementInputName] = supplementBody;
+    inputArtifactIds[requestInputName] = requestArtifact.id;
+    inputArtifactIds[supplementInputName] = supplementArtifact.id;
+
+    const capture: ContextRequestCapture = {
+      request,
+      sourceName: parsed.sourceName,
+      requestArtifactId: requestArtifact.id,
+      supplementArtifactId: supplementArtifact.id,
+      supplementContextPackId: supplementPack.id,
+      baseContextPackId: input.baseContextPack.id,
+    };
+    ctx.contextRequestChain.push(capture);
+    await api.recordContextRequest({
+      workflowRunId: input.skillCtx.workflowRunId,
+      request,
+      sourceName: parsed.sourceName,
+      taskId: input.taskId,
+      baseContextPackId: input.baseContextPack.id,
+      supplementContextPackId: supplementPack.id,
+      requestArtifactId: requestArtifact.id,
+      supplementArtifactId: supplementArtifact.id,
+    });
+    console.log(
+      `[runner] context_request ${request.id} -> supplement ${supplementPack.id}`,
+    );
+    return capture;
+  }
+
+  async function parseContextRequestFromRunResult(input: {
+    skill: SkillSpec;
+    skillCtx: Parameters<AgentBackend['run']>[1];
+    result: Awaited<ReturnType<AgentBackend['run']>>;
+  }): Promise<ParsedContextRequest | null> {
+    const sources: Array<{ name: string; text: string }> = [];
+    if (input.result.lastMessage) {
+      sources.push({ name: 'last_message', text: input.result.lastMessage });
+    }
+    for (const out of input.result.outputs) {
+      if (!isContextRequestParseableOutput(out)) continue;
+      const text = await Bun.file(out.path).text();
+      sources.push({ name: out.name, text });
+    }
+    return parseContextRequestFromAgentOutput({
+      workflowRunId: input.skillCtx.workflowRunId,
+      stepRunId: input.skillCtx.stepRunId ?? null,
+      stage: input.skill.stage,
+      sources,
+    });
+  }
+
+  async function ensureContextFoundation(c: RunCtx): Promise<RunCtx['contextFoundation']> {
+    if (!c.contextFoundation.projectProfileResult) {
+      const profileResult = await generateProjectProfile({
+        projectId: c.project.id,
+        name: c.project.name,
+        localPath: c.project.localPath,
+        reuseIfPresent: true,
+      });
+      c.contextFoundation.projectProfileResult = profileResult;
+      c.inputs['project_profile.md'] = profileResult.markdown;
+    }
+
+    if (c.contextFoundation.acceptedKnowledge === null) {
+      const acceptedKnowledge = await collectAcceptedKnowledge(c.project.id);
+      c.contextFoundation.acceptedKnowledge = acceptedKnowledge;
+      c.inputs['accepted_knowledge.md'] = acceptedKnowledge;
+      if (acceptedKnowledge) {
+        console.log(`[runner] accepted_knowledge: ${acceptedKnowledge.length} bytes`);
+      }
+    }
+
+    if (c.contextFoundation.knowledgeArtifacts === null) {
+      try {
+        c.contextFoundation.knowledgeArtifacts = await api.listKnowledgeArtifacts({
+          projectId: c.project.id,
+        });
+      } catch (err) {
+        console.warn(
+          `[runner] knowledge_artifacts unavailable for context pack: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        c.contextFoundation.knowledgeArtifacts = [];
+      }
+    }
+
+    if (c.contextFoundation.runHistory === null) {
+      try {
+        c.contextFoundation.runHistory = await api.listWorkflowRuns({ projectId: c.project.id });
+      } catch (err) {
+        console.warn(
+          `[runner] workflow run history unavailable for maturity profile: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        c.contextFoundation.runHistory = [];
+      }
+    }
+
+    return c.contextFoundation;
+  }
+
+  async function finishAgentSuccess(
+    agent: InvokedAgent,
     outputArtifactIds: string[],
     summary: string,
   ): Promise<void> {
+    const supplementIds = agent.contextRequest
+      ? [agent.contextRequest.requestArtifactId, agent.contextRequest.supplementArtifactId]
+      : [];
     await api.agentTaskFinished({
-      taskId,
+      taskId: agent.taskId,
       status: 'success',
-      summary,
-      outputArtifactIds,
+      summary: agent.contextRequest
+        ? `${summary}; context_request ${agent.contextRequest.request.id} supplemented by ${agent.contextRequest.supplementContextPackId}`
+        : summary,
+      outputArtifactIds: [...outputArtifactIds, ...supplementIds],
     });
   }
+}
+
+function isContextRequestParseableOutput(output: {
+  name: string;
+  contentType: string;
+  size: number;
+}): boolean {
+  if (output.size > 256_000) return false;
+  return output.contentType === 'application/json'
+    || output.contentType.startsWith('text/')
+    || /\.(json|md|markdown|txt)$/i.test(output.name);
 }
 
 async function mustSkill(
@@ -1179,16 +1557,54 @@ function taskKindForSkill(skill: SkillSpec): AgentTaskKind {
   }
 }
 
-function renderAgentPromptAudit(skill: SkillSpec, inputs: Record<string, string>): string {
+function renderAgentPromptAudit(
+  skill: SkillSpec,
+  inputs: Record<string, string>,
+  contextPack?: ContextPack,
+): string {
   const inputNames = Object.keys(inputs).sort();
-  return [
+  const lines = [
     `Skill: ${skill.id}@${skill.version}`,
     `Stage: ${skill.stage}`,
     '',
     skill.instructions,
     '',
     `Inputs: ${inputNames.join(', ') || '(none)'}`,
-  ].join('\n');
+  ];
+  if (contextPack) {
+    lines.push(
+      '',
+      `ContextPack: ${contextPack.id}`,
+      `ContextMode: ${contextPack.mode}`,
+      'ContextManifest:',
+      ...contextPack.manifest.map((item) => (
+        `- ${item.ref}: ${item.reason} (mode=${item.mode}; sourceType=${item.sourceType ?? 'n/a'}; knowledgeClass=${item.knowledgeClass}; trustLevel=${item.trustLevel ?? 'n/a'}; freshness=${item.freshness ?? 'n/a'}; confidence=${item.confidence ?? 'n/a'}; score=${item.score ?? 'n/a'}; sourceRefs=${item.sourceRefs?.join(', ') || 'n/a'}${item.degradedFrom ? `; degraded=${item.degradedFrom}->${item.mode}; degradationReason=${item.degradationReason ?? 'n/a'}` : ''})`
+      )),
+    );
+    if (contextPack.calibrationSignals && contextPack.calibrationSignals.length > 0) {
+      lines.push(
+        'KnowledgeReviewSignals:',
+        ...contextPack.calibrationSignals.map((signal) => (
+          `- ${signal.id}: ${signal.kind}/${signal.severity}; action=${signal.recommendedAction}; subjectRefs=${signal.subjectRefs.join(', ') || 'n/a'}; evidenceRefs=${signal.evidenceRefs.join(', ') || 'n/a'}; message=${signal.message}`
+        )),
+      );
+    }
+  }
+  return lines.join('\n');
+}
+
+function knowledgeReviewActionForSignal(recommendedAction: string): string {
+  switch (recommendedAction) {
+    case 'mark_stale_or_supersede':
+    case 'mark_stale_or_downgrade':
+      return 'mark_stale';
+    case 'open_knowledge_review':
+    case 'review_before_use':
+    case 'review_status_transition':
+      return 'needs_review';
+    default:
+      return recommendedAction;
+  }
 }
 
 // ---------------------------------------------------------------------------

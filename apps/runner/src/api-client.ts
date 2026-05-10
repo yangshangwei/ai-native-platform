@@ -12,11 +12,13 @@ import type {
   KnowledgeArtifact,
   KnowledgeArtifactKind,
   KnowledgeArtifactStatus,
+  KnowledgeClass,
   PromoteRequest,
   PromoteResponse,
   AgentStreamEventInput,
   AgentBackendKind,
   AgentTaskKind,
+  ContextRequest,
   CoordinatorDecision,
   RequestMessage,
 } from '@ainp/shared';
@@ -141,6 +143,11 @@ export const api = {
       'GET',
       `/workflow-runs/${id}`,
     ),
+
+  listWorkflowRuns: (params: { projectId?: string } = {}) => {
+    const qs = params.projectId ? `?projectId=${encodeURIComponent(params.projectId)}` : '';
+    return request<{ items: WorkflowRun[] }>('GET', `/workflow-runs${qs}`).then((r) => r.items);
+  },
 
   getArtifactContent: (id: string) =>
     request<{
@@ -270,6 +277,19 @@ export const api = {
       `/knowledge-artifacts/projects/${encodeURIComponent(params.projectId)}?kind=${encodeURIComponent(params.kind)}`,
     ).then((r) => r.artifacts),
 
+  listKnowledgeArtifacts: (params: {
+    projectId: string;
+    knowledgeClass?: KnowledgeClass;
+  }) => {
+    const qs = params.knowledgeClass
+      ? `?knowledgeClass=${encodeURIComponent(params.knowledgeClass)}`
+      : '';
+    return request<{ ok: boolean; artifacts: KnowledgeArtifact[] }>(
+      'GET',
+      `/knowledge-artifacts/projects/${encodeURIComponent(params.projectId)}${qs}`,
+    ).then((r) => r.artifacts);
+  },
+
   listKnowledgeArtifactsByEntity: (params: {
     projectId: string;
     entityId: string;
@@ -288,6 +308,24 @@ export const api = {
       `/knowledge-artifacts/${encodeURIComponent(params.id)}/status`,
       { status: params.status },
     ).then((r) => r.artifact),
+
+  recordKnowledgeAction: (params: {
+    workflowRunId: string;
+    targetId: string;
+    action: string;
+    actor?: string;
+    payload?: Record<string, unknown>;
+  }) =>
+    request<{ ok: boolean; action: { id: string } }>(
+      'POST',
+      `/workflow-runs/${encodeURIComponent(params.workflowRunId)}/knowledge-actions`,
+      {
+        targetId: params.targetId,
+        action: params.action,
+        actor: params.actor ?? 'runner',
+        payload: params.payload ?? {},
+      },
+    ).then((r) => r.action),
 
   // ---- promote (V2 P0-2 / Q5=5-A) --------------------------------------
   // Single canonical entry point. The API runs the entire 6-step promote
@@ -332,6 +370,22 @@ export const api = {
     request<{ ok: boolean; result: { id: string } }>(
       'POST',
       '/runner/events/agent-task-finished',
+      params,
+    ),
+
+  recordContextRequest: (params: {
+    workflowRunId: string;
+    request: ContextRequest;
+    sourceName: string;
+    taskId: string;
+    baseContextPackId: string;
+    supplementContextPackId: string;
+    requestArtifactId: string;
+    supplementArtifactId: string;
+  }) =>
+    request<{ ok: boolean; action: { id: string } }>(
+      'POST',
+      '/runner/events/context-request',
       params,
     ),
 

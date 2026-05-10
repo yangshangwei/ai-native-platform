@@ -2,7 +2,7 @@ import { mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { sh } from '../sh';
-import type { SkillSpec } from '@ainp/shared';
+import type { ContextPack, SkillSpec } from '@ainp/shared';
 
 /**
  * AgentBackend interface — runtime contract.
@@ -23,6 +23,10 @@ export interface AgentTaskContext {
   artifactsDir: string;
   /** Previously-produced artifact text by skill input name. */
   inputs: Record<string, string>;
+  /** Provider-neutral context selected by the platform for this invocation. */
+  contextPack?: ContextPack;
+  /** Context policy sensitive path patterns used for prompt-visible legacy inputs. */
+  sensitivePathPatterns?: readonly string[];
 }
 
 export interface AgentArtifactOutput {
@@ -36,7 +40,13 @@ export interface AgentArtifactOutput {
 
 export interface AgentBackend {
   kind: 'native' | 'codex' | 'claude_code';
-  run(skill: SkillSpec, ctx: AgentTaskContext): Promise<{ outputs: AgentArtifactOutput[] }>;
+  run(skill: SkillSpec, ctx: AgentTaskContext): Promise<AgentRunResult>;
+}
+
+export interface AgentRunResult {
+  outputs: AgentArtifactOutput[];
+  /** Final assistant message when the backend exposes it (for context_request parsing). */
+  lastMessage?: string | null;
 }
 
 // ---- NativeBackend ---------------------------------------------------------
@@ -47,7 +57,7 @@ export class NativeBackend implements AgentBackend {
   async run(
     skill: SkillSpec,
     ctx: AgentTaskContext,
-  ): Promise<{ outputs: AgentArtifactOutput[] }> {
+  ): Promise<AgentRunResult> {
     await mkdir(ctx.artifactsDir, { recursive: true });
 
     switch (skill.stage) {
@@ -113,7 +123,7 @@ export class NativeBackend implements AgentBackend {
    */
   private async runImplementation(
     ctx: AgentTaskContext,
-  ): Promise<{ outputs: AgentArtifactOutput[] }> {
+  ): Promise<AgentRunResult> {
     const target = join(ctx.workspacePath, 'src/main/java/sample/Calculator.java');
     if (!existsSync(target)) {
       throw new Error(`NativeBackend implementation: expected target file missing: ${target}`);

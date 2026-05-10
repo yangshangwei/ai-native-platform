@@ -30,7 +30,7 @@ import {
   type CoordinatorAction,
 } from '@ainp/shared';
 import { buildUserPrompt } from './prompt';
-import { claudeCliAvailable, readUserSettingsEnv } from '../claude-code';
+import { claudeCliAvailable, emptyClaudeHooksSettings, readUserSettingsEnv } from '../claude-code';
 import { codexCliAvailable } from '../codex';
 import { getConfig } from '../../config-client';
 import type { ClassifyInput, ClassifyOutput } from './rules';
@@ -170,26 +170,25 @@ export async function classifyByLlm(
   };
 }
 
-// ---- Claude Code one-shot (existing behaviour, preserved) -----------------
+// ---- Claude Code one-shot --------------------------------------------------
 
 function runClaudeOneShot(system: string, user: string, timeoutMs: number): Promise<string> {
-  // Mirror ClaudeCodeBackend: pass --setting-sources project,local so the
-  // user-level settings.json (with its hooks) is not loaded. Stop hook etc.
-  // would otherwise loop on every message_stop and burn the timeout. The
-  // user `env` block is forwarded into childEnv inside spawnCandidate so
-  // third-party auth keeps working.
+  // Mirror ClaudeCodeBackend: pass a local --settings JSON with every known
+  // hook event set to an empty array. Stop hook etc. would otherwise loop on
+  // every message_stop and burn the timeout. Do NOT use --setting-sources:
+  // it hides user env/settings needed by third-party auth.
   // AINP_CLAUDE_LOAD_USER_SETTINGS=1 keeps user hooks active for debugging.
   const keepUserHooks = process.env.AINP_CLAUDE_LOAD_USER_SETTINGS === '1';
-  const settingSourcesArgs = keepUserHooks
+  const settingsArgs = keepUserHooks
     ? []
-    : ['--setting-sources', 'project,local'];
+    : ['--settings', JSON.stringify({ hooks: emptyClaudeHooksSettings() })];
   const args = [
     '--print',
     '--output-format',
     'stream-json',
     '--verbose',
     '--no-session-persistence',
-    ...settingSourcesArgs,
+    ...settingsArgs,
     '--permission-mode',
     'default',
     '--append-system-prompt',
@@ -291,10 +290,9 @@ function spawnCandidate(
       delete childEnv.CLAUDE_CONFIG_DIR;
       delete childEnv.XDG_CONFIG_HOME;
     } else if (backend === 'claude_code' && process.env.AINP_CLAUDE_LOAD_USER_SETTINGS !== '1') {
-      // The Coordinator one-shot also passes --setting-sources project,local
-      // (see runClaudeOneShot above), which skips the user `env` block. Read
-      // it ourselves and forward so third-party auth tokens still flow into
-      // the spawned CLI.
+      // Duplicate the user settings `env` block into process env as a
+      // compatibility belt-and-suspenders while hooks are neutralized by the
+      // --settings overlay (see runClaudeOneShot above).
       const userEnv = readUserSettingsEnv(process.env.CLAUDE_CONFIG_DIR, process.env.HOME);
       for (const [k, v] of Object.entries(userEnv)) {
         if (childEnv[k] === undefined) childEnv[k] = v;

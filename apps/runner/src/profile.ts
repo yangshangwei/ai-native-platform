@@ -11,6 +11,7 @@
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { isSensitiveContextPath } from '@ainp/shared';
 import { PROJECTS_DIR } from './config';
 
 export interface PomSummary {
@@ -203,6 +204,7 @@ async function listFilesRecursive(root: string, ext: string): Promise<string[]> 
       return;
     }
     for (const e of entries) {
+      if (isSensitiveProfilePath(e.name)) continue;
       const full = join(dir, e.name);
       if (e.isDirectory()) await walk(full);
       else if (e.isFile() && e.name.endsWith(ext)) out.push(full);
@@ -222,13 +224,13 @@ async function scanTreeOutline(root: string): Promise<string[]> {
     return out;
   }
   for (const e of top.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (SKIP.has(e.name)) continue;
+    if (SKIP.has(e.name) || isSensitiveProfilePath(e.name)) continue;
     out.push(e.isDirectory() ? `${e.name}/` : e.name);
     if (e.isDirectory()) {
       try {
         const inner = await readdir(join(root, e.name), { withFileTypes: true });
         for (const ie of inner.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 8)) {
-          if (SKIP.has(ie.name)) continue;
+          if (SKIP.has(ie.name) || isSensitiveProfilePath(`${e.name}/${ie.name}`)) continue;
           out.push(`  ${e.name}/${ie.isDirectory() ? `${ie.name}/` : ie.name}`);
         }
       } catch {
@@ -237,6 +239,10 @@ async function scanTreeOutline(root: string): Promise<string[]> {
     }
   }
   return out;
+}
+
+function isSensitiveProfilePath(value: string): boolean {
+  return isSensitiveContextPath(value);
 }
 
 function renderProfileMarkdown(p: ProjectProfile): string {

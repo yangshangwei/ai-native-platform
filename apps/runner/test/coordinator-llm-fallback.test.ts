@@ -273,7 +273,7 @@ describe('classifyByLlm real Claude spawn environment', () => {
     expect(env.XDG_CONFIG_HOME).toBeUndefined();
   });
 
-  it('passes --setting-sources project,local by default to skip user-level hooks', async () => {
+  it('passes --settings hook overrides by default without dropping user settings sources', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ainp-coord-claude-settings-'));
     const capturePath = join(root, 'args.bin');
     process.env.AINP_CLAUDE_BIN = fakeClaudeCoordinatorBin(root);
@@ -285,12 +285,16 @@ describe('classifyByLlm real Claude spawn environment', () => {
 
     expect(result.decision.action).toBe('proceed');
     const args = readFileSync(capturePath, 'utf8').split('\0').filter(Boolean);
-    const idx = args.indexOf('--setting-sources');
+    expect(args).not.toContain('--setting-sources');
+    const idx = args.indexOf('--settings');
     expect(idx).toBeGreaterThanOrEqual(0);
-    expect(args[idx + 1]).toBe('project,local');
+    const settings = JSON.parse(args[idx + 1]!) as { hooks: Record<string, unknown[]> };
+    expect(settings.hooks.Stop).toEqual([]);
+    expect(settings.hooks.PostToolUse).toEqual([]);
+    expect(settings.hooks.UserPromptSubmit).toEqual([]);
   });
 
-  it('omits --setting-sources when AINP_CLAUDE_LOAD_USER_SETTINGS=1', async () => {
+  it('keeps user-level hooks when AINP_CLAUDE_LOAD_USER_SETTINGS=1', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ainp-coord-claude-settings-on-'));
     const capturePath = join(root, 'args.bin');
     process.env.AINP_CLAUDE_BIN = fakeClaudeCoordinatorBin(root);
@@ -302,6 +306,7 @@ describe('classifyByLlm real Claude spawn environment', () => {
 
     expect(result.decision.action).toBe('proceed');
     const args = readFileSync(capturePath, 'utf8').split('\0').filter(Boolean);
+    expect(args).not.toContain('--settings');
     expect(args).not.toContain('--setting-sources');
   });
 });
