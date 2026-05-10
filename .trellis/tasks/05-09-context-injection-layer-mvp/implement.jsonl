@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "Shared package type/schema changes must follow shared backend guidelines"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "Runner ContextPack builder and backend prompt rendering changes must follow runner backend guidelines"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API artifact/knowledge metadata changes must follow API backend guidelines if touched"}
+{"file": ".trellis/tasks/05-09-context-injection-layer-mvp/research/current-implementation-map.md", "reason": "Summarizes design docs, current implementation fit, and MVP scope"}

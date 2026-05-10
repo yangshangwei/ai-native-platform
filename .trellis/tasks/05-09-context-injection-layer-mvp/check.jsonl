@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "Check shared type/schema changes against package guidelines"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "Check runner ContextPack builder and backend prompt rendering against runner guidelines"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "Check API metadata/artifact impacts if touched"}
+{"file": ".trellis/tasks/05-09-context-injection-layer-mvp/research/current-implementation-map.md", "reason": "Verify implementation stays within MVP scope and matches known architecture gaps"}
