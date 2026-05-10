@@ -1,0 +1,4 @@
+{"file":".trellis/spec/runner/backend/index.md","reason":"Runner backend guideline index for coordinator LLM fallback changes."}
+{"file":".trellis/spec/runner/backend/agent-backend-runtime.md","reason":"Agent CLI invocation and hook/Skill-related runtime constraints."}
+{"file":".trellis/spec/runner/backend/quality-guidelines.md","reason":"Runner parser/test/typecheck quality expectations."}
+{"file":".trellis/spec/runtime-config-layer.md","reason":"Coordinator fallback questions are runtime-config defaults and registry entries."}
