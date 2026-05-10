@@ -135,6 +135,16 @@ export class CodexBackend implements AgentBackend {
       '--json',
       '--ephemeral',
       '--skip-git-repo-check',
+      // Force approval policy to `never` for runner-driven sessions. `codex exec`
+      // is non-interactive, so any prompt (including a user's default
+      // `approval_policy = "on-request"` from ~/.codex/config.toml) becomes an
+      // automatic reject. That surfaces as `patch rejected: writing outside of
+      // the project; rejected by user approval settings` whenever Codex tries
+      // to apply_patch to files under `ctx.artifactsDir`, even though that path
+      // is already on the sandbox's writable roots via `--add-dir`. Pinning the
+      // approval policy here keeps the sandbox as the only gate.
+      '-c',
+      'approval_policy="never"',
       '--cd',
       ctx.workspacePath,
       '--add-dir',

@@ -82,7 +82,7 @@
 
 - Shared: assert product backend guard accepts only `codex` / `claude_code`.
 - API: create/update project stores backend, rejects invalid backend, normalizes legacy invalid DB values to `null`, and blocks workflow request/run without backend.
-- Runner: backend selection reads only project config, uses the backend-specific preflight contract, Codex runtime does not pass `--ask-for-approval` to `codex exec`, and fail-fast errors include remediation.
+- Runner: backend selection reads only project config, uses the backend-specific preflight contract, Codex runtime does not pass `--ask-for-approval` to `codex exec` (the flag is interactive-only) and instead pins `-c approval_policy="never"` so the sandbox is the sole gate, and fail-fast errors include remediation.
 - Web: project form/task form renders only Claude Code/Codex, disables task creation without backend, and labels stream events with display names.
 - Shared/API: stream-channel tests must prove `workflowRunId | workflowRequestId` mutual exclusion, per-channel sequence independence, and request/run live-tail isolation.
 

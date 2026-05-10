@@ -54,7 +54,14 @@ describe('CodexBackend runtime invocation', () => {
     expect(args).toContain('workspace-write');
     expect(args).toContain('--output-last-message');
     expect(args).not.toContain('--ask-for-approval');
-    expect(args).not.toContain('never');
+    // Approval policy is pinned via `-c approval_policy="never"` so that the
+    // sandbox is the only gate for non-interactive runner sessions. Without
+    // this override, a user's default `on-request` policy silently rejects
+    // apply_patch writes under artifactsDir with "rejected by user approval
+    // settings" because there's no human to answer the prompt.
+    const approvalIndex = args.indexOf('-c');
+    expect(approvalIndex).toBeGreaterThanOrEqual(0);
+    expect(args[approvalIndex + 1]).toBe('approval_policy="never"');
   });
 
   it('keeps running when agent stream upload fails', async () => {
