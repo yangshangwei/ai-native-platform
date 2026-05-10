@@ -11,7 +11,7 @@
  * §D-PR4.2 for the design intent.
  */
 
-export type SettingsTabId = 'coordinator' | 'skill_prompts' | 'runtime';
+export type SettingsTabId = 'coordinator' | 'skill_prompts' | 'runtime' | 'context_policy';
 
 export interface ProjectionConfigEntry {
   type: 'number' | 'string' | 'string_array';
@@ -94,6 +94,11 @@ const TABS_CONFIG: ReadonlyArray<{ id: SettingsTabId; label: string; help: strin
     label: 'Runtime',
     help: 'timeout / poll / 缓存 TTL',
   },
+  {
+    id: 'context_policy',
+    label: 'Context Policy',
+    help: 'ContextPack 预算 / 敏感路径过滤',
+  },
 ];
 
 /**
@@ -112,6 +117,7 @@ export function buildSettingsViewModel(
     coordinator: [],
     skill_prompts: [],
     runtime: [],
+    context_policy: [],
   };
 
   let overrideCount = 0;

@@ -48,8 +48,8 @@ function audit(
   };
 }
 
-describe('buildSettingsViewModel — registry → 3 tabs grouping', () => {
-  it('groups every registry key into its category tab and reports a 24-key total when given a 24-key registry', () => {
+describe('buildSettingsViewModel — registry → 4 tabs grouping', () => {
+  it('groups every registry key into its category tab and reports a 29-key total when given a 29-key registry', () => {
     const keys = [
       // 14 coordinator
       'c.k1', 'c.k2', 'c.k3', 'c.k4', 'c.k5', 'c.k6', 'c.k7',
@@ -58,11 +58,14 @@ describe('buildSettingsViewModel — registry → 3 tabs grouping', () => {
       's.k1', 's.k2', 's.k3', 's.k4', 's.k5',
       // 5 runtime
       'r.k1', 'r.k2', 'r.k3', 'r.k4', 'r.k5',
+      // 5 context policy in this fixture
+      'ctx.k1', 'ctx.k2', 'ctx.k3', 'ctx.k4', 'ctx.k5',
     ];
     const entries: Record<string, ProjectionConfigEntry> = {};
     for (const k of keys) {
       const cat: SettingsTabId = k.startsWith('c.') ? 'coordinator'
         : k.startsWith('s.') ? 'skill_prompts'
+          : k.startsWith('ctx.') ? 'context_policy'
         : 'runtime';
       entries[k] = entry(cat, 'string', 'default');
     }
@@ -74,12 +77,13 @@ describe('buildSettingsViewModel — registry → 3 tabs grouping', () => {
       audits: new Map(),
     });
 
-    expect(vm.tabs.map((t) => t.id)).toEqual(['coordinator', 'skill_prompts', 'runtime']);
+    expect(vm.tabs.map((t) => t.id)).toEqual(['coordinator', 'skill_prompts', 'runtime', 'context_policy']);
     expect(vm.tabs.find((t) => t.id === 'coordinator')!.rows).toHaveLength(14);
     expect(vm.tabs.find((t) => t.id === 'skill_prompts')!.rows).toHaveLength(5);
     expect(vm.tabs.find((t) => t.id === 'runtime')!.rows).toHaveLength(5);
-    expect(vm.summary).toEqual({ totalKeys: 24, overrideCount: 0, dirtyCount: 0 });
-    expect(vm.perKey.size).toBe(24);
+    expect(vm.tabs.find((t) => t.id === 'context_policy')!.rows).toHaveLength(5);
+    expect(vm.summary).toEqual({ totalKeys: 29, overrideCount: 0, dirtyCount: 0 });
+    expect(vm.perKey.size).toBe(29);
   });
 
   it('skips keys missing from registry.entries without crashing', () => {

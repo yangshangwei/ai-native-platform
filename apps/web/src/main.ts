@@ -192,6 +192,91 @@ interface CommandLogsDto {
   stderr: { text: string; contentType: string; filename: string };
 }
 
+interface ContextGovernanceDto {
+  schemaVersion: 'ainp.context_governance.v1';
+  workflowRunId: string;
+  projectId: string;
+  contextPacks: Array<{
+    contextPackId: string;
+    source: string;
+    artifactId: string | null;
+    taskId: string | null;
+    stage: string | null;
+    mode: string | null;
+    manifest: ContextManifestDto[];
+  }>;
+  manifest: ContextManifestDto[];
+  sourceRefs: Array<{
+    sourceRef: string;
+    contextPackIds: string[];
+    manifestRefs: string[];
+    trustLevels: string[];
+    knowledgeClasses: string[];
+  }>;
+  trustLevels: Record<string, number>;
+  budgetDecisions: Array<{
+    contextPackId: string;
+    ref: string;
+    mode: string | null;
+    degradedFrom: string | null;
+    degradationReason: string | null;
+    score: number | null;
+  }>;
+  contextRequests: Array<{
+    id: string;
+    actionId: string;
+    status: string;
+    priority: number | null;
+    reason: string;
+    requestedRefs: string[];
+    questions: string[];
+    sourceName: string | null;
+    taskId: string | null;
+    baseContextPackId: string | null;
+    supplementContextPackId: string | null;
+    requestArtifactId: string | null;
+    supplementArtifactId: string | null;
+    createdAt: string;
+  }>;
+  metrics: {
+    impactCoverage: RatioMetricDto;
+    evidenceTraceability: RatioMetricDto;
+    irrelevantContextRatio: RatioMetricDto;
+    contextRequestCount: { value: number; explanation: string };
+    downstreamReworkSignal: {
+      value: number;
+      rejectedApprovals: number;
+      failedGates: number;
+      failedAgentResults: number;
+      explanation: string;
+    };
+  };
+}
+
+interface ContextManifestDto {
+  contextPackId: string;
+  ref: string;
+  reason: string;
+  priority: number | null;
+  mode: string | null;
+  knowledgeClass: string | null;
+  trustLevel: string | null;
+  freshness: string | null;
+  sourceType: string | null;
+  sourceRefs: string[];
+  score: number | null;
+  selectionReasons: string[];
+  degradedFrom: string | null;
+  degradationReason: string | null;
+}
+
+interface RatioMetricDto {
+  value: number;
+  numerator: number;
+  denominator: number;
+  explanation: string;
+}
+
 interface RunnerControlStatusDto {
   mode: 'api-managed-local-runner';
   running: boolean;
@@ -236,6 +321,8 @@ const scrollPositionState = new Map<string, { top: number; left: number }>();
 const SCROLLABLE_STATE_SELECTOR = '[data-scroll-key], .doc-preview';
 let viewportScrollPosition = { top: 0, left: 0 };
 const commandLogs = new Map<string, CommandLogsDto | null>();
+const contextGovernanceByRun = new Map<string, ContextGovernanceDto | null>();
+const contextGovernanceInFlight = new Set<string>();
 const detailsOpenState = new Map<string, boolean>();
 const knowledgeDecisions = new Map<string, 'accepted' | 'ignored' | 'edited'>();
 const knowledgeEdits = new Map<string, string>();
@@ -530,6 +617,7 @@ async function loadRunDetail(runId: string, shouldRender = true): Promise<void> 
     data.activeDetail = await api<RunDetail>(`/workflow-runs/${encodeURIComponent(runId)}`);
     activeRunId = runId;
     primeArtifactPreviews(data.activeDetail.artifacts);
+    void ensureContextGovernance(runId);
     attachStream(runId);
   } catch (err) {
     lastError = err instanceof Error ? err.message : String(err);
@@ -537,6 +625,23 @@ async function loadRunDetail(runId: string, shouldRender = true): Promise<void> 
     loadingDetailFor = null;
   }
   if (shouldRender) render();
+}
+
+async function ensureContextGovernance(runId: string): Promise<void> {
+  if (contextGovernanceByRun.has(runId) || contextGovernanceInFlight.has(runId)) return;
+  contextGovernanceInFlight.add(runId);
+  contextGovernanceByRun.set(runId, null);
+  try {
+    contextGovernanceByRun.set(
+      runId,
+      await api<ContextGovernanceDto>(`/workflow-runs/${encodeURIComponent(runId)}/context`),
+    );
+  } catch {
+    contextGovernanceByRun.set(runId, null);
+  } finally {
+    contextGovernanceInFlight.delete(runId);
+  }
+  if (data.activeDetail?.run.id === runId) render();
 }
 
 function primeArtifactPreviews(artifacts: ArtifactDto[]): void {
@@ -915,6 +1020,7 @@ function renderTaskDetailPage(): HTMLElement {
           renderTaskHero(request, detail, projection),
           coordinatorPanel,
           detail ? renderLifecycle(detail, projection!) : renderQueuedLifecycle(request),
+          detail ? renderContextGovernancePanel(detail) : null,
           renderCurrentStagePanel(request, detail, projection),
           detail ? renderStageBackendDetails(detail, projection!) : renderQueuedBackendDetails(request),
         ],
@@ -1209,6 +1315,163 @@ function renderContextSnapshotPanel(detail: RunDetail): HTMLElement {
       renderRawFallback(detail, detail.run.currentStage === 'context_pack' ? 'context_pack' : 'project_profile'),
     ],
   });
+}
+
+function renderContextGovernancePanel(detail: RunDetail): HTMLElement {
+  const model = contextGovernanceByRun.get(detail.run.id) ?? null;
+  if (!model) {
+    return el('section', {
+      class: 'panel doc-panel',
+      children: [
+        panelHeader('Context Governance', '正在读取 manifest / sourceRefs / context_request history…'),
+        el('p', { class: 'muted compact', text: '数据来自 /workflow-runs/:id/context；失败时仍可在 Evidence Drill-down 查看原始 artifacts/actions。' }),
+      ],
+    });
+  }
+
+  const metrics = model.metrics;
+  return el('section', {
+    class: 'panel doc-panel structured-panel',
+    children: [
+      panelHeader('Context Governance', '为什么 Agent 知道这些：Manifest、来源、预算与请求闭环'),
+      el('div', {
+        class: 'metric-grid',
+        children: [
+          metric('Impact Coverage', formatPercent(metrics.impactCoverage.value), `${metrics.impactCoverage.numerator}/${metrics.impactCoverage.denominator} agent tasks`, metrics.impactCoverage.value >= 0.8 ? 'good' : 'warn'),
+          metric('Traceability', formatPercent(metrics.evidenceTraceability.value), `${metrics.evidenceTraceability.numerator}/${metrics.evidenceTraceability.denominator} manifest refs`, metrics.evidenceTraceability.value >= 0.8 ? 'good' : 'warn'),
+          metric('Irrelevant Ratio', formatPercent(metrics.irrelevantContextRatio.value), 'deterministic low-signal proxy', metrics.irrelevantContextRatio.value <= 0.2 ? 'good' : 'warn'),
+          metric('Context Requests', String(metrics.contextRequestCount.value), 'structured requests', metrics.contextRequestCount.value ? 'info' : 'muted'),
+          metric('Rework Signal', String(metrics.downstreamReworkSignal.value), 'rejects + failed gates/agents', metrics.downstreamReworkSignal.value ? 'warn' : 'good'),
+        ],
+      }),
+      renderContextManifestSummary(model.manifest),
+      renderContextBudgetSummary(model.budgetDecisions),
+      renderContextRequestHistory(model.contextRequests),
+      renderContextSourceRefs(model.sourceRefs),
+    ],
+  });
+}
+
+function formatPercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+function renderContextManifestSummary(items: ContextManifestDto[]): HTMLElement {
+  return el('details', {
+    class: 'raw-details',
+    children: [
+      el('summary', { text: `Context Manifest (${items.length})` }),
+      items.length
+        ? el('div', {
+            class: 'stack',
+            children: items.slice(0, 20).map((item) =>
+              el('article', {
+                class: 'evidence-row',
+                children: [
+                  el('span', {
+                    children: [
+                      pill(item.trustLevel ?? 'unknown', trustKind(item.trustLevel)),
+                      document.createTextNode(` ${item.ref}`),
+                    ],
+                  }),
+                  el('small', { text: `mode=${item.mode ?? 'n/a'} · class=${item.knowledgeClass ?? 'n/a'} · freshness=${item.freshness ?? 'n/a'} · score=${item.score ?? 'n/a'}` }),
+                  item.sourceRefs.length
+                    ? el('small', { text: `sourceRefs: ${item.sourceRefs.join(' · ')}` })
+                    : el('small', { class: 'warn', text: 'sourceRefs: (none)' }),
+                  item.degradedFrom
+                    ? el('small', { class: 'warn', text: `budget: ${item.degradedFrom} → ${item.mode ?? 'n/a'} (${item.degradationReason ?? 'budget degradation'})` })
+                    : null,
+                  el('small', { text: item.reason }),
+                ],
+              }),
+            ),
+          })
+        : el('p', { class: 'muted compact', text: 'No manifest items recorded yet.' }),
+    ],
+  });
+}
+
+function renderContextBudgetSummary(items: ContextGovernanceDto['budgetDecisions']): HTMLElement {
+  const degraded = items.filter((item) => item.degradedFrom || item.mode === 'retrieval_hint');
+  return el('details', {
+    class: 'raw-details',
+    children: [
+      el('summary', { text: `Budget Decisions (${items.length}; degraded ${degraded.length})` }),
+      items.length
+        ? el('div', {
+            class: 'stack',
+            children: items.slice(0, 20).map((item) =>
+              el('div', {
+                class: 'evidence-row',
+                children: [
+                  el('span', { children: [pill(item.mode ?? 'unknown', item.degradedFrom ? 'warn' : 'muted'), document.createTextNode(` ${item.ref}`)] }),
+                  el('small', { text: `pack=${shortId(item.contextPackId)} · score=${item.score ?? 'n/a'}` }),
+                  item.degradedFrom ? el('small', { class: 'warn', text: `${item.degradedFrom} → ${item.mode ?? 'n/a'}: ${item.degradationReason ?? 'budget degradation'}` }) : null,
+                ],
+              }),
+            ),
+          })
+        : el('p', { class: 'muted compact', text: 'No budget decisions recorded yet.' }),
+    ],
+  });
+}
+
+function renderContextRequestHistory(requests: ContextGovernanceDto['contextRequests']): HTMLElement {
+  return el('details', {
+    class: 'raw-details',
+    children: [
+      el('summary', { text: `Context Request History (${requests.length})` }),
+      requests.length
+        ? el('div', {
+            class: 'stack',
+            children: requests.map((request) =>
+              el('article', {
+                class: 'evidence-row',
+                children: [
+                  el('span', { children: [pill(request.status, statusKind(request.status)), document.createTextNode(` ${request.id}`)] }),
+                  el('small', { text: `priority=${request.priority ?? 'n/a'} · source=${request.sourceName ?? 'unknown'} · ${fmtTime(request.createdAt)}` }),
+                  el('small', { text: request.reason || '(no reason)' }),
+                  request.requestedRefs.length ? el('small', { text: `requestedRefs: ${request.requestedRefs.join(' · ')}` }) : null,
+                  request.questions.length ? el('small', { text: `questions: ${request.questions.join(' | ')}` }) : null,
+                  el('small', { text: `supplement: ${request.baseContextPackId ?? '(none)'} → ${request.supplementContextPackId ?? '(none)'}` }),
+                ],
+              }),
+            ),
+          })
+        : el('p', { class: 'muted compact', text: 'No structured context_request actions recorded.' }),
+    ],
+  });
+}
+
+function renderContextSourceRefs(refs: ContextGovernanceDto['sourceRefs']): HTMLElement {
+  return el('details', {
+    class: 'raw-details',
+    children: [
+      el('summary', { text: `SourceRefs (${refs.length})` }),
+      refs.length
+        ? el('div', {
+            class: 'stack',
+            children: refs.slice(0, 30).map((ref) =>
+              el('div', {
+                class: 'evidence-row',
+                children: [
+                  el('code', { text: ref.sourceRef }),
+                  el('small', { text: `trust=${ref.trustLevels.join(', ')} · class=${ref.knowledgeClasses.join(', ')}` }),
+                  el('small', { text: `manifestRefs=${ref.manifestRefs.join(', ')}` }),
+                ],
+              }),
+            ),
+          })
+        : el('p', { class: 'muted compact', text: 'No sourceRefs recorded yet.' }),
+    ],
+  });
+}
+
+function trustKind(trustLevel: string | null): StatusKind {
+  if (trustLevel === 'source' || trustLevel === 'accepted_knowledge') return 'good';
+  if (trustLevel === 'summary') return 'info';
+  if (trustLevel === 'inference') return 'warn';
+  return 'muted';
 }
 
 function renderCompletionSnapshotPanel(detail: RunDetail): HTMLElement {
@@ -4004,7 +4267,7 @@ interface ConfigEntryDto {
   type: 'number' | 'string' | 'string_array';
   default: number | string | readonly string[];
   description: string;
-  category: 'coordinator' | 'skill_prompts' | 'runtime';
+  category: 'coordinator' | 'skill_prompts' | 'runtime' | 'context_policy';
   min?: number;
   max?: number;
   multiline?: boolean;
@@ -4028,7 +4291,7 @@ interface ConfigAuditDto {
   changedBy: string | null;
 }
 
-type ConfigCategory = 'coordinator' | 'skill_prompts' | 'runtime';
+type ConfigCategory = 'coordinator' | 'skill_prompts' | 'runtime' | 'context_policy';
 
 interface SettingsConfigState {
   activeTab: ConfigCategory;
