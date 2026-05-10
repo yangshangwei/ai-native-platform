@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildStreamDisplayLines,
+  lastStreamSequenceForChannel,
   lastStreamSequenceForRun,
   rememberStreamEventInCache,
+  streamChannelForEvent,
+  streamChannelKey,
+  streamEventsForChannel,
   streamEventsForRun,
   type StreamDisplayEvent,
   type StreamEventCache,
@@ -32,6 +36,19 @@ function streamEvent(
   return {
     ...event(sequence, type, text),
     workflowRunId,
+  };
+}
+
+function requestStreamEvent(
+  workflowRequestId: string,
+  sequence: number,
+  type: StreamDisplayEvent['type'],
+  text: string | null,
+): StreamDisplayEvent & { workflowRunId: null; workflowRequestId: string } {
+  return {
+    ...event(sequence, type, text),
+    workflowRunId: null,
+    workflowRequestId,
   };
 }
 
@@ -166,6 +183,44 @@ describe('web agent stream rendering', () => {
         sequences: [1, 2, 3],
       },
     ]);
+  });
+
+  it('keeps request and run channels isolated while preserving per-channel resume sequence', () => {
+    const cache: StreamEventCache<
+      StreamDisplayEvent & { workflowRunId: string | null; workflowRequestId?: string | null }
+    > = new Map();
+    const requestChannel = { kind: 'request' as const, id: 'wreq_stream' };
+    const runChannel = { kind: 'run' as const, id: 'wrun_stream' };
+
+    expect(streamChannelKey(requestChannel)).toBe('request:wreq_stream');
+    expect(streamChannelForEvent(requestStreamEvent(requestChannel.id, 1, 'meta', '[meta:cli_started]'))).toEqual(requestChannel);
+    expect(rememberStreamEventInCache(cache, requestStreamEvent(requestChannel.id, 1, 'meta', '[meta:cli_started]'))).toBe(true);
+    expect(rememberStreamEventInCache(cache, requestStreamEvent(requestChannel.id, 2, 'assistant', '[claude…] Coordinating'))).toBe(true);
+    expect(rememberStreamEventInCache(cache, streamEvent(runChannel.id, 1, 'assistant', '[claude…] Implementing'))).toBe(true);
+    expect(rememberStreamEventInCache(cache, requestStreamEvent(requestChannel.id, 2, 'assistant', '[claude…] Coordinating'))).toBe(false);
+
+    expect(streamEventsForChannel(cache, requestChannel).map((stored) => stored.sequence)).toEqual([1, 2]);
+    expect(streamEventsForChannel(cache, runChannel).map((stored) => stored.sequence)).toEqual([1]);
+    expect(lastStreamSequenceForChannel(cache, requestChannel)).toBe(2);
+    expect(lastStreamSequenceForChannel(cache, runChannel)).toBe(1);
+    expect(buildStreamDisplayLines(streamEventsForChannel(cache, requestChannel)).at(-1)).toMatchObject({
+      prefix: '[2 Claude Code assistant]',
+      text: 'Coordinating',
+    });
+  });
+
+  it('rejects malformed stream events without a single request/run channel', () => {
+    const cache: StreamEventCache<
+      StreamDisplayEvent & { workflowRunId: string | null; workflowRequestId?: string | null }
+    > = new Map();
+    const neither = { ...event(1, 'assistant', '[claude…] orphan'), workflowRunId: null, workflowRequestId: null };
+    const both = { ...event(2, 'assistant', '[claude…] ambiguous'), workflowRunId: 'run_1', workflowRequestId: 'req_1' };
+
+    expect(streamChannelForEvent(neither)).toBeNull();
+    expect(streamChannelForEvent(both)).toBeNull();
+    expect(rememberStreamEventInCache(cache, neither)).toBe(false);
+    expect(rememberStreamEventInCache(cache, both)).toBe(false);
+    expect(cache.size).toBe(0);
   });
 
   it('builds identical readable live-tail snapshots for compact and expanded views from one cache', () => {

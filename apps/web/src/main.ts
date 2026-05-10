@@ -27,10 +27,13 @@ import {
 import { buildSettingsViewModel } from './settings-projection';
 import {
   buildStreamDisplayLines,
-  lastStreamSequenceForRun,
+  lastStreamSequenceForChannel,
   rememberStreamEventInCache,
-  streamEventsForRun,
+  streamChannelForEvent,
+  streamChannelKey,
+  streamEventsForChannel,
   type StreamDisplayLine,
+  type StreamChannel,
   type StreamEventCache,
 } from './stream-rendering';
 
@@ -607,6 +610,7 @@ async function loadData(opts: { render?: boolean; keepDetail?: boolean } = {}): 
   } catch (err) {
     lastError = err instanceof Error ? err.message : String(err);
   }
+  syncActiveStreamSubscription();
   if (opts.render !== false) render();
 }
 
@@ -618,7 +622,7 @@ async function loadRunDetail(runId: string, shouldRender = true): Promise<void> 
     activeRunId = runId;
     primeArtifactPreviews(data.activeDetail.artifacts);
     void ensureContextGovernance(runId);
-    attachStream(runId);
+    attachRunStream(runId);
   } catch (err) {
     lastError = err instanceof Error ? err.message : String(err);
   } finally {
@@ -1013,7 +1017,7 @@ function renderTaskDetailPage(): HTMLElement {
   const detail = request.workflowRunId && data.activeDetail?.run.id === request.workflowRunId ? data.activeDetail : null;
   const projection = detail ? buildRunProjection(detail) : null;
   if (detail) clearCoordinatorReplyComposerState(request.id);
-  const coordinatorPanel = !detail ? renderCoordinatorChatPanel(request) : null;
+  const coordinatorPanel = renderCoordinatorChatPanel(request);
   return el('section', {
     class: 'task-detail-grid',
     children: [
@@ -2366,7 +2370,7 @@ function renderAuditRow(item: RunDetail['audit'][number]): HTMLElement {
 
 function renderAgentStreamPanel(): HTMLElement {
   const runId = data.activeDetail?.run.id ?? null;
-  const view = buildAgentStreamView(runId);
+  const view = buildAgentStreamViewForRun(runId);
   const expandRunId = view.runId;
   const expandButton = expandRunId ? button('放大录屏', 'button secondary small stream-expand-button') : null;
   if (expandRunId && expandButton) {
@@ -2400,7 +2404,7 @@ function renderAgentStreamPanel(): HTMLElement {
 }
 
 function renderExpandedAgentStreamOverlay(runId: string): HTMLElement {
-  const view = buildAgentStreamView(runId);
+  const view = buildAgentStreamViewForRun(runId);
   const titleId = 'stream-modal-title';
   const summaryId = 'stream-modal-summary';
   const closeButton = button('关闭', 'button secondary small');
@@ -4049,18 +4053,36 @@ function renderCoordinatorVerdictMetric(request: WorkflowRequestDto): HTMLElemen
   );
 }
 
+function coordinatorStreamChannelForRequest(request: WorkflowRequestDto): StreamChannel {
+  return request.workflowRunId
+    ? { kind: 'run', id: request.workflowRunId }
+    : { kind: 'request', id: request.id };
+}
+
+function ensureCoordinatorStreamSubscription(request: WorkflowRequestDto): void {
+  if (activePage !== 'task' || activeTaskRequestId !== request.id) return;
+  if (request.workflowRunId) attachRunStream(request.workflowRunId);
+  else if (shouldSubscribeRequestStream(request)) attachRequestStream(request.id);
+}
+
+function shouldSubscribeRequestStream(request: WorkflowRequestDto): boolean {
+  return request.status === 'pending' || request.status === 'claimed' || request.status === 'awaiting_clarification';
+}
+
 function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLElement | null {
   const requestId = request.id;
+  const streamChannel = coordinatorStreamChannelForRequest(request);
+  ensureCoordinatorStreamSubscription(request);
   const state = coordinatorChats.get(requestId);
   if (!state) {
     void loadCoordinatorChat(requestId);
-    return null;
   }
-  const canReply = request.status === 'awaiting_clarification' && state.status === 'awaiting_clarification';
+  const streamView = buildAgentStreamView(streamChannel);
+  const canReply = request.status === 'awaiting_clarification' && state?.status === 'awaiting_clarification';
   if (!canReply) clearCoordinatorReplyComposerState(requestId);
-  if (state.messages.length === 0 && !state.decision) return null;
+  if (!state && streamView.events.length === 0 && request.status !== 'pending' && request.status !== 'claimed') return null;
 
-  const thread = state.messages.map((m) =>
+  const thread = (state?.messages ?? []).map((m) =>
     el('div', {
       class: `chat-message chat-message-${m.role}`,
       children: [
@@ -4089,7 +4111,7 @@ function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLElement | 
   const sendBtn = replyArea ? button('发送', 'button primary small') : null;
   if (sendBtn && replyArea) sendBtn.onclick = () => void sendCoordinatorReply(requestId, replyArea);
 
-  const decisionLine = state.decision
+  const decisionLine = state?.decision
     ? el('div', {
         class: 'chat-decision',
         text:
@@ -4100,16 +4122,64 @@ function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLElement | 
               : `已取消：${state.decision.decision.reason}`,
       })
     : null;
+  const waitingLine = !state || ((state.messages.length === 0 && !state.decision))
+    ? el('p', {
+        class: 'muted compact',
+        text: request.workflowRunId
+          ? 'Coordinator 记录加载中；执行流会继续显示在下方折叠区。'
+          : 'Coordinator 正在接收请求；实时输出会先显示在下方折叠区。',
+      })
+    : null;
+  const requestHistoryView = request.workflowRunId
+    ? buildAgentStreamView({ kind: 'request', id: request.id })
+    : null;
+  const streamDetails = [
+    requestHistoryView && requestHistoryView.events.length > 0
+      ? renderCoordinatorStreamDetails(request, requestHistoryView, 'history')
+      : null,
+    renderCoordinatorStreamDetails(request, streamView, 'live'),
+  ];
 
   return el('section', {
     class: 'panel coordinator-chat',
     children: [
       panelHeader('Coordinator 对话', '需求开始执行前的分诊'),
       decisionLine,
+      waitingLine,
       el('div', { class: 'chat-thread', children: thread }),
+      ...streamDetails,
       replyArea && sendBtn
         ? el('div', { class: 'chat-composer', children: [replyArea, sendBtn] })
         : null,
+    ],
+  });
+}
+
+function renderCoordinatorStreamDetails(
+  request: WorkflowRequestDto,
+  view: AgentStreamViewModel,
+  mode: 'live' | 'history',
+): HTMLElement {
+  const channelKey = view.channel ? streamChannelKey(view.channel) : 'none';
+  const shouldOpen =
+    mode === 'live'
+      ? view.events.length > 0 || request.status === 'pending' || request.status === 'claimed'
+      : false;
+  return el('details', {
+    class: 'coordinator-stream-details',
+    attrs: {
+      'data-details-key': `coordinator-stream:${request.id}:${mode}:${channelKey}`,
+      ...(shouldOpen ? { open: '' } : {}),
+    },
+    children: [
+      el('summary', {
+        children: [
+          el('span', { text: mode === 'history' ? `${view.title}（已缓存）` : view.title }),
+          renderStreamStatus(view),
+          renderStreamSummary(view),
+        ],
+      }),
+      renderAgentStreamBody(view, { scrollKeyPrefix: 'coordinator-stream' }),
     ],
   });
 }
@@ -4888,7 +4958,8 @@ async function submitKnowledgeAction(
 
 interface AgentStreamEvent {
   id: string;
-  workflowRunId: string;
+  workflowRunId: string | null;
+  workflowRequestId?: string | null;
   stepRunId: string | null;
   agentKind: AgentBackendKind;
   sequence: number;
@@ -4899,40 +4970,43 @@ interface AgentStreamEvent {
 }
 
 let streamES: EventSource | null = null;
-let streamRunId: string | null = null;
+let streamChannel: StreamChannel | null = null;
 let expandedStreamRunId: string | null = null;
-const streamEventsByRun: StreamEventCache<AgentStreamEvent> = new Map();
-let streamConnection: { runId: string | null; label: string; cls: 'live' | 'idle' | 'error' } = {
-  runId: null,
+const streamEventsByChannel: StreamEventCache<AgentStreamEvent> = new Map();
+let streamConnection: { channelKey: string | null; label: string; cls: 'live' | 'idle' | 'error' } = {
+  channelKey: null,
   label: 'disconnected',
   cls: 'idle',
 };
 const STREAM_EVENT_TYPES = ['system', 'assistant', 'user', 'result', 'stderr', 'meta', 'raw'] as const;
 
-function setStreamStatus(label: string, cls: 'live' | 'idle' | 'error', runId: string | null = streamRunId): void {
-  streamConnection = { runId, label, cls };
-  updateStreamStatusNodes(runId, label, cls);
+function setStreamStatus(label: string, cls: 'live' | 'idle' | 'error', channel: StreamChannel | null = streamChannel): void {
+  const channelKey = channel ? streamChannelKey(channel) : null;
+  streamConnection = { channelKey, label, cls };
+  updateStreamStatusNodes(channel, label, cls);
 }
 
 function appendStreamEvent(ev: AgentStreamEvent): void {
   if (!rememberStreamEvent(ev)) return;
-  if (ev.workflowRunId !== streamRunId) return;
-  refreshStreamViewsForRun(ev.workflowRunId);
+  const channel = streamChannelForEvent(ev);
+  if (!channel || !streamChannel || streamChannelKey(channel) !== streamChannelKey(streamChannel)) return;
+  refreshStreamViewsForChannel(channel);
 }
 
 function rememberStreamEvent(ev: AgentStreamEvent): boolean {
-  return rememberStreamEventInCache(streamEventsByRun, ev);
+  return rememberStreamEventInCache(streamEventsByChannel, ev);
 }
 
-function agentStreamEventsForRun(runId: string): AgentStreamEvent[] {
-  return streamEventsForRun(streamEventsByRun, runId);
+function agentStreamEventsForChannel(channel: StreamChannel): AgentStreamEvent[] {
+  return streamEventsForChannel(streamEventsByChannel, channel);
 }
 
-function lastStreamSeqForRun(runId: string): number {
-  return lastStreamSequenceForRun(streamEventsByRun, runId);
+function lastStreamSeqForChannel(channel: StreamChannel): number {
+  return lastStreamSequenceForChannel(streamEventsByChannel, channel);
 }
 
 interface AgentStreamViewModel {
+  channel: StreamChannel | null;
   runId: string | null;
   title: string;
   summary: string;
@@ -4941,22 +5015,30 @@ interface AgentStreamViewModel {
   lines: StreamDisplayLine[];
 }
 
-function buildAgentStreamView(runId: string | null): AgentStreamViewModel {
-  const events = runId ? agentStreamEventsForRun(runId) : [];
-  const backend = streamBackendForRun(runId, events);
-  const title = backend === 'claude_code'
-    ? 'Claude Code 执行日志'
-    : backend === 'codex'
-      ? 'Codex 执行日志'
-      : 'Agent 执行日志';
+function buildAgentStreamView(channel: StreamChannel | null): AgentStreamViewModel {
+  const events = channel ? agentStreamEventsForChannel(channel) : [];
+  const runId = channel?.kind === 'run' ? channel.id : null;
+  const backend = streamBackendForChannel(channel, events);
+  const title = channel?.kind === 'request'
+    ? 'Coordinator 实时输出'
+    : backend === 'claude_code'
+      ? 'Claude Code 执行日志'
+      : backend === 'codex'
+        ? 'Codex 执行日志'
+        : 'Agent 执行日志';
   return {
+    channel,
     runId,
     title,
-    summary: streamSummaryText(runId, streamRunTitle(runId), events.length),
-    status: streamStatusForRun(runId),
+    summary: streamSummaryText(channel, events.length),
+    status: streamStatusForChannel(channel),
     events,
     lines: buildStreamDisplayLines(events),
   };
+}
+
+function buildAgentStreamViewForRun(runId: string | null): AgentStreamViewModel {
+  return buildAgentStreamView(runId ? { kind: 'run', id: runId } : null);
 }
 
 function streamBackendForRun(runId: string | null, events: readonly AgentStreamEvent[]): AgentBackendKind | null {
@@ -4968,43 +5050,60 @@ function streamBackendForRun(runId: string | null, events: readonly AgentStreamE
   return data.projects.find((project) => project.id === run?.projectId)?.agentBackend ?? selectedProjectBackend();
 }
 
+function streamBackendForChannel(channel: StreamChannel | null, events: readonly AgentStreamEvent[]): AgentBackendKind | null {
+  if (events.length > 0) return events.at(-1)?.agentKind ?? null;
+  if (channel?.kind === 'run') return streamBackendForRun(channel.id, events);
+  const request = channel?.kind === 'request' ? data.requests.find((item) => item.id === channel.id) : null;
+  return data.projects.find((project) => project.id === request?.projectId)?.agentBackend ?? selectedProjectBackend();
+}
+
 function streamRunTitle(runId: string | null): string | null {
   if (!runId) return null;
   if (data.activeDetail?.run.id === runId) return data.activeDetail.run.title;
   return data.runs.find((run) => run.id === runId)?.title ?? null;
 }
 
-function streamSummaryText(runId: string | null, runTitle: string | null, eventCount: number): string {
-  if (!runId) return '等待 workflow run';
-  return `${runTitle ? `${runTitle} · ` : ''}Run ${shortId(runId)} · ${eventCount} events`;
+function streamRequestTitle(requestId: string): string | null {
+  return data.requests.find((request) => request.id === requestId)?.title ?? null;
+}
+
+function streamSummaryText(channel: StreamChannel | null, eventCount: number): string {
+  if (!channel) return '等待 stream channel';
+  if (channel.kind === 'request') {
+    const requestTitle = streamRequestTitle(channel.id);
+    return `${requestTitle ? `${requestTitle} · ` : ''}Request ${shortId(channel.id)} · ${eventCount} events`;
+  }
+  const runTitle = streamRunTitle(channel.id);
+  return `${runTitle ? `${runTitle} · ` : ''}Run ${shortId(channel.id)} · ${eventCount} events`;
+}
+
+function streamViewAttrs(view: AgentStreamViewModel, role: 'title' | 'summary' | 'status' | 'body'): Record<string, string> {
+  const attrs: Record<string, string> = { [`data-stream-${role}`]: 'agent-stream' };
+  if (view.channel) attrs['data-stream-channel-key'] = streamChannelKey(view.channel);
+  if (view.runId) attrs['data-stream-run-id'] = view.runId;
+  return attrs;
 }
 
 function renderStreamTitle(view: AgentStreamViewModel, id?: string): HTMLElement {
-  const attrs: Record<string, string> = { 'data-stream-title': 'agent-stream' };
-  if (view.runId) attrs['data-stream-run-id'] = view.runId;
-  return el('h2', { id, text: view.title, attrs });
+  return el('h2', { id, text: view.title, attrs: streamViewAttrs(view, 'title') });
 }
 
 function renderStreamSummary(view: AgentStreamViewModel, id?: string): HTMLElement {
-  const attrs: Record<string, string> = { 'data-stream-summary': 'agent-stream' };
-  if (view.runId) attrs['data-stream-run-id'] = view.runId;
-  return el('small', { id, class: 'muted', text: view.summary, attrs });
+  return el('small', { id, class: 'muted', text: view.summary, attrs: streamViewAttrs(view, 'summary') });
 }
 
 function renderStreamStatus(view: AgentStreamViewModel): HTMLElement {
-  const attrs: Record<string, string> = { 'data-stream-status': 'agent-stream' };
-  if (view.runId) attrs['data-stream-run-id'] = view.runId;
-  return el('span', { class: `stream-status ${view.status.cls}`, text: view.status.label, attrs });
+  return el('span', { class: `stream-status ${view.status.cls}`, text: view.status.label, attrs: streamViewAttrs(view, 'status') });
 }
 
 function renderAgentStreamBody(
   view: AgentStreamViewModel,
   opts: { id?: string; expanded?: boolean; scrollKeyPrefix: string },
 ): HTMLElement {
-  const attrs: Record<string, string> = { 'data-stream-body': 'agent-stream' };
-  if (view.runId) {
-    attrs['data-stream-run-id'] = view.runId;
-    attrs['data-scroll-key'] = `${opts.scrollKeyPrefix}:${view.runId}`;
+  const attrs = streamViewAttrs(view, 'body');
+  if (view.channel) {
+    const key = streamChannelKey(view.channel);
+    attrs['data-scroll-key'] = `${opts.scrollKeyPrefix}:${key}`;
     attrs['aria-label'] = `${view.title} ${view.summary}`;
   }
   attrs.role = 'log';
@@ -5042,7 +5141,7 @@ function openExpandedStream(runId: string): void {
   expandedStreamRunId = runId;
   render();
   requestAnimationFrame(() => {
-    scrollStreamBodiesToBottom(runId);
+    scrollStreamBodiesToBottom({ kind: 'run', id: runId });
     document.querySelector<HTMLButtonElement>('[data-stream-close="agent-stream"]')?.focus();
   });
 }
@@ -5056,33 +5155,36 @@ function closeExpandedStream(): void {
   }
 }
 
-function refreshStreamViewsForRun(runId: string): void {
-  const view = buildAgentStreamView(runId);
+function refreshStreamViewsForChannel(channel: StreamChannel): void {
+  const view = buildAgentStreamView(channel);
+  const key = streamChannelKey(channel);
   document.querySelectorAll<HTMLElement>('[data-stream-title="agent-stream"]').forEach((node) => {
-    if (node.dataset.streamRunId === runId) node.textContent = view.title;
+    if (node.dataset.streamChannelKey === key) node.textContent = view.title;
   });
   document.querySelectorAll<HTMLElement>('[data-stream-summary="agent-stream"]').forEach((node) => {
-    if (node.dataset.streamRunId === runId) node.textContent = view.summary;
+    if (node.dataset.streamChannelKey === key) node.textContent = view.summary;
   });
   document.querySelectorAll<HTMLElement>('[data-stream-body="agent-stream"]').forEach((body) => {
-    if (body.dataset.streamRunId !== runId) return;
+    if (body.dataset.streamChannelKey !== key) return;
     body.setAttribute('aria-label', `${view.title} ${view.summary}`);
     body.replaceChildren(...renderStreamBodyChildren(view));
     body.scrollTop = body.scrollHeight;
   });
 }
 
-function updateStreamStatusNodes(runId: string | null, label: string, cls: 'live' | 'idle' | 'error'): void {
+function updateStreamStatusNodes(channel: StreamChannel | null, label: string, cls: 'live' | 'idle' | 'error'): void {
+  const key = channel ? streamChannelKey(channel) : null;
   document.querySelectorAll<HTMLElement>('[data-stream-status="agent-stream"]').forEach((node) => {
-    if ((node.dataset.streamRunId ?? null) !== runId) return;
+    if ((node.dataset.streamChannelKey ?? null) !== key) return;
     node.textContent = label;
     node.className = `stream-status ${cls}`;
   });
 }
 
-function scrollStreamBodiesToBottom(runId: string): void {
+function scrollStreamBodiesToBottom(channel: StreamChannel): void {
+  const key = streamChannelKey(channel);
   document.querySelectorAll<HTMLElement>('[data-stream-body="agent-stream"]').forEach((body) => {
-    if (body.dataset.streamRunId === runId) body.scrollTop = body.scrollHeight;
+    if (body.dataset.streamChannelKey === key) body.scrollTop = body.scrollHeight;
   });
 }
 
@@ -5093,28 +5195,40 @@ function focusStreamExpandButton(runId: string): void {
 }
 
 function detachStream(): void {
-  const detachedRunId = streamRunId;
+  const detachedChannel = streamChannel;
   if (streamES) streamES.close();
   streamES = null;
-  streamRunId = null;
-  setStreamStatus('disconnected', 'idle', detachedRunId);
+  streamChannel = null;
+  setStreamStatus('disconnected', 'idle', detachedChannel);
 }
 
-function attachStream(runId: string): void {
-  if (streamRunId === runId && streamES && streamES.readyState !== EventSource.CLOSED) return;
-  const previousRunId = streamRunId;
+function attachStream(channel: StreamChannel): void {
+  if (
+    streamChannel &&
+    streamChannelKey(streamChannel) === streamChannelKey(channel) &&
+    streamES &&
+    streamES.readyState !== EventSource.CLOSED
+  ) return;
+  const previousChannel = streamChannel;
   if (streamES) {
     streamES.close();
-    setStreamStatus('disconnected', 'idle', previousRunId);
+    setStreamStatus('disconnected', 'idle', previousChannel);
   }
-  streamRunId = runId;
-  setStreamStatus('connecting…', 'idle', runId);
+  streamChannel = channel;
+  setStreamStatus('connecting…', 'idle', channel);
 
-  const sinceSeq = lastStreamSeqForRun(runId);
-  const es = new EventSource(`${API_BASE}/workflow-runs/${encodeURIComponent(runId)}/agent-stream?sinceSeq=${sinceSeq}`);
+  const sinceSeq = lastStreamSeqForChannel(channel);
+  const endpoint = channel.kind === 'run'
+    ? `/workflow-runs/${encodeURIComponent(channel.id)}/agent-stream`
+    : `/workflow-requests/${encodeURIComponent(channel.id)}/agent-stream`;
+  const es = new EventSource(`${API_BASE}${endpoint}?sinceSeq=${sinceSeq}`);
   streamES = es;
-  es.addEventListener('ready', () => setStreamStatus('live', 'live', runId));
-  es.addEventListener('ping', () => setStreamStatus('live', 'live', runId));
+  es.addEventListener('ready', () => {
+    if (streamES === es) setStreamStatus('live', 'live', channel);
+  });
+  es.addEventListener('ping', () => {
+    if (streamES === es) setStreamStatus('live', 'live', channel);
+  });
   for (const type of STREAM_EVENT_TYPES) {
     es.addEventListener(type, (raw) => {
       try {
@@ -5125,12 +5239,39 @@ function attachStream(runId: string): void {
     });
   }
   es.onerror = () => {
-    if (streamES === es) setStreamStatus('reconnecting…', 'error', runId);
+    if (streamES === es) setStreamStatus('reconnecting…', 'error', channel);
   };
 }
 
-function streamStatusForRun(runId: string | null): { label: string; cls: 'live' | 'idle' | 'error' } {
-  if (runId && streamConnection.runId === runId) return streamConnection;
+function attachRunStream(runId: string): void {
+  attachStream({ kind: 'run', id: runId });
+}
+
+function attachRequestStream(requestId: string): void {
+  attachStream({ kind: 'request', id: requestId });
+}
+
+function syncActiveStreamSubscription(): void {
+  if (activePage === 'task') {
+    const task = activeTaskRequest();
+    if (!task) {
+      detachStream();
+      return;
+    }
+    if (task.workflowRunId) attachRunStream(task.workflowRunId);
+    else if (shouldSubscribeRequestStream(task)) attachRequestStream(task.id);
+    else detachStream();
+    return;
+  }
+  if (activePage === 'workbench' && activeRunId) {
+    attachRunStream(activeRunId);
+    return;
+  }
+  detachStream();
+}
+
+function streamStatusForChannel(channel: StreamChannel | null): { label: string; cls: 'live' | 'idle' | 'error' } {
+  if (channel && streamConnection.channelKey === streamChannelKey(channel)) return streamConnection;
   return { label: 'disconnected', cls: 'idle' };
 }
 
@@ -5140,6 +5281,7 @@ window.addEventListener('hashchange', async () => {
   const task = activeTaskRequest();
   if (task?.workflowRunId) await loadRunDetail(task.workflowRunId, false);
   else if (activeRunId && activePage !== 'task') await loadRunDetail(activeRunId, false);
+  syncActiveStreamSubscription();
   render();
   maybeAutoStartRunnerForActiveTask();
 });

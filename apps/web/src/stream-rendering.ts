@@ -18,7 +18,20 @@ export interface StreamDisplayLine {
   title?: string;
 }
 
-export type StreamEventCache<T extends { workflowRunId: string; sequence: number }> = Map<string, Map<number, T>>;
+export type StreamChannelKind = 'run' | 'request';
+
+export interface StreamChannel {
+  kind: StreamChannelKind;
+  id: string;
+}
+
+export interface StreamChannelEvent {
+  workflowRunId?: string | null;
+  workflowRequestId?: string | null;
+  sequence: number;
+}
+
+export type StreamEventCache<T extends StreamChannelEvent> = Map<string, Map<number, T>>;
 
 type AssistantTextFlavor = 'delta' | 'message';
 
@@ -45,15 +58,31 @@ interface PendingAssistantGroup {
   lastFlavor: AssistantTextFlavor;
 }
 
-export function rememberStreamEventInCache<T extends { workflowRunId: string; sequence: number }>(
+export function streamChannelKey(channel: StreamChannel): string {
+  return `${channel.kind}:${channel.id}`;
+}
+
+export function streamChannelForEvent(event: StreamChannelEvent): StreamChannel | null {
+  const hasRun = typeof event.workflowRunId === 'string' && event.workflowRunId.length > 0;
+  const hasRequest = typeof event.workflowRequestId === 'string' && event.workflowRequestId.length > 0;
+  if (hasRun === hasRequest) return null;
+  return hasRun
+    ? { kind: 'run', id: event.workflowRunId as string }
+    : { kind: 'request', id: event.workflowRequestId as string };
+}
+
+export function rememberStreamEventInCache<T extends StreamChannelEvent>(
   cache: StreamEventCache<T>,
   event: T,
   maxEvents = 1_000,
 ): boolean {
-  let events = cache.get(event.workflowRunId);
+  const channel = streamChannelForEvent(event);
+  if (!channel) return false;
+  const key = streamChannelKey(channel);
+  let events = cache.get(key);
   if (!events) {
     events = new Map();
-    cache.set(event.workflowRunId, events);
+    cache.set(key, events);
   }
   if (events.has(event.sequence)) return false;
   events.set(event.sequence, event);
@@ -65,18 +94,32 @@ export function rememberStreamEventInCache<T extends { workflowRunId: string; se
   return true;
 }
 
-export function streamEventsForRun<T extends { workflowRunId: string; sequence: number }>(
+export function streamEventsForChannel<T extends StreamChannelEvent>(
+  cache: StreamEventCache<T>,
+  channel: StreamChannel,
+): T[] {
+  return [...(cache.get(streamChannelKey(channel))?.values() ?? [])].sort((a, b) => a.sequence - b.sequence);
+}
+
+export function lastStreamSequenceForChannel<T extends StreamChannelEvent>(
+  cache: StreamEventCache<T>,
+  channel: StreamChannel,
+): number {
+  return streamEventsForChannel(cache, channel).at(-1)?.sequence ?? -1;
+}
+
+export function streamEventsForRun<T extends StreamChannelEvent & { workflowRunId: string }>(
   cache: StreamEventCache<T>,
   runId: string,
 ): T[] {
-  return [...(cache.get(runId)?.values() ?? [])].sort((a, b) => a.sequence - b.sequence);
+  return streamEventsForChannel(cache, { kind: 'run', id: runId });
 }
 
-export function lastStreamSequenceForRun<T extends { workflowRunId: string; sequence: number }>(
+export function lastStreamSequenceForRun<T extends StreamChannelEvent & { workflowRunId: string }>(
   cache: StreamEventCache<T>,
   runId: string,
 ): number {
-  return streamEventsForRun(cache, runId).at(-1)?.sequence ?? -1;
+  return lastStreamSequenceForChannel(cache, { kind: 'run', id: runId });
 }
 
 export function buildStreamDisplayLines(events: readonly StreamDisplayEvent[]): StreamDisplayLine[] {
