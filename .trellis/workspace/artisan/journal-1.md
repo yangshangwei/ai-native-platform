@@ -835,3 +835,43 @@ Fixed duplicate Workflow Request backend details keys so polling refreshes no lo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: Coordinator request-channel LLM streaming to Web
+
+**Date**: 2026-05-10
+**Task**: Coordinator request-channel LLM streaming to Web
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Added request-scoped agent stream channels, streamed Coordinator LLM triage events, rendered Coordinator live output in Web, and documented the channel contracts.
+
+### Main Changes
+
+- Added request-scoped agent stream channels and request SSE history/live endpoints.
+- Streamed Coordinator LLM triage lifecycle and assistant output to the request channel.
+- Rendered Coordinator live output in Web and switched live tailing to run streams after run creation.
+- Documented request/run channel contracts, Coordinator streaming, UI switching, and SQLite rebuild migration rules.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ad14363` | (see git log) |
+| `f274828` | (see git log) |
+| `f52d8ae` | (see git log) |
+| `43984c4` | (see git log) |
+
+### Testing
+
+- [OK] `bun run typecheck`
+- [OK] `bun test` (559 pass, 0 fail)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
