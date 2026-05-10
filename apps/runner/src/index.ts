@@ -5,7 +5,7 @@ import { cmdDoctor } from './cmd/doctor';
 import { cmdWatch } from './cmd/watch';
 import { cmdOrchestrate } from './orchestrator';
 import { api } from './api-client';
-import type { FlowId } from '@ainp/shared';
+import type { FlowId, WorkflowStage } from '@ainp/shared';
 
 const KNOWN_FLOW_IDS: readonly FlowId[] = ['feature.standard', 'feature.fastforward', 'issue.standard', 'refactor.standard'];
 function parseFlowIdFlag(raw: unknown): FlowId | undefined {
@@ -119,11 +119,15 @@ async function main(): Promise<void> {
       const title = String(flags.title ?? '');
       if (!project || !title) usage();
       const flowId = parseFlowIdFlag(flags['flow-id']);
+      const startStage = typeof flags['start-stage'] === 'string' ? flags['start-stage'] as WorkflowStage : undefined;
+      const workflowRunId = typeof flags['workflow-run-id'] === 'string' ? flags['workflow-run-id'] : undefined;
       await cmdOrchestrate({
         project,
         title,
         cleanup: !flags['keep-worktree'],
         flowId,
+        startStage: startStage ?? null,
+        workflowRunId,
       });
       return;
     }

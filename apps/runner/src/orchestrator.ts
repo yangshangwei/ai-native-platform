@@ -66,6 +66,11 @@ export interface OrchestrateOpts {
    * `FLOW_REGISTRY[flowId].stages` at this stage on the API side.
    */
   startStage?: WorkflowStage | null;
+  /**
+   * When set, resume an existing workflow run instead of creating a new one.
+   * Used by the retry-step flow to re-enter orchestration at a specific stage.
+   */
+  workflowRunId?: string;
   /** Default true — auto-clean worktree at the end. */
   cleanup?: boolean;
   /** Default true for CLI mode; watch mode keeps the daemon alive on failed jobs. */
@@ -189,15 +194,23 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
 
   const project = await api.getProject(opts.project);
   const backend = await selectAgentBackend(project);
-  const run = await api.createWorkflowRun({
-    projectName: project.name,
-    title: opts.title,
-    type: opts.runType ?? 'feature',
-    sourceBranch: opts.sourceBranch ?? project.defaultBranch,
-    flowId: opts.flowId,
-    startStage: opts.startStage,
-  });
-  console.log(`[runner] workflow-run ${run.id} created (flow=${run.flowId})`);
+  let run: WorkflowRun;
+  if (opts.workflowRunId) {
+    // Resume an existing run (retry-step flow).
+    const detail = await api.getWorkflowRun(opts.workflowRunId);
+    run = detail.run;
+    console.log(`[runner] resuming workflow-run ${run.id} at stage ${opts.startStage ?? run.currentStage} (flow=${run.flowId})`);
+  } else {
+    run = await api.createWorkflowRun({
+      projectName: project.name,
+      title: opts.title,
+      type: opts.runType ?? 'feature',
+      sourceBranch: opts.sourceBranch ?? project.defaultBranch,
+      flowId: opts.flowId,
+      startStage: opts.startStage,
+    });
+    console.log(`[runner] workflow-run ${run.id} created (flow=${run.flowId})`);
+  }
   if (opts.workflowRequestId) {
     await api.workflowRequestRunStarted({
       requestId: opts.workflowRequestId,

@@ -2029,6 +2029,15 @@ function renderStageRetryActions(workflowRunId: string, stage: string, gateId: s
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ stage, actor: 'web' }),
       });
+      // Trigger the runner to pick up the retry.
+      await api('/runner/control/retry-run', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ workflowRunId, stage }),
+      }).catch(() => {
+        // Runner control may not be available; the step is still reset
+        // and a manual runner start will pick it up.
+      });
       await loadRunDetail(workflowRunId, false);
       await loadData({ render: false, keepDetail: true });
     } catch (err) {

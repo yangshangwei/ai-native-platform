@@ -61,10 +61,10 @@ const server = Bun.serve({
       const transpiler = new Bun.Transpiler({ loader: 'ts', target: 'browser' });
       const source = await Bun.file(file).text();
       const out = transpiler.transformSync(source);
-      return new Response(out, { headers: { 'content-type': MIME['.js']! } });
+      return new Response(out, { headers: { 'content-type': MIME['.js']!, 'cache-control': 'no-cache' } });
     }
 
-    return new Response(Bun.file(file), { headers: { 'content-type': type } });
+    return new Response(Bun.file(file), { headers: { 'content-type': type, 'cache-control': ext === '.html' ? 'no-cache' : 'max-age=60' } });
   },
 });
 

@@ -126,3 +126,42 @@ runnerControl.post('/start', (c) => {
 });
 
 runnerControl.post('/stop', (c) => c.json(stop()));
+
+runnerControl.post('/retry-run', async (c) => {
+  const body = (await c.req.json()) as { workflowRunId?: string; stage?: string };
+  if (!body.workflowRunId || !body.stage) {
+    return c.json({ error: 'workflowRunId and stage required' }, 400);
+  }
+  const run = store.workflowRuns.get(body.workflowRunId);
+  if (!run) return c.json({ error: 'run not found' }, 404);
+  const project = store.projects.get(run.projectId);
+  if (!project) return c.json({ error: 'project not found' }, 404);
+
+  // Spawn a one-shot orchestrate for the retry. The runner will pick up
+  // the pending step and re-execute from that stage.
+  const cmd = [
+    process.execPath,
+    runnerEntrypoint(),
+    'orchestrate',
+    '--project', project.name,
+    '--title', run.title,
+    '--workflow-run-id', run.id,
+    '--start-stage', body.stage,
+  ];
+  recentLogs.push(`[control:retry] ${cmd.join(' ')}`);
+  const retryChild = spawn(cmd[0]!, cmd.slice(1), {
+    cwd: repoRoot(),
+    env: {
+      ...process.env,
+      AINP_API_BASE:
+        process.env.AINP_API_BASE ??
+        `http://${process.env.AINP_API_HOST ?? '127.0.0.1'}:${process.env.AINP_API_PORT ?? '8787'}`,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
+  });
+  retryChild.stdout?.on('data', (chunk: Buffer) => appendLog('[retry]', chunk));
+  retryChild.stderr?.on('data', (chunk: Buffer) => appendLog('[retry:err]', chunk));
+  retryChild.unref();
+  return c.json({ ok: true, pid: retryChild.pid ?? null });
+});
