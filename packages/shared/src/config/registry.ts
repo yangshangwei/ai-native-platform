@@ -1,7 +1,8 @@
 /**
  * Static registry of all runtime-configurable keys exposed via UI.
  *
- * MVP-M scope: 25 keys (15 coordinator + 5 skill_prompts + 5 runtime).
+ * MVP-M + Context Governance scope: 29 keys
+ * (15 coordinator + 5 skill_prompts + 5 runtime + 4 context_policy).
  * Adding / removing a key REQUIRES a code PR; the UI never creates new keys.
  *
  * Source-of-truth defaults live in `./defaults.ts` (byte-for-byte transcribed
@@ -36,9 +37,13 @@ import {
   RUNNER_COMMAND_DEFAULT_TIMEOUT_MS_DEFAULT,
   RUNNER_COMMAND_MAX_LOG_BYTES_DEFAULT,
   RUNNER_CONFIG_CACHE_TTL_MS_DEFAULT,
+  CONTEXT_POLICY_MAX_TOKENS_DEFAULT,
+  CONTEXT_POLICY_RESERVED_FOR_REASONING_DEFAULT,
+  CONTEXT_POLICY_RESERVED_FOR_OUTPUT_DEFAULT,
+  CONTEXT_POLICY_SENSITIVE_PATH_PATTERNS_DEFAULT,
 } from './defaults';
 
-export type ConfigCategory = 'coordinator' | 'skill_prompts' | 'runtime';
+export type ConfigCategory = 'coordinator' | 'skill_prompts' | 'runtime' | 'context_policy';
 export type ConfigType = 'number' | 'string' | 'string_array';
 
 export interface ConfigEntry {
@@ -258,6 +263,43 @@ export const CONFIG_REGISTRY = {
     category: 'runtime',
     source: 'apps/runner/src/config-client.ts (new in this PR)',
   },
+
+  // ============ Tab "context_policy" — 4 keys ============
+
+  'context.policy.max_tokens': {
+    type: 'number',
+    default: CONTEXT_POLICY_MAX_TOKENS_DEFAULT,
+    min: 1_000,
+    max: 64_000,
+    description: 'ContextPack 总 token 预算；超限时按 full → summary → retrieval_hint 降级',
+    category: 'context_policy',
+    source: 'apps/runner/src/context/builder.ts:DEFAULT_BUDGET',
+  },
+  'context.policy.reserved_for_reasoning': {
+    type: 'number',
+    default: CONTEXT_POLICY_RESERVED_FOR_REASONING_DEFAULT,
+    min: 0,
+    max: 32_000,
+    description: '为模型推理预留的 context token；会从可注入上下文预算中扣除',
+    category: 'context_policy',
+    source: 'apps/runner/src/context/builder.ts:DEFAULT_BUDGET',
+  },
+  'context.policy.reserved_for_output': {
+    type: 'number',
+    default: CONTEXT_POLICY_RESERVED_FOR_OUTPUT_DEFAULT,
+    min: 0,
+    max: 32_000,
+    description: '为模型输出预留的 context token；会从可注入上下文预算中扣除',
+    category: 'context_policy',
+    source: 'apps/runner/src/context/builder.ts:DEFAULT_BUDGET',
+  },
+  'context.policy.sensitive_path_patterns': {
+    type: 'string_array',
+    default: CONTEXT_POLICY_SENSITIVE_PATH_PATTERNS_DEFAULT,
+    description: '敏感路径/文件名片段；命中则不进入 ContextPack selected context',
+    category: 'context_policy',
+    source: 'packages/shared/src/utils/context-policy.ts',
+  },
 } satisfies Record<string, ConfigEntry>;
 
 export type ConfigKey = keyof typeof CONFIG_REGISTRY;
@@ -265,8 +307,8 @@ export type ConfigKey = keyof typeof CONFIG_REGISTRY;
 /** Resolved type of a key's default value. Use for return-type annotations on getConfig. */
 export type RegistryDefault<K extends ConfigKey> = (typeof CONFIG_REGISTRY)[K]['default'];
 
-/** Total = 15 + 5 + 5 = 25 keys. Asserted by tests. */
-export const CONFIG_REGISTRY_KEY_COUNT = 25 as const;
+/** Total = 15 + 5 + 5 + 4 = 29 keys. Asserted by tests. */
+export const CONFIG_REGISTRY_KEY_COUNT = 29 as const;
 
 /** All registered keys in declaration order. */
 export function configKeys(): ConfigKey[] {

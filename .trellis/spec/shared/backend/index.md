@@ -20,6 +20,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [Agent Backend Contract](./agent-backend-contract.md) | Project-level real backend type/API/DB contract | Current |
+| [Context Injection Protocol](./context-injection-protocol.md) | Provider-neutral ContextPack type/render/audit contract | Current |
 
 ---
 

@@ -9,6 +9,7 @@ export * from './types/gate';
 export * from './types/build';
 export * from './types/agent';
 export * from './types/agent-event';
+export * from './types/context';
 export * from './types/execution-environment';
 export * from './types/skill';
 export * from './types/coordinator';
@@ -25,6 +26,7 @@ export * from './utils/surefire';
 export * from './utils/redaction';
 export * from './utils/agent-backend-cli';
 export * from './utils/agent-backend-preflight';
+export * from './utils/context-policy';
 
 export * from './config/registry';
 export * from './config/defaults';

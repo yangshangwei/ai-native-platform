@@ -1,4 +1,12 @@
 import type { Iso8601, ArtifactId, ProjectId, WorkflowRunId, StepRunId } from './ids';
+import {
+  isContextFreshness,
+  isContextTrustLevel,
+  isKnowledgeClass,
+  type ContextFreshness,
+  type ContextTrustLevel,
+  type KnowledgeClass,
+} from './context';
 
 // ---------------------------------------------------------------------------
 // Artifact kinds
@@ -119,6 +127,17 @@ export function isKnowledgeArtifactKind(value: unknown): value is KnowledgeArtif
  */
 export type KnowledgeArtifactStatus = 'draft' | 'accepted' | 'superseded';
 
+export const KNOWLEDGE_ARTIFACT_STATUSES = [
+  'draft',
+  'accepted',
+  'superseded',
+] as const satisfies readonly KnowledgeArtifactStatus[];
+
+export function isKnowledgeArtifactStatus(value: unknown): value is KnowledgeArtifactStatus {
+  return typeof value === 'string'
+    && (KNOWLEDGE_ARTIFACT_STATUSES as readonly string[]).includes(value);
+}
+
 /**
  * Strongly-typed core fields every knowledge artifact carries. Additional
  * per-kind fields (e.g. lesson severity, decision supersedes-id) ride
@@ -149,16 +168,152 @@ export interface KnowledgeMetadataCore {
 }
 
 /**
+ * Context-injection classification fields stored in the existing
+ * `knowledge_artifacts.metadata_json` blob. These deliberately live in
+ * metadata first so Seed / Recovered / Confirmed can ship without a DB
+ * migration; callers should use the helpers below at trust boundaries.
+ */
+export interface KnowledgeContextMetadata {
+  knowledgeClass?: KnowledgeClass;
+  trustLevel?: ContextTrustLevel;
+  freshness?: ContextFreshness;
+  sourceRefs?: string[];
+  confidence?: number;
+}
+
+export interface NormalizedKnowledgeContextMetadata {
+  knowledgeClass: KnowledgeClass;
+  trustLevel: ContextTrustLevel;
+  freshness: ContextFreshness;
+  sourceRefs: string[];
+  confidence: number;
+}
+
+/**
  * Knowledge artifact metadata: typed core + freeform extension.
  *
  * Use this for any `Artifact` whose `kind` is a `KnowledgeArtifactKind`.
  */
-export type KnowledgeArtifactMetadata = KnowledgeMetadataCore & Record<string, unknown>;
+export type KnowledgeArtifactMetadata =
+  KnowledgeMetadataCore & KnowledgeContextMetadata & Record<string, unknown>;
 
 /**
  * Per-run artifact metadata: stays freeform (V1 behavior preserved).
  */
 export type PerRunArtifactMetadata = Record<string, unknown>;
+
+export interface NormalizeKnowledgeContextMetadataOptions {
+  status?: KnowledgeArtifactStatus;
+  fallbackSourceRefs?: readonly string[];
+}
+
+/**
+ * Default bridge from existing lifecycle status to Context Injection
+ * knowledge metadata. `accepted` maps to confirmed unless explicit metadata
+ * overrides it with a valid `knowledgeClass`.
+ */
+export function defaultKnowledgeContextMetadataForStatus(
+  status: KnowledgeArtifactStatus = 'draft',
+): Omit<NormalizedKnowledgeContextMetadata, 'sourceRefs'> {
+  switch (status) {
+    case 'accepted':
+      return {
+        knowledgeClass: 'confirmed',
+        trustLevel: 'accepted_knowledge',
+        freshness: 'possibly_stale',
+        confidence: 0.9,
+      };
+    case 'superseded':
+      return {
+        knowledgeClass: 'recovered',
+        trustLevel: 'summary',
+        freshness: 'historical',
+        confidence: 0.4,
+      };
+    case 'draft':
+      return {
+        knowledgeClass: 'recovered',
+        trustLevel: 'summary',
+        freshness: 'possibly_stale',
+        confidence: 0.5,
+      };
+  }
+}
+
+/**
+ * Returns field-level validation errors for standardized knowledge metadata.
+ * Use this at API/CLI trust boundaries before persisting freeform metadata.
+ */
+export function knowledgeContextMetadataValidationErrors(
+  metadata: Record<string, unknown> | undefined,
+): string[] {
+  if (!metadata) return [];
+  const errors: string[] = [];
+  if ('knowledgeClass' in metadata && !isKnowledgeClass(metadata.knowledgeClass)) {
+    errors.push(`metadata.knowledgeClass must be one of: seed, recovered, confirmed`);
+  }
+  if ('trustLevel' in metadata && !isContextTrustLevel(metadata.trustLevel)) {
+    errors.push(`metadata.trustLevel must be one of: source, accepted_knowledge, summary, inference`);
+  }
+  if ('freshness' in metadata && !isContextFreshness(metadata.freshness)) {
+    errors.push(`metadata.freshness must be one of: current, possibly_stale, historical`);
+  }
+  if ('sourceRefs' in metadata && !isStringArray(metadata.sourceRefs)) {
+    errors.push(`metadata.sourceRefs must be an array of non-empty strings`);
+  }
+  if ('confidence' in metadata && !isConfidence(metadata.confidence)) {
+    errors.push(`metadata.confidence must be a number between 0 and 1`);
+  }
+  return errors;
+}
+
+export function normalizeKnowledgeContextMetadata(
+  metadata: Record<string, unknown> | undefined,
+  options: NormalizeKnowledgeContextMetadataOptions = {},
+): NormalizedKnowledgeContextMetadata {
+  const defaults = defaultKnowledgeContextMetadataForStatus(options.status);
+  const fallbackSourceRefs = normalizeSourceRefs(options.fallbackSourceRefs ?? []);
+  const metadataSourceRefs = isStringArray(metadata?.sourceRefs)
+    ? normalizeSourceRefs(metadata.sourceRefs)
+    : [];
+  return {
+    knowledgeClass: isKnowledgeClass(metadata?.knowledgeClass)
+      ? metadata.knowledgeClass
+      : defaults.knowledgeClass,
+    trustLevel: isContextTrustLevel(metadata?.trustLevel)
+      ? metadata.trustLevel
+      : defaults.trustLevel,
+    freshness: isContextFreshness(metadata?.freshness)
+      ? metadata.freshness
+      : defaults.freshness,
+    sourceRefs: metadataSourceRefs.length > 0 ? metadataSourceRefs : fallbackSourceRefs,
+    confidence: isConfidence(metadata?.confidence) ? metadata.confidence : defaults.confidence,
+  };
+}
+
+export function withNormalizedKnowledgeContextMetadata(
+  metadata: Record<string, unknown> | undefined,
+  options: NormalizeKnowledgeContextMetadataOptions = {},
+): Record<string, unknown> & NormalizedKnowledgeContextMetadata {
+  const normalized = normalizeKnowledgeContextMetadata(metadata, options);
+  return {
+    ...(metadata ?? {}),
+    ...normalized,
+  };
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value)
+    && value.every((item) => typeof item === 'string' && item.trim().length > 0);
+}
+
+function normalizeSourceRefs(sourceRefs: readonly string[]): string[] {
+  return [...new Set(sourceRefs.map((ref) => ref.trim()).filter(Boolean))];
+}
+
+function isConfidence(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+}
 
 // ---------------------------------------------------------------------------
 // Subtype catalog

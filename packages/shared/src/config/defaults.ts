@@ -259,3 +259,35 @@ export const RUNNER_COMMAND_MAX_LOG_BYTES_DEFAULT = 8 * 1024 * 1024;
 
 /** New in this PR — runner config-client cache TTL; should be slightly shorter than watch poll. */
 export const RUNNER_CONFIG_CACHE_TTL_MS_DEFAULT = 1500;
+
+// ---- Context policy (Context Injection Layer Phase 6) ---------------------
+
+/** apps/runner/src/context/builder.ts — default ContextPack total token budget. */
+export const CONTEXT_POLICY_MAX_TOKENS_DEFAULT = 12_000;
+
+/** apps/runner/src/context/builder.ts — token budget reserved for model reasoning. */
+export const CONTEXT_POLICY_RESERVED_FOR_REASONING_DEFAULT = 2_000;
+
+/** apps/runner/src/context/builder.ts — token budget reserved for model output. */
+export const CONTEXT_POLICY_RESERVED_FOR_OUTPUT_DEFAULT = 2_000;
+
+/**
+ * packages/shared/src/utils/context-policy.ts — path fragments that are
+ * never injected as selected context. Exact globbing is intentionally avoided;
+ * matching is conservative substring/extension based and dependency-free.
+ */
+export const CONTEXT_POLICY_SENSITIVE_PATH_PATTERNS_DEFAULT: readonly string[] = [
+  '.env',
+  '.npmrc',
+  '.netrc',
+  '.ssh/',
+  '.aws/credentials',
+  'id_rsa',
+  'id_ed25519',
+  '.pem',
+  '.key',
+  '.p12',
+  '.pfx',
+  'secrets/',
+  'credentials',
+];
