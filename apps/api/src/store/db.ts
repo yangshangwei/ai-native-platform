@@ -265,7 +265,7 @@ const MIGRATIONS: string[] = [
    )`,
   `CREATE TABLE IF NOT EXISTS agent_events (
      id TEXT PRIMARY KEY,
-     workflow_run_id TEXT NOT NULL,
+     workflow_run_id TEXT,
      step_run_id TEXT,
      agent_kind TEXT NOT NULL,
      sequence INTEGER NOT NULL,
@@ -388,4 +388,62 @@ if (!workflowRequestColumns.has('flow_id')) {
 }
 if (!workflowRequestColumns.has('start_stage')) {
   runSql(`ALTER TABLE workflow_requests ADD COLUMN start_stage TEXT`);
+}
+
+// 05-10 coordinator-llm-web-sse PR1: agent_events stream channel extension.
+// Coordinator triage (and any future pre-workflow-run agent stage) needs to
+// emit stream events before a workflow_run exists. Add an optional
+// workflow_request_id column + secondary index so events can be keyed on
+// either channel. Mutual exclusion (exactly one of workflow_run_id /
+// workflow_request_id non-null) is a runtime invariant enforced by
+// recordAgentEvent — not declared as a DB CHECK to keep migrations
+// straightforward across already-stored historical rows. Idempotent.
+const agentEventColumns = columnNames('agent_events');
+if (!agentEventColumns.has('workflow_request_id')) {
+  runSql(`ALTER TABLE agent_events ADD COLUMN workflow_request_id TEXT`);
+}
+runSql(
+  `CREATE INDEX IF NOT EXISTS idx_agent_events_request ON agent_events(workflow_request_id, sequence)`,
+);
+
+// Drop legacy NOT NULL constraint on agent_events.workflow_run_id for DBs
+// created before PR1. SQLite cannot ALTER a column nullability in place;
+// rebuild the table when the constraint is still present. Idempotent: on a
+// fresh DB the CREATE TABLE above already declares the column as nullable.
+{
+  const info = db.prepare('PRAGMA table_info(agent_events)').all() as Array<{
+    name: string;
+    notnull: number;
+  }>;
+  const wfRunCol = info.find((c) => c.name === 'workflow_run_id');
+  if (wfRunCol && wfRunCol.notnull === 1) {
+    db.transaction(() => {
+      runSql(`CREATE TABLE agent_events__rebuild (
+         id TEXT PRIMARY KEY,
+         workflow_run_id TEXT,
+         workflow_request_id TEXT,
+         step_run_id TEXT,
+         agent_kind TEXT NOT NULL,
+         sequence INTEGER NOT NULL,
+         type TEXT NOT NULL,
+         payload_json TEXT NOT NULL,
+         text TEXT,
+         ts TEXT NOT NULL
+       )`);
+      runSql(
+        `INSERT INTO agent_events__rebuild
+           (id, workflow_run_id, workflow_request_id, step_run_id, agent_kind, sequence, type, payload_json, text, ts)
+         SELECT id, workflow_run_id, workflow_request_id, step_run_id, agent_kind, sequence, type, payload_json, text, ts
+           FROM agent_events`,
+      );
+      runSql(`DROP TABLE agent_events`);
+      runSql(`ALTER TABLE agent_events__rebuild RENAME TO agent_events`);
+      runSql(
+        `CREATE INDEX IF NOT EXISTS idx_agent_events_workflow ON agent_events(workflow_run_id, sequence)`,
+      );
+      runSql(
+        `CREATE INDEX IF NOT EXISTS idx_agent_events_request ON agent_events(workflow_request_id, sequence)`,
+      );
+    })();
+  }
 }

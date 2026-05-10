@@ -1191,7 +1191,8 @@ const agentResults = {
 
 interface AgentEventRow {
   id: string;
-  workflow_run_id: string;
+  workflow_run_id: string | null;
+  workflow_request_id: string | null;
   step_run_id: string | null;
   agent_kind: string;
   sequence: number;
@@ -1205,6 +1206,7 @@ function rowToAgentEvent(r: AgentEventRow): AgentStreamEvent {
   return {
     id: r.id,
     workflowRunId: r.workflow_run_id,
+    workflowRequestId: r.workflow_request_id,
     stepRunId: r.step_run_id,
     agentKind: r.agent_kind as AgentStreamEvent['agentKind'],
     sequence: r.sequence,
@@ -1220,6 +1222,7 @@ const agentEvents = {
     insertRow('agent_events', {
       id: e.id,
       workflow_run_id: e.workflowRunId,
+      workflow_request_id: e.workflowRequestId ?? null,
       step_run_id: e.stepRunId,
       agent_kind: e.agentKind,
       sequence: e.sequence,
@@ -1238,10 +1241,27 @@ const agentEvents = {
         .all(workflowRunId, sinceSeq) as AgentEventRow[]
     ).map(rowToAgentEvent);
   },
-  nextSequence(workflowRunId: string): number {
+  byRequest(workflowRequestId: string, sinceSeq = -1): AgentStreamEvent[] {
+    return (
+      db
+        .prepare(
+          'SELECT * FROM agent_events WHERE workflow_request_id = ? AND sequence > ? ORDER BY sequence ASC',
+        )
+        .all(workflowRequestId, sinceSeq) as AgentEventRow[]
+    ).map(rowToAgentEvent);
+  },
+  /**
+   * Next monotonic sequence for a stream channel. The `run` and `request`
+   * channels have independent sequences (a request's events do NOT advance
+   * the sequence of any later workflow run derived from that request).
+   */
+  nextSequence(channel: { kind: 'run' | 'request'; id: string }): number {
+    const column = channel.kind === 'run' ? 'workflow_run_id' : 'workflow_request_id';
     const r = db
-      .prepare('SELECT COALESCE(MAX(sequence), -1) AS m FROM agent_events WHERE workflow_run_id = ?')
-      .get(workflowRunId) as { m: number };
+      .prepare(
+        `SELECT COALESCE(MAX(sequence), -1) AS m FROM agent_events WHERE ${column} = ?`,
+      )
+      .get(channel.id) as { m: number };
     return r.m + 1;
   },
 };

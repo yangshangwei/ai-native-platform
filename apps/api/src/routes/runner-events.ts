@@ -119,6 +119,19 @@ runnerEvents.post('/agent-stream', async (c) => {
   const inputs = Array.isArray((body as { events?: unknown }).events)
     ? (body as { events: AgentStreamEventInput[] }).events
     : [body as AgentStreamEventInput];
+  for (const i of inputs) {
+    const hasRun = typeof i.workflowRunId === 'string' && i.workflowRunId.length > 0;
+    const hasReq =
+      typeof i.workflowRequestId === 'string' && (i.workflowRequestId as string).length > 0;
+    if (hasRun === hasReq) {
+      return c.json(
+        {
+          error: 'each agent-stream event requires exactly one of workflowRunId or workflowRequestId',
+        },
+        400,
+      );
+    }
+  }
   const stored = inputs.map((i) => recordAgentEvent(i));
   return c.json({ ok: true, count: stored.length, events: stored });
 });

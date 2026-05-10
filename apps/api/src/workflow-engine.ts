@@ -2,6 +2,7 @@ import {
   newId,
   nowIso,
   slugify,
+  isAgentStreamChannel,
   isKnowledgeArtifactKind,
   isKnowledgeArtifactStatus,
   isValidKnowledgeSubtype,
@@ -962,15 +963,24 @@ export function audit(
  * in-process bus for SSE subscribers.
  *
  * Sole writer for `agent_events`: keeps sequence assignment monotonic per
- * workflow run.
+ * channel. Channel mutual exclusion (exactly one of workflowRunId /
+ * workflowRequestId set) is enforced here — the wire format from the runner
+ * may not be DB-checked, so this is the trust boundary.
  */
 export function recordAgentEvent(input: AgentStreamEventInput): AgentStreamEvent {
+  const channel = isAgentStreamChannel(input);
+  if (!channel) {
+    throw new Error(
+      'agent stream event requires exactly one of workflowRunId or workflowRequestId',
+    );
+  }
   const event: AgentStreamEvent = {
     id: newId('aev'),
-    workflowRunId: input.workflowRunId,
+    workflowRunId: input.workflowRunId ?? null,
+    workflowRequestId: input.workflowRequestId ?? null,
     stepRunId: input.stepRunId,
     agentKind: input.agentKind,
-    sequence: store.agentEvents.nextSequence(input.workflowRunId),
+    sequence: store.agentEvents.nextSequence(channel),
     type: input.type,
     payload: input.payload,
     text: input.text,

@@ -301,7 +301,7 @@ workflowRuns.get('/:id/agent-stream', (c) => {
     let lastSeq = Number.isFinite(sinceSeq) ? sinceSeq : -1;
     const queue: AgentStreamEvent[] = [];
     let resolveNext: (() => void) | null = null;
-    const unsubscribe = subscribe(id, (ev) => {
+    const unsubscribe = subscribe({ kind: 'run', id }, (ev) => {
       if (ev.sequence <= lastSeq) return; // dedupe across history/live race
       queue.push(ev);
       if (resolveNext) {

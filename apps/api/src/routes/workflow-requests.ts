@@ -1,5 +1,7 @@
 import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
 import type {
+  AgentStreamEvent,
   FlowId,
   MessageRole,
   Project,
@@ -14,6 +16,7 @@ import {
   createWorkflowRequest,
   markWorkflowRequestRunStarted,
 } from '../workflow-engine';
+import { subscribe } from '../agent-stream-bus';
 import {
   KNOWN_FLOW_IDS,
   KNOWN_WORKFLOW_STAGES,
@@ -197,4 +200,103 @@ workflowRequests.post('/:id/complete', async (c) => {
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 404);
   }
+});
+
+/**
+ * History tail for the request channel — symmetric with
+ * `/workflow-runs/:id/agent-events`. Returns events with `sequence > sinceSeq`
+ * (default -1, i.e. full history). Used by clients before / instead of SSE.
+ */
+workflowRequests.get('/:id/agent-events', (c) => {
+  const id = c.req.param('id');
+  if (!store.workflowRequests.get(id)) return c.json({ error: 'not found' }, 404);
+  const sinceSeq = Number(c.req.query('sinceSeq') ?? -1);
+  const items = store.agentEvents.byRequest(id, Number.isFinite(sinceSeq) ? sinceSeq : -1);
+  return c.json({ items });
+});
+
+/**
+ * Live SSE tail of agent events for the request channel (Coordinator triage,
+ * any future pre-workflow-run agent stage). Mirrors
+ * `GET /workflow-runs/:id/agent-stream`: replays history > sinceSeq, then
+ * attaches a subscriber for newly-published events. Closes when client
+ * disconnects.
+ *
+ * Wire format: `event: <type>\nid: <sequence>\ndata: <AgentStreamEvent json>\n\n`.
+ */
+workflowRequests.get('/:id/agent-stream', (c) => {
+  const id = c.req.param('id');
+  if (!store.workflowRequests.get(id)) return c.json({ error: 'not found' }, 404);
+  const sinceSeq = Number(c.req.query('sinceSeq') ?? -1);
+
+  return streamSSE(c, async (stream) => {
+    let aborted = false;
+    stream.onAbort(() => {
+      aborted = true;
+    });
+
+    const writeEvent = async (ev: AgentStreamEvent): Promise<void> => {
+      await stream.writeSSE({
+        id: String(ev.sequence),
+        event: ev.type,
+        data: JSON.stringify(ev),
+      });
+    };
+
+    let lastSeq = Number.isFinite(sinceSeq) ? sinceSeq : -1;
+    const queue: AgentStreamEvent[] = [];
+    let resolveNext: (() => void) | null = null;
+    const unsubscribe = subscribe({ kind: 'request', id }, (ev) => {
+      if (ev.sequence <= lastSeq) return; // dedupe across history/live race
+      queue.push(ev);
+      if (resolveNext) {
+        const fn = resolveNext;
+        resolveNext = null;
+        fn();
+      }
+    });
+
+    try {
+      // Subscribe before replaying history so events inserted between the
+      // history query and live-tail setup cannot disappear during reconnects.
+      await stream.writeSSE({ event: 'ready', data: JSON.stringify({ sinceSeq }) });
+
+      const history = store.agentEvents.byRequest(id, lastSeq);
+      for (const ev of history) {
+        if (ev.sequence <= lastSeq) continue;
+        await writeEvent(ev);
+        lastSeq = ev.sequence;
+        if (aborted) return;
+      }
+
+      while (!aborted) {
+        if (queue.length === 0) {
+          await new Promise<void>((res) => {
+            resolveNext = res;
+            // Tight ping interval (5s) keeps the underlying TCP connection
+            // alive — Bun's idleTimeout (set to 255s on the server) and
+            // proxies / load balancers won't drop us mid-stream.
+            setTimeout(() => {
+              if (resolveNext === res) {
+                resolveNext = null;
+                res();
+              }
+            }, 5_000);
+          });
+          if (queue.length === 0 && !aborted) {
+            await stream.writeSSE({ event: 'ping', data: JSON.stringify({ ts: Date.now() }) });
+            continue;
+          }
+        }
+        while (queue.length > 0 && !aborted) {
+          const ev = queue.shift()!;
+          if (ev.sequence <= lastSeq) continue;
+          await writeEvent(ev);
+          lastSeq = ev.sequence;
+        }
+      }
+    } finally {
+      unsubscribe();
+    }
+  });
 });
