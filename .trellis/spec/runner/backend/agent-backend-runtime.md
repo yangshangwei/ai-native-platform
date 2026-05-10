@@ -28,6 +28,7 @@
 - `AINP_CLAUDE_HOME_ISOLATION=1` is the explicit opt-in debugging flag for Claude Code HOME isolation. When set, runtime execution uses a temporary empty `HOME` and removes `CLAUDE_CONFIG_DIR` / `XDG_CONFIG_HOME` from the child environment. Do not restore default isolation under another negative flag.
 - Runtime `codex` execution uses `codex exec --json ... -` and must not pass `--ask-for-approval` to `exec` for Codex CLI 0.128.0 compatibility.
 - Coordinator LLM fallback parsing must tolerate human-visible Skill/session prelude or markdown wrapped around the machine decision. Do not disable Codex / Claude Code Skills or user settings to force clean output; parse the first syntactically valid JSON object whose shape includes a Coordinator `action`, then validate through the existing `proceed` / `pause_for_human` / `abort` branches. If no decision object can be extracted, keep technical parse detail in `reason` and show a user-facing natural-language clarification question.
+- Coordinator triage is a pre-run AgentBackend call and MUST stream chunk-by-chunk to the `request:<workflowRequestId>` agent-stream channel. It must emit lifecycle meta events (`cli_started`, `cli_finished`, `decided`) plus parsed assistant/stderr/raw stream events as lines arrive. Do not regress to buffer-then-emit or wait until the final CoordinatorDecision before publishing stream evidence. Emit/post failures are side-channel failures: log/mask them and continue producing the final decision. Because `triageRequest` may degrade transient LLM failures back to a rule-based `proceed`, the `decided` event must summarize the final Coordinator decision after source selection, not an intermediate LLM fallback result.
 - Runner CLI command resolution must be shared with preflight:
   - macOS/Linux use ordinary `claude` / `codex` or the matching env override.
   - Windows tries shim/executable candidates (`.cmd`, `.exe`, `.bat`, then the
@@ -80,6 +81,7 @@
 - Runtime tests for Claude Code must assert that for `stage='context_pack'` the system prompt argument contains the literal "CONTEXT-PACK CONSTRAINTS" guard (forbids implementation planning and caps output size).
 - Runtime tests for Codex must assert args include `--json`, `--sandbox workspace-write`, `--cd`, `--ephemeral`, `--skip-git-repo-check`, `--output-last-message`, and do not include `--ask-for-approval`.
 - Coordinator LLM fallback tests must cover Codex plain text and Claude Code `stream-json` assistant text where Skill/session notices or fenced markdown appear before/around the Coordinator JSON, plus malformed/no-JSON degradation with user-friendly `questions[]`.
+- Coordinator streaming tests must assert request-channel lifecycle order (`meta:cli_started` → assistant/stderr/raw events → `meta:cli_finished` → `meta:decided`), Codex stdout streaming coexists with `--output-last-message`, and emit failures do not change the returned decision.
 - Cross-platform resolver tests must cover Windows candidate order, env override
   expansion, `.cmd` shim spawn wrapping, `.exe` direct spawn, and runtime env
   override use without requiring a real Windows host.

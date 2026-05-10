@@ -78,6 +78,18 @@ Adding a NOT NULL column to a table with existing rows requires a default. Use `
 
 This project's policy (see V2 P0-2 Q4=4-B) is **idempotent migration + no automatic backfill**. New tables come up empty; data accrues via the live write path. If a migration absolutely needs to populate rows, write a separate admin command, not inline in the migration loop.
 
+### Rebuilding a table to relax a NOT NULL constraint
+
+SQLite cannot `ALTER COLUMN` to change nullability. When an existing table must relax a `NOT NULL` column (for example `agent_events.workflow_run_id` became nullable when pre-run `workflow_request_id` channels were introduced), use an idempotent rebuild migration:
+
+1. Inspect `PRAGMA table_info(<table>)` and rebuild only when the old constraint is present.
+2. Create `<table>__rebuild` with the full target schema.
+3. `INSERT ... SELECT ...` existing rows, supplying `NULL` / defaults for new nullable columns.
+4. Drop the old table and rename the rebuild table.
+5. Recreate indexes with `CREATE INDEX IF NOT EXISTS`.
+
+Do not rely on unconditional rebuilds; dev machines and tests may import the DB module many times.
+
 ---
 
 ## Naming Conventions
