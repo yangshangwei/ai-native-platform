@@ -41,6 +41,8 @@
 - SSE reconnect uses `sinceSeq` from the last displayed event and dedupes by monotonic `sequence`.
 - Stream cache keys must include channel kind (`run:<id>` / `request:<id>`). Never dedupe by sequence alone because request and run channels have independent sequence counters.
 - The Coordinator conversation panel subscribes to the request channel while `workflowRunId` is absent, renders partial Coordinator output in a developer/details area, and keeps the main chat bubbles reserved for persisted user-friendly Coordinator messages.
+- When a request is `awaiting_clarification`, the Coordinator conversation panel must prioritize the user-facing clarification flow: show the pending question cards and reply composer before any stream/log details. Developer logs are supporting diagnostics and should default collapsed in this context, even when live events already exist.
+- Coordinator clarification messages should be visually distinguishable from user replies and must remain text-rendered DOM nodes (`textContent`/element text), not HTML strings, because Coordinator content can originate from user-provided workflow text.
 - When the request gains `workflowRunId`, close the request-channel `EventSource` and switch to the run-channel stream without clearing cached history for either channel. The switch must preserve `sinceSeq` resume semantics per channel and avoid opening duplicate SSE connections.
 - Cached preflight status is valid only when its `backend` matches the current project backend.
 
@@ -68,6 +70,7 @@
 - Stream rendering tests should cover Claude Code readable aggregation,
   boundary preservation, and sequence-based replay/live dedupe.
 - Coordinator stream tests should cover request/run channel isolation, per-channel resume sequence, and malformed channel event rejection.
+- Coordinator clarification UI changes should be verified for ordering: pending question cards and reply composer before developer logs, collapsed log details by default, and draft/focus/IME preservation while polling renders continue.
 - Expanded/recording stream UI should be protected by either DOM tests or a
   pure renderer/cache test proving multiple views read identical snapshots from
   one cached event stream.

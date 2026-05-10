@@ -266,7 +266,58 @@
       .stream-line.user { color: #93c5fd; } .stream-line.result { color: #86efac; } .stream-line.stderr { color: #fca5a5; }
       .stream-prefix { color: #64748b; font-weight: 800; }
       .agent-backend-check { display: grid; gap: 4px; }
-      .coordinator-stream-details { border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 4px; }
+      .coordinator-chat { display: grid; gap: 14px; }
+      .coordinator-chat .panel-header { margin-bottom: 0; }
+      .coordinator-action {
+        display: grid; gap: 12px; padding: 14px; border: 1px solid #fdba74; border-radius: 14px;
+        background: #fff7ed;
+      }
+      .coordinator-action-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+      .coordinator-action-head strong { display: block; font-size: 16px; }
+      .coordinator-action-head p, .coordinator-action-reason { margin: 3px 0 0; color: var(--muted); }
+      .coordinator-action-reason { overflow-wrap: anywhere; }
+      .coordinator-question-list { display: grid; gap: 10px; }
+      .coordinator-question-card {
+        display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; padding: 12px;
+        border: 1px solid #fed7aa; border-radius: 14px; background: #fff;
+      }
+      .coordinator-question-index {
+        width: 28px; height: 28px; border-radius: 999px; display: grid; place-items: center;
+        background: var(--warn-bg); color: var(--warn); font-weight: 900;
+      }
+      .coordinator-question-text, .chat-content { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .coordinator-option-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+      .coordinator-option {
+        display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: start;
+        padding: 7px 9px; border: 1px solid var(--line); border-radius: 12px; background: #f8fafc;
+        overflow-wrap: anywhere;
+      }
+      .coordinator-option-key {
+        min-width: 24px; border-radius: 999px; background: #e2e8f0; color: #334155;
+        text-align: center; font-weight: 900;
+      }
+      .chat-composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
+      .chat-input { min-height: 104px; }
+      .chat-composer .button { min-width: 112px; white-space: nowrap; }
+      .chat-decision {
+        border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px;
+        background: #f8fafc; color: var(--muted); font-weight: 700;
+      }
+      .chat-thread-section { display: grid; gap: 8px; }
+      .chat-section-title { margin: 0; font-size: 13px; color: var(--muted); }
+      .chat-thread { display: grid; gap: 10px; }
+      .chat-message {
+        max-width: min(84%, 760px); display: grid; gap: 5px; padding: 10px 12px;
+        border: 1px solid var(--line); border-radius: 14px;
+      }
+      .chat-message-coordinator { justify-self: start; background: #f8fafc; border-color: #cbd5e1; }
+      .chat-message-user { justify-self: end; background: #eff6ff; border-color: #bfdbfe; }
+      .chat-message-meta { display: flex; flex-wrap: wrap; gap: 8px; color: var(--muted); font-size: 12px; font-weight: 800; }
+      .chat-message-user .chat-message-meta { justify-content: flex-end; }
+      .chat-role { color: var(--text); }
+      .coordinator-stream-details {
+        border: 1px dashed var(--line); border-radius: 12px; padding: 10px 12px; background: #fbfdff;
+      }
       .coordinator-stream-details summary { cursor: pointer; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-weight: 800; }
       .coordinator-stream-details .stream-body { margin-top: 10px; max-height: 220px; }
 
@@ -310,6 +361,11 @@
         .stage-panel-grid, .metric-grid, .test-grid { grid-template-columns: 1fr; }
         .overview-grid, .config-grid, .coverage-row, .summary-list, .task-list-item { grid-template-columns: 1fr; }
         .context-item { min-width: calc(50% - 4px); }
+        .coordinator-action-head, .chat-composer { grid-template-columns: 1fr; }
+        .coordinator-action-head { display: grid; }
+        .coordinator-question-card { grid-template-columns: 1fr; }
+        .chat-composer .button { width: 100%; }
+        .chat-message { max-width: 100%; }
         .config-row-header { gap: 6px; }
         .config-history-row { grid-template-columns: 1fr; }
         .config-tabs { top: 0; }

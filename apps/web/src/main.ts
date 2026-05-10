@@ -4094,6 +4094,125 @@ function shouldSubscribeRequestStream(request: WorkflowRequestDto): boolean {
   return request.status === 'pending' || request.status === 'claimed' || request.status === 'awaiting_clarification';
 }
 
+function coordinatorPendingQuestions(state: CoordinatorChatState | undefined): string[] {
+  const decision = state?.decision?.decision;
+  return decision?.action === 'pause_for_human' ? decision.questions : [];
+}
+
+function parseCoordinatorQuestion(question: string): { prompt: string; options: Array<{ label: string; text: string }> } {
+  const normalized = question.replace(/\r\n?/g, '\n').trim();
+  const optionLinePattern = /^([A-Da-d])[\.\)、:：]\s*(.+)$/;
+  const promptLines: string[] = [];
+  const lineOptions: Array<{ label: string; text: string }> = [];
+
+  for (const line of normalized.split('\n').map((part) => part.trim()).filter(Boolean)) {
+    const match = line.match(optionLinePattern);
+    const label = match?.[1];
+    const text = match?.[2];
+    if (label && text) lineOptions.push({ label: label.toUpperCase(), text: text.trim() });
+    else promptLines.push(line);
+  }
+
+  if (lineOptions.length >= 2) {
+    return { prompt: promptLines.join('\n') || '请选择一个选项', options: lineOptions };
+  }
+
+  const markerPattern = /(^|[\s，,；;])([A-Da-d])[\.\)、:：]\s*/g;
+  const markers: Array<{ index: number; contentStart: number; label: string }> = [];
+  let match: RegExpExecArray | null;
+  while ((match = markerPattern.exec(normalized)) !== null) {
+    const label = match[2];
+    if (!label) continue;
+    markers.push({
+      index: match.index,
+      contentStart: match.index + (match[0]?.length ?? 0),
+      label: label.toUpperCase(),
+    });
+  }
+
+  if (markers.length >= 2) {
+    const firstMarker = markers[0];
+    if (!firstMarker) return { prompt: normalized, options: [] };
+    const options = markers.map((marker, index) => {
+      const next = markers[index + 1];
+      return {
+        label: marker.label,
+        text: normalized.slice(marker.contentStart, next ? next.index : undefined).trim().replace(/[，,；;]+$/, ''),
+      };
+    }).filter((option) => option.text.length > 0);
+    if (options.length < 2) return { prompt: normalized, options: [] };
+    return {
+      prompt: normalized.slice(0, firstMarker.index).trim() || '请选择一个选项',
+      options,
+    };
+  }
+
+  return { prompt: normalized, options: [] };
+}
+
+function renderCoordinatorQuestionCard(question: string, index: number): HTMLElement {
+  const parsed = parseCoordinatorQuestion(question);
+  return el('article', {
+    class: 'coordinator-question-card',
+    children: [
+      el('span', { class: 'coordinator-question-index', text: String(index + 1) }),
+      el('div', {
+        class: 'coordinator-question-body',
+        children: [
+          el('p', { class: 'coordinator-question-text', text: parsed.prompt }),
+          parsed.options.length > 0
+            ? el('ul', {
+                class: 'coordinator-option-list',
+                children: parsed.options.map((option) =>
+                  el('li', {
+                    class: 'coordinator-option',
+                    children: [
+                      el('span', { class: 'coordinator-option-key', text: option.label }),
+                      el('span', { text: option.text }),
+                    ],
+                  }),
+                ),
+              })
+            : null,
+        ],
+      }),
+    ],
+  });
+}
+
+function renderCoordinatorActionPanel(
+  questions: string[],
+  reason: string | null,
+  replyArea: HTMLTextAreaElement,
+  sendBtn: HTMLButtonElement,
+): HTMLElement {
+  return el('section', {
+    class: 'coordinator-action',
+    children: [
+      el('div', {
+        class: 'coordinator-action-head',
+        children: [
+          el('div', {
+            children: [
+              el('strong', { text: '等待你回复' }),
+              el('p', { text: '回答后系统会继续判断任务类型和执行路径。' }),
+            ],
+          }),
+          pill(`${questions.length || 1} 个问题`, 'warn'),
+        ],
+      }),
+      reason ? el('p', { class: 'coordinator-action-reason', text: reason }) : null,
+      el('div', {
+        class: 'coordinator-question-list',
+        children: questions.length > 0
+          ? questions.map((question, index) => renderCoordinatorQuestionCard(question, index))
+          : [el('p', { class: 'muted compact', text: 'Coordinator 正在整理需要你确认的问题。' })],
+      }),
+      el('div', { class: 'chat-composer', children: [replyArea, sendBtn] }),
+    ],
+  });
+}
+
 function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLElement | null {
   const requestId = request.id;
   const streamChannel = coordinatorStreamChannelForRequest(request);
@@ -4106,25 +4225,44 @@ function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLElement | 
   const canReply = request.status === 'awaiting_clarification' && state?.status === 'awaiting_clarification';
   if (!canReply) clearCoordinatorReplyComposerState(requestId);
   if (!state && streamView.events.length === 0 && request.status !== 'pending' && request.status !== 'claimed') return null;
+  const pendingQuestions = coordinatorPendingQuestions(state);
 
   const thread = (state?.messages ?? []).map((m) =>
-    el('div', {
+    el('article', {
       class: `chat-message chat-message-${m.role}`,
       children: [
-        el('span', { class: 'chat-role', text: m.role === 'user' ? '你' : 'Coordinator' }),
-        el('p', { text: m.content }),
+        el('div', {
+          class: 'chat-message-meta',
+          children: [
+            el('span', { class: 'chat-role', text: m.role === 'user' ? '你' : 'Coordinator' }),
+            el('span', { text: fmtTime(m.createdAt) }),
+          ],
+        }),
+        el('p', { class: 'chat-content', text: m.content }),
       ],
     }),
   );
 
   const replyArea = canReply ? el('textarea', {
     class: 'chat-input',
-    attrs: { rows: '2', placeholder: '回复 Coordinator…', 'data-coordinator-reply-request-id': requestId },
+    attrs: {
+      rows: '3',
+      placeholder: '可一次回答多个问题，也可以补充约束、例子或验收方式…',
+      'data-coordinator-reply-request-id': requestId,
+    },
   }) as HTMLTextAreaElement : null;
+  const sendBtn = replyArea ? button('提交回复', 'button primary small') : null;
 
-  if (replyArea) {
+  if (replyArea && sendBtn) {
+    const updateSendState = () => {
+      sendBtn.disabled = replyArea.value.trim().length === 0;
+    };
     replyArea.value = coordinatorReplyDrafts.get(requestId) ?? '';
-    replyArea.oninput = () => setCoordinatorReplyDraft(requestId, replyArea.value);
+    updateSendState();
+    replyArea.oninput = () => {
+      setCoordinatorReplyDraft(requestId, replyArea.value);
+      updateSendState();
+    };
     replyArea.addEventListener('compositionstart', () => {
       coordinatorReplyComposing = { requestId };
     });
@@ -4133,6 +4271,7 @@ function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLElement | 
       // Flush whatever the IME just committed into the draft so a follow-up
       // render (deferred or otherwise) rehydrates the final characters.
       setCoordinatorReplyDraft(requestId, replyArea.value);
+      updateSendState();
       if (coordinatorReplyRenderDeferred) {
         coordinatorReplyRenderDeferred = false;
         queueMicrotask(() => render());
@@ -4156,10 +4295,8 @@ function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLElement | 
         }
       }
     };
+    sendBtn.onclick = () => void sendCoordinatorReply(requestId, replyArea);
   }
-
-  const sendBtn = replyArea ? button('发送', 'button primary small') : null;
-  if (sendBtn && replyArea) sendBtn.onclick = () => void sendCoordinatorReply(requestId, replyArea);
 
   const decisionLine = state?.decision
     ? el('div', {
@@ -4176,8 +4313,8 @@ function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLElement | 
     ? el('p', {
         class: 'muted compact',
         text: request.workflowRunId
-          ? 'Coordinator 记录加载中；执行流会继续显示在下方折叠区。'
-          : 'Coordinator 正在接收请求；实时输出会先显示在下方折叠区。',
+          ? 'Coordinator 记录加载中；开发者日志会继续显示在下方折叠区。'
+          : 'Coordinator 正在接收请求；开发者日志会先显示在下方折叠区。',
       })
     : null;
   const requestHistoryView = request.workflowRunId
@@ -4189,18 +4326,32 @@ function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLElement | 
       : null,
     renderCoordinatorStreamDetails(request, streamView, 'live'),
   ];
+  const actionPanel = replyArea && sendBtn
+    ? renderCoordinatorActionPanel(
+        pendingQuestions,
+        state?.decision?.decision.action === 'pause_for_human' ? state.decision.decision.reason : null,
+        replyArea,
+        sendBtn,
+      )
+    : null;
 
   return el('section', {
     class: 'panel coordinator-chat',
     children: [
-      panelHeader('Coordinator 对话', '需求开始执行前的分诊'),
-      decisionLine,
+      panelHeader('需求澄清', '回答后系统会继续判断任务类型和执行路径'),
+      actionPanel,
+      actionPanel ? null : decisionLine,
       waitingLine,
-      el('div', { class: 'chat-thread', children: thread }),
-      ...streamDetails,
-      replyArea && sendBtn
-        ? el('div', { class: 'chat-composer', children: [replyArea, sendBtn] })
+      thread.length > 0
+        ? el('section', {
+            class: 'chat-thread-section',
+            children: [
+              el('h3', { class: 'chat-section-title', text: '沟通记录' }),
+              el('div', { class: 'chat-thread', children: thread }),
+            ],
+          })
         : null,
+      ...streamDetails,
     ],
   });
 }
@@ -4211,20 +4362,15 @@ function renderCoordinatorStreamDetails(
   mode: 'live' | 'history',
 ): HTMLElement {
   const channelKey = view.channel ? streamChannelKey(view.channel) : 'none';
-  const shouldOpen =
-    mode === 'live'
-      ? view.events.length > 0 || request.status === 'pending' || request.status === 'claimed'
-      : false;
   return el('details', {
     class: 'coordinator-stream-details',
     attrs: {
       'data-details-key': `coordinator-stream:${request.id}:${mode}:${channelKey}`,
-      ...(shouldOpen ? { open: '' } : {}),
     },
     children: [
       el('summary', {
         children: [
-          el('span', { text: mode === 'history' ? `${view.title}（已缓存）` : view.title }),
+          el('span', { text: mode === 'history' ? '开发者日志（Coordinator 阶段已缓存）' : '开发者日志' }),
           renderStreamStatus(view),
           renderStreamSummary(view),
         ],
@@ -5070,7 +5216,7 @@ function buildAgentStreamView(channel: StreamChannel | null): AgentStreamViewMod
   const runId = channel?.kind === 'run' ? channel.id : null;
   const backend = streamBackendForChannel(channel, events);
   const title = channel?.kind === 'request'
-    ? 'Coordinator 实时输出'
+    ? '开发者日志'
     : backend === 'claude_code'
       ? 'Claude Code 执行日志'
       : backend === 'codex'
