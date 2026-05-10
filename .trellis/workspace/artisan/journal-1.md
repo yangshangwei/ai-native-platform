@@ -875,3 +875,38 @@ Added request-scoped agent stream channels, streamed Coordinator LLM triage even
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: Archive Coordinator Skill-prefix JSON compatibility
+
+**Date**: 2026-05-10
+**Task**: Archive Coordinator Skill-prefix JSON compatibility
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Archived the completed Coordinator parser compatibility task that tolerates Codex/Claude Skill prelude while keeping user-facing fallback questions natural.
+
+### Main Changes
+
+- Archived the completed Skill-prefix JSON compatibility Trellis task.
+- Preserved the work commit reference for tolerant Coordinator LLM JSON parsing and user-friendly fallback text.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `26b2136` | (see git log) |
+
+### Testing
+
+- [OK] Work commit previously verified with `bun run typecheck` and `bun test`.
+- [OK] Archive commit contains only the completed task directory.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
