@@ -117,6 +117,21 @@ restore focus to the input after rerender. **Always think about
 in-progress user input when you rerender** — module-scope state survives,
 DOM does not.
 
+### 1a. IME composition swallowed by polling render
+
+> Reference: archived task `05-10-preserve-coordinator-reply-ime`.
+
+Draft + focus preservation was not enough: CJK / IME users reported that
+typing into `回复 Coordinator…` kept "resetting" every few seconds. The
+root cause was that IME composition (pinyin/kana/etc.) lives on the live
+DOM node, not in `.value`, so the 1.5s coordinator poll + 3s page poll
+tearing out and rebuilding the textarea cancelled the composition
+mid-keystroke. Fix: track composing state via `compositionstart` /
+`compositionend`, short-circuit `render()` while a composition is
+active, and flush a pending render via `queueMicrotask` on
+`compositionend`. See the "Defer root rebuild while an IME composition
+is active" section in `state-management.md` for the full contract.
+
 ### 2. Live edit prompts/rules/configs panel
 
 > Reference: archived task

@@ -698,6 +698,13 @@ async function ensureArtifactContent(artifactId: string): Promise<void> {
 function render(): void {
   const root = document.getElementById('app');
   if (!root) return;
+  // IME composition on the Coordinator reply textarea must not be interrupted
+  // by a root rebuild. Defer the render; `compositionend` flushes the
+  // pending render on the next microtask.
+  if (coordinatorReplyComposing) {
+    coordinatorReplyRenderDeferred = true;
+    return;
+  }
   captureDetailsOpenState(root);
   captureViewportScrollPosition();
   captureScrollPositionState(root);
@@ -3855,6 +3862,18 @@ let newTaskTitleFocus: {
 } | null = null;
 let isReplacingAppRootForRender = false;
 
+// 2026-05-10 fix(web): defer render() while the Coordinator reply textarea is
+// mid-IME composition. The page rebuilds its root on every 1.5s Coordinator
+// poll + 3s page poll; if a rebuild happens while the browser is composing
+// (pinyin/kana/etc.), the textarea node is destroyed and the uncommitted
+// composition is lost along with the caret. `coordinatorReplyComposing`
+// tracks the active composition by requestId; `coordinatorReplyRenderDeferred`
+// records that at least one render was skipped so we can catch up on
+// `compositionend`. Spec: .trellis/spec/web/frontend/state-management.md
+// "Preserve user-owned drafts across polling renders".
+let coordinatorReplyComposing: { requestId: string } | null = null;
+let coordinatorReplyRenderDeferred = false;
+
 function captureCoordinatorReplyComposerState(root: HTMLElement): void {
   const replyArea = root.querySelector<HTMLTextAreaElement>(COORDINATOR_REPLY_SELECTOR);
   if (!replyArea) {
@@ -3903,6 +3922,12 @@ function setCoordinatorReplyDraft(requestId: string, value: string): void {
 function clearCoordinatorReplyComposerState(requestId: string): void {
   coordinatorReplyDrafts.delete(requestId);
   if (coordinatorReplyFocus?.requestId === requestId) coordinatorReplyFocus = null;
+  if (coordinatorReplyComposing?.requestId === requestId) {
+    coordinatorReplyComposing = null;
+    // No other composing textareas exist in this SPA; reset the pending flag
+    // so a stale defer does not survive request-state transitions.
+    coordinatorReplyRenderDeferred = false;
+  }
 }
 
 function normalizeSelectionDirection(direction: string | null): 'forward' | 'backward' | 'none' {
@@ -4100,10 +4125,35 @@ function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLElement | 
   if (replyArea) {
     replyArea.value = coordinatorReplyDrafts.get(requestId) ?? '';
     replyArea.oninput = () => setCoordinatorReplyDraft(requestId, replyArea.value);
+    replyArea.addEventListener('compositionstart', () => {
+      coordinatorReplyComposing = { requestId };
+    });
+    replyArea.addEventListener('compositionend', () => {
+      coordinatorReplyComposing = null;
+      // Flush whatever the IME just committed into the draft so a follow-up
+      // render (deferred or otherwise) rehydrates the final characters.
+      setCoordinatorReplyDraft(requestId, replyArea.value);
+      if (coordinatorReplyRenderDeferred) {
+        coordinatorReplyRenderDeferred = false;
+        queueMicrotask(() => render());
+      }
+    });
     replyArea.onblur = () => {
       setCoordinatorReplyDraft(requestId, replyArea.value);
-      if (!isReplacingAppRootForRender && coordinatorReplyFocus?.requestId === requestId) {
-        coordinatorReplyFocus = null;
+      if (!isReplacingAppRootForRender) {
+        // A genuine blur (not render replacement) ends any composition this
+        // textarea may have been carrying; `compositionend` would otherwise
+        // never fire once the node is detached.
+        if (coordinatorReplyComposing?.requestId === requestId) {
+          coordinatorReplyComposing = null;
+          if (coordinatorReplyRenderDeferred) {
+            coordinatorReplyRenderDeferred = false;
+            queueMicrotask(() => render());
+          }
+        }
+        if (coordinatorReplyFocus?.requestId === requestId) {
+          coordinatorReplyFocus = null;
+        }
       }
     };
   }

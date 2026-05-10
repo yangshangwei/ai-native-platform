@@ -58,6 +58,88 @@ replyArea.oninput = () => drafts.set(requestId, replyArea.value);
 Also add capture/restore hooks around the root rebuild when focus or cursor
 position must survive the render.
 
+### Convention: Defer root rebuild while an IME composition is active
+
+**What**: When a textarea / input visible during polling is mid-IME
+composition (e.g. pinyin / kana / hangul not yet committed), `render()`
+must not tear the element out of the DOM. Defer the rebuild until
+`compositionend`, then flush the pending render.
+
+**Why**: IME composition is browser-owned state attached to the live DOM
+node. Wholesale root replacement destroys the composing node and cancels
+the composition, swallowing whatever the user had just typed. Draft /
+focus / selection preservation does not help here because the characters
+are not yet in `.value` — they live only in the IME overlay. Deferring the
+rebuild is the only way to keep the composition intact.
+
+**Required contract**:
+
+- Track which editable control is composing via module-scope state keyed
+  by the same stable entity id used for drafts (for example
+  `replyComposing: { requestId } | null`).
+- On the control, listen for `compositionstart` (set the flag) and
+  `compositionend` (clear the flag, flush DOM value into the draft, and
+  schedule a catch-up render via `queueMicrotask(() => render())` if one
+  was deferred).
+- At the top of `render()`, if the composing flag is set, mark a pending
+  deferred render and return immediately. Do not capture, clear, or
+  rebuild.
+- Use `addEventListener('compositionstart' / 'compositionend', …)` — DOM
+  types do not expose `.oncompositionstart` / `.oncompositionend` as
+  typed properties on `HTMLTextAreaElement` / `HTMLInputElement`, so
+  property assignment would fail TypeScript.
+- Flush the pending-deferred flag on genuine blur (not render-replacement
+  blur) so a user tabbing away mid-composition cannot strand the app in a
+  permanently-deferred render state.
+- Clear both the composing flag and the pending-deferred flag whenever
+  the draft itself is cleared (leaving the editable state, successful
+  submit, page switch).
+
+**Why `queueMicrotask` over `setTimeout(…, 0)`**: the catch-up render
+should happen on the same task that fired `compositionend`, so the very
+next paint already reflects the latest server state. `queueMicrotask`
+keeps it synchronous with the event dispatch; `setTimeout` delays it by
+at least one tick and can let a subsequent user keystroke race the
+flush.
+
+**Wrong**:
+
+```typescript
+// Polling render tears out the composing <textarea>; IME overlay dies mid-pinyin.
+function render(): void {
+  clear(root);
+  root.appendChild(renderShell());
+}
+```
+
+**Correct**:
+
+```typescript
+let replyComposing: { requestId: string } | null = null;
+let renderDeferredByComposition = false;
+
+function render(): void {
+  if (replyComposing) {
+    renderDeferredByComposition = true;
+    return;
+  }
+  clear(root);
+  root.appendChild(renderShell());
+}
+
+replyArea.addEventListener('compositionstart', () => {
+  replyComposing = { requestId };
+});
+replyArea.addEventListener('compositionend', () => {
+  replyComposing = null;
+  drafts.set(requestId, replyArea.value);
+  if (renderDeferredByComposition) {
+    renderDeferredByComposition = false;
+    queueMicrotask(() => render());
+  }
+});
+```
+
 ### Convention: Preserve user-owned disclosure state across polling renders
 
 **What**: `<details>` panels that users can open while automatic polling calls
