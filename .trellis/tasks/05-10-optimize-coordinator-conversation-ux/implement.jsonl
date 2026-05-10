@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Web frontend conventions for task detail UI changes"}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Coordinator stream and user-friendly message layering contract"}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Preserve user-owned drafts, focus, and IME behavior across polling renders"}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "Frontend quality guidance for small scoped UI changes"}
