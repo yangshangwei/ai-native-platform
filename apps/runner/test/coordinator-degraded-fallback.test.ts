@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { triageRequest } from '../src/agents/coordinator';
 import type { LlmFallbackDeps } from '../src/agents/coordinator/llm-fallback';
 import { invalidateConfigCache } from '../src/config-client';
+import type { AgentStreamEventInput } from '@ainp/shared';
 
 const realFetch = globalThis.fetch;
 
@@ -31,6 +32,30 @@ beforeEach(() => {
 afterEach(() => {
   globalThis.fetch = realFetch;
 });
+
+function captureAgentEvents(): AgentStreamEventInput[] {
+  const events: AgentStreamEventInput[] = [];
+  globalThis.fetch = (async (input, init) => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+    if (url.endsWith('/runner/events/agent-stream')) {
+      events.push(JSON.parse(String(init?.body ?? '{}')) as AgentStreamEventInput);
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response(JSON.stringify({ overrides: {} }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as typeof fetch;
+  return events;
+}
 
 describe('triageRequest degraded fallback (Issue 2 fix)', () => {
   it('keeps rule proceed when LLM throws on a concrete request', async () => {
@@ -55,6 +80,47 @@ describe('triageRequest degraded fallback (Issue 2 fix)', () => {
     expect(decision.decision.action).toBe('proceed');
     expect(decision.source).toBe('rules');
     expect(decision.rulesFired).toContain('llm.degraded.invocation_failed');
+  });
+
+  it('streams the final degraded rule decision, not the intermediate LLM failure', async () => {
+    const events = captureAgentEvents();
+    const throwingDeps: LlmFallbackDeps = {
+      checkAvailability: async (backend) => backend === 'claude_code',
+      runOneShot: async () => {
+        throw new Error('claude one-shot timed out');
+      },
+    };
+
+    const decision = await triageRequest({
+      workflowRequestId: 'wreq_degraded_stream_test' as never,
+      userRequest: '增加一个 subtract 方法并补测试',
+      messageHistory: [],
+      preferredBackend: 'claude_code',
+      llmDeps: throwingDeps,
+    });
+
+    expect(decision.decision.action).toBe('proceed');
+    const eventOrder = events.map((event) =>
+      event.type === 'meta' ? event.payload.event : event.type,
+    );
+    expect(eventOrder).toEqual(['cli_started', 'cli_finished', 'decided']);
+    const decided = events.at(-1);
+    expect(decided).toMatchObject({
+      workflowRunId: null,
+      workflowRequestId: 'wreq_degraded_stream_test',
+      agentKind: 'claude_code',
+      type: 'meta',
+      payload: {
+        event: 'decided',
+        source: 'rules',
+        action: 'proceed',
+        routeCase: 'feature_clear',
+        runType: 'feature',
+      },
+    });
+    expect((decided?.payload.rulesFired as string[] | undefined) ?? []).toContain(
+      'llm.degraded.invocation_failed',
+    );
   });
 
   it('keeps rule proceed when no LLM backend is available', async () => {

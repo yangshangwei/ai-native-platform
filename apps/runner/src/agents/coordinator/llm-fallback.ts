@@ -23,15 +23,21 @@ import { spawn } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
 import {
   buildAgentBackendCliSpawn,
   maskSecrets,
   resolveAgentBackendCliCandidates,
   type CoordinatorAction,
+  type AgentStreamEventInput,
+  type WorkflowRequestId,
 } from '@ainp/shared';
 import { buildUserPrompt } from './prompt';
 import { claudeCliAvailable, emptyClaudeHooksSettings, readUserSettingsEnv } from '../claude-code';
 import { codexCliAvailable } from '../codex';
+import { parseStreamLine } from '../claude-code-parser';
+import { parseCodexJsonLine } from '../codex-parser';
+import { api } from '../../api-client';
 import { getConfig } from '../../config-client';
 import type { ClassifyInput, ClassifyOutput } from './rules';
 
@@ -41,6 +47,9 @@ import type { ClassifyInput, ClassifyOutput } from './rules';
  * judgment, so it has no business in this fallback.
  */
 export type LlmBackendKind = 'claude_code' | 'codex';
+
+type CoordinatorStreamEvent = Pick<AgentStreamEventInput, 'type' | 'payload' | 'text'>;
+type CoordinatorStreamEmit = (event: CoordinatorStreamEvent) => void | Promise<void>;
 
 interface FallbackQuestions {
   unavailable: string;
@@ -70,6 +79,7 @@ export interface LlmFallbackDeps {
     system: string,
     user: string,
     timeoutMs: number,
+    emit?: CoordinatorStreamEmit,
   ): Promise<string>;
 }
 
@@ -78,6 +88,14 @@ export interface ClassifyByLlmOptions {
   preferredBackend?: LlmBackendKind;
   /** Override for tests; defaults to the real spawn-based implementations. */
   deps?: LlmFallbackDeps;
+  /** When set, stream Coordinator LLM events to this pre-run request channel. */
+  workflowRequestId?: WorkflowRequestId;
+  /**
+   * Default true for direct `classifyByLlm` callers. `triageRequest` sets this
+   * false so it can emit exactly one final `decided` event after applying its
+   * degraded-fallback override.
+   */
+  emitDecisionEvent?: boolean;
 }
 
 const DEFAULT_DEPS: LlmFallbackDeps = {
@@ -85,9 +103,9 @@ const DEFAULT_DEPS: LlmFallbackDeps = {
     if (backend === 'codex') return codexCliAvailable();
     return claudeCliAvailable();
   },
-  runOneShot: (backend, system, user, timeoutMs) => {
-    if (backend === 'codex') return runCodexOneShot(system, user, timeoutMs);
-    return runClaudeOneShot(system, user, timeoutMs);
+  runOneShot: (backend, system, user, timeoutMs, emit) => {
+    if (backend === 'codex') return runCodexOneShot(system, user, timeoutMs, emit);
+    return runClaudeOneShot(system, user, timeoutMs, emit);
   },
 };
 
@@ -102,6 +120,70 @@ function selectionOrder(preferredBackend: LlmBackendKind | undefined): LlmBacken
   if (preferredBackend === 'codex') return ['codex', 'claude_code'];
   if (preferredBackend === 'claude_code') return ['claude_code', 'codex'];
   return ['claude_code', 'codex'];
+}
+
+function createCoordinatorEmitter(
+  workflowRequestId: WorkflowRequestId,
+  agentKind: LlmBackendKind,
+): CoordinatorStreamEmit {
+  return async (event) => {
+    try {
+      await api.postAgentEvent({
+        workflowRunId: null,
+        workflowRequestId,
+        stepRunId: null,
+        agentKind,
+        type: event.type,
+        payload: event.payload,
+        text: event.text,
+      });
+    } catch (err) {
+      // Coordinator decisions must not depend on the API/SSE side channel.
+      process.stderr.write(
+        `[coordinator:${agentKind}] postAgentEvent failed: ${maskSecrets(errorMessage(err))}\n`,
+      );
+    }
+  };
+}
+
+async function emitMeta(
+  emit: CoordinatorStreamEmit | undefined,
+  event: string,
+  detail: Record<string, unknown>,
+): Promise<void> {
+  if (!emit) return;
+  const text = `[coordinator:${event}]`;
+  await emit({ type: 'meta', payload: { event, ...detail }, text });
+}
+
+async function emitDecision(
+  emit: CoordinatorStreamEmit | undefined,
+  decision: CoordinatorAction,
+  confidence: number,
+  rulesFired: string[],
+  source?: 'llm' | 'rules',
+): Promise<void> {
+  if (!emit) return;
+  await emitMeta(emit, 'decided', {
+    action: decision.action,
+    confidence,
+    rulesFired,
+    ...(source ? { source } : {}),
+    routeCase: decision.action === 'proceed' ? decision.routeCase : null,
+    runType: decision.action === 'proceed' ? decision.runType : null,
+  });
+}
+
+export async function emitCoordinatorDecisionEvent(params: {
+  workflowRequestId: WorkflowRequestId;
+  agentKind: LlmBackendKind;
+  decision: CoordinatorAction;
+  confidence: number;
+  rulesFired: string[];
+  source: 'llm' | 'rules';
+}): Promise<void> {
+  const emit = createCoordinatorEmitter(params.workflowRequestId, params.agentKind);
+  await emitDecision(emit, params.decision, params.confidence, params.rulesFired, params.source);
 }
 
 export async function classifyByLlm(
@@ -135,19 +217,40 @@ export async function classifyByLlm(
   const systemPrompt = await getConfig('coordinator.system_prompt');
   const timeoutMs = await getConfig('runner.coordinator.oneshot_timeout_ms');
   const userPrompt = buildUserPrompt(input.userRequest, input.messageHistory);
+  const emit =
+    opts.workflowRequestId == null
+      ? undefined
+      : createCoordinatorEmitter(opts.workflowRequestId, chosen);
+  const shouldEmitDecision = opts.emitDecisionEvent !== false;
 
   let raw = '';
   try {
-    raw = await deps.runOneShot(chosen, systemPrompt, userPrompt, timeoutMs);
+    await emitMeta(emit, 'cli_started', { backend: chosen, timeoutMs });
+    raw = await deps.runOneShot(chosen, systemPrompt, userPrompt, timeoutMs, emit);
+    await emitMeta(emit, 'cli_finished', { backend: chosen, ok: true });
   } catch (err) {
+    await emitMeta(emit, 'cli_finished', {
+      backend: chosen,
+      ok: false,
+      error: maskSecrets(errorMessage(err)),
+    });
+    const decision: CoordinatorAction = {
+      action: 'pause_for_human',
+      questions: [fallback.invocationFailed],
+      reason: `${chosen} CLI invocation failed: ${errorMessage(err)}`,
+    };
+    if (shouldEmitDecision) {
+      await emitDecision(emit, decision, 0.5, ['llm.invocation_failed'], 'llm');
+    }
     return {
       decision: {
         action: 'pause_for_human',
         questions: [fallback.invocationFailed],
-        reason: `${chosen} CLI invocation failed: ${(err as Error).message}`,
+        reason: `${chosen} CLI invocation failed: ${errorMessage(err)}`,
       },
       confidence: 0.5,
       rulesFired: ['llm.invocation_failed'],
+      agentKind: chosen,
       failureKind: 'invocation_failed',
     };
   }
@@ -161,18 +264,27 @@ export async function classifyByLlm(
     decision.action === 'pause_for_human' && decision.reason === 'empty LLM output'
       ? 'empty'
       : null;
+  if (shouldEmitDecision) {
+    await emitDecision(emit, decision, 0.7, [`llm.classified.${chosen}`], 'llm');
+  }
 
   return {
     decision,
     confidence: 0.7,
     rulesFired: [`llm.classified.${chosen}`],
+    agentKind: chosen,
     failureKind,
   };
 }
 
 // ---- Claude Code one-shot --------------------------------------------------
 
-function runClaudeOneShot(system: string, user: string, timeoutMs: number): Promise<string> {
+function runClaudeOneShot(
+  system: string,
+  user: string,
+  timeoutMs: number,
+  emit?: CoordinatorStreamEmit,
+): Promise<string> {
   // Mirror ClaudeCodeBackend: pass a local --settings JSON with every known
   // hook event set to an empty array. Stop hook etc. would otherwise loop on
   // every message_stop and burn the timeout. Do NOT use --setting-sources:
@@ -187,6 +299,7 @@ function runClaudeOneShot(system: string, user: string, timeoutMs: number): Prom
     '--output-format',
     'stream-json',
     '--verbose',
+    '--include-partial-messages',
     '--no-session-persistence',
     ...settingsArgs,
     '--permission-mode',
@@ -195,7 +308,11 @@ function runClaudeOneShot(system: string, user: string, timeoutMs: number): Prom
     system,
     user,
   ];
-  return runFirstCandidate('claude_code', args, timeoutMs);
+  if (!emit) return runFirstCandidate('claude_code', args, timeoutMs);
+  return runFirstCandidateStreaming('claude_code', args, timeoutMs, {
+    emit,
+    parseLine: parseStreamLine,
+  });
 }
 
 // ---- Codex one-shot (PR3 new) ---------------------------------------------
@@ -209,7 +326,12 @@ function runClaudeOneShot(system: string, user: string, timeoutMs: number): Prom
  * how `apps/runner/src/agents/codex.ts` already invokes the CLI for
  * production runs (see `--output-last-message` usage there).
  */
-async function runCodexOneShot(system: string, user: string, timeoutMs: number): Promise<string> {
+async function runCodexOneShot(
+  system: string,
+  user: string,
+  timeoutMs: number,
+  emit?: CoordinatorStreamEmit,
+): Promise<string> {
   const tmpDir = mkdtempSync(join(tmpdir(), 'ainp-coord-codex-'));
   const lastMessagePath = join(tmpDir, 'codex-last-message.txt');
   const args = [
@@ -225,7 +347,15 @@ async function runCodexOneShot(system: string, user: string, timeoutMs: number):
   ];
   const stdin = `${system}\n\n${user}\n`;
   try {
-    await runFirstCandidate('codex', args, timeoutMs, { stdin });
+    if (emit) {
+      await runFirstCandidateStreaming('codex', args, timeoutMs, {
+        stdin,
+        emit,
+        parseLine: parseCodexJsonLine,
+      });
+    } else {
+      await runFirstCandidate('codex', args, timeoutMs, { stdin });
+    }
     try {
       return readFileSync(lastMessagePath, 'utf8');
     } catch {
@@ -244,6 +374,11 @@ async function runCodexOneShot(system: string, user: string, timeoutMs: number):
 
 interface SpawnOpts {
   stdin?: string;
+}
+
+interface StreamingSpawnOpts extends SpawnOpts {
+  emit: CoordinatorStreamEmit;
+  parseLine: (line: string) => CoordinatorStreamEvent;
 }
 
 async function runFirstCandidate(
@@ -267,6 +402,27 @@ async function runFirstCandidate(
   throw lastError ?? new Error(`no ${backend} CLI candidates resolved`);
 }
 
+async function runFirstCandidateStreaming(
+  backend: LlmBackendKind,
+  args: string[],
+  timeoutMs: number,
+  spawnOpts: StreamingSpawnOpts,
+): Promise<string> {
+  const candidates = resolveAgentBackendCliCandidates(backend, {
+    env: process.env,
+    platform: process.platform,
+  });
+  let lastError: Error | null = null;
+  for (const candidate of candidates) {
+    try {
+      return await spawnCandidateStreaming(backend, candidate, args, timeoutMs, spawnOpts);
+    } catch (err) {
+      lastError = err as Error;
+    }
+  }
+  throw lastError ?? new Error(`no ${backend} CLI candidates resolved`);
+}
+
 function spawnCandidate(
   backend: LlmBackendKind,
   bin: string,
@@ -279,39 +435,13 @@ function spawnCandidate(
       env: process.env,
       platform: process.platform,
     });
-    // Match the production claude-code backend: inherit the user's local
-    // Claude Code environment by default so OAuth/keychain login and config
-    // remain visible. Empty-HOME isolation is an explicit debugging opt-in.
-    const isolateHome = backend === 'claude_code' && process.env.AINP_CLAUDE_HOME_ISOLATION === '1';
-    const isolatedHome = isolateHome ? mkdtempSync(join(tmpdir(), 'ainp-coord-home-')) : null;
-    const childEnv: NodeJS.ProcessEnv = { ...process.env };
-    if (isolatedHome) {
-      childEnv.HOME = isolatedHome;
-      delete childEnv.CLAUDE_CONFIG_DIR;
-      delete childEnv.XDG_CONFIG_HOME;
-    } else if (backend === 'claude_code' && process.env.AINP_CLAUDE_LOAD_USER_SETTINGS !== '1') {
-      // Duplicate the user settings `env` block into process env as a
-      // compatibility belt-and-suspenders while hooks are neutralized by the
-      // --settings overlay (see runClaudeOneShot above).
-      const userEnv = readUserSettingsEnv(process.env.CLAUDE_CONFIG_DIR, process.env.HOME);
-      for (const [k, v] of Object.entries(userEnv)) {
-        if (childEnv[k] === undefined) childEnv[k] = v;
-      }
-    }
+    const { childEnv, cleanupHome } = buildCoordinatorChildEnv(backend);
     const child = spawn(invocation.command, invocation.args, {
       stdio: [spawnOpts.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
       env: childEnv,
       shell: invocation.shell,
       windowsHide: invocation.windowsHide,
     });
-    const cleanupHome = (): void => {
-      if (!isolatedHome) return;
-      try {
-        rmSync(isolatedHome, { recursive: true, force: true });
-      } catch {
-        /* best-effort */
-      }
-    };
     let out = '';
     let errOut = '';
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -350,6 +480,125 @@ function spawnCandidate(
   });
 }
 
+function spawnCandidateStreaming(
+  backend: LlmBackendKind,
+  bin: string,
+  args: string[],
+  timeoutMs: number,
+  spawnOpts: StreamingSpawnOpts,
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const invocation = buildAgentBackendCliSpawn(bin, args, {
+      env: process.env,
+      platform: process.platform,
+    });
+    const { childEnv, cleanupHome } = buildCoordinatorChildEnv(backend);
+    const child = spawn(invocation.command, invocation.args, {
+      stdio: [spawnOpts.stdin ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+      env: childEnv,
+      shell: invocation.shell,
+      windowsHide: invocation.windowsHide,
+    });
+
+    let out = '';
+    let errOut = '';
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill('SIGTERM');
+    }, timeoutMs);
+
+    const stdoutDone = consumeLines(child.stdout, async (line) => {
+      out += `${line}\n`;
+      const parsed = spawnOpts.parseLine(line);
+      if (parsed.text) process.stdout.write(`${parsed.text}\n`);
+      await spawnOpts.emit(parsed);
+    });
+    const stderrDone = consumeLines(child.stderr, async (line) => {
+      const safeLine = maskSecrets(line);
+      errOut += `${safeLine}\n`;
+      process.stderr.write(`[${backend}:stderr] ${safeLine}\n`);
+      await spawnOpts.emit({ type: 'stderr', payload: { line: safeLine }, text: safeLine });
+    });
+
+    child.on('error', (err) => {
+      clearTimeout(timer);
+      cleanupHome();
+      reject(err);
+    });
+    child.on('close', async (code) => {
+      clearTimeout(timer);
+      await Promise.allSettled([stdoutDone, stderrDone]);
+      cleanupHome();
+      if (timedOut) {
+        reject(new Error(`${bin} one-shot timed out`));
+        return;
+      }
+      if (code !== 0) {
+        reject(
+          new Error(
+            `${bin} one-shot exited ${code ?? 'unknown'}: ${compactCliError(errOut || out)}`,
+          ),
+        );
+        return;
+      }
+      resolve(out);
+    });
+    if (spawnOpts.stdin && child.stdin) {
+      child.stdin.write(spawnOpts.stdin);
+      child.stdin.end();
+    }
+  });
+}
+
+function buildCoordinatorChildEnv(backend: LlmBackendKind): {
+  childEnv: NodeJS.ProcessEnv;
+  cleanupHome: () => void;
+} {
+  // Match the production claude-code backend: inherit the user's local
+  // Claude Code environment by default so OAuth/keychain login and config
+  // remain visible. Empty-HOME isolation is an explicit debugging opt-in.
+  const isolateHome = backend === 'claude_code' && process.env.AINP_CLAUDE_HOME_ISOLATION === '1';
+  const isolatedHome = isolateHome ? mkdtempSync(join(tmpdir(), 'ainp-coord-home-')) : null;
+  const childEnv: NodeJS.ProcessEnv = { ...process.env };
+  if (isolatedHome) {
+    childEnv.HOME = isolatedHome;
+    delete childEnv.CLAUDE_CONFIG_DIR;
+    delete childEnv.XDG_CONFIG_HOME;
+  } else if (backend === 'claude_code' && process.env.AINP_CLAUDE_LOAD_USER_SETTINGS !== '1') {
+    // Duplicate the user settings `env` block into process env as a
+    // compatibility belt-and-suspenders while hooks are neutralized by the
+    // --settings overlay (see runClaudeOneShot above).
+    const userEnv = readUserSettingsEnv(process.env.CLAUDE_CONFIG_DIR, process.env.HOME);
+    for (const [k, v] of Object.entries(userEnv)) {
+      if (childEnv[k] === undefined) childEnv[k] = v;
+    }
+  }
+  return {
+    childEnv,
+    cleanupHome: () => {
+      if (!isolatedHome) return;
+      try {
+        rmSync(isolatedHome, { recursive: true, force: true });
+      } catch {
+        /* best-effort */
+      }
+    },
+  };
+}
+
+async function consumeLines(
+  stream: NodeJS.ReadableStream | null,
+  onLine: (line: string) => Promise<void>,
+): Promise<void> {
+  if (!stream) return;
+  const rl = createInterface({ input: stream, crlfDelay: Infinity });
+  for await (const line of rl) {
+    if (!line) continue;
+    await onLine(line);
+  }
+}
+
 function compactCliError(value: string): string {
   const masked = maskSecrets(value)
     .split('\n')
@@ -360,6 +609,10 @@ function compactCliError(value: string): string {
   return masked.length <= 500 ? masked : `${masked.slice(0, 499)}…`;
 }
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 interface AssistantContentBlock {
   type?: string;
   text?: string;
@@ -367,6 +620,7 @@ interface AssistantContentBlock {
 interface AssistantEvent {
   type?: string;
   message?: { content?: AssistantContentBlock[] };
+  result?: string;
 }
 
 function extractFinalAssistantText(raw: string): string {
@@ -377,6 +631,9 @@ function extractFinalAssistantText(raw: string): string {
       if (evt.type === 'assistant' && Array.isArray(evt.message?.content)) {
         const textBlock = evt.message!.content!.find((b) => b.type === 'text');
         if (textBlock?.text) return textBlock.text;
+      }
+      if (evt.type === 'result' && typeof evt.result === 'string' && evt.result.trim()) {
+        return evt.result.trim();
       }
     } catch {
       /* skip non-JSON lines */

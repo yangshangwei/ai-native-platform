@@ -18,7 +18,12 @@
 import type { CoordinatorDecision, WorkflowRequestId } from '@ainp/shared';
 import { newId, nowIso } from '@ainp/shared';
 import { classifyByRules, type ClassifyInput, type ClassifyOutput } from './rules';
-import { classifyByLlm, type LlmBackendKind, type LlmFallbackDeps } from './llm-fallback';
+import {
+  classifyByLlm,
+  emitCoordinatorDecisionEvent,
+  type LlmBackendKind,
+  type LlmFallbackDeps,
+} from './llm-fallback';
 import { getConfig } from '../../config-client';
 
 export interface TriageInput {
@@ -48,6 +53,7 @@ export async function triageRequest(input: TriageInput): Promise<CoordinatorDeci
 
   let final: ClassifyOutput;
   let source: CoordinatorDecision['source'];
+  let llmAgentKind: LlmBackendKind | null = null;
 
   if (ruleResult.confidence >= threshold) {
     final = ruleResult;
@@ -56,7 +62,13 @@ export async function triageRequest(input: TriageInput): Promise<CoordinatorDeci
     const llmResult = await classifyByLlm(ruleInput, {
       preferredBackend: input.preferredBackend,
       deps: input.llmDeps,
+      workflowRequestId: input.workflowRequestId,
+      emitDecisionEvent: false,
     });
+    llmAgentKind =
+      llmResult.agentKind === 'claude_code' || llmResult.agentKind === 'codex'
+        ? llmResult.agentKind
+        : null;
     // Degraded fallback: when the LLM call failed for transient reasons
     // (CLI throw, no backend available, empty output) but the rule
     // classifier already produced a `proceed` decision, use the rule's
@@ -81,6 +93,17 @@ export async function triageRequest(input: TriageInput): Promise<CoordinatorDeci
       final = llmResult;
       source = 'llm';
     }
+  }
+
+  if (llmAgentKind) {
+    await emitCoordinatorDecisionEvent({
+      workflowRequestId: input.workflowRequestId,
+      agentKind: llmAgentKind,
+      decision: final.decision,
+      confidence: final.confidence,
+      rulesFired: final.rulesFired,
+      source,
+    });
   }
 
   return {

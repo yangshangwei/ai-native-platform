@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { classifyByLlm, type LlmFallbackDeps } from '../src/agents/coordinator/llm-fallback';
 import { invalidateConfigCache } from '../src/config-client';
+import type { AgentStreamEventInput } from '@ainp/shared';
 
 const realFetch = globalThis.fetch;
 const ORIGINAL_CLAUDE_BIN = process.env.AINP_CLAUDE_BIN;
@@ -80,6 +81,31 @@ function makeDeps(opts: {
       });
     },
   };
+}
+
+function captureAgentEvents(opts: { failAgentEvents?: boolean } = {}): AgentStreamEventInput[] {
+  const events: AgentStreamEventInput[] = [];
+  globalThis.fetch = (async (input, init) => {
+    const url =
+      typeof input === 'string'
+        ? input
+        : input instanceof URL
+          ? input.toString()
+          : input.url;
+    if (url.endsWith('/runner/events/agent-stream')) {
+      if (opts.failAgentEvents) throw new Error('simulated stream post failure');
+      events.push(JSON.parse(String(init?.body ?? '{}')) as AgentStreamEventInput);
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response(JSON.stringify({ overrides: {} }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  }) as typeof fetch;
+  return events;
 }
 
 describe('classifyByLlm selection strategy (PR3)', () => {
@@ -383,6 +409,74 @@ describe('classifyByLlm selection strategy (PR3)', () => {
   });
 });
 
+describe('classifyByLlm coordinator request-channel streaming (PR2)', () => {
+  it('emits cli lifecycle, assistant chunks, and final decision to workflowRequestId', async () => {
+    const events = captureAgentEvents();
+    const deps: LlmFallbackDeps = {
+      checkAvailability: async (backend) => backend === 'codex',
+      runOneShot: async (_backend, _system, _user, _timeoutMs, emit) => {
+        await emit?.({
+          type: 'assistant',
+          payload: { delta: '{"action":"proceed"' },
+          text: '{"action":"proceed"',
+        });
+        return FAKE_PROCEED_JSON;
+      },
+    };
+
+    const r = await classifyByLlm(BLANK_INPUT, {
+      deps,
+      preferredBackend: 'codex',
+      workflowRequestId: 'wreq_stream_test' as never,
+    });
+
+    expect(r.decision.action).toBe('proceed');
+    expect(events.map((event) => event.type === 'meta' ? event.payload.event : event.type)).toEqual([
+      'cli_started',
+      'assistant',
+      'cli_finished',
+      'decided',
+    ]);
+    expect(events.every((event) => event.workflowRunId === null)).toBe(true);
+    expect(events.every((event) => event.workflowRequestId === 'wreq_stream_test')).toBe(true);
+    expect(events.every((event) => event.stepRunId === null)).toBe(true);
+    expect(events.every((event) => event.agentKind === 'codex')).toBe(true);
+    expect(events[0]?.payload).toMatchObject({ event: 'cli_started', backend: 'codex' });
+    expect(events[1]).toMatchObject({
+      type: 'assistant',
+      payload: { delta: '{"action":"proceed"' },
+      text: '{"action":"proceed"',
+    });
+    expect(events[2]?.payload).toMatchObject({ event: 'cli_finished', ok: true });
+    expect(events[3]?.payload).toMatchObject({
+      event: 'decided',
+      action: 'proceed',
+      routeCase: 'feature_clear',
+      runType: 'feature',
+    });
+  });
+
+  it('does not block the coordinator decision when request-channel emits fail', async () => {
+    captureAgentEvents({ failAgentEvents: true });
+    const deps: LlmFallbackDeps = {
+      checkAvailability: async (backend) => backend === 'codex',
+      runOneShot: async (_backend, _system, _user, _timeoutMs, emit) => {
+        await emit?.({ type: 'assistant', payload: { delta: 'x' }, text: 'x' });
+        return FAKE_PROCEED_JSON;
+      },
+    };
+
+    const r = await classifyByLlm(BLANK_INPUT, {
+      deps,
+      preferredBackend: 'codex',
+      workflowRequestId: 'wreq_emit_failure_test' as never,
+    });
+
+    expect(r.decision.action).toBe('proceed');
+    expect(r.rulesFired).toContain('llm.classified.codex');
+  });
+});
+
 describe('classifyByLlm real Claude spawn environment', () => {
   it('inherits local Claude Code HOME and config env by default', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ainp-coord-claude-home-'));
@@ -483,6 +577,31 @@ describe('classifyByLlm real Claude spawn environment', () => {
     expect(args).not.toContain('--settings');
     expect(args).not.toContain('--setting-sources');
   });
+
+  it('streams Codex stdout while preserving the sidecar final decision', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ainp-coord-codex-stream-'));
+    const events = captureAgentEvents();
+    process.env.AINP_CODEX_BIN = fakeCodexCoordinatorBin(root);
+    process.env.AINP_CLAUDE_BIN = missingCliBin(root, 'claude');
+
+    const result = await classifyByLlm(BLANK_INPUT, {
+      preferredBackend: 'codex',
+      workflowRequestId: 'wreq_codex_stream_test' as never,
+    });
+
+    expect(result.decision.action).toBe('proceed');
+    const eventOrder = events.map((event) =>
+      event.type === 'meta' ? event.payload.event : event.type,
+    );
+    expect(eventOrder).toEqual(['cli_started', 'assistant', 'cli_finished', 'decided']);
+    expect(events[1]).toMatchObject({
+      workflowRunId: null,
+      workflowRequestId: 'wreq_codex_stream_test',
+      agentKind: 'codex',
+      type: 'assistant',
+      text: 'streaming partial',
+    });
+  });
 });
 
 function restoreEnv(key: string, original: string | undefined): void {
@@ -514,6 +633,28 @@ function fakeClaudeCoordinatorBin(dir: string): string {
     '  writeFileSync(process.env.CAPTURE_COORD_ARGS, process.argv.slice(2).join("\\u0000"));',
     '}',
     `console.log(${JSON.stringify(assistantEvent)});`,
+    '',
+  ].join('\n'), 'utf8');
+  chmodSync(bin, 0o755);
+  return bin;
+}
+
+function fakeCodexCoordinatorBin(dir: string): string {
+  const bin = join(dir, 'codex.mjs');
+  writeFileSync(bin, [
+    '#!/usr/bin/env node',
+    'import { writeFileSync } from "node:fs";',
+    'if (process.argv[2] === "--version") {',
+    '  console.log("codex 0.128.0");',
+    '  process.exit(0);',
+    '}',
+    'let prompt = "";',
+    'process.stdin.on("data", (chunk) => { prompt += chunk; });',
+    'process.stdin.on("end", () => {',
+    '  const idx = process.argv.indexOf("--output-last-message");',
+    '  if (idx >= 0) writeFileSync(process.argv[idx + 1], ' + JSON.stringify(FAKE_PROCEED_JSON) + ');',
+    '  console.log(JSON.stringify({ type: "response.output_text.delta", delta: "streaming partial" }));',
+    '});',
     '',
   ].join('\n'), 'utf8');
   chmodSync(bin, 0o755);

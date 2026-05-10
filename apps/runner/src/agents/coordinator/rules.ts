@@ -1,4 +1,4 @@
-import type { CoordinatorAction } from '@ainp/shared';
+import type { AgentBackendKind, CoordinatorAction } from '@ainp/shared';
 import { classifyByRulesCore } from '@ainp/shared';
 import { getConfig } from '../../config-client';
 
@@ -32,6 +32,13 @@ export interface ClassifyOutput {
   /** 0..1; ≥ threshold means rules are confident enough that the LLM fallback is skipped. */
   confidence: number;
   rulesFired: string[];
+  /**
+   * Set by `classifyByLlm` to identify the backend that produced the result.
+   * Rule-only results leave this empty. The coordinator entry uses it to emit
+   * the final `meta:decided` stream event after degraded-fallback logic has
+   * selected the user-visible final decision.
+   */
+  agentKind?: AgentBackendKind | null;
   /**
    * Set by `classifyByLlm` when its `pause_for_human` was caused by a
    * transient/availability failure (CLI throw, empty output, no backend
