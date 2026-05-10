@@ -43,6 +43,8 @@
 - The Coordinator conversation panel subscribes to the request channel while `workflowRunId` is absent, renders partial Coordinator output in a developer/details area, and keeps the main chat bubbles reserved for persisted user-friendly Coordinator messages.
 - When a request is `awaiting_clarification`, the Coordinator conversation panel must prioritize the user-facing clarification flow: show the pending question cards and reply composer before any stream/log details. Developer logs are supporting diagnostics and should default collapsed in this context, even when live events already exist.
 - Coordinator clarification messages should be visually distinguishable from user replies and must remain text-rendered DOM nodes (`textContent`/element text), not HTML strings, because Coordinator content can originate from user-provided workflow text.
+- Coordinator clarification options are parsed from untrusted Coordinator text, not a structured API contract. Keep parsing in a pure helper, render options as text-only buttons, and cover mixed inline/line option formats in unit tests (for example `Question? A. one\nB. two`). Do not use HTML injection for option text.
+- Clickable clarification options may update the reply composer, but they must reuse the existing draft/focus/IME preservation path. Generated option replies should be replaceable as a block so changing a selection does not erase user-written supplements.
 - When the request gains `workflowRunId`, close the request-channel `EventSource` and switch to the run-channel stream without clearing cached history for either channel. The switch must preserve `sinceSeq` resume semantics per channel and avoid opening duplicate SSE connections.
 - Cached preflight status is valid only when its `backend` matches the current project backend.
 
@@ -71,6 +73,7 @@
   boundary preservation, and sequence-based replay/live dedupe.
 - Coordinator stream tests should cover request/run channel isolation, per-channel resume sequence, and malformed channel event rejection.
 - Coordinator clarification UI changes should be verified for ordering: pending question cards and reply composer before developer logs, collapsed log details by default, and draft/focus/IME preservation while polling renders continue.
+- Coordinator clarification option parsing should be covered with pure helper tests for inline options, line-based options, mixed inline/line options, multi-select detection, and non-option dotted text such as `A.1`.
 - Expanded/recording stream UI should be protected by either DOM tests or a
   pure renderer/cache test proving multiple views read identical snapshots from
   one cached event stream.

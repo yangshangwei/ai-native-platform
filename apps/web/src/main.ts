@@ -26,6 +26,14 @@ import {
 } from './projection';
 import { buildSettingsViewModel } from './settings-projection';
 import {
+  buildCoordinatorChoiceReply,
+  coordinatorQuestionKey,
+  mergeCoordinatorAutoReply,
+  parseCoordinatorQuestion,
+  type CoordinatorQuestionOption,
+  type ParsedCoordinatorQuestion,
+} from './coordinator-clarification';
+import {
   buildStreamDisplayLines,
   lastStreamSequenceForChannel,
   rememberStreamEventInCache,
@@ -3820,6 +3828,8 @@ interface CoordinatorChatState {
 const coordinatorChats = new Map<string, CoordinatorChatState>();
 const coordinatorPolling = new Set<string>();
 const coordinatorReplyDrafts = new Map<string, string>();
+const coordinatorOptionSelections = new Map<string, Map<string, Set<string>>>();
+const coordinatorAutoReplyBlocks = new Map<string, string>();
 const COORDINATOR_REPLY_SELECTOR = 'textarea[data-coordinator-reply-request-id]';
 
 let coordinatorReplyFocus: {
@@ -3921,6 +3931,8 @@ function setCoordinatorReplyDraft(requestId: string, value: string): void {
 
 function clearCoordinatorReplyComposerState(requestId: string): void {
   coordinatorReplyDrafts.delete(requestId);
+  coordinatorOptionSelections.delete(requestId);
+  coordinatorAutoReplyBlocks.delete(requestId);
   if (coordinatorReplyFocus?.requestId === requestId) coordinatorReplyFocus = null;
   if (coordinatorReplyComposing?.requestId === requestId) {
     coordinatorReplyComposing = null;
@@ -4099,59 +4111,92 @@ function coordinatorPendingQuestions(state: CoordinatorChatState | undefined): s
   return decision?.action === 'pause_for_human' ? decision.questions : [];
 }
 
-function parseCoordinatorQuestion(question: string): { prompt: string; options: Array<{ label: string; text: string }> } {
-  const normalized = question.replace(/\r\n?/g, '\n').trim();
-  const optionLinePattern = /^([A-Da-d])[\.\)、:：]\s*(.+)$/;
-  const promptLines: string[] = [];
-  const lineOptions: Array<{ label: string; text: string }> = [];
-
-  for (const line of normalized.split('\n').map((part) => part.trim()).filter(Boolean)) {
-    const match = line.match(optionLinePattern);
-    const label = match?.[1];
-    const text = match?.[2];
-    if (label && text) lineOptions.push({ label: label.toUpperCase(), text: text.trim() });
-    else promptLines.push(line);
-  }
-
-  if (lineOptions.length >= 2) {
-    return { prompt: promptLines.join('\n') || '请选择一个选项', options: lineOptions };
-  }
-
-  const markerPattern = /(^|[\s，,；;])([A-Da-d])[\.\)、:：]\s*/g;
-  const markers: Array<{ index: number; contentStart: number; label: string }> = [];
-  let match: RegExpExecArray | null;
-  while ((match = markerPattern.exec(normalized)) !== null) {
-    const label = match[2];
-    if (!label) continue;
-    markers.push({
-      index: match.index,
-      contentStart: match.index + (match[0]?.length ?? 0),
-      label: label.toUpperCase(),
-    });
-  }
-
-  if (markers.length >= 2) {
-    const firstMarker = markers[0];
-    if (!firstMarker) return { prompt: normalized, options: [] };
-    const options = markers.map((marker, index) => {
-      const next = markers[index + 1];
-      return {
-        label: marker.label,
-        text: normalized.slice(marker.contentStart, next ? next.index : undefined).trim().replace(/[，,；;]+$/, ''),
-      };
-    }).filter((option) => option.text.length > 0);
-    if (options.length < 2) return { prompt: normalized, options: [] };
-    return {
-      prompt: normalized.slice(0, firstMarker.index).trim() || '请选择一个选项',
-      options,
-    };
-  }
-
-  return { prompt: normalized, options: [] };
+function coordinatorSelectedOptionLabels(requestId: string, questionKey: string): Set<string> {
+  return coordinatorOptionSelections.get(requestId)?.get(questionKey) ?? new Set<string>();
 }
 
-function renderCoordinatorQuestionCard(question: string, index: number): HTMLElement {
+function setCoordinatorSelectedOptionLabel(
+  requestId: string,
+  questionKey: string,
+  optionLabel: string,
+  multiple: boolean,
+): void {
+  let requestSelections = coordinatorOptionSelections.get(requestId);
+  if (!requestSelections) {
+    requestSelections = new Map<string, Set<string>>();
+    coordinatorOptionSelections.set(requestId, requestSelections);
+  }
+
+  if (!multiple) {
+    requestSelections.set(questionKey, new Set([optionLabel]));
+    return;
+  }
+
+  const selected = new Set(requestSelections.get(questionKey) ?? []);
+  if (selected.has(optionLabel)) selected.delete(optionLabel);
+  else selected.add(optionLabel);
+  if (selected.size > 0) requestSelections.set(questionKey, selected);
+  else requestSelections.delete(questionKey);
+}
+
+function syncCoordinatorOptionButtonState(requestId: string, questionKey: string): void {
+  const selectedLabels = coordinatorSelectedOptionLabels(requestId, questionKey);
+  document.querySelectorAll<HTMLButtonElement>('[data-coordinator-option-request-id][data-coordinator-question-key]')
+    .forEach((candidate) => {
+      if (
+        candidate.dataset.coordinatorOptionRequestId !== requestId ||
+        candidate.dataset.coordinatorQuestionKey !== questionKey
+      ) {
+        return;
+      }
+      const isSelected = selectedLabels.has(candidate.dataset.coordinatorOptionLabel ?? '');
+      candidate.classList.toggle('is-selected', isSelected);
+      candidate.setAttribute('aria-pressed', String(isSelected));
+    });
+}
+
+function coordinatorChoiceReplySelections(
+  requestId: string,
+  questions: string[],
+): Array<{ prompt: string; selectedOptions: CoordinatorQuestionOption[] }> {
+  const requestSelections = coordinatorOptionSelections.get(requestId);
+  if (!requestSelections) return [];
+  return questions.flatMap((question, index) => {
+    const parsed = parseCoordinatorQuestion(question);
+    const selectedLabels = requestSelections.get(coordinatorQuestionKey(parsed, index));
+    if (!selectedLabels || selectedLabels.size === 0) return [];
+    const selectedOptions = parsed.options.filter((option) => selectedLabels.has(option.label));
+    return selectedOptions.length > 0 ? [{ prompt: parsed.prompt, selectedOptions }] : [];
+  });
+}
+
+function updateCoordinatorReplyFromSelectedOptions(
+  requestId: string,
+  questions: string[],
+  replyArea: HTMLTextAreaElement,
+  updateSendState: () => void,
+): void {
+  const nextAutoReply = buildCoordinatorChoiceReply(coordinatorChoiceReplySelections(requestId, questions));
+  const previousAutoReply = coordinatorAutoReplyBlocks.get(requestId) ?? '';
+  const nextReply = mergeCoordinatorAutoReply(replyArea.value, previousAutoReply, nextAutoReply);
+  if (nextAutoReply) coordinatorAutoReplyBlocks.set(requestId, nextAutoReply);
+  else coordinatorAutoReplyBlocks.delete(requestId);
+  replyArea.value = nextReply;
+  setCoordinatorReplyDraft(requestId, replyArea.value);
+  updateSendState();
+}
+
+function renderCoordinatorQuestionCard(
+  requestId: string,
+  question: string,
+  index: number,
+  questions: string[],
+  replyArea: HTMLTextAreaElement,
+  updateSendState: () => void,
+): HTMLElement {
   const parsed = parseCoordinatorQuestion(question);
+  const questionKey = coordinatorQuestionKey(parsed, index);
+  const selectedLabels = coordinatorSelectedOptionLabels(requestId, questionKey);
   return el('article', {
     class: 'coordinator-question-card',
     children: [
@@ -4159,16 +4204,34 @@ function renderCoordinatorQuestionCard(question: string, index: number): HTMLEle
       el('div', {
         class: 'coordinator-question-body',
         children: [
-          el('p', { class: 'coordinator-question-text', text: parsed.prompt }),
+          el('div', {
+            class: 'coordinator-question-title-row',
+            children: [
+              el('p', { class: 'coordinator-question-text', text: parsed.prompt }),
+              parsed.options.length > 0
+                ? el('span', {
+                    class: 'coordinator-question-mode',
+                    text: parsed.multiple ? '可多选' : '单选',
+                  })
+                : null,
+            ],
+          }),
           parsed.options.length > 0
             ? el('ul', {
                 class: 'coordinator-option-list',
                 children: parsed.options.map((option) =>
                   el('li', {
-                    class: 'coordinator-option',
                     children: [
-                      el('span', { class: 'coordinator-option-key', text: option.label }),
-                      el('span', { text: option.text }),
+                      renderCoordinatorOptionButton(
+                        requestId,
+                        questionKey,
+                        option,
+                        parsed,
+                        selectedLabels.has(option.label),
+                        questions,
+                        replyArea,
+                        updateSendState,
+                      ),
                     ],
                   }),
                 ),
@@ -4180,11 +4243,45 @@ function renderCoordinatorQuestionCard(question: string, index: number): HTMLEle
   });
 }
 
+function renderCoordinatorOptionButton(
+  requestId: string,
+  questionKey: string,
+  option: CoordinatorQuestionOption,
+  parsed: ParsedCoordinatorQuestion,
+  selected: boolean,
+  questions: string[],
+  replyArea: HTMLTextAreaElement,
+  updateSendState: () => void,
+): HTMLButtonElement {
+  const optionButton = el('button', {
+    class: `coordinator-option${selected ? ' is-selected' : ''}`,
+    attrs: {
+      type: 'button',
+      'aria-pressed': String(selected),
+      'data-coordinator-option-request-id': requestId,
+      'data-coordinator-question-key': questionKey,
+      'data-coordinator-option-label': option.label,
+    },
+    children: [
+      el('span', { class: 'coordinator-option-key', text: option.label }),
+      el('span', { class: 'coordinator-option-text', text: option.text }),
+    ],
+  }) as HTMLButtonElement;
+  optionButton.onclick = () => {
+    setCoordinatorSelectedOptionLabel(requestId, questionKey, option.label, parsed.multiple);
+    syncCoordinatorOptionButtonState(requestId, questionKey);
+    updateCoordinatorReplyFromSelectedOptions(requestId, questions, replyArea, updateSendState);
+  };
+  return optionButton;
+}
+
 function renderCoordinatorActionPanel(
+  requestId: string,
   questions: string[],
   reason: string | null,
   replyArea: HTMLTextAreaElement,
   sendBtn: HTMLButtonElement,
+  updateSendState: () => void,
 ): HTMLElement {
   return el('section', {
     class: 'coordinator-action',
@@ -4205,7 +4302,9 @@ function renderCoordinatorActionPanel(
       el('div', {
         class: 'coordinator-question-list',
         children: questions.length > 0
-          ? questions.map((question, index) => renderCoordinatorQuestionCard(question, index))
+          ? questions.map((question, index) =>
+              renderCoordinatorQuestionCard(requestId, question, index, questions, replyArea, updateSendState),
+            )
           : [el('p', { class: 'muted compact', text: 'Coordinator 正在整理需要你确认的问题。' })],
       }),
       el('div', { class: 'chat-composer', children: [replyArea, sendBtn] }),
@@ -4252,16 +4351,17 @@ function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLElement | 
     },
   }) as HTMLTextAreaElement : null;
   const sendBtn = replyArea ? button('提交回复', 'button primary small') : null;
+  let updateCoordinatorReplySendState = (): void => {};
 
   if (replyArea && sendBtn) {
-    const updateSendState = () => {
+    updateCoordinatorReplySendState = () => {
       sendBtn.disabled = replyArea.value.trim().length === 0;
     };
     replyArea.value = coordinatorReplyDrafts.get(requestId) ?? '';
-    updateSendState();
+    updateCoordinatorReplySendState();
     replyArea.oninput = () => {
       setCoordinatorReplyDraft(requestId, replyArea.value);
-      updateSendState();
+      updateCoordinatorReplySendState();
     };
     replyArea.addEventListener('compositionstart', () => {
       coordinatorReplyComposing = { requestId };
@@ -4271,7 +4371,7 @@ function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLElement | 
       // Flush whatever the IME just committed into the draft so a follow-up
       // render (deferred or otherwise) rehydrates the final characters.
       setCoordinatorReplyDraft(requestId, replyArea.value);
-      updateSendState();
+      updateCoordinatorReplySendState();
       if (coordinatorReplyRenderDeferred) {
         coordinatorReplyRenderDeferred = false;
         queueMicrotask(() => render());
@@ -4328,10 +4428,12 @@ function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLElement | 
   ];
   const actionPanel = replyArea && sendBtn
     ? renderCoordinatorActionPanel(
+        requestId,
         pendingQuestions,
         state?.decision?.decision.action === 'pause_for_human' ? state.decision.decision.reason : null,
         replyArea,
         sendBtn,
+        updateCoordinatorReplySendState,
       )
     : null;
 

@@ -285,17 +285,30 @@
         width: 28px; height: 28px; border-radius: 999px; display: grid; place-items: center;
         background: var(--warn-bg); color: var(--warn); font-weight: 900;
       }
+      .coordinator-question-title-row { display: flex; align-items: start; justify-content: space-between; gap: 10px; }
       .coordinator-question-text, .chat-content { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .coordinator-question-mode {
+        flex: 0 0 auto; border-radius: 999px; padding: 2px 7px; background: #fef3c7;
+        color: #92400e; font-size: 11px; font-weight: 900;
+      }
       .coordinator-option-list { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
       .coordinator-option {
-        display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: start;
+        width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; align-items: start;
         padding: 7px 9px; border: 1px solid var(--line); border-radius: 12px; background: #f8fafc;
-        overflow-wrap: anywhere;
+        color: var(--text); font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer;
+        transition: border-color .15s ease, background .15s ease, box-shadow .15s ease, transform .15s ease;
+      }
+      .coordinator-option:hover { border-color: #fb923c; background: #fff7ed; transform: translateY(-1px); }
+      .coordinator-option:focus-visible { outline: 3px solid rgba(251, 146, 60, .35); outline-offset: 2px; }
+      .coordinator-option.is-selected {
+        border-color: #fb923c; background: #fffbeb; box-shadow: 0 0 0 1px rgba(251, 146, 60, .2);
       }
       .coordinator-option-key {
         min-width: 24px; border-radius: 999px; background: #e2e8f0; color: #334155;
         text-align: center; font-weight: 900;
       }
+      .coordinator-option.is-selected .coordinator-option-key { background: var(--warn); color: #fff; }
+      .coordinator-option-text { min-width: 0; }
       .chat-composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
       .chat-input { min-height: 104px; }
       .chat-composer .button { min-width: 112px; white-space: nowrap; }
