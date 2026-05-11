@@ -24,8 +24,18 @@ function event(
     type,
     text,
     payload,
+    ts: '2026-05-10T10:30:45.000Z',
   };
 }
+
+/** Expected local-time prefix for the test fixture ts. */
+const T = (() => {
+  const d = new Date('2026-05-10T10:30:45.000Z');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+})();
 
 function streamEvent(
   workflowRunId: string,
@@ -63,7 +73,7 @@ describe('web agent stream rendering', () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({
       className: 'stream-line assistant assistant-readable',
-      prefix: '[1–3 Claude Code assistant]',
+      prefix: `[${T} 1–3 Claude Code assistant]`,
       text: 'Hello world',
       sequences: [1, 2, 3],
     });
@@ -80,11 +90,11 @@ describe('web agent stream rendering', () => {
     ]);
 
     expect(lines.map((line) => line.prefix)).toEqual([
-      '[1 Claude Code assistant]',
-      '[2 Claude Code assistant]',
-      '[3 Claude Code assistant]',
-      '[4 Claude Code stderr]',
-      '[5 Claude Code result]',
+      `[${T} 1 Claude Code assistant]`,
+      `[${T} 2 Claude Code assistant]`,
+      `[${T} 3 Claude Code assistant]`,
+      `[${T} 4 Claude Code stderr]`,
+      `[${T} 5 Claude Code result]`,
     ]);
     expect(lines.map((line) => line.text)).toEqual([
       'Reading the file',
@@ -106,10 +116,10 @@ describe('web agent stream rendering', () => {
     ]);
 
     expect(lines.map((line) => line.prefix)).toEqual([
-      '[1 Claude Code system]',
-      '[2 Claude Code assistant]',
-      '[3 Claude Code user]',
-      '[4 Claude Code assistant]',
+      `[${T} 1 Claude Code system]`,
+      `[${T} 2 Claude Code assistant]`,
+      `[${T} 3 Claude Code user]`,
+      `[${T} 4 Claude Code assistant]`,
     ]);
     expect(lines.map((line) => line.text)).toEqual([
       '[init] cwd=/tmp model=claude',
@@ -129,17 +139,17 @@ describe('web agent stream rendering', () => {
 
     expect(lines).toHaveLength(3);
     expect(lines[0]).toMatchObject({
-      prefix: '[10 Claude Code assistant]',
+      prefix: `[${T} 10 Claude Code assistant]`,
       text: 'I will inspect this.',
       sequences: [10],
     });
     expect(lines[1]).toMatchObject({
-      prefix: '[10 Claude Code assistant]',
+      prefix: `[${T} 10 Claude Code assistant]`,
       text: '[tool→ Read] {"file_path":"apps/web/src/main.ts"}',
       sequences: [10],
     });
     expect(lines[2]).toMatchObject({
-      prefix: '[11 Claude Code assistant]',
+      prefix: `[${T} 11 Claude Code assistant]`,
       text: 'Continuing after the tool.',
       sequences: [11],
     });
@@ -154,12 +164,12 @@ describe('web agent stream rendering', () => {
     expect(lines).toHaveLength(2);
     expect(lines[0]).toMatchObject({
       className: 'stream-line assistant',
-      prefix: '[20 Claude Code assistant]',
+      prefix: `[${T} 20 Claude Code assistant]`,
       text: '{"type":"stream_event","event":{"type":"message_start"}}',
     });
     expect(lines[1]).toMatchObject({
       className: 'stream-line assistant assistant-readable',
-      prefix: '[21 Claude Code assistant]',
+      prefix: `[${T} 21 Claude Code assistant]`,
       text: 'visible text',
     });
   });
@@ -178,7 +188,7 @@ describe('web agent stream rendering', () => {
     expect(lastStreamSequenceForRun(cache, runId)).toBe(3);
     expect(buildStreamDisplayLines(stored)).toMatchObject([
       {
-        prefix: '[1–3 Claude Code assistant]',
+        prefix: `[${T} 1–3 Claude Code assistant]`,
         text: 'Hello',
         sequences: [1, 2, 3],
       },
@@ -204,7 +214,7 @@ describe('web agent stream rendering', () => {
     expect(lastStreamSequenceForChannel(cache, requestChannel)).toBe(2);
     expect(lastStreamSequenceForChannel(cache, runChannel)).toBe(1);
     expect(buildStreamDisplayLines(streamEventsForChannel(cache, requestChannel)).at(-1)).toMatchObject({
-      prefix: '[2 Claude Code assistant]',
+      prefix: `[${T} 2 Claude Code assistant]`,
       text: 'Coordinating',
     });
   });
@@ -257,7 +267,7 @@ describe('web agent stream rendering', () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({
       className: 'stream-line assistant assistant-readable',
-      prefix: '[1–3 Codex assistant]',
+      prefix: `[${T} 1–3 Codex assistant]`,
       text: 'Summarizing repo',
       sequences: [1, 2, 3],
     });
@@ -273,11 +283,11 @@ describe('web agent stream rendering', () => {
     ]);
 
     expect(lines.map((line) => line.prefix)).toEqual([
-      '[10 Codex assistant]',
-      '[11 Codex assistant]',
-      '[12 Codex user]',
-      '[13 Codex assistant]',
-      '[14 Codex result]',
+      `[${T} 10 Codex assistant]`,
+      `[${T} 11 Codex assistant]`,
+      `[${T} 12 Codex user]`,
+      `[${T} 13 Codex assistant]`,
+      `[${T} 14 Codex result]`,
     ]);
     expect(lines.map((line) => line.text)).toEqual([
       'Planning',
@@ -298,7 +308,7 @@ describe('web agent stream rendering', () => {
     ]);
 
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toMatchObject({ prefix: '[1 Claude Code assistant]', text: 'Claude speaking' });
-    expect(lines[1]).toMatchObject({ prefix: '[2 Codex assistant]', text: 'Codex speaking' });
+    expect(lines[0]).toMatchObject({ prefix: `[${T} 1 Claude Code assistant]`, text: 'Claude speaking' });
+    expect(lines[1]).toMatchObject({ prefix: `[${T} 2 Codex assistant]`, text: 'Codex speaking' });
   });
 });

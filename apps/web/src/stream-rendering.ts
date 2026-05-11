@@ -8,6 +8,7 @@ export interface StreamDisplayEvent {
   type: StreamDisplayEventType;
   payload: Record<string, unknown>;
   text: string | null;
+  ts?: string | null;
 }
 
 export interface StreamDisplayLine {
@@ -16,6 +17,7 @@ export interface StreamDisplayLine {
   text: string;
   sequences: number[];
   title?: string;
+  ts?: string | null;
 }
 
 export type StreamChannelKind = 'run' | 'request';
@@ -41,6 +43,7 @@ interface AssistantTextSegment {
   sequence: number;
   text: string;
   flavor: AssistantTextFlavor;
+  ts: string | null;
 }
 
 interface BoundarySegment {
@@ -56,6 +59,7 @@ interface PendingAssistantGroup {
   sequences: number[];
   text: string;
   lastFlavor: AssistantTextFlavor;
+  firstTs: string | null;
 }
 
 export function streamChannelKey(channel: StreamChannel): string {
@@ -132,12 +136,14 @@ export function buildStreamDisplayLines(events: readonly StreamDisplayEvent[]): 
     if (text) {
       const backend = streamAgentBackendDisplayName(pending.agentKind);
       const sequenceLabel = formatSequenceLabel(pending.sequences);
+      const time = formatEventTime(pending.firstTs);
       lines.push({
         className: 'stream-line assistant assistant-readable',
-        prefix: `[${sequenceLabel} ${backend} assistant]`,
+        prefix: `[${time} ${sequenceLabel} ${backend} assistant]`,
         text,
         sequences: [...pending.sequences],
         title: `raw sequences: ${formatSequenceTitle(pending.sequences)}`,
+        ts: pending.firstTs,
       });
     }
     pending = null;
@@ -158,6 +164,7 @@ export function buildStreamDisplayLines(events: readonly StreamDisplayEvent[]): 
           sequences: [segment.sequence],
           text: segment.text,
           lastFlavor: segment.flavor,
+          firstTs: segment.ts,
         };
         continue;
       }
@@ -207,6 +214,7 @@ function assistantTextSegments(event: StreamDisplayEvent, text: string): StreamT
         sequence: event.sequence,
         text,
         flavor: pending.lastFlavor,
+        ts: event.ts ?? null,
       });
     }
     pending = null;
@@ -280,11 +288,13 @@ function appendAssistantText(
 
 function renderBoundaryLine(event: StreamDisplayEvent, text: string): StreamDisplayLine {
   const backend = streamAgentBackendDisplayName(event.agentKind);
+  const time = formatEventTime(event.ts);
   return {
     className: `stream-line ${event.type}`,
-    prefix: `[${event.sequence} ${backend} ${event.type}]`,
+    prefix: `[${time} ${event.sequence} ${backend} ${event.type}]`,
     text,
     sequences: [event.sequence],
+    ts: event.ts,
   };
 }
 
@@ -327,4 +337,17 @@ function formatSequenceTitle(sequences: readonly number[]): string {
 
 function uniqueSortedSequences(sequences: readonly number[]): number[] {
   return [...new Set(sequences)].sort((a, b) => a - b);
+}
+
+function formatEventTime(ts: string | null | undefined): string {
+  if (!ts) return '--:--:--';
+  try {
+    const d = new Date(ts);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return `${hh}:${mm}:${ss}`;
+  } catch {
+    return '--:--:--';
+  }
 }
