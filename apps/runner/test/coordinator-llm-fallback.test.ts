@@ -14,10 +14,14 @@ import { invalidateConfigCache } from '../src/config-client';
 import type { AgentStreamEventInput } from '@ainp/shared';
 
 const realFetch = globalThis.fetch;
+const ORIGINAL_COORDINATOR_TRANSPORT = process.env.AINP_COORDINATOR_TRANSPORT;
 const ORIGINAL_CLAUDE_BIN = process.env.AINP_CLAUDE_BIN;
 const ORIGINAL_CODEX_BIN = process.env.AINP_CODEX_BIN;
+const ORIGINAL_CLAUDE_ACP_BIN = process.env.AINP_CLAUDE_ACP_BIN;
+const ORIGINAL_CODEX_ACP_BIN = process.env.AINP_CODEX_ACP_BIN;
 const ORIGINAL_CAPTURE_COORD_ENV = process.env.CAPTURE_COORD_ENV;
 const ORIGINAL_CAPTURE_COORD_ARGS = process.env.CAPTURE_COORD_ARGS;
+const ORIGINAL_CAPTURE_COORD_ACP_MESSAGES = process.env.CAPTURE_COORD_ACP_MESSAGES;
 const ORIGINAL_HOME = process.env.HOME;
 const ORIGINAL_CLAUDE_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR;
 const ORIGINAL_XDG_CONFIG_HOME = process.env.XDG_CONFIG_HOME;
@@ -49,10 +53,14 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = realFetch;
+  restoreEnv('AINP_COORDINATOR_TRANSPORT', ORIGINAL_COORDINATOR_TRANSPORT);
   restoreEnv('AINP_CLAUDE_BIN', ORIGINAL_CLAUDE_BIN);
   restoreEnv('AINP_CODEX_BIN', ORIGINAL_CODEX_BIN);
+  restoreEnv('AINP_CLAUDE_ACP_BIN', ORIGINAL_CLAUDE_ACP_BIN);
+  restoreEnv('AINP_CODEX_ACP_BIN', ORIGINAL_CODEX_ACP_BIN);
   restoreEnv('CAPTURE_COORD_ENV', ORIGINAL_CAPTURE_COORD_ENV);
   restoreEnv('CAPTURE_COORD_ARGS', ORIGINAL_CAPTURE_COORD_ARGS);
+  restoreEnv('CAPTURE_COORD_ACP_MESSAGES', ORIGINAL_CAPTURE_COORD_ACP_MESSAGES);
   restoreEnv('HOME', ORIGINAL_HOME);
   restoreEnv('CLAUDE_CONFIG_DIR', ORIGINAL_CLAUDE_CONFIG_DIR);
   restoreEnv('XDG_CONFIG_HOME', ORIGINAL_XDG_CONFIG_HOME);
@@ -477,7 +485,61 @@ describe('classifyByLlm coordinator request-channel streaming (PR2)', () => {
   });
 });
 
-describe('classifyByLlm real Claude spawn environment', () => {
+describe('classifyByLlm default ACP coordinator transport', () => {
+  it('drives the ACP lifecycle and streams request-channel events by default', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ainp-coord-acp-'));
+    const capturePath = join(root, 'acp-messages.jsonl');
+    const events = captureAgentEvents();
+    process.env.AINP_CODEX_BIN = fakeCodexVersionBin(root);
+    process.env.AINP_CLAUDE_BIN = missingCliBin(root, 'claude');
+    process.env.AINP_CODEX_ACP_BIN = fakeCoordinatorAcpAgentBin(root);
+    process.env.CAPTURE_COORD_ACP_MESSAGES = capturePath;
+    delete process.env.AINP_COORDINATOR_TRANSPORT;
+
+    const result = await classifyByLlm(BLANK_INPUT, {
+      preferredBackend: 'codex',
+      workflowRequestId: 'wreq_coord_acp_test' as never,
+    });
+
+    expect(result.decision.action).toBe('proceed');
+    expect(result.rulesFired).toContain('llm.classified.codex');
+    expect(readCapturedAcpMethods(capturePath)).toEqual([
+      'initialize',
+      'session/new',
+      'session/prompt',
+    ]);
+
+    const prompt = readCapturedAcpParams(capturePath, 'session/prompt') as {
+      prompt: { text: string }[];
+    };
+    expect(prompt.prompt[0]?.text).toContain('You are the Coordinator');
+    expect(prompt.prompt[0]?.text).toContain('do the thing');
+
+    const eventOrder = events.map((event) =>
+      event.type === 'meta' ? event.payload.event : event.type,
+    );
+    expect(eventOrder).toEqual([
+      'cli_started',
+      'acp_started',
+      'acp_initialized',
+      'acp_session_new',
+      'assistant',
+      'acp_finished',
+      'cli_finished',
+      'decided',
+    ]);
+    expect(events.every((event) => event.workflowRunId === null)).toBe(true);
+    expect(events.every((event) => event.workflowRequestId === 'wreq_coord_acp_test')).toBe(true);
+    expect(events.every((event) => event.stepRunId === null)).toBe(true);
+    expect(events.every((event) => event.agentKind === 'codex')).toBe(true);
+    expect(events[4]).toMatchObject({
+      type: 'assistant',
+      text: `[acp…] ${FAKE_PROCEED_JSON}`,
+    });
+  });
+});
+
+describe('classifyByLlm legacy CLI spawn environment', () => {
   it('inherits local Claude Code HOME and config env by default', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ainp-coord-claude-home-'));
     const localHome = join(root, 'local-home');
@@ -494,6 +556,7 @@ describe('classifyByLlm real Claude spawn environment', () => {
     process.env.HOME = localHome;
     process.env.CLAUDE_CONFIG_DIR = claudeConfigDir;
     process.env.XDG_CONFIG_HOME = xdgConfigHome;
+    process.env.AINP_COORDINATOR_TRANSPORT = 'cli';
     delete process.env.AINP_CLAUDE_HOME_ISOLATION;
 
     const result = await classifyByLlm(BLANK_INPUT, { preferredBackend: 'claude_code' });
@@ -526,6 +589,7 @@ describe('classifyByLlm real Claude spawn environment', () => {
     process.env.CLAUDE_CONFIG_DIR = claudeConfigDir;
     process.env.XDG_CONFIG_HOME = xdgConfigHome;
     process.env.AINP_CLAUDE_HOME_ISOLATION = '1';
+    process.env.AINP_COORDINATOR_TRANSPORT = 'cli';
 
     const result = await classifyByLlm(BLANK_INPUT, { preferredBackend: 'claude_code' });
 
@@ -547,6 +611,7 @@ describe('classifyByLlm real Claude spawn environment', () => {
     process.env.AINP_CLAUDE_BIN = fakeClaudeCoordinatorBin(root);
     process.env.AINP_CODEX_BIN = missingCliBin(root, 'codex');
     process.env.CAPTURE_COORD_ARGS = capturePath;
+    process.env.AINP_COORDINATOR_TRANSPORT = 'cli';
     delete process.env.AINP_CLAUDE_LOAD_USER_SETTINGS;
 
     const result = await classifyByLlm(BLANK_INPUT, { preferredBackend: 'claude_code' });
@@ -569,6 +634,7 @@ describe('classifyByLlm real Claude spawn environment', () => {
     process.env.AINP_CODEX_BIN = missingCliBin(root, 'codex');
     process.env.CAPTURE_COORD_ARGS = capturePath;
     process.env.AINP_CLAUDE_LOAD_USER_SETTINGS = '1';
+    process.env.AINP_COORDINATOR_TRANSPORT = 'cli';
 
     const result = await classifyByLlm(BLANK_INPUT, { preferredBackend: 'claude_code' });
 
@@ -583,6 +649,7 @@ describe('classifyByLlm real Claude spawn environment', () => {
     const events = captureAgentEvents();
     process.env.AINP_CODEX_BIN = fakeCodexCoordinatorBin(root);
     process.env.AINP_CLAUDE_BIN = missingCliBin(root, 'claude');
+    process.env.AINP_COORDINATOR_TRANSPORT = 'cli';
 
     const result = await classifyByLlm(BLANK_INPUT, {
       preferredBackend: 'codex',
@@ -661,6 +728,61 @@ function fakeCodexCoordinatorBin(dir: string): string {
   return bin;
 }
 
+function fakeCodexVersionBin(dir: string): string {
+  const bin = join(dir, 'codex-version.mjs');
+  writeFileSync(bin, [
+    '#!/usr/bin/env node',
+    'if (process.argv[2] === "--version") {',
+    '  console.log("codex 0.128.0");',
+    '  process.exit(0);',
+    '}',
+    'process.exit(0);',
+    '',
+  ].join('\n'), 'utf8');
+  chmodSync(bin, 0o755);
+  return bin;
+}
+
+function fakeCoordinatorAcpAgentBin(dir: string): string {
+  const bin = join(dir, 'coord-acp-agent.mjs');
+  writeFileSync(bin, [
+    '#!/usr/bin/env node',
+    'import fs from "node:fs";',
+    'import readline from "node:readline";',
+    'const capture = process.env.CAPTURE_COORD_ACP_MESSAGES;',
+    'function send(message) { process.stdout.write(`${JSON.stringify(message)}\\n`); }',
+    'function captureMessage(message) {',
+    '  if (capture) fs.appendFileSync(capture, `${JSON.stringify({ method: message.method, params: message.params })}\\n`);',
+    '}',
+    'async function handle(message) {',
+    '  if (!message || !message.method) return;',
+    '  captureMessage(message);',
+    '  if (message.method === "initialize") {',
+    '    send({ jsonrpc: "2.0", id: message.id, result: { protocolVersion: 1, agentInfo: { name: "coord-fake-acp", version: "1.0.0" }, agentCapabilities: {} } });',
+    '    return;',
+    '  }',
+    '  if (message.method === "session/new") {',
+    '    send({ jsonrpc: "2.0", id: message.id, result: { sessionId: "coord_session" } });',
+    '    return;',
+    '  }',
+    '  if (message.method === "session/prompt") {',
+    '    send({ jsonrpc: "2.0", method: "session/update", params: { sessionId: message.params.sessionId, update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: ' + JSON.stringify(FAKE_PROCEED_JSON) + ' } } } });',
+    '    send({ jsonrpc: "2.0", id: message.id, result: { stopReason: "end_turn" } });',
+    '    setTimeout(() => process.exit(0), 10);',
+    '    return;',
+    '  }',
+    '  send({ jsonrpc: "2.0", id: message.id, error: { code: -32601, message: `unsupported ${message.method}` } });',
+    '}',
+    'readline.createInterface({ input: process.stdin, crlfDelay: Infinity }).on("line", (line) => {',
+    '  if (!line.trim()) return;',
+    '  handle(JSON.parse(line)).catch((err) => { console.error(err); process.exit(1); });',
+    '});',
+    '',
+  ].join('\n'), 'utf8');
+  chmodSync(bin, 0o755);
+  return bin;
+}
+
 function missingCliBin(dir: string, name: string): string {
   const bin = join(dir, name);
   writeFileSync(bin, [
@@ -670,4 +792,23 @@ function missingCliBin(dir: string, name: string): string {
   ].join('\n'), 'utf8');
   chmodSync(bin, 0o755);
   return bin;
+}
+
+function readCapturedAcpMethods(path: string): string[] {
+  return readFileSync(path, 'utf8')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as { method: string })
+    .filter((message) => ['initialize', 'session/new', 'session/prompt'].includes(message.method))
+    .map((message) => message.method);
+}
+
+function readCapturedAcpParams(path: string, method: string): unknown {
+  const line = readFileSync(path, 'utf8')
+    .trim()
+    .split('\n')
+    .find((entry) => (JSON.parse(entry) as { method: string }).method === method);
+  if (!line) throw new Error(`missing captured ACP method ${method}`);
+  return (JSON.parse(line) as { params: unknown }).params;
 }

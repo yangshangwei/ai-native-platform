@@ -1,0 +1,5 @@
+{"file":".trellis/tasks/05-23-acp-protocol-integration-for-claude-code-and-codex/prd.md","reason":"Acceptance criteria for verification."}
+{"file":".trellis/tasks/05-23-acp-protocol-integration-for-claude-code-and-codex/research/acp-protocol.md","reason":"Protocol-level facts to verify implementation against."}
+{"file":".trellis/spec/runner/backend/agent-backend-runtime.md","reason":"Runner backend runtime and streaming verification contract."}
+{"file":".trellis/spec/shared/backend/agent-backend-contract.md","reason":"Shared backend/stream event verification contract."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Context rendering parity verification contract."}

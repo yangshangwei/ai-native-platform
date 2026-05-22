@@ -1,5 +1,7 @@
 /**
- * CodexBackend — drives `codex exec --json` as a non-interactive AgentBackend.
+ * CodexBackend — drives the local Codex ACP agent as a non-interactive
+ * AgentBackend by default. The legacy `codex exec --json` path remains as an
+ * explicit compatibility fallback.
  *
  * The runner keeps platform invariants:
  * - non-implementation stages must write exactly one markdown artifact under
@@ -39,9 +41,15 @@ import type { AgentArtifactOutput, AgentBackend, AgentRunResult, AgentTaskContex
 import { parseCodexJsonLine } from './codex-parser';
 import { renderAgentPrompt, renderCombinedAgentPrompt } from '../context/renderer';
 import { parseContextRequestFromAgentOutput } from '../context/request';
+import { resolveAcpAgentCommand, runAcpPrompt } from './acp-client';
 
 export interface CodexBackendOpts {
+  /** Override legacy CLI binary path; defaults to `AINP_CODEX_BIN` env or `codex`. */
   bin?: string;
+  /** Override ACP agent command; defaults to `AINP_CODEX_ACP_BIN` env or `codex-acp`. */
+  acpBin?: string;
+  /** Runtime transport. ACP is the production default; CLI is a temporary compatibility fallback. */
+  transport?: 'acp' | 'cli';
   timeoutMs?: number;
   model?: string;
 }
@@ -81,7 +89,7 @@ export class CodexBackend implements AgentBackend {
       targetPath: stagedPath,
       outputName: expected.name,
     });
-    const { exitCode, lastMessage } = await this.invokeCli(prompt, ctx, skill);
+    const { exitCode, lastMessage } = await this.invokeAgent(prompt, ctx, skill);
     if (exitCode !== 0) throw new Error(`codex exited ${exitCode} for stage ${skill.stage}`);
 
     const produced = await adoptStagedArtifact(stagedPath, finalPath);
@@ -111,7 +119,7 @@ export class CodexBackend implements AgentBackend {
     ctx: AgentTaskContext,
   ): Promise<AgentRunResult> {
     const prompt = buildPrompt(skill, ctx, { mode: 'implementation' });
-    const { exitCode, lastMessage } = await this.invokeCli(prompt, ctx, skill);
+    const { exitCode, lastMessage } = await this.invokeAgent(prompt, ctx, skill);
     if (exitCode !== 0) throw new Error(`codex exited ${exitCode} during implementation`);
 
     const diff = await sh('git', ['diff'], { cwd: ctx.workspacePath });
@@ -139,6 +147,43 @@ export class CodexBackend implements AgentBackend {
       ],
       lastMessage,
     };
+  }
+
+  private async invokeAgent(
+    prompt: string,
+    ctx: AgentTaskContext,
+    skill: SkillSpec,
+  ): Promise<{ exitCode: number; lastMessage: string | null }> {
+    if (this.runtimeTransport() === 'cli') {
+      return this.invokeCli(prompt, ctx, skill);
+    }
+    return this.invokeAcp(prompt, ctx, skill);
+  }
+
+  private async invokeAcp(
+    prompt: string,
+    ctx: AgentTaskContext,
+    skill: SkillSpec,
+  ): Promise<{ exitCode: number; lastMessage: string | null }> {
+    const command = resolveAcpAgentCommand({
+      command: this.opts.acpBin,
+      envKey: 'AINP_CODEX_ACP_BIN',
+      defaultCommand: 'codex-acp',
+    });
+    const result = await runAcpPrompt({
+      command,
+      kind: 'codex',
+      ctx,
+      timeoutMs: this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      prompt,
+      meta: {
+        stage: skill.stage,
+        skillId: skill.id,
+        sandbox: 'workspace-write',
+        model: this.opts.model ?? process.env.AINP_CODEX_MODEL ?? null,
+      },
+    });
+    return { exitCode: result.exitCode, lastMessage: result.lastMessage };
   }
 
   private async invokeCli(
@@ -219,6 +264,12 @@ export class CodexBackend implements AgentBackend {
     const lastMessage = await readOptionalText(lastMessagePath);
     await emitMeta(ctx, 'finished', { exitCode, timedOut, lastMessagePath });
     return { exitCode, lastMessage };
+  }
+
+  private runtimeTransport(): 'acp' | 'cli' {
+    const env = process.env.AINP_CODEX_TRANSPORT;
+    if (env === 'cli' || env === 'acp') return env;
+    return this.opts.transport ?? 'acp';
   }
 }
 

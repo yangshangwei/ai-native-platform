@@ -40,6 +40,7 @@ import { parseCodexJsonLine } from '../codex-parser';
 import { api } from '../../api-client';
 import { getConfig } from '../../config-client';
 import type { ClassifyInput, ClassifyOutput } from './rules';
+import { resolveAcpAgentCommand, runAcpPrompt } from '../acp-client';
 
 /**
  * Backends that can answer the Coordinator's one-shot triage prompt.
@@ -104,6 +105,7 @@ const DEFAULT_DEPS: LlmFallbackDeps = {
     return claudeCliAvailable();
   },
   runOneShot: (backend, system, user, timeoutMs, emit) => {
+    if (coordinatorTransport() === 'acp') return runAcpOneShot(backend, system, user, timeoutMs, emit);
     if (backend === 'codex') return runCodexOneShot(system, user, timeoutMs, emit);
     return runClaudeOneShot(system, user, timeoutMs, emit);
   },
@@ -120,6 +122,10 @@ function selectionOrder(preferredBackend: LlmBackendKind | undefined): LlmBacken
   if (preferredBackend === 'codex') return ['codex', 'claude_code'];
   if (preferredBackend === 'claude_code') return ['claude_code', 'codex'];
   return ['claude_code', 'codex'];
+}
+
+function coordinatorTransport(): 'acp' | 'cli' {
+  return process.env.AINP_COORDINATOR_TRANSPORT === 'cli' ? 'cli' : 'acp';
 }
 
 function createCoordinatorEmitter(
@@ -277,7 +283,61 @@ export async function classifyByLlm(
   };
 }
 
-// ---- Claude Code one-shot --------------------------------------------------
+// ---- ACP one-shot ----------------------------------------------------------
+
+async function runAcpOneShot(
+  backend: LlmBackendKind,
+  system: string,
+  user: string,
+  timeoutMs: number,
+  emit?: CoordinatorStreamEmit,
+): Promise<string> {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'ainp-coord-acp-'));
+  const command = resolveAcpAgentCommand({
+    command: backend === 'codex' ? process.env.AINP_CODEX_ACP_BIN : process.env.AINP_CLAUDE_ACP_BIN,
+    envKey: backend === 'codex' ? 'AINP_CODEX_ACP_BIN' : 'AINP_CLAUDE_ACP_BIN',
+    defaultCommand: backend === 'codex' ? 'codex-acp' : 'claude-agent-acp',
+  });
+  try {
+    const prompt = backend === 'codex' ? `${system}\n\n${user}` : user;
+    const result = await runAcpPrompt({
+      command,
+      kind: backend,
+      ctx: {
+        workflowRunId: null,
+        stepRunId: null,
+        workspacePath: process.cwd(),
+        artifactsDir: tmpDir,
+      },
+      timeoutMs,
+      prompt,
+      sessionMeta: backend === 'claude_code'
+        ? {
+            systemPrompt: system,
+            claudeCode: {
+              options: {
+                permissionMode: 'default',
+                settings: process.env.AINP_CLAUDE_LOAD_USER_SETTINGS === '1'
+                  ? undefined
+                  : { hooks: emptyClaudeHooksSettings() },
+              },
+            },
+          }
+        : undefined,
+      streamEmit: emit,
+      meta: { backend, purpose: 'coordinator' },
+    });
+    return result.lastMessage ?? '';
+  } finally {
+    try {
+      rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* best-effort cleanup */
+    }
+  }
+}
+
+// ---- Legacy CLI one-shot ---------------------------------------------------
 
 function runClaudeOneShot(
   system: string,
@@ -764,7 +824,9 @@ function parseDecision(
 ): CoordinatorAction {
   // Claude returns a stream-json line set; Codex `--output-last-message`
   // returns the final text directly. Use the right extractor per source.
-  const finalText = source === 'claude_code' ? extractFinalAssistantText(raw) : raw.trim();
+  const finalText = source === 'claude_code'
+    ? (extractFinalAssistantText(raw) || raw.trim())
+    : raw.trim();
   if (!finalText) {
     return {
       action: 'pause_for_human',

@@ -4,8 +4,9 @@
  * so the Coordinator triage runs (B7) and orchestrate is invoked with the
  * Coordinator-chosen runType.
  *
- * Uses AINP_AGENT_BACKEND from env (set claude_code to exercise real Claude;
- * leave unset for NativeBackend dry run).
+ * Uses the project-level Agent Backend configured through the API. Production
+ * runner orchestration must not use AINP_AGENT_BACKEND or NativeBackend as a
+ * dry-run fallback.
  *
  * Asserts:
  *   - CoordinatorDecision persisted with action=proceed and source=rules
@@ -96,7 +97,7 @@ async function approveIfNeeded(workflowRunId: string, approved: Set<string>): Pr
 
 async function main(): Promise<void> {
   log(`API: ${API_BASE}`);
-  log(`backend: ${process.env.AINP_AGENT_BACKEND ?? 'native'}`);
+  log('backend: project.agentBackend');
   log(`title: ${TITLE}`);
 
   const project = await ensureProject();

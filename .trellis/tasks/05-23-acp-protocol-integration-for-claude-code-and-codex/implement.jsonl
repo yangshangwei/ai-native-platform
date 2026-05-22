@@ -1,0 +1,5 @@
+{"file":".trellis/tasks/05-23-acp-protocol-integration-for-claude-code-and-codex/prd.md","reason":"Task requirements and acceptance criteria for ACP runner integration."}
+{"file":".trellis/tasks/05-23-acp-protocol-integration-for-claude-code-and-codex/research/acp-protocol.md","reason":"ACP protocol lifecycle and official adapter package notes."}
+{"file":".trellis/spec/runner/backend/agent-backend-runtime.md","reason":"Runner backend invocation, preflight, streaming, and test contracts."}
+{"file":".trellis/spec/shared/backend/agent-backend-contract.md","reason":"Shared product backend and stream event contracts."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Prompt rendering and context injection invariants for both backends."}

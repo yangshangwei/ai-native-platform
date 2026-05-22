@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 /**
  * Minimal CodexBackend smoke. One read-only-ish context_pack stage validates:
- * codex CLI availability → `codex exec --json` streaming parse → artifact
- * production → API stream ingest.
+ * codex CLI preflight → Codex ACP runtime → artifact production → API stream
+ * ingest. Set AINP_CODEX_TRANSPORT=cli only when intentionally exercising the
+ * legacy direct `codex exec --json` fallback.
  *
  * Usage:
  *   bun run apps/api/src/server.ts &

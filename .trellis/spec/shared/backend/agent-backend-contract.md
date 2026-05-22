@@ -30,6 +30,9 @@
 - Environment keys:
   - `AINP_CLAUDE_BIN` optionally overrides the Claude Code binary.
   - `AINP_CODEX_BIN` optionally overrides the Codex binary.
+  - `AINP_CLAUDE_ACP_BIN` optionally overrides the Claude Code ACP agent command; default runtime command is `claude-agent-acp`.
+  - `AINP_CODEX_ACP_BIN` optionally overrides the Codex ACP agent command; default runtime command is `codex-acp`.
+  - `AINP_CLAUDE_TRANSPORT=cli`, `AINP_CODEX_TRANSPORT=cli`, and `AINP_COORDINATOR_TRANSPORT=cli` are temporary compatibility/debug escape hatches back to direct CLI execution. When unset, runner invocation defaults to ACP stdio JSON-RPC.
   - `AINP_AGENT_PREFLIGHT_TIMEOUT_MS` optionally overrides preflight timeout.
 - Cross-platform CLI resolution is a shared contract between API preflight,
   Runner preflight, and Runner runtime invocation:
@@ -54,6 +57,7 @@
   - `workflowRequestId` is set and `workflowRunId` is null for pre-run phases such as Coordinator triage.
   - Both set or both missing is invalid at API ingest / engine write boundaries. The bus and UI must derive channel keys through the shared helper, not by concatenating ids ad hoc.
 - `sequence` is monotonic per channel, not globally. `run:<id>` and `request:<id>` may both start at sequence 1; UI resume/dedupe must key by channel + sequence.
+- Runtime invocation for Claude Code and Codex defaults to local ACP agents over newline-delimited JSON-RPC on stdio. The runner drives `initialize` -> `session/new` -> `session/prompt`, maps ACP `session/update` notifications into existing stream event shapes, and handles advertised text-file reads/writes within workspace/artifact scope. The direct `claude --print ...` and `codex exec --json ...` paths remain compatibility fallbacks only; product/backend selection is still `claude_code` or `codex`, not a separate ACP product backend.
 
 ### 4. Validation & Error Matrix
 

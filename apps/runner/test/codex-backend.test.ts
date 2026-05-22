@@ -33,7 +33,7 @@ describe('CodexBackend runtime invocation', () => {
     process.env.CAPTURE_CODEX_ARGS = capturePath;
     vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
 
-    await new CodexBackend({ bin: fakeCodexBin(root), timeoutMs: TEST_CODEX_TIMEOUT_MS }).run(implementationSkill(), {
+    await new CodexBackend({ transport: 'cli', bin: fakeCodexBin(root), timeoutMs: TEST_CODEX_TIMEOUT_MS }).run(implementationSkill(), {
       workflowRunId: 'run_codex_args',
       stepRunId: 'step_codex_args',
       workspacePath,
@@ -75,7 +75,7 @@ describe('CodexBackend runtime invocation', () => {
     process.env.CAPTURE_CODEX_ARGS = capturePath;
     vi.spyOn(api, 'postAgentEvent').mockRejectedValue(new Error('token=sk-test-codex-secret'));
 
-    await expect(new CodexBackend({ bin: fakeCodexBin(root), timeoutMs: TEST_CODEX_TIMEOUT_MS }).run(implementationSkill(), {
+    await expect(new CodexBackend({ transport: 'cli', bin: fakeCodexBin(root), timeoutMs: TEST_CODEX_TIMEOUT_MS }).run(implementationSkill(), {
       workflowRunId: 'run_codex_stream_fail',
       stepRunId: 'step_codex_stream_fail',
       workspacePath,
@@ -101,7 +101,7 @@ describe('CodexBackend runtime invocation', () => {
     process.env.AINP_CODEX_BIN = fakeCodexBin(root);
     vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
 
-    await new CodexBackend({ timeoutMs: TEST_CODEX_TIMEOUT_MS }).run(implementationSkill(), {
+    await new CodexBackend({ transport: 'cli', timeoutMs: TEST_CODEX_TIMEOUT_MS }).run(implementationSkill(), {
       workflowRunId: 'run_codex_env_args',
       stepRunId: 'step_codex_env_args',
       workspacePath,
@@ -127,6 +127,7 @@ describe('CodexBackend runtime invocation', () => {
     const spy = vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
 
     await new CodexBackend({
+      transport: 'cli',
       bin: fakeCodexBin(root, { stderrLine: 'Codex auth error OPENAI_API_KEY=sk-test-codex-secret' }),
       timeoutMs: TEST_CODEX_TIMEOUT_MS,
     }).run(implementationSkill(), {
@@ -157,7 +158,7 @@ describe('CodexBackend runtime invocation', () => {
     process.env.CAPTURE_CODEX_STDIN = stdinPath;
     vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
 
-    await new CodexBackend({ bin: fakeCodexBin(root), timeoutMs: TEST_CODEX_TIMEOUT_MS }).run(implementationSkill(), {
+    await new CodexBackend({ transport: 'cli', bin: fakeCodexBin(root), timeoutMs: TEST_CODEX_TIMEOUT_MS }).run(implementationSkill(), {
       workflowRunId: 'run_codex_context',
       stepRunId: 'step_codex_context',
       workspacePath,
@@ -209,7 +210,7 @@ describe('CodexBackend runtime invocation', () => {
     );
     chmodSync(bin, 0o755);
 
-    const result = await new CodexBackend({ bin, timeoutMs: TEST_CODEX_TIMEOUT_MS }).run(
+    const result = await new CodexBackend({ transport: 'cli', bin, timeoutMs: TEST_CODEX_TIMEOUT_MS }).run(
       contextPackSkill(),
       {
         workflowRunId: 'run_codex_stage',

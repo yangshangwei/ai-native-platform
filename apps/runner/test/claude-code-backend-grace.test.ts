@@ -35,6 +35,7 @@ describe('ClaudeCodeBackend post-result grace shutdown', () => {
 
     const start = Date.now();
     const backend = new ClaudeCodeBackend({
+      transport: 'cli',
       bin: hangAfterResultBin(root),
       timeoutMs: 30_000, // far above grace; must NOT be the bottleneck
       postResultGraceMs: 200,
@@ -67,6 +68,7 @@ describe('ClaudeCodeBackend post-result grace shutdown', () => {
     vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
 
     const backend = new ClaudeCodeBackend({
+      transport: 'cli',
       bin: hangNoResultBin(root),
       timeoutMs: 300, // hard timeout fires; no result was seen
       postResultGraceMs: 5_000,

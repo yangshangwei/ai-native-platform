@@ -47,7 +47,7 @@ describe('ClaudeCodeBackend runtime invocation', () => {
     process.env.CAPTURE_CLAUDE_ARGS = capturePath;
     vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
 
-    await new ClaudeCodeBackend({ bin: fakeClaudeBin(root), timeoutMs: 3_000 }).run(implementationSkill(), {
+    await new ClaudeCodeBackend({ transport: 'cli', bin: fakeClaudeBin(root), timeoutMs: 3_000 }).run(implementationSkill(), {
       workflowRunId: 'run_claude_args',
       stepRunId: 'step_claude_args',
       workspacePath,
@@ -77,7 +77,7 @@ describe('ClaudeCodeBackend runtime invocation', () => {
     process.env.AINP_CLAUDE_BIN = fakeClaudeBin(root);
     vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
 
-    await new ClaudeCodeBackend({ timeoutMs: 3_000 }).run(implementationSkill(), {
+    await new ClaudeCodeBackend({ transport: 'cli', timeoutMs: 3_000 }).run(implementationSkill(), {
       workflowRunId: 'run_claude_env_args',
       stepRunId: 'step_claude_env_args',
       workspacePath,
@@ -113,7 +113,7 @@ describe('ClaudeCodeBackend runtime invocation', () => {
     delete process.env.AINP_CLAUDE_HOME_ISOLATION;
     vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
 
-    await new ClaudeCodeBackend({ bin: fakeClaudeBin(root), timeoutMs: 3_000 }).run(implementationSkill(), {
+    await new ClaudeCodeBackend({ transport: 'cli', bin: fakeClaudeBin(root), timeoutMs: 3_000 }).run(implementationSkill(), {
       workflowRunId: 'run_claude_home',
       stepRunId: 'step_claude_home',
       workspacePath,
@@ -154,7 +154,7 @@ describe('ClaudeCodeBackend runtime invocation', () => {
     process.env.AINP_CLAUDE_HOME_ISOLATION = '1';
     vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
 
-    await new ClaudeCodeBackend({ bin: fakeClaudeBin(root), timeoutMs: 3_000 }).run(implementationSkill(), {
+    await new ClaudeCodeBackend({ transport: 'cli', bin: fakeClaudeBin(root), timeoutMs: 3_000 }).run(implementationSkill(), {
       workflowRunId: 'run_claude_isolated_home',
       stepRunId: 'step_claude_isolated_home',
       workspacePath,
@@ -187,7 +187,7 @@ describe('ClaudeCodeBackend runtime invocation', () => {
     delete process.env.AINP_CLAUDE_LOAD_USER_SETTINGS;
     vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
 
-    await new ClaudeCodeBackend({ bin: fakeClaudeBin(root), timeoutMs: 3_000 }).run(implementationSkill(), {
+    await new ClaudeCodeBackend({ transport: 'cli', bin: fakeClaudeBin(root), timeoutMs: 3_000 }).run(implementationSkill(), {
       workflowRunId: 'run_claude_settings_default',
       stepRunId: 'step_claude_settings_default',
       workspacePath,
@@ -220,7 +220,7 @@ describe('ClaudeCodeBackend runtime invocation', () => {
     process.env.AINP_CLAUDE_LOAD_USER_SETTINGS = '1';
     vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
 
-    await new ClaudeCodeBackend({ bin: fakeClaudeBin(root), timeoutMs: 3_000 }).run(implementationSkill(), {
+    await new ClaudeCodeBackend({ transport: 'cli', bin: fakeClaudeBin(root), timeoutMs: 3_000 }).run(implementationSkill(), {
       workflowRunId: 'run_claude_settings_opt_in',
       stepRunId: 'step_claude_settings_opt_in',
       workspacePath,
@@ -246,7 +246,7 @@ describe('ClaudeCodeBackend runtime invocation', () => {
     process.env.CAPTURE_CLAUDE_ARGS = capturePath;
     vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
 
-    await new ClaudeCodeBackend({ bin: fakeClaudeBinThatProducesArtifact(root, artifactsDir, 'context_pack.md'), timeoutMs: 3_000 }).run(
+    await new ClaudeCodeBackend({ transport: 'cli', bin: fakeClaudeBinThatProducesArtifact(root, artifactsDir, 'context_pack.md'), timeoutMs: 3_000 }).run(
       contextPackSkill(),
       {
         workflowRunId: 'run_claude_ctxpack_prompt',
@@ -279,7 +279,7 @@ describe('ClaudeCodeBackend runtime invocation', () => {
     process.env.CAPTURE_CLAUDE_ARGS = capturePath;
     vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
 
-    await new ClaudeCodeBackend({ bin: fakeClaudeBin(root), timeoutMs: 3_000 }).run(implementationSkill(), {
+    await new ClaudeCodeBackend({ transport: 'cli', bin: fakeClaudeBin(root), timeoutMs: 3_000 }).run(implementationSkill(), {
       workflowRunId: 'run_claude_context',
       stepRunId: 'step_claude_context',
       workspacePath,

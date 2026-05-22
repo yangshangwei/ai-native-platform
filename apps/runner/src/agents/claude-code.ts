@@ -1,8 +1,9 @@
 /**
- * ClaudeCodeBackend — drives the local `claude` CLI in `--print
- * --output-format stream-json` mode and relays every event in real time both
- * to the runner's own stdout and to the platform API (which broadcasts via
- * SSE for the Web UI).
+ * ClaudeCodeBackend — drives the local Claude ACP agent by default and relays
+ * progress in real time both to the runner's own stdout and to the platform API
+ * (which broadcasts via SSE for the Web UI). The legacy `claude --print
+ * --output-format stream-json` path remains as an explicit compatibility
+ * fallback.
  *
  * Design constraints (see memory: feedback_claude-code-cli-streaming-realtime.md):
  *   - **Real-time** is non-negotiable. Events are forwarded one at a time as
@@ -36,10 +37,15 @@ import { parseStreamLine } from './claude-code-parser';
 import type { AgentArtifactOutput, AgentBackend, AgentRunResult, AgentTaskContext } from './native';
 import { renderAgentPrompt } from '../context/renderer';
 import { parseContextRequestFromAgentOutput } from '../context/request';
+import { resolveAcpAgentCommand, runAcpPrompt } from './acp-client';
 
 export interface ClaudeCodeBackendOpts {
-  /** Override binary path; defaults to `AINP_CLAUDE_BIN` env or `claude`. */
+  /** Override legacy CLI binary path; defaults to `AINP_CLAUDE_BIN` env or `claude`. */
   bin?: string;
+  /** Override ACP agent command; defaults to `AINP_CLAUDE_ACP_BIN` env or `claude-agent-acp`. */
+  acpBin?: string;
+  /** Runtime transport. ACP is the production default; CLI is a temporary compatibility fallback. */
+  transport?: 'acp' | 'cli';
   /** Per-stage hard timeout. */
   timeoutMs?: number;
   /**
@@ -103,7 +109,7 @@ export class ClaudeCodeBackend implements AgentBackend {
       outputName: expected.name,
     });
 
-    const { exitCode, lastMessage } = await this.invokeCli(systemPrompt, userPrompt, ctx, skill);
+    const { exitCode, lastMessage } = await this.invokeAgent(systemPrompt, userPrompt, ctx, skill);
     if (exitCode !== 0) {
       throw new Error(`claude exited ${exitCode} for stage ${skill.stage}`);
     }
@@ -136,7 +142,7 @@ export class ClaudeCodeBackend implements AgentBackend {
   ): Promise<AgentRunResult> {
     const { systemPrompt, userPrompt } = buildPrompts(skill, ctx, { mode: 'implementation' });
 
-    const { exitCode, lastMessage } = await this.invokeCli(systemPrompt, userPrompt, ctx, skill);
+    const { exitCode, lastMessage } = await this.invokeAgent(systemPrompt, userPrompt, ctx, skill);
     if (exitCode !== 0) {
       throw new Error(`claude exited ${exitCode} during implementation`);
     }
@@ -166,6 +172,62 @@ export class ClaudeCodeBackend implements AgentBackend {
       ],
       lastMessage,
     };
+  }
+
+  private async invokeAgent(
+    systemPrompt: string,
+    userPrompt: string,
+    ctx: AgentTaskContext,
+    skill: SkillSpec,
+  ): Promise<{ exitCode: number; lastMessage: string | null }> {
+    if (this.runtimeTransport() === 'cli') {
+      return this.invokeCli(systemPrompt, userPrompt, ctx, skill);
+    }
+    return this.invokeAcp(systemPrompt, userPrompt, ctx, skill);
+  }
+
+  private async invokeAcp(
+    systemPrompt: string,
+    userPrompt: string,
+    ctx: AgentTaskContext,
+    skill: SkillSpec,
+  ): Promise<{ exitCode: number; lastMessage: string | null }> {
+    const allowedTools = computeAllowedTools(skill);
+    const disallowedTools = ['WebFetch', 'WebSearch'];
+    const command = resolveAcpAgentCommand({
+      command: this.opts.acpBin,
+      envKey: 'AINP_CLAUDE_ACP_BIN',
+      defaultCommand: 'claude-agent-acp',
+    });
+    const result = await runAcpPrompt({
+      command,
+      kind: 'claude_code',
+      ctx,
+      timeoutMs: this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      prompt: userPrompt,
+      sessionMeta: {
+        systemPrompt,
+        claudeCode: {
+          options: {
+            permissionMode: this.opts.permissionMode ?? 'acceptEdits',
+            maxBudgetUsd: this.opts.maxBudgetUsd ?? DEFAULT_BUDGET_USD,
+            allowedTools,
+            disallowedTools,
+            settings: process.env.AINP_CLAUDE_LOAD_USER_SETTINGS === '1'
+              ? undefined
+              : { hooks: emptyClaudeHooksSettings() },
+          },
+        },
+      },
+      meta: {
+        stage: skill.stage,
+        skillId: skill.id,
+        allowedTools,
+        disallowedTools,
+        userHooksOverridden: process.env.AINP_CLAUDE_LOAD_USER_SETTINGS !== '1',
+      },
+    });
+    return { exitCode: result.exitCode, lastMessage: result.lastMessage };
   }
 
   private async invokeCli(
@@ -343,6 +405,12 @@ export class ClaudeCodeBackend implements AgentBackend {
       graceShutdown: graceShutdownInitiated,
     });
     return { exitCode: effectiveExitCode, lastMessage };
+  }
+
+  private runtimeTransport(): 'acp' | 'cli' {
+    const env = process.env.AINP_CLAUDE_TRANSPORT;
+    if (env === 'cli' || env === 'acp') return env;
+    return this.opts.transport ?? 'acp';
   }
 }
 

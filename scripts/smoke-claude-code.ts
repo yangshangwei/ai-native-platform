@@ -1,9 +1,11 @@
 #!/usr/bin/env bun
 /**
  * Minimal claude_code streaming smoke. One stage only (context_pack — read-only,
- * cheap). Validates: spawn → stream-json parse → POST /runner/events/agent-stream
- * → SSE broadcast. Run alongside `bun run dev:web` to see the live tail in the
- * browser, or follow `/agent-stream` with curl.
+ * cheap). Validates: Claude Code preflight → ACP runtime → POST
+ * /runner/events/agent-stream → SSE broadcast. Run alongside `bun run dev:web`
+ * to see the live tail in the browser, or follow `/agent-stream` with curl.
+ * Set AINP_CLAUDE_TRANSPORT=cli only when intentionally exercising the legacy
+ * direct `claude --print --output-format stream-json` fallback.
  *
  * Usage:
  *   bun run apps/api/src/server.ts &           # API on :8787
