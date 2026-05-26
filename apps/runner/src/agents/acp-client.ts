@@ -278,7 +278,10 @@ class AcpStdioClient {
       case 'fs/read_text_file': {
         const params = readObject(request.params);
         const path = stringOr(params?.path, '');
-        const allowedPath = await authorizeAcpFilePath(path, this.opts.ctx, 'read');
+        const allowedPath = await authorizeAcpFilePath(path, this.opts.ctx, {
+          mode: 'read',
+          additionalReadDirectories: this.opts.additionalDirectories,
+        });
         const content = await readFile(allowedPath, 'utf8');
         this.respond(request.id, { content: sliceFileContent(content, params) });
         return;
@@ -287,7 +290,7 @@ class AcpStdioClient {
         const params = readObject(request.params);
         const path = stringOr(params?.path, '');
         const content = stringOr(params?.content, '');
-        const allowedPath = await authorizeAcpFilePath(path, this.opts.ctx, 'write');
+        const allowedPath = await authorizeAcpFilePath(path, this.opts.ctx, { mode: 'write' });
         await mkdir(dirname(allowedPath), { recursive: true });
         await writeFile(allowedPath, content, 'utf8');
         this.respond(request.id, null);
@@ -470,16 +473,19 @@ function hasStreamChannel(ctx: AcpRunContext): boolean {
 async function authorizeAcpFilePath(
   path: string,
   ctx: AcpRunContext,
-  mode: 'read' | 'write',
+  opts: { mode: 'read' | 'write'; additionalReadDirectories?: readonly string[] },
 ): Promise<string> {
   if (!path || !isAbsolute(path)) throw new Error(`ACP file access denied: ${path}`);
   const requested = resolve(path);
-  const roots = await acpRootInfos(ctx);
+  const roots = await acpRootInfos(
+    ctx,
+    opts.mode === 'read' ? opts.additionalReadDirectories ?? [] : [],
+  );
   if (!roots.some((root) => isWithin(requested, root.path))) {
     throw new Error(`ACP file access denied: ${path}`);
   }
 
-  if (mode === 'read') {
+  if (opts.mode === 'read') {
     const realRequested = await realpath(requested);
     if (!roots.some((root) => isWithin(realRequested, root.realPath))) {
       throw new Error(`ACP file access denied: ${path}`);
@@ -496,8 +502,11 @@ async function authorizeAcpFilePath(
   return requested;
 }
 
-async function acpRootInfos(ctx: AcpRunContext): Promise<{ path: string; realPath: string }[]> {
-  const roots = unique([ctx.workspacePath, ctx.artifactsDir]).map((path) => resolve(path));
+async function acpRootInfos(
+  ctx: AcpRunContext,
+  additionalDirectories: readonly string[] = [],
+): Promise<{ path: string; realPath: string }[]> {
+  const roots = unique([ctx.workspacePath, ctx.artifactsDir, ...additionalDirectories]).map((path) => resolve(path));
   const infos: { path: string; realPath: string }[] = [];
   for (const path of roots) {
     infos.push({ path, realPath: await realpath(path) });

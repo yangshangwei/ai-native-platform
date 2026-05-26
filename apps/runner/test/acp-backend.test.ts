@@ -4,11 +4,14 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SkillSpec } from '@ainp/shared';
 import { api } from '../src/api-client';
+import { parseAcpAgentCommand, runAcpPrompt } from '../src/agents/acp-client';
 import { ClaudeCodeBackend } from '../src/agents/claude-code';
 import { CodexBackend } from '../src/agents/codex';
 
 const ORIGINAL_CAPTURE_ACP = process.env.CAPTURE_ACP_MESSAGES;
 const ORIGINAL_FAKE_ACP_ARTIFACT = process.env.FAKE_ACP_ARTIFACT_PATH;
+const ORIGINAL_FAKE_ACP_READ_PATH = process.env.FAKE_ACP_READ_PATH;
+const ORIGINAL_FAKE_ACP_WRITE_PATH = process.env.FAKE_ACP_WRITE_PATH;
 const ORIGINAL_FAKE_ACP_OUTSIDE_ARTIFACT = process.env.FAKE_ACP_OUTSIDE_ARTIFACT_PATH;
 const ORIGINAL_FAKE_ACP_SYMLINK_ARTIFACT = process.env.FAKE_ACP_SYMLINK_ARTIFACT_PATH;
 const ORIGINAL_FAKE_ACP_PERMISSION = process.env.FAKE_ACP_PERMISSION_REQUEST;
@@ -19,6 +22,10 @@ afterEach(() => {
   else process.env.CAPTURE_ACP_MESSAGES = ORIGINAL_CAPTURE_ACP;
   if (ORIGINAL_FAKE_ACP_ARTIFACT === undefined) delete process.env.FAKE_ACP_ARTIFACT_PATH;
   else process.env.FAKE_ACP_ARTIFACT_PATH = ORIGINAL_FAKE_ACP_ARTIFACT;
+  if (ORIGINAL_FAKE_ACP_READ_PATH === undefined) delete process.env.FAKE_ACP_READ_PATH;
+  else process.env.FAKE_ACP_READ_PATH = ORIGINAL_FAKE_ACP_READ_PATH;
+  if (ORIGINAL_FAKE_ACP_WRITE_PATH === undefined) delete process.env.FAKE_ACP_WRITE_PATH;
+  else process.env.FAKE_ACP_WRITE_PATH = ORIGINAL_FAKE_ACP_WRITE_PATH;
   if (ORIGINAL_FAKE_ACP_OUTSIDE_ARTIFACT === undefined) delete process.env.FAKE_ACP_OUTSIDE_ARTIFACT_PATH;
   else process.env.FAKE_ACP_OUTSIDE_ARTIFACT_PATH = ORIGINAL_FAKE_ACP_OUTSIDE_ARTIFACT;
   if (ORIGINAL_FAKE_ACP_SYMLINK_ARTIFACT === undefined) delete process.env.FAKE_ACP_SYMLINK_ARTIFACT_PATH;
@@ -117,6 +124,78 @@ describe('ACP backend runtime invocation', () => {
     expect(result.outputs).toHaveLength(1);
     expect(result.outputs[0]).toMatchObject({ name: 'context_pack.md', path: finalPath });
     expect(readFileSync(finalPath, 'utf8')).toBe('# ACP Artifact\n\nwritten through fs/write_text_file\n');
+  });
+
+  it('allows ACP fs/read_text_file requests inside declared additional directories', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ainp-acp-read-additional-'));
+    const workspacePath = join(root, 'workspace');
+    const artifactsDir = join(root, 'artifacts');
+    const extraDir = join(root, 'extra');
+    mkdirSync(workspacePath, { recursive: true });
+    mkdirSync(artifactsDir, { recursive: true });
+    mkdirSync(extraDir, { recursive: true });
+    const extraFile = join(extraDir, 'notes.md');
+    writeFileSync(extraFile, 'extra context\n', 'utf8');
+
+    process.env.FAKE_ACP_READ_PATH = extraFile;
+    const capturePath = join(root, 'acp-messages.jsonl');
+    process.env.CAPTURE_ACP_MESSAGES = capturePath;
+    vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
+
+    const result = await runAcpPrompt({
+      command: parseAcpAgentCommand(fakeAcpAgentBin(root)),
+      kind: 'codex',
+      ctx: {
+        workflowRunId: 'run_acp_read_additional',
+        stepRunId: 'step_acp_read_additional',
+        workspacePath,
+        artifactsDir,
+      },
+      timeoutMs: 3_000,
+      prompt: 'read additional context',
+      additionalDirectories: [extraDir],
+    });
+
+    expect(result.exitCode).toBe(0);
+    const response = readCapturedResponse(capturePath, 'fs/read_text_file') as {
+      result: { content: string };
+    };
+    expect(response.result.content).toBe('extra context\n');
+  });
+
+  it('keeps ACP fs/write_text_file denied for read-only additional directories', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ainp-acp-write-additional-deny-'));
+    const workspacePath = join(root, 'workspace');
+    const artifactsDir = join(root, 'artifacts');
+    const extraDir = join(root, 'extra');
+    mkdirSync(workspacePath, { recursive: true });
+    mkdirSync(artifactsDir, { recursive: true });
+    mkdirSync(extraDir, { recursive: true });
+
+    process.env.FAKE_ACP_WRITE_PATH = join(extraDir, 'notes.md');
+    const capturePath = join(root, 'acp-messages.jsonl');
+    process.env.CAPTURE_ACP_MESSAGES = capturePath;
+    vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
+
+    const result = await runAcpPrompt({
+      command: parseAcpAgentCommand(fakeAcpAgentBin(root)),
+      kind: 'codex',
+      ctx: {
+        workflowRunId: 'run_acp_write_additional_deny',
+        stepRunId: 'step_acp_write_additional_deny',
+        workspacePath,
+        artifactsDir,
+      },
+      timeoutMs: 3_000,
+      prompt: 'deny write additional context',
+      additionalDirectories: [extraDir],
+    });
+
+    expect(result.exitCode).toBe(0);
+    const response = readCapturedResponse(capturePath, 'fs/write_text_file') as {
+      error: { message: string };
+    };
+    expect(response.error.message).toMatch(/ACP file access denied/);
   });
 
   it('rejects ACP fs/write_text_file requests outside workspace and artifacts scope', async () => {
@@ -287,6 +366,12 @@ function fakeAcpAgentBin(dir: string): string {
       '    return;',
       '  }',
       '  if (message.method === "session/prompt") {',
+      '    if (process.env.FAKE_ACP_READ_PATH) {',
+      '      await request("fs/read_text_file", { sessionId: message.params.sessionId, path: process.env.FAKE_ACP_READ_PATH });',
+      '    }',
+      '    if (process.env.FAKE_ACP_WRITE_PATH) {',
+      '      await requestAndCaptureError("fs/write_text_file", { sessionId: message.params.sessionId, path: process.env.FAKE_ACP_WRITE_PATH, content: "write attempt\\n" });',
+      '    }',
       '    if (process.env.FAKE_ACP_ARTIFACT_PATH) {',
       '      await request("fs/write_text_file", { sessionId: message.params.sessionId, path: process.env.FAKE_ACP_ARTIFACT_PATH, content: "# ACP Artifact\\n\\nwritten through fs/write_text_file\\n" });',
       '    }',
