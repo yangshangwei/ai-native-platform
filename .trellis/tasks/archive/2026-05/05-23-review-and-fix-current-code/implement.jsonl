@@ -1,0 +1,3 @@
+{"file":".trellis/spec/runner/backend/index.md","reason":"Review/fix scope includes runner ACP backend behavior and must follow runner backend guidelines."}
+{"file":".trellis/spec/shared/backend/index.md","reason":"Review/fix scope includes shared backend contracts for agent backend runtime integration."}
+{"file":".trellis/spec/guides/index.md","reason":"Use Trellis thinking guides while checking cross-layer and reuse risks."}
