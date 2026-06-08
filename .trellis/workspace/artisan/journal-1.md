@@ -943,3 +943,36 @@ Completed Context Injection Layer task: preserved ContextManifest priority in ag
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: Evidence-backed agent harness
+
+**Date**: 2026-06-09
+**Task**: Evidence-backed agent harness
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Implemented digest-backed evidence gates, verifier media ingestion, eval scenarios, knowledge usage telemetry, and retro artifacts for the agent harness roadmap; verified with typecheck, eval, targeted tests, full test suite, and diff check.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9ccc3c2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

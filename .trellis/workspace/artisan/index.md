@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 24
-- **Last Active**: 2026-05-10
+- **Total Sessions**: 25
+- **Last Active**: 2026-06-09
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~945 | Active |
+| `journal-1.md` | ~978 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 25 | 2026-06-09 | Evidence-backed agent harness | `9ccc3c2` | `feat/context-injection-layer-mvp` |
 | 24 | 2026-05-10 | Context Injection Layer MVP governance audit | `27d52d4` | `feat/context-injection-layer-mvp` |
 | 23 | 2026-05-10 | Archive Coordinator Skill-prefix JSON compatibility | `26b2136` | `feat/context-injection-layer-mvp` |
 | 22 | 2026-05-10 | Coordinator request-channel LLM streaming to Web | `ad14363`, `f274828`, `f52d8ae`, `43984c4` | `feat/context-injection-layer-mvp` |
