@@ -195,13 +195,18 @@ interface ArtifactContentDto {
   text: string;
   contentType: string;
   filename: string;
+  digest: DigestVerificationDto;
 }
 
 interface CommandLogsDto {
   commandRun: RunDetail['commands'][number];
-  stdout: { text: string; contentType: string; filename: string };
-  stderr: { text: string; contentType: string; filename: string };
+  stdout: { text: string; contentType: string; filename: string; digest: DigestVerificationDto };
+  stderr: { text: string; contentType: string; filename: string; digest: DigestVerificationDto };
 }
+
+type DigestVerificationDto =
+  | { algorithm: 'sha256'; expected: string; actual: string; verified: boolean }
+  | { algorithm: 'sha256'; expected: null; actual: string; verified: null };
 
 interface ContextGovernanceDto {
   schemaVersion: 'ainp.context_governance.v1';
@@ -2392,11 +2397,16 @@ function renderGateRow(gate: GateRunDto): HTMLElement {
 }
 
 function renderCommandRow(command: RunDetail['commands'][number]): HTMLElement {
+  const logs = commandLogs.get(command.id);
   return el('div', {
     class: 'evidence-row',
     children: [
       el('span', { children: [pill(command.status), document.createTextNode(` exit=${command.exitCode ?? '∅'}`)] }),
       el('code', { text: command.command }),
+      command.combinedSha256 ? el('small', { text: `sha256 ${shortDigest(command.combinedSha256)}` }) : el('small', { text: 'sha256 pending/legacy evidence' }),
+      logs
+        ? el('small', { text: `stdout ${digestStatusText(logs.stdout.digest)} · stderr ${digestStatusText(logs.stderr.digest)}` })
+        : null,
     ],
   });
 }
@@ -2419,6 +2429,7 @@ function renderArtifactRow(artifact: ArtifactDto, viewerScope: string): HTMLElem
         ],
       }),
       el('code', { text: artifact.uri }),
+      artifact.sha256 ? el('small', { text: `sha256 ${shortDigest(artifact.sha256)}` }) : el('small', { text: 'sha256 pending/legacy evidence' }),
       !canReadInline ? el('small', { text: '当前只支持直接查看本地 file:// Artifact。' }) : null,
       isOpen ? renderArtifactInlineViewer(artifact, viewerScope) : null,
     ],
@@ -2450,6 +2461,7 @@ function renderArtifactInlineViewer(artifact: ArtifactDto, viewerScope: string):
         children: [
           pill(content.filename, 'info'),
           pill(content.contentType, 'muted'),
+          pill(digestStatusText(content.digest), content.digest.verified === false ? 'bad' : content.digest.verified === true ? 'good' : 'muted'),
         ],
       }),
       el('pre', {
@@ -2459,6 +2471,16 @@ function renderArtifactInlineViewer(artifact: ArtifactDto, viewerScope: string):
       }),
     ],
   });
+}
+
+function shortDigest(value: string): string {
+  return value.length > 16 ? `${value.slice(0, 12)}…${value.slice(-4)}` : value;
+}
+
+function digestStatusText(digest: DigestVerificationDto): string {
+  if (digest.verified === true) return 'sha256 verified';
+  if (digest.verified === false) return 'sha256 mismatch';
+  return 'sha256 untracked';
 }
 
 function renderAgentTaskRow(task: RunDetail['agentTasks'][number], detail: RunDetail): HTMLElement {

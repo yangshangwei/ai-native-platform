@@ -90,6 +90,9 @@ const MIGRATIONS: string[] = [
      stderr_ref TEXT NOT NULL,
      stdout_bytes INTEGER NOT NULL,
      stderr_bytes INTEGER NOT NULL,
+     stdout_sha256 TEXT,
+     stderr_sha256 TEXT,
+     combined_sha256 TEXT,
      timed_out INTEGER NOT NULL,
      truncated INTEGER NOT NULL
    )`,
@@ -115,6 +118,7 @@ const MIGRATIONS: string[] = [
      step_run_id TEXT,
      size INTEGER NOT NULL,
      content_type TEXT NOT NULL,
+     sha256 TEXT,
      created_at TEXT NOT NULL,
      metadata_json TEXT NOT NULL
    )`,
@@ -388,6 +392,24 @@ if (!workflowRequestColumns.has('flow_id')) {
 }
 if (!workflowRequestColumns.has('start_stage')) {
   runSql(`ALTER TABLE workflow_requests ADD COLUMN start_stage TEXT`);
+}
+
+// 06-08 agent-harness-evidence: tamper-evident command/artifact records.
+// New rows store SHA-256 digests; historical rows stay valid with NULL.
+const commandRunColumns = columnNames('command_runs');
+if (!commandRunColumns.has('stdout_sha256')) {
+  runSql(`ALTER TABLE command_runs ADD COLUMN stdout_sha256 TEXT`);
+}
+if (!commandRunColumns.has('stderr_sha256')) {
+  runSql(`ALTER TABLE command_runs ADD COLUMN stderr_sha256 TEXT`);
+}
+if (!commandRunColumns.has('combined_sha256')) {
+  runSql(`ALTER TABLE command_runs ADD COLUMN combined_sha256 TEXT`);
+}
+
+const artifactColumns = columnNames('artifacts');
+if (!artifactColumns.has('sha256')) {
+  runSql(`ALTER TABLE artifacts ADD COLUMN sha256 TEXT`);
 }
 
 // 05-10 coordinator-llm-web-sse PR1: agent_events stream channel extension.

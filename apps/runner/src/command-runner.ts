@@ -9,6 +9,7 @@ import {
   type CommandSpec,
   type CommandStatus,
 } from '@ainp/shared';
+import { sha256Buffer, sha256CombinedStreams } from './digest';
 
 export interface RunCommandInput extends CommandSpec {
   workflowRunId: string;
@@ -102,9 +103,11 @@ export async function runWhitelistedCommand(input: RunCommandInput): Promise<Com
   }
 
   await mkdir(dirname(stdoutPath), { recursive: true });
+  const stdoutContent = Buffer.concat(stdoutBuf);
+  const stderrContent = Buffer.concat(stderrBuf);
   await Promise.all([
-    writeFile(stdoutPath, Buffer.concat(stdoutBuf)),
-    writeFile(stderrPath, Buffer.concat(stderrBuf)),
+    writeFile(stdoutPath, stdoutContent),
+    writeFile(stderrPath, stderrContent),
   ]);
 
   const finishedAt = nowIso();
@@ -131,6 +134,9 @@ export async function runWhitelistedCommand(input: RunCommandInput): Promise<Com
     stderrRef: `file://${stderrPath}`,
     stdoutBytes,
     stderrBytes,
+    stdoutSha256: sha256Buffer(stdoutContent),
+    stderrSha256: sha256Buffer(stderrContent),
+    combinedSha256: sha256CombinedStreams(stdoutContent, stderrContent),
     timedOut,
     truncated,
   };

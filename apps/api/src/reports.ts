@@ -427,6 +427,309 @@ export async function generateKnowledgeCandidate(
   return { artifact, sidecar };
 }
 
+/**
+ * Retro Report — fact-first run review. This is a generated per-run artifact
+ * that feeds later human decisions; it does not promote long-term knowledge by
+ * itself.
+ */
+export async function generateRetroReport(
+  workflowRunId: string,
+): Promise<GeneratedArtifactWithSidecar> {
+  const run = store.workflowRuns.get(workflowRunId);
+  if (!run) throw new Error(`workflow run not found: ${workflowRunId}`);
+
+  const steps = store.stepRuns.byWorkflow(workflowRunId);
+  const commands = store.commandRuns.byWorkflow(workflowRunId);
+  const gates = store.gateRuns.byWorkflow(workflowRunId);
+  const artifacts = store.artifacts.byWorkflow(workflowRunId);
+  const builds = store.buildRuns.byWorkflow(workflowRunId);
+  const testRuns = builds.flatMap((build) => store.testRuns.byBuild(build.id));
+  const approvals = store.approvals.byWorkflow(workflowRunId);
+  const actions = store.workflowActions.byWorkflow(workflowRunId);
+  const agentTasks = store.agentTasks.byWorkflow(workflowRunId);
+  const agentResults = store.agentResults.byWorkflow(workflowRunId);
+  const agentEvents = store.agentEvents.byWorkflow(workflowRunId);
+  const auditEntries = store.auditLog.byWorkflow(workflowRunId);
+  const knowledgeReviewSignals = collectKnowledgeReviewSignals({ artifacts, actions });
+
+  const gateIssues = gates
+    .filter((gate) => gate.status !== 'pass' || gate.ruleResults.some((rule) => rule.status !== 'pass'))
+    .map((gate) => ({
+      gateRunId: gate.id,
+      gateId: gate.gateId,
+      status: gate.status,
+      ruleResults: gate.ruleResults.filter((rule) => rule.status !== 'pass'),
+      evidenceRefs: gate.evidenceRefs,
+    }));
+  const commandIssues = commands
+    .filter((command) => command.status !== 'passed' || !command.combinedSha256)
+    .map((command) => ({
+      commandRunId: command.id,
+      command: command.command,
+      status: command.status,
+      exitCode: command.exitCode,
+      digestBacked: Boolean(command.stdoutSha256 && command.stderrSha256 && command.combinedSha256),
+      stdoutRef: command.stdoutRef,
+      stderrRef: command.stderrRef,
+    }));
+  const agentIssues = agentResults
+    .filter((result) => result.status !== 'success')
+    .map((result) => ({
+      agentResultId: result.id,
+      taskId: result.taskId,
+      status: result.status,
+      summary: result.summary,
+    }));
+  const rejectedApprovals = approvals
+    .filter((approval) => approval.decision !== 'approved')
+    .map((approval) => ({
+      approvalId: approval.id,
+      gateId: approval.gateId,
+      decision: approval.decision,
+      actor: approval.actor,
+      comment: approval.comment,
+    }));
+  const contextRequests = actions
+    .filter((action) => action.kind === 'context_request')
+    .map((action) => ({
+      actionId: action.id,
+      targetId: action.targetId,
+      baseContextPackId: stringField(action.payload, 'baseContextPackId'),
+      supplementContextPackId: stringField(action.payload, 'supplementContextPackId'),
+      requestArtifactId: stringField(action.payload, 'requestArtifactId'),
+      supplementArtifactId: stringField(action.payload, 'supplementArtifactId'),
+    }));
+  const findings = [
+    ...gateIssues.map((issue) => ({
+      kind: 'gate_issue',
+      severity: issue.status === 'fail' ? 'high' : 'medium',
+      summary: `${issue.gateId} ended as ${issue.status}`,
+      evidenceRefs: [`gate:${issue.gateRunId}`, ...issue.evidenceRefs.map((ref) => `artifact:${ref.artifactId}`)],
+      recommendedAction: issue.status === 'fail' ? 'create_eval_case' : 'review_before_knowledge_promotion',
+    })),
+    ...commandIssues.map((issue) => ({
+      kind: 'command_issue',
+      severity: issue.status === 'passed' ? 'medium' : 'high',
+      summary: `${issue.command} status=${issue.status} digestBacked=${issue.digestBacked}`,
+      evidenceRefs: [`command:${issue.commandRunId}`, issue.stdoutRef, issue.stderrRef],
+      recommendedAction: issue.digestBacked ? 'inspect_command_log' : 'require_digest_backed_command_evidence',
+    })),
+    ...agentIssues.map((issue) => ({
+      kind: 'agent_issue',
+      severity: 'high',
+      summary: `${issue.taskId} result=${issue.status}: ${issue.summary}`,
+      evidenceRefs: [`agent_result:${issue.agentResultId}`, `agent_task:${issue.taskId}`],
+      recommendedAction: 'create_eval_case',
+    })),
+    ...knowledgeReviewSignals.map((signal) => ({
+      kind: 'knowledge_review',
+      severity: signal.severity,
+      summary: signal.message,
+      evidenceRefs: signal.evidenceRefs,
+      recommendedAction: signal.recommendedAction,
+    })),
+  ];
+  const promotionCandidates = findings.map((finding, index) => ({
+    id: `retro-${String(index + 1).padStart(3, '0')}`,
+    target: finding.recommendedAction === 'create_eval_case' ? 'eval_candidate' : 'knowledge_review',
+    findingKind: finding.kind,
+    summary: finding.summary,
+    evidenceRefs: finding.evidenceRefs,
+    recommendedAction: finding.recommendedAction,
+  }));
+  const summary = {
+    workflowRunId: run.id,
+    title: run.title,
+    status: run.status,
+    steps: steps.length,
+    commands: commands.length,
+    gates: gates.length,
+    artifacts: artifacts.length,
+    approvals: approvals.length,
+    agentTasks: agentTasks.length,
+    agentResults: agentResults.length,
+    agentEvents: agentEvents.length,
+    auditEntries: auditEntries.length,
+    findings: findings.length,
+    promotionCandidates: promotionCandidates.length,
+  };
+
+  const md = [
+    '# Retro Report',
+    '',
+    `- **Workflow Run:** \`${run.id}\``,
+    `- **Title:** ${run.title}`,
+    `- **Status:** ${run.status}`,
+    '',
+    '## Evidence Summary',
+    '',
+    `- steps=${summary.steps}`,
+    `- commands=${summary.commands}`,
+    `- gates=${summary.gates}`,
+    `- artifacts=${summary.artifacts}`,
+    `- approvals=${summary.approvals}`,
+    `- agentTasks=${summary.agentTasks}`,
+    `- agentEvents=${summary.agentEvents}`,
+    '',
+    '## Findings',
+    '',
+    findings.length === 0
+      ? '_No retro findings were generated from persisted evidence._'
+      : findings.map((finding) => `- ${finding.kind} severity=${finding.severity}: ${finding.summary}`).join('\n'),
+    '',
+    '## Promotion Candidates',
+    '',
+    promotionCandidates.length === 0
+      ? '_No knowledge/eval candidates were generated._'
+      : promotionCandidates.map((candidate) => `- ${candidate.id} -> ${candidate.target}: ${candidate.summary}`).join('\n'),
+    '',
+    '_Generated from persisted workflow evidence; no long-term knowledge was mutated._',
+  ].join('\n');
+
+  const generatedAt = new Date().toISOString();
+  const json = {
+    schemaVersion: 'ainp.retro_report.v1',
+    workflowRunId: run.id,
+    title: 'Retro Report',
+    generatedAt,
+    summary,
+    findings,
+    promotionCandidates,
+    evidence: {
+      stepIds: steps.map((step) => step.id),
+      commandRunIds: commands.map((command) => command.id),
+      gateRunIds: gates.map((gate) => gate.id),
+      artifactIds: artifacts.map((artifact) => artifact.id),
+      approvalIds: approvals.map((approval) => approval.id),
+      agentTaskIds: agentTasks.map((task) => task.id),
+      agentResultIds: agentResults.map((result) => result.id),
+      contextRequests,
+      rejectedApprovals,
+      gateIssues,
+      commandIssues,
+      agentIssues,
+      knowledgeReviewSignalIds: knowledgeReviewSignals.map((signal) => signal.id),
+    },
+  };
+  const outDir = join(REPORTS_DIR, workflowRunId);
+  await mkdir(outDir, { recursive: true });
+  const id = newId('art');
+  const path = join(outDir, `${id}.retro.md`);
+  await writeFile(path, md, 'utf8');
+  const jsonText = `${JSON.stringify(json, null, 2)}\n`;
+  const jsonId = newId('art');
+  const jsonPath = join(outDir, `${jsonId}.retro.json`);
+  await writeFile(jsonPath, jsonText, 'utf8');
+  audit(workflowRunId, 'retro_report.generated', { path, sidecarPath: jsonPath });
+
+  const artifact = createArtifact({
+    workflowRunId,
+    stepRunId: null,
+    kind: 'other',
+    uri: `file://${path}`,
+    size: Buffer.byteLength(md, 'utf8'),
+    contentType: 'text/markdown',
+    metadata: {
+      generatedAt,
+      output: 'retro_report.md',
+      reportKind: 'retro_report',
+      schemaVersion: 'ainp.retro_report.v1',
+    },
+  });
+  const sidecar = createArtifact({
+    workflowRunId,
+    stepRunId: null,
+    kind: 'other',
+    uri: `file://${jsonPath}`,
+    size: Buffer.byteLength(jsonText, 'utf8'),
+    contentType: 'application/json',
+    metadata: {
+      generatedAt,
+      output: 'retro_report.json',
+      reportKind: 'retro_report',
+      structured: true,
+      schemaVersion: 'ainp.retro_report.v1',
+    },
+  });
+  return { artifact, sidecar };
+}
+
+export async function generateRetroEvalScenarioDraft(
+  workflowRunId: string,
+  input: {
+    targetId: string;
+    actor: string;
+    payload?: Record<string, unknown>;
+  },
+): Promise<Artifact> {
+  const run = store.workflowRuns.get(workflowRunId);
+  if (!run) throw new Error(`workflow run not found: ${workflowRunId}`);
+
+  const payload = input.payload ?? {};
+  const generatedAt = new Date().toISOString();
+  const title = stringField(payload, 'title') ?? `Retro eval scenario ${input.targetId}`;
+  const evidenceRefs = stringArray(payload.evidenceRefs);
+  const suggestedScenario = asRecord(payload.scenario) ?? {
+    schemaVersion: 'ainp.eval.scenario.v1',
+    id: safeDraftId(`${run.id}-${input.targetId}`),
+    title,
+    description: stringField(payload, 'summary') ?? 'Drafted from a confirmed retro finding.',
+    kind: stringField(payload, 'scenarioKind') ?? 'workflow_fixture',
+    input: {
+      workflowRunId: run.id,
+      retroCandidateId: input.targetId,
+      evidenceRefs,
+    },
+    expectations: asRecord(payload.expectations) ?? {},
+  };
+  const draft = {
+    schemaVersion: 'ainp.eval.scenario_draft.v1',
+    workflowRunId: run.id,
+    targetId: input.targetId,
+    title,
+    status: 'draft',
+    actor: input.actor,
+    generatedAt,
+    source: {
+      kind: 'retro_candidate',
+      findingKind: stringField(payload, 'findingKind'),
+      recommendedAction: stringField(payload, 'recommendedAction'),
+      summary: stringField(payload, 'summary'),
+      evidenceRefs,
+    },
+    suggestedScenario,
+    payload,
+  };
+
+  const outDir = join(REPORTS_DIR, workflowRunId);
+  await mkdir(outDir, { recursive: true });
+  const artifactId = newId('art');
+  const path = join(outDir, `${artifactId}.eval-scenario-draft.json`);
+  const jsonText = `${JSON.stringify(draft, null, 2)}\n`;
+  await writeFile(path, jsonText, 'utf8');
+  audit(workflowRunId, 'retro_action.eval_scenario_draft_created', {
+    targetId: input.targetId,
+    path,
+  });
+
+  return createArtifact({
+    workflowRunId,
+    stepRunId: null,
+    kind: 'other',
+    uri: `file://${path}`,
+    size: Buffer.byteLength(jsonText, 'utf8'),
+    contentType: 'application/json',
+    metadata: {
+      generatedAt,
+      output: 'eval_scenario_draft.json',
+      reportKind: 'eval_candidate',
+      structured: true,
+      schemaVersion: 'ainp.eval.scenario_draft.v1',
+      retroCandidateId: input.targetId,
+    },
+  });
+}
+
 interface KnowledgeReviewSignalSummary {
   id: string;
   kind: string;
@@ -665,4 +968,13 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0))];
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function safeDraftId(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'retro-eval-scenario';
 }

@@ -2,12 +2,26 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { KnowledgeArtifact } from '@ainp/shared';
 
 const TMP = mkdtempSync(join(tmpdir(), 'ainp-knowledge-'));
 process.env.AINP_PROJECTS_DIR = TMP;
 process.env.AINP_HOME = TMP;
 
 describe('knowledge feedback loop', () => {
+  it('uses legacy accepted markdown only when structured KnowledgeArtifacts are absent', async () => {
+    const { acceptedKnowledgeMarkdownForContext } = await import('../src/knowledge');
+
+    expect(acceptedKnowledgeMarkdownForContext({
+      legacyMarkdown: 'legacy accepted knowledge',
+      knowledgeArtifacts: [],
+    })).toBe('legacy accepted knowledge');
+    expect(acceptedKnowledgeMarkdownForContext({
+      legacyMarkdown: 'legacy accepted knowledge',
+      knowledgeArtifacts: [knowledgeArtifactFixture()],
+    })).toBe('');
+  });
+
   it('persistKnowledgeCandidate copies the candidate into the project knowledge dir', async () => {
     const { persistKnowledgeCandidate, collectAcceptedKnowledge } = await import('../src/knowledge');
 
@@ -180,3 +194,26 @@ describe('knowledge feedback loop', () => {
     expect(acc).not.toContain('check backend policy');
   });
 });
+
+function knowledgeArtifactFixture(): KnowledgeArtifact {
+  const ts = new Date().toISOString();
+  return {
+    id: 'kart_structured',
+    kind: 'lesson',
+    uri: 'mem://lesson.md',
+    projectId: 'proj_k_structured',
+    size: 1,
+    contentType: 'text/markdown',
+    status: 'accepted',
+    version: 1,
+    entityId: 'LSN-structured',
+    derivedFromArtifactId: null,
+    subtype: null,
+    createdAt: ts,
+    updatedAt: ts,
+    metadata: {
+      title: 'structured scoped lesson',
+      sourceRefs: ['artifact:retro_1'],
+    },
+  };
+}

@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/shared/backend/agent-backend-contract.md", "reason": "Verify shared event/evidence contracts remain coherent."}
+{"file": ".trellis/spec/shared/backend/context-injection-protocol.md", "reason": "Verify evidence and knowledge roadmap aligns with governance expectations."}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "Check API route/store/gate behavior."}
+{"file": ".trellis/spec/runner/backend/agent-backend-runtime.md", "reason": "Check runner evidence emission and command runtime behavior."}
+{"file": ".trellis/spec/runner/backend/flow-registry.md", "reason": "Check orchestrator completion hook does not break flow invariants."}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Check evidence UI display remains consistent."}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "Check web type additions and DTO boundary handling."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check digest fields survive cross-layer round trips."}

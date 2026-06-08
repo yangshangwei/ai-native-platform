@@ -12,6 +12,7 @@
     "dev:api": "bun run --filter @ainp/api dev",
     "dev:web": "bun run --filter @ainp/web dev",
     "runner": "bun run --filter @ainp/runner runner",
+    "eval": "bun run scripts/eval-harness.ts",
     "smoke": "bun run scripts/smoke.ts",
     "smoke:codex": "bun run scripts/smoke-codex.ts",
     "e2e": "bun run scripts/e2e.ts",

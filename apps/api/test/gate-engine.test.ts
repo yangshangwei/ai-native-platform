@@ -1,8 +1,15 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, expect, test } from 'vitest';
-import type { Artifact } from '@ainp/shared';
+import {
+  VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+  VERIFIER_MEDIA_SCHEMA_VERSION,
+  type Artifact,
+  type Project,
+  type WorkflowRun,
+} from '@ainp/shared';
 
 process.env.AINP_DB_PATH = join(mkdtempSync(join(tmpdir(), 'ainp-gate-test-')), 'ainp.sqlite');
 
@@ -23,9 +30,14 @@ function artifact(kind: Artifact['kind'], path: string): Artifact {
     stepRunId: 'step_gate_structured',
     size: 1,
     contentType: 'text/markdown',
+    sha256: sha256(readFileSync(path)),
     createdAt: new Date().toISOString(),
     metadata: {},
   };
+}
+
+function sha256(content: string | Buffer): string {
+  return createHash('sha256').update(content).digest('hex');
 }
 
 test('requirement gate fails when the draft lacks IDs, acceptance criteria, and context evidence', () => {
@@ -156,6 +168,9 @@ test('acceptance traceability gate requires requirement, design, diff, review, a
     stderrRef: 'file:///tmp/stderr.log',
     stdoutBytes: 0,
     stderrBytes: 0,
+    stdoutSha256: sha256(''),
+    stderrSha256: sha256(''),
+    combinedSha256: sha256('combined'),
     timedOut: false,
     truncated: false,
   });
@@ -275,6 +290,36 @@ function insertStepRun(workflowRunId: string, stage: import('@ainp/shared').Work
   });
 }
 
+function insertWorkflowRun(workflowRunId: string, title: string) {
+  const project: Project = {
+    id: `proj_${workflowRunId}`,
+    name: `project-${workflowRunId}`,
+    localPath: tmpdir(),
+    language: 'java',
+    buildTool: 'maven',
+    defaultBranch: 'main',
+    registeredAt: new Date().toISOString(),
+  };
+  storeMod.store.projects.set(project.id, project);
+  const run: WorkflowRun = {
+    id: workflowRunId,
+    projectId: project.id,
+    type: 'feature',
+    status: 'running',
+    currentStage: 'review',
+    flowId: 'feature.standard',
+    startStage: null,
+    configSnapshotId: null,
+    sourceBranch: 'main',
+    branch: `ai/${workflowRunId}`,
+    workspacePath: tmpdir(),
+    title,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  storeMod.store.workflowRuns.set(run.id, run);
+}
+
 test('AC-14: feature.standard regression — requirement step scheduled but artifact missing → fail', () => {
   const workflowRunId = 'run_acceptance_trace_missing_req';
   const stepRunId = 'step_acceptance_trace_missing_req';
@@ -308,6 +353,53 @@ test('AC-14: feature.standard regression — requirement step scheduled but arti
   expect(ruleByid['acceptance.requirement_present'].status).toBe('fail');
   expect(ruleByid['acceptance.design_present'].status).toBe('pass');
   expect(ruleByid['acceptance.diff_present'].status).toBe('pass');
+});
+
+test('acceptance traceability gate does not treat verifier artifacts as review evidence', () => {
+  const workflowRunId = 'run_acceptance_trace_verifier_not_review';
+  const stepRunId = 'step_acceptance_trace_verifier_not_review';
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-verifier-not-review-'));
+  const diffPath = join(dir, 'changes.diff');
+  const matrixPath = join(dir, 'verifier-ac-matrix.json');
+  writeFileSync(diffPath, 'diff --git a/src/main b/src/main\n');
+  writeFileSync(
+    matrixPath,
+    `${JSON.stringify({
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      workflowRunId,
+      stepRunId,
+      verifierRequired: true,
+      verifierStatus: 'blocked',
+      acceptanceCriteria: [],
+      createdAt: new Date().toISOString(),
+    }, null, 2)}\n`,
+  );
+
+  for (const a of [
+    { ...artifact('diff', diffPath), workflowRunId, stepRunId },
+    {
+      ...artifact('other', matrixPath),
+      workflowRunId,
+      stepRunId,
+      contentType: 'application/json',
+      metadata: {
+        schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+        reportKind: 'verifier_ac_matrix',
+        verifierArtifactType: 'ac_matrix',
+        subStage: 'verifier',
+      },
+    },
+  ]) {
+    storeMod.store.artifacts.insert(a);
+  }
+  insertPassingTestGate(workflowRunId, stepRunId);
+
+  const gate = gates.runAcceptanceTraceabilityGate({ workflowRunId, stepRunId });
+
+  expect(gate.status).toBe('fail');
+  const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
+  expect(ruleById['acceptance.diff_present'].status).toBe('pass');
+  expect(ruleById['acceptance.review_present'].status).toBe('fail');
 });
 
 test('AC-15: issue.standard shape — no requirement/design step scheduled → presence rules pass with N/A', () => {
@@ -441,4 +533,378 @@ test('AC-16: feature.fastforward shape — no requirement/design step → pass (
   expect(ruleById['acceptance.design_present'].status).toBe('pass');
   expect(ruleById['acceptance.diff_present'].status).toBe('pass');
   expect(ruleById['acceptance.review_present'].status).toBe('pass');
+});
+
+test('evidence gate fails when a passing gate has no resolvable evidence', () => {
+  const workflowRunId = 'run_evidence_missing_refs';
+
+  storeMod.store.gateRuns.insert({
+    id: 'gate_fake_pass',
+    gateId: 'requirement_gate',
+    workflowRunId,
+    stepRunId: null,
+    status: 'pass',
+    ruleResults: [
+      {
+        ruleId: 'requirement.fake_pass',
+        status: 'pass',
+        message: 'claimed pass without evidence',
+        evidenceRefs: [],
+      },
+    ],
+    evidenceRefs: [],
+    commandRunIds: [],
+    decidedAt: new Date().toISOString(),
+    agentNote: null,
+  });
+
+  const gate = gates.runEvidenceGate({ workflowRunId, stepRunId: null });
+
+  expect(gate.status).toBe('fail');
+  const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
+  expect(ruleById['evidence.pass_rules_have_refs'].status).toBe('fail');
+});
+
+test('evidence gate fails when passing compile/test gates lack command evidence', () => {
+  const workflowRunId = 'run_evidence_compile_artifact_only';
+  const stepRunId = 'step_evidence_compile_artifact_only';
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-evidence-artifact-only-'));
+  const path = join(dir, 'compile-note.md');
+  writeFileSync(path, '# Compile\n\nClaimed success without command evidence.\n');
+  const note = { ...artifact('other', path), workflowRunId, stepRunId };
+  const evidenceRefs = [{ artifactId: note.id, claim: 'non-command compile note' }];
+  storeMod.store.artifacts.insert(note);
+  storeMod.store.gateRuns.insert({
+    id: 'gate_compile_artifact_only',
+    gateId: 'compile_gate',
+    workflowRunId,
+    stepRunId,
+    status: 'pass',
+    ruleResults: [
+      {
+        ruleId: 'compile.exit_zero',
+        status: 'pass',
+        message: 'compile claimed as passed',
+        evidenceRefs,
+      },
+    ],
+    evidenceRefs,
+    commandRunIds: [],
+    decidedAt: new Date().toISOString(),
+    agentNote: null,
+  });
+
+  const gate = gates.runEvidenceGate({ workflowRunId, stepRunId });
+
+  expect(gate.status).toBe('fail');
+  const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
+  expect(ruleById['evidence.pass_rules_have_refs'].status).toBe('pass');
+  expect(ruleById['evidence.refs_resolve'].status).toBe('pass');
+  expect(ruleById['evidence.command_digests_present'].status).toBe('fail');
+  expect(ruleById['evidence.command_digests_present'].message).toMatch(/missing command evidence/i);
+});
+
+test('evidence gate passes complete digest-backed compile/test/acceptance evidence', () => {
+  const workflowRunId = 'run_evidence_complete';
+  const stepRunId = 'step_evidence_complete';
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-evidence-complete-'));
+  const stdout = join(dir, 'stdout.log');
+  const stderr = join(dir, 'stderr.log');
+  writeFileSync(stdout, 'BUILD SUCCESS\n');
+  writeFileSync(stderr, '');
+
+  const diffPath = join(dir, 'changes.diff');
+  const reviewPath = join(dir, 'review.md');
+  const surefirePath = join(dir, 'TEST-demo.xml');
+  writeFileSync(diffPath, 'diff --git a/src/main b/src/main\n');
+  writeFileSync(reviewPath, '# Review\nVerified\n');
+  writeFileSync(surefirePath, '<testsuite tests="1" failures="0" errors="0" skipped="0"></testsuite>\n');
+
+  for (const a of [
+    { ...artifact('diff', diffPath), workflowRunId, stepRunId },
+    { ...artifact('other', reviewPath), workflowRunId, stepRunId },
+    { ...artifact('surefire_report', surefirePath), workflowRunId, stepRunId, contentType: 'application/xml' },
+  ]) {
+    storeMod.store.artifacts.insert(a);
+  }
+  for (const stage of ['implementation', 'build_test', 'review'] as const) {
+    insertStepRun(workflowRunId, stage);
+  }
+  storeMod.store.commandRuns.set('cmd_evidence_compile', {
+    id: 'cmd_evidence_compile',
+    workflowRunId,
+    stepRunId,
+    cwd: dir,
+    command: 'mvn -B -DskipTests compile',
+    stage: 'compile',
+    status: 'passed',
+    exitCode: 0,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    durationMs: 1,
+    stdoutRef: `file://${stdout}`,
+    stderrRef: `file://${stderr}`,
+    stdoutBytes: 14,
+    stderrBytes: 0,
+    stdoutSha256: sha256(readFileSync(stdout)),
+    stderrSha256: sha256(readFileSync(stderr)),
+    combinedSha256: sha256('compile-combined'),
+    timedOut: false,
+    truncated: false,
+  });
+  storeMod.store.commandRuns.set('cmd_evidence_test', {
+    id: 'cmd_evidence_test',
+    workflowRunId,
+    stepRunId,
+    cwd: dir,
+    command: 'mvn -B test',
+    stage: 'test',
+    status: 'passed',
+    exitCode: 0,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    durationMs: 1,
+    stdoutRef: `file://${stdout}`,
+    stderrRef: `file://${stderr}`,
+    stdoutBytes: 14,
+    stderrBytes: 0,
+    stdoutSha256: sha256(readFileSync(stdout)),
+    stderrSha256: sha256(readFileSync(stderr)),
+    combinedSha256: sha256('test-combined'),
+    timedOut: false,
+    truncated: false,
+  });
+  gates.runCompileGate({
+    workflowRunId,
+    stepRunId,
+    buildRun: {
+      id: 'build_evidence_complete',
+      workflowRunId,
+      stepRunId,
+      language: 'java',
+      buildTool: 'maven',
+      jdkVersion: '1.8',
+      mavenCommand: 'mvn -B -DskipTests compile && mvn -B test',
+      status: 'passed',
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      commandRunIds: ['cmd_evidence_compile', 'cmd_evidence_test'],
+      artifactIds: [],
+    },
+  });
+  gates.runTestGate({
+    workflowRunId,
+    stepRunId,
+    buildRun: {
+      id: 'build_evidence_complete',
+      workflowRunId,
+      stepRunId,
+      language: 'java',
+      buildTool: 'maven',
+      jdkVersion: '1.8',
+      mavenCommand: 'mvn -B -DskipTests compile && mvn -B test',
+      status: 'passed',
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      commandRunIds: ['cmd_evidence_compile', 'cmd_evidence_test'],
+      artifactIds: [],
+    },
+    testRuns: [{
+      id: 'test_evidence_complete',
+      buildRunId: 'build_evidence_complete',
+      framework: 'maven-surefire',
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      errors: 0,
+      reportArtifactIds: storeMod.store.artifacts.byKind(workflowRunId, 'surefire_report').map((a) => a.id),
+    }],
+    surefireAggregate: {
+      framework: 'maven-surefire',
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      errors: 0,
+      suites: [],
+      reportPaths: [`file://${surefirePath}`],
+    },
+  });
+  gates.runAcceptanceTraceabilityGate({ workflowRunId, stepRunId });
+
+  const gate = gates.runEvidenceGate({ workflowRunId, stepRunId });
+
+  expect(gate.status).toBe('pass');
+  const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
+  expect(ruleById['evidence.pass_rules_have_refs'].status).toBe('pass');
+  expect(ruleById['evidence.refs_resolve'].status).toBe('pass');
+  expect(ruleById['evidence.command_digests_present'].status).toBe('pass');
+  expect(ruleById['evidence.acceptance_has_execution_evidence'].status).toBe('pass');
+});
+
+test('evidence gate fails UI runs when verifier matrix and media refs are missing', () => {
+  const workflowRunId = 'run_ui_verifier_missing';
+  insertWorkflowRun(workflowRunId, 'Update frontend UI button state');
+
+  const gate = gates.runEvidenceGate({ workflowRunId, stepRunId: null });
+
+  expect(gate.status).toBe('fail');
+  const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
+  expect(ruleById['evidence.ui_verifier_matrix_present'].status).toBe('fail');
+  expect(ruleById['evidence.ui_verifier_media_refs_present'].status).toBe('fail');
+  expect(ruleById['evidence.ui_verifier_artifact_digests_present'].status).toBe('fail');
+});
+
+test('evidence gate accepts UI verifier AC matrix with before and after screenshot artifacts', () => {
+  const workflowRunId = 'run_ui_verifier_complete';
+  const stepRunId = 'step_ui_verifier_complete';
+  insertWorkflowRun(workflowRunId, 'Polish web UI settings page');
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-ui-verifier-complete-'));
+  const beforePath = join(dir, 'AC-001-before.png');
+  const afterPath = join(dir, 'AC-001-after.png');
+  const matrixPath = join(dir, 'verifier-ac-matrix.json');
+  writeFileSync(beforePath, 'before screenshot bytes');
+  writeFileSync(afterPath, 'after screenshot bytes');
+
+  const before = {
+    ...artifact('other', beforePath),
+    workflowRunId,
+    stepRunId,
+    contentType: 'image/png',
+    metadata: {
+      schemaVersion: VERIFIER_MEDIA_SCHEMA_VERSION,
+      reportKind: 'verifier_media',
+      verifierArtifactType: 'screenshot_before',
+    },
+  };
+  const after = {
+    ...artifact('other', afterPath),
+    workflowRunId,
+    stepRunId,
+    contentType: 'image/png',
+    metadata: {
+      schemaVersion: VERIFIER_MEDIA_SCHEMA_VERSION,
+      reportKind: 'verifier_media',
+      verifierArtifactType: 'screenshot_after',
+    },
+  };
+  storeMod.store.artifacts.insert(before);
+  storeMod.store.artifacts.insert(after);
+
+  writeFileSync(
+    matrixPath,
+    `${JSON.stringify({
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      workflowRunId,
+      stepRunId,
+      verifierRequired: true,
+      verifierStatus: 'pass',
+      acceptanceCriteria: [
+        {
+          id: 'AC-001',
+          status: 'pass',
+          evidenceRefs: [
+            { artifactId: before.id, role: 'screenshot_before', claim: 'before screenshot' },
+            { artifactId: after.id, role: 'screenshot_after', claim: 'after screenshot' },
+          ],
+        },
+      ],
+      createdAt: new Date().toISOString(),
+    }, null, 2)}\n`,
+  );
+  const matrix = {
+    ...artifact('other', matrixPath),
+    workflowRunId,
+    stepRunId,
+    contentType: 'application/json',
+    metadata: {
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      reportKind: 'verifier_ac_matrix',
+      verifierRequired: true,
+      verifierArtifactType: 'ac_matrix',
+    },
+  };
+  storeMod.store.artifacts.insert(matrix);
+
+  const gate = gates.runEvidenceGate({ workflowRunId, stepRunId });
+
+  expect(gate.status).toBe('pass');
+  const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
+  expect(ruleById['evidence.ui_verifier_matrix_present'].status).toBe('pass');
+  expect(ruleById['evidence.ui_verifier_media_refs_present'].status).toBe('pass');
+  expect(ruleById['evidence.ui_verifier_artifact_digests_present'].status).toBe('pass');
+  expect(ruleById['evidence.ui_verifier_media_refs_present'].evidenceRefs.map((ref) => ref.artifactId))
+    .toEqual(expect.arrayContaining([before.id, after.id, matrix.id]));
+});
+
+test('evidence gate rejects verifier matrix refs to untagged image artifacts', () => {
+  const workflowRunId = 'run_ui_verifier_untagged_images';
+  const stepRunId = 'step_ui_verifier_untagged_images';
+  insertWorkflowRun(workflowRunId, 'Update browser UI image preview');
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-ui-verifier-untagged-'));
+  const beforePath = join(dir, 'before.png');
+  const afterPath = join(dir, 'after.png');
+  const matrixPath = join(dir, 'verifier-ac-matrix.json');
+  writeFileSync(beforePath, 'before screenshot bytes');
+  writeFileSync(afterPath, 'after screenshot bytes');
+
+  const before = {
+    ...artifact('other', beforePath),
+    workflowRunId,
+    stepRunId,
+    contentType: 'image/png',
+    metadata: {},
+  };
+  const after = {
+    ...artifact('other', afterPath),
+    workflowRunId,
+    stepRunId,
+    contentType: 'image/png',
+    metadata: {},
+  };
+  storeMod.store.artifacts.insert(before);
+  storeMod.store.artifacts.insert(after);
+
+  writeFileSync(
+    matrixPath,
+    `${JSON.stringify({
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      workflowRunId,
+      stepRunId,
+      verifierRequired: true,
+      verifierStatus: 'pass',
+      acceptanceCriteria: [
+        {
+          id: 'AC-001',
+          status: 'pass',
+          evidenceRefs: [
+            { artifactId: before.id, role: 'screenshot_before', claim: 'before screenshot' },
+            { artifactId: after.id, role: 'screenshot_after', claim: 'after screenshot' },
+          ],
+        },
+      ],
+      createdAt: new Date().toISOString(),
+    }, null, 2)}\n`,
+  );
+  const matrix = {
+    ...artifact('other', matrixPath),
+    workflowRunId,
+    stepRunId,
+    contentType: 'application/json',
+    metadata: {
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      reportKind: 'verifier_ac_matrix',
+      verifierRequired: true,
+      verifierArtifactType: 'ac_matrix',
+    },
+  };
+  storeMod.store.artifacts.insert(matrix);
+
+  const gate = gates.runEvidenceGate({ workflowRunId, stepRunId });
+
+  expect(gate.status).toBe('fail');
+  const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
+  expect(ruleById['evidence.ui_verifier_matrix_present'].status).toBe('pass');
+  expect(ruleById['evidence.ui_verifier_media_refs_present'].status).toBe('fail');
 });

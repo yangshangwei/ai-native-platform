@@ -11,8 +11,8 @@ commandRuns.get('/:id/logs', (c) => {
   try {
     return c.json({
       commandRun,
-      stdout: readFileUriContent(commandRun.stdoutRef, 'text/plain'),
-      stderr: readFileUriContent(commandRun.stderrRef, 'text/plain'),
+      stdout: readFileUriContent(commandRun.stdoutRef, 'text/plain', commandRun.stdoutSha256 ?? null),
+      stderr: readFileUriContent(commandRun.stderrRef, 'text/plain', commandRun.stderrSha256 ?? null),
     });
   } catch (err) {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);

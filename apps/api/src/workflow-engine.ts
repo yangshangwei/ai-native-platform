@@ -48,6 +48,7 @@ import {
   type WorkflowAction,
 } from './store/store';
 import { db } from './store/db';
+import { sha256File } from './digest';
 import {
   runCompileGate,
   runTestGate,
@@ -572,6 +573,9 @@ export interface CreateArtifactInput {
 }
 
 export function createArtifact(input: CreateArtifactInput): Artifact {
+  const sha256 = input.uri.startsWith('file://')
+    ? safeFileSha256(input.uri.slice('file://'.length))
+    : null;
   const a: Artifact = {
     id: newId('art'),
     workflowRunId: input.workflowRunId,
@@ -580,12 +584,21 @@ export function createArtifact(input: CreateArtifactInput): Artifact {
     uri: input.uri,
     size: input.size,
     contentType: input.contentType,
+    sha256,
     createdAt: nowIso(),
     metadata: input.metadata ?? {},
   };
   store.artifacts.insert(a);
   audit(input.workflowRunId, 'artifact.created', { artifactId: a.id, kind: a.kind });
   return a;
+}
+
+function safeFileSha256(path: string): string | null {
+  try {
+    return sha256File(path);
+  } catch {
+    return null;
+  }
 }
 
 // ---- Knowledge artifact (V2 P0-1) ----------------------------------------

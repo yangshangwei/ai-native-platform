@@ -2,11 +2,13 @@ import { basename, dirname, resolve } from 'node:path';
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import type { Artifact } from '@ainp/shared';
+import { verifyFileSha256, type DigestVerification } from './digest';
 
 export interface ArtifactContent {
   text: string;
   contentType: string;
   filename: string;
+  digest: DigestVerification;
 }
 
 const allowedArtifactRoots = [
@@ -18,15 +20,20 @@ const allowedArtifactRoots = [
 ].filter((root): root is string => Boolean(root));
 
 export function readArtifactContent(artifact: Artifact): ArtifactContent {
-  return readFileUriContent(artifact.uri, artifact.contentType);
+  return readFileUriContent(artifact.uri, artifact.contentType, artifact.sha256 ?? null);
 }
 
-export function readFileUriContent(uri: string, contentType = 'text/plain'): ArtifactContent {
+export function readFileUriContent(
+  uri: string,
+  contentType = 'text/plain',
+  expectedSha256: string | null = null,
+): ArtifactContent {
   const path = resolveReadableFileUri(uri);
   return {
     text: readFileSync(path, 'utf8'),
     contentType,
     filename: basename(path),
+    digest: verifyFileSha256(path, expectedSha256),
   };
 }
 
@@ -49,6 +56,10 @@ function resolveReadableFileUri(uri: string): string {
     throw new Error('File artifact path is outside the allowed local artifact roots');
   }
   return realPath;
+}
+
+export function resolvedReadableFileUriForDigest(uri: string): string {
+  return resolveReadableFileUri(uri);
 }
 
 function isWithinResolvedRoot(path: string, root: string): boolean {

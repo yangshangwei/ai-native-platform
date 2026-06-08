@@ -77,6 +77,9 @@ export interface CommandRunDto {
   durationMs: number | null;
   stdoutRef: string;
   stderrRef: string;
+  stdoutSha256?: string | null;
+  stderrSha256?: string | null;
+  combinedSha256?: string | null;
   startedAt: string;
 }
 
@@ -95,6 +98,7 @@ export interface ArtifactDto {
   stepRunId?: string | null;
   uri: string;
   contentType: string;
+  sha256?: string | null;
   createdAt: string;
   metadata?: Record<string, unknown>;
 }

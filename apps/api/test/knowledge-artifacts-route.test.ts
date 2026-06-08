@@ -290,6 +290,76 @@ test('GET /:id returns 404 for unknown id', async () => {
   expect(res.status).toBe(404);
 });
 
+test('POST /usage records selected knowledge hit metadata once per artifact', async () => {
+  const created = (await (
+    await postKnowledge({
+      kind: 'decision',
+      uri: 'mem://usage-decision',
+      size: 50,
+      contentType: 'text/markdown',
+      status: 'accepted',
+      entityId: 'ADR-USAGE',
+      metadata: {
+        title: 'Usage tracking decision',
+        hitCount: 2,
+      },
+    })
+  ).json()) as { artifact: { id: string } };
+
+  const res = await app.request('/knowledge-artifacts/usage', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: 'run_usage',
+      contextPackId: 'ctxpack_usage',
+      taskId: 'agt_usage',
+      actor: 'runner',
+      usedAt: '2026-06-09T01:02:03.000Z',
+      items: [
+        {
+          knowledgeArtifactId: created.artifact.id,
+          mode: 'summary',
+          score: 123,
+          sourceRefs: ['knowledge:accepted', 42, 'knowledge:accepted', 'artifact:art_usage'],
+        },
+        { knowledgeArtifactId: created.artifact.id, mode: 'full', score: 999 },
+        { knowledgeArtifactId: 'kart_missing' },
+        'ignored malformed row',
+      ],
+    }),
+  });
+
+  expect(res.status).toBe(200);
+  const json = (await res.json()) as {
+    ok: boolean;
+    updated: Array<{ id: string; metadata: Record<string, unknown> }>;
+    missing: string[];
+  };
+  expect(json.ok).toBe(true);
+  expect(json.updated).toHaveLength(1);
+  expect(json.missing).toEqual(['kart_missing']);
+  expect(json.updated[0]?.metadata).toMatchObject({
+    title: 'Usage tracking decision',
+    hitCount: 3,
+    lastUsedAt: '2026-06-09T01:02:03.000Z',
+    lastUsedBy: 'runner',
+    lastUsedInWorkflowRunId: 'run_usage',
+    lastUsedContextPackId: 'ctxpack_usage',
+    lastUsedAgentTaskId: 'agt_usage',
+    lastUsedMode: 'summary',
+    lastUsedScore: 123,
+  });
+  expect(json.updated[0]?.metadata.lastUsedSourceRefs).toEqual([
+    'knowledge:accepted',
+    'artifact:art_usage',
+  ]);
+
+  const fetched = await app.request(`/knowledge-artifacts/${created.artifact.id}`);
+  const persisted = (await fetched.json()) as { artifact: { metadata: Record<string, unknown> } };
+  expect(persisted.artifact.metadata.hitCount).toBe(3);
+  expect(persisted.artifact.metadata.lastUsedContextPackId).toBe('ctxpack_usage');
+});
+
 // ---------------------------------------------------------------------------
 // Versioning via entityId
 // ---------------------------------------------------------------------------

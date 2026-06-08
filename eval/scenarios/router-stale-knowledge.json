@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "router-stale-knowledge",
+  "title": "Router suppresses stale or conflicted accepted knowledge",
+  "description": "Accepted-looking knowledge with historical freshness or conflict review status must not drive start-stage skips or relevant knowledge selection.",
+  "kind": "router_recommendation",
+  "input": {
+    "projectId": "eval_router",
+    "runType": "feature",
+    "title": "implement payment reconciliation retry workflow with enough detail to require standard feature routing",
+    "knowledgeArtifacts": []
+  },
+  "expectations": {
+    "flowId": "feature.standard",
+    "startStage": null,
+    "relevantKnowledgeMax": 0,
+    "rulesFiredIncludes": ["startStage.no_skip"]
+  },
+  "variants": [
+    {
+      "id": "historical-design",
+      "label": "Historical design is ignored",
+      "backend": "rules_only",
+      "knowledgeVariant": "historical-design",
+      "inputOverrides": {
+        "knowledgeArtifacts": [
+          {
+            "kind": "design",
+            "entityId": "DSN-payment-reconciliation",
+            "metadata": {
+              "title": "payment reconciliation retry workflow design",
+              "knowledgeClass": "confirmed",
+              "freshness": "historical",
+              "sourceRefs": ["artifact:old_payment_design"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "conflicted-requirement",
+      "label": "Conflict-marked requirement is ignored",
+      "backend": "rules_only",
+      "knowledgeVariant": "conflicted-requirement",
+      "inputOverrides": {
+        "knowledgeArtifacts": [
+          {
+            "kind": "requirement",
+            "entityId": "REQ-payment-reconciliation",
+            "metadata": {
+              "title": "payment reconciliation retry workflow requirement",
+              "knowledgeClass": "confirmed",
+              "freshness": "current",
+              "reviewStatus": "Conflict",
+              "sourceRefs": ["artifact:conflicting_payment_requirement"]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -16,6 +16,7 @@ import {
   isKnowledgeClass,
   isKnowledgeArtifactKind,
   isKnowledgeArtifactStatus,
+  nowIso,
   normalizeKnowledgeContextMetadata,
   type ContextFreshness,
   type ContextTrustLevel,
@@ -216,6 +217,77 @@ knowledgeArtifacts.post('/promote', async (c) => {
   }
 });
 
+knowledgeArtifacts.post('/usage', async (c) => {
+  const body = (await c.req.json()) as {
+    workflowRunId?: string;
+    contextPackId?: string;
+    taskId?: string | null;
+    actor?: string;
+    usedAt?: string;
+    items?: Array<{
+      id?: string;
+      knowledgeArtifactId?: string;
+      mode?: string;
+      score?: number;
+      sourceRefs?: string[];
+    }>;
+  };
+  const workflowRunId = stringField(body, 'workflowRunId');
+  const contextPackId = stringField(body, 'contextPackId');
+  if (!workflowRunId || !contextPackId) {
+    return c.json({ error: 'workflowRunId and contextPackId required' }, 400);
+  }
+  if (!Array.isArray(body.items) || body.items.length === 0) {
+    return c.json({ error: 'items must be a non-empty array' }, 400);
+  }
+
+  const usedAt = typeof body.usedAt === 'string' && body.usedAt.trim()
+    ? body.usedAt.trim()
+    : nowIso();
+  const actor = typeof body.actor === 'string' && body.actor.trim()
+    ? body.actor.trim()
+    : 'runner';
+  const taskId = typeof body.taskId === 'string' && body.taskId.trim()
+    ? body.taskId.trim()
+    : null;
+  const updated: KnowledgeArtifact[] = [];
+  const missing: string[] = [];
+  const seen = new Set<string>();
+
+  for (const rawItem of body.items) {
+    if (!isRecord(rawItem)) continue;
+    const id = (stringField(rawItem, 'knowledgeArtifactId') ?? stringField(rawItem, 'id') ?? '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const artifact = store.knowledgeArtifacts.get(id);
+    if (!artifact) {
+      missing.push(id);
+      continue;
+    }
+    const previousHitCount = typeof artifact.metadata.hitCount === 'number'
+      && Number.isFinite(artifact.metadata.hitCount)
+      ? artifact.metadata.hitCount
+      : 0;
+    const metadata = {
+      ...artifact.metadata,
+      hitCount: previousHitCount + 1,
+      lastUsedAt: usedAt,
+      lastUsedBy: actor,
+      lastUsedInWorkflowRunId: workflowRunId,
+      lastUsedContextPackId: contextPackId,
+      lastUsedAgentTaskId: taskId,
+      lastUsedMode: stringField(rawItem, 'mode'),
+      lastUsedScore: typeof rawItem.score === 'number' && Number.isFinite(rawItem.score) ? rawItem.score : null,
+      lastUsedSourceRefs: stringArray(rawItem.sourceRefs),
+    };
+    store.knowledgeArtifacts.updateMetadata(id, metadata, usedAt);
+    const refreshed = store.knowledgeArtifacts.get(id);
+    if (refreshed) updated.push(refreshed);
+  }
+
+  return c.json({ ok: true, updated, missing });
+});
+
 // ---- read ------------------------------------------------------------------
 
 knowledgeArtifacts.get('/projects/:projectId', (c) => {
@@ -288,3 +360,17 @@ knowledgeArtifacts.patch('/:id/status', async (c) => {
     return c.json({ error: err instanceof Error ? err.message : String(err) }, 404);
   }
 });
+
+function stringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0))];
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}

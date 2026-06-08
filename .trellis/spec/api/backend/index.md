@@ -20,6 +20,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [Context Injection Protocol](../../shared/backend/context-injection-protocol.md) | ContextPack governance read model, context_request chain, metrics, and policy validation | Current |
+| [Evidence and Verifier Protocol](../../shared/backend/evidence-verifier-protocol.md) | Digest-backed evidence gates, completion blocking, and UI verifier artifacts | Current |
 
 ---
 

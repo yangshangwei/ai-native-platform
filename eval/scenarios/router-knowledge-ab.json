@@ -1,0 +1,77 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "router-knowledge-ab",
+  "title": "Router uses scoped accepted knowledge without exceeding top-N",
+  "description": "Compares a no-knowledge baseline with a scoped accepted-knowledge variant for Smart Router recommendations.",
+  "kind": "router_recommendation",
+  "input": {
+    "projectId": "eval_router",
+    "runType": "feature",
+    "title": "implement export retry workflow with approved design and lessons for enough detail to use the full feature flow",
+    "knowledgeArtifacts": []
+  },
+  "expectations": {
+    "flowId": "feature.standard",
+    "relevantKnowledgeMax": 5
+  },
+  "variants": [
+    {
+      "id": "baseline",
+      "label": "No accepted knowledge",
+      "backend": "rules_only",
+      "knowledgeVariant": "none",
+      "expectations": {
+        "startStage": null,
+        "relevantKnowledgeMin": 0,
+        "relevantKnowledgeMax": 0,
+        "rulesFiredIncludes": ["startStage.no_skip"]
+      }
+    },
+    {
+      "id": "accepted-knowledge",
+      "label": "Accepted design and lessons",
+      "backend": "rules_only",
+      "knowledgeVariant": "accepted-top-n",
+      "inputOverrides": {
+        "knowledgeArtifacts": [
+          {
+            "kind": "design",
+            "entityId": "DSN-export-retry",
+            "metadata": {
+              "title": "export retry workflow design",
+              "knowledgeClass": "confirmed",
+              "freshness": "current",
+              "sourceRefs": ["artifact:dsn_export_retry"]
+            }
+          },
+          {
+            "kind": "lesson",
+            "entityId": "LSN-export-timeout",
+            "metadata": {
+              "title": "export retry timeout lesson",
+              "knowledgeClass": "confirmed",
+              "freshness": "current",
+              "sourceRefs": ["artifact:retro_export_timeout"]
+            }
+          },
+          {
+            "kind": "pattern",
+            "entityId": "PAT-export-idempotency",
+            "metadata": {
+              "title": "export idempotency pattern",
+              "knowledgeClass": "confirmed",
+              "freshness": "current",
+              "sourceRefs": ["artifact:pattern_export_idempotency"]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "startStage": "implementation",
+        "relevantKnowledgeMin": 1,
+        "relevantKnowledgeMax": 5,
+        "rulesFiredIncludes": ["startStage.has_accepted_design"]
+      }
+    }
+  ]
+}

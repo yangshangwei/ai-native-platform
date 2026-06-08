@@ -422,6 +422,9 @@ interface CommandRunRow {
   stderr_ref: string;
   stdout_bytes: number;
   stderr_bytes: number;
+  stdout_sha256: string | null;
+  stderr_sha256: string | null;
+  combined_sha256: string | null;
   timed_out: number;
   truncated: number;
 }
@@ -443,6 +446,9 @@ function rowToCommandRun(r: CommandRunRow): CommandRun {
     stderrRef: r.stderr_ref,
     stdoutBytes: r.stdout_bytes,
     stderrBytes: r.stderr_bytes,
+    stdoutSha256: r.stdout_sha256,
+    stderrSha256: r.stderr_sha256,
+    combinedSha256: r.combined_sha256,
     timedOut: unbool(r.timed_out),
     truncated: unbool(r.truncated),
   };
@@ -469,6 +475,9 @@ const commandRuns: MapLike<CommandRun> & {
       stderr_ref: c.stderrRef,
       stdout_bytes: c.stdoutBytes,
       stderr_bytes: c.stderrBytes,
+      stdout_sha256: c.stdoutSha256 ?? null,
+      stderr_sha256: c.stderrSha256 ?? null,
+      combined_sha256: c.combinedSha256 ?? null,
       timed_out: bool(c.timedOut),
       truncated: bool(c.truncated),
     });
@@ -585,6 +594,7 @@ interface ArtifactRow {
   step_run_id: string | null;
   size: number;
   content_type: string;
+  sha256: string | null;
   created_at: string;
   metadata_json: string;
 }
@@ -598,6 +608,7 @@ function rowToArtifact(r: ArtifactRow): Artifact {
     stepRunId: r.step_run_id,
     size: r.size,
     contentType: r.content_type,
+    sha256: r.sha256,
     createdAt: r.created_at,
     metadata: JSON.parse(r.metadata_json) as Record<string, unknown>,
   };
@@ -613,6 +624,7 @@ const artifacts = {
       step_run_id: a.stepRunId,
       size: a.size,
       content_type: a.contentType,
+      sha256: a.sha256 ?? null,
       created_at: a.createdAt,
       metadata_json: JSON.stringify(a.metadata),
     });
@@ -755,6 +767,11 @@ const knowledgeArtifacts = {
     db.prepare(
       'UPDATE knowledge_artifacts SET status = ?, metadata_json = ?, updated_at = ? WHERE id = ?',
     ).run(status, JSON.stringify(metadata), updatedAt, id);
+  },
+  updateMetadata(id: string, metadata: Record<string, unknown>, updatedAt: string): void {
+    db.prepare(
+      'UPDATE knowledge_artifacts SET metadata_json = ?, updated_at = ? WHERE id = ?',
+    ).run(JSON.stringify(metadata), updatedAt, id);
   },
 };
 

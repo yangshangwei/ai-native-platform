@@ -1,0 +1,63 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "router-flow-types",
+  "title": "Router maps run types to stable flow recommendations",
+  "description": "Covers deterministic rules for bugfix, refactor, and smoke run types without requiring an agent backend.",
+  "kind": "router_recommendation",
+  "input": {
+    "projectId": "eval_router",
+    "runType": "feature",
+    "title": "implement a detailed export workflow with enough scope to avoid fast-forward routing",
+    "knowledgeArtifacts": []
+  },
+  "variants": [
+    {
+      "id": "bugfix",
+      "label": "Bugfix uses issue flow",
+      "backend": "rules_only",
+      "skillVariant": "bugfix-standard",
+      "inputOverrides": {
+        "runType": "bugfix",
+        "title": "fix failed export retry status propagation"
+      },
+      "expectations": {
+        "flowId": "issue.standard",
+        "startStage": null,
+        "relevantKnowledgeMax": 0,
+        "rulesFiredIncludes": ["flow.bugfix_to_issue_standard", "startStage.short_flow_no_skip"]
+      }
+    },
+    {
+      "id": "refactor",
+      "label": "Refactor uses refactor flow",
+      "backend": "rules_only",
+      "skillVariant": "refactor-standard",
+      "inputOverrides": {
+        "runType": "refactor",
+        "title": "refactor export retry orchestration boundaries"
+      },
+      "expectations": {
+        "flowId": "refactor.standard",
+        "startStage": null,
+        "relevantKnowledgeMax": 0,
+        "rulesFiredIncludes": ["flow.refactor_to_refactor_standard", "startStage.short_flow_no_skip"]
+      }
+    },
+    {
+      "id": "smoke",
+      "label": "Smoke keeps feature flow",
+      "backend": "rules_only",
+      "skillVariant": "smoke-standard",
+      "inputOverrides": {
+        "runType": "smoke",
+        "title": "smoke export retry workflow end to end"
+      },
+      "expectations": {
+        "flowId": "feature.standard",
+        "startStage": null,
+        "relevantKnowledgeMax": 0,
+        "rulesFiredIncludes": ["flow.smoke_to_feature_standard", "startStage.no_skip"]
+      }
+    }
+  ]
+}

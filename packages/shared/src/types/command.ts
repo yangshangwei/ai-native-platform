@@ -37,6 +37,12 @@ export interface CommandRun {
   stderrRef: string;
   stdoutBytes: number;
   stderrBytes: number;
+  /** SHA-256 digest of the captured stdout log file. Null for legacy rows. */
+  stdoutSha256?: string | null;
+  /** SHA-256 digest of the captured stderr log file. Null for legacy rows. */
+  stderrSha256?: string | null;
+  /** SHA-256 digest over stdout and stderr bytes with stream separators. Null for legacy rows. */
+  combinedSha256?: string | null;
   timedOut: boolean;
   truncated: boolean;
 }

@@ -33,6 +33,7 @@ import {
   runRequirementGate,
   runDesignGate,
   runAcceptanceTraceabilityGate,
+  runEvidenceGate,
 } from '../gate-engine';
 import { store } from '../store/store';
 import { assertReadableFileUri } from '../artifact-content';
@@ -404,6 +405,13 @@ runnerEvents.post('/run-gate', async (c) => {
     }
     case 'acceptance_gate': {
       gate = runAcceptanceTraceabilityGate({
+        workflowRunId: body.workflowRunId,
+        stepRunId: body.stepRunId,
+      });
+      break;
+    }
+    case 'evidence_gate': {
+      gate = runEvidenceGate({
         workflowRunId: body.workflowRunId,
         stepRunId: body.stepRunId,
       });

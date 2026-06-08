@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/shared/backend/agent-backend-contract.md", "reason": "Shared AgentBackend/stream/evidence types are part of the cross-layer trust contract."}
+{"file": ".trellis/spec/shared/backend/context-injection-protocol.md", "reason": "Evidence and knowledge selection changes must preserve context governance and source-ref contracts."}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API backend package index for route/store/gate conventions."}
+{"file": ".trellis/spec/runner/backend/agent-backend-runtime.md", "reason": "Runner command/backend runtime must keep real CLI execution and evidence emission semantics."}
+{"file": ".trellis/spec/runner/backend/flow-registry.md", "reason": "Completion/Evidence Gate hook must respect orchestrator flow dispatch invariants."}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Web evidence display should preserve existing live execution and evidence panel conventions."}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "Web DTO additions for digest fields must follow runtime-boundary typing rules."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Digest helpers and gate resolution should reuse/extract shared patterns rather than duplicate logic."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Digest data flows through runner -> API -> DB -> routes -> web and needs boundary mapping."}

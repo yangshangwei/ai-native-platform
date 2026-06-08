@@ -15,7 +15,8 @@ export type GateId =
   | 'compile_gate'
   | 'test_gate'
   | 'acceptance_gate'
-  | 'knowledge_gate';
+  | 'knowledge_gate'
+  | 'evidence_gate';
 
 export type GateStatus = 'pass' | 'warn' | 'fail';
 

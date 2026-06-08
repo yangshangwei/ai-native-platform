@@ -3,6 +3,7 @@ import {
   nowIso,
   type Artifact,
   type BuildRun,
+  type CommandRun,
   type CommandRunId,
   type GateRun,
   type RuleResult,
@@ -11,6 +12,11 @@ import {
   type WorkflowRunId,
   type StepRunId,
   type EvidenceRef,
+  VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+  VERIFIER_MEDIA_SCHEMA_VERSION,
+  type VerifierAcMatrix,
+  type VerifierMediaRole,
+  type VerifierStatus,
 } from '@ainp/shared';
 import { store } from './store/store';
 import { readFileUriText } from './artifact-content';
@@ -458,7 +464,10 @@ export function runAcceptanceTraceabilityGate(params: {
   const requirement = store.artifacts.byKind(params.workflowRunId, 'requirement_draft').at(-1) ?? null;
   const design = store.artifacts.byKind(params.workflowRunId, 'design_doc').at(-1) ?? null;
   const diff = store.artifacts.byKind(params.workflowRunId, 'diff').at(-1) ?? null;
-  const review = store.artifacts.byKind(params.workflowRunId, 'other').at(-1) ?? null;
+  const review = store.artifacts
+    .byKind(params.workflowRunId, 'other')
+    .filter(isAcceptanceReviewArtifact)
+    .at(-1) ?? null;
   const testGate = store.gateRuns.latestForGate(params.workflowRunId, 'test_gate');
 
   // V2 W2-2a (PRD ADR Q3): stage-history-aware traceability rules. If the
@@ -598,4 +607,445 @@ export function runManualGate(params: {
     },
   ];
   return record(params.workflowRunId, params.stepRunId, params.gateId, results);
+}
+
+// ---- Unified Evidence Gate ------------------------------------------------
+
+export function runEvidenceGate(params: {
+  workflowRunId: WorkflowRunId;
+  stepRunId: StepRunId | null;
+}): GateRun {
+  const gates = store.gateRuns
+    .byWorkflow(params.workflowRunId)
+    .filter((gate) => gate.gateId !== 'evidence_gate');
+
+  const passRules = gates.flatMap((gate) =>
+    gate.ruleResults
+      .filter((rule) => rule.status === 'pass')
+      .map((rule) => ({ gate, rule })),
+  );
+
+  const missingEvidence = passRules.filter(({ rule }) => (
+    !isEvidenceOptionalPassRule(rule) && rule.evidenceRefs.length === 0
+  ));
+  const unresolvedEvidence = passRules.flatMap(({ gate, rule }) =>
+    rule.evidenceRefs
+      .filter((ref) => !resolveEvidenceRef(ref))
+      .map((ref) => `${gate.gateId}/${rule.ruleId}:${ref.artifactId}`),
+  );
+
+  const passingCompileTestGates = gates.filter((gate) =>
+    gate.status === 'pass'
+    && (gate.gateId === 'compile_gate' || gate.gateId === 'test_gate')
+  );
+  const commandEvidenceByGate = passingCompileTestGates.map((gate) => ({
+    gate,
+    commands: commandEvidenceForGate(gate),
+  }));
+  const compileTestGatesMissingCommandEvidence = commandEvidenceByGate.filter(
+    ({ commands }) => commands.length === 0,
+  );
+  const commandEvidence = uniqueCommands(commandEvidenceByGate.flatMap(({ commands }) => commands));
+  const commandsMissingDigest = commandEvidence.filter((cmd) => (
+    !cmd.stdoutSha256 || !cmd.stderrSha256 || !cmd.combinedSha256
+  ));
+
+  const artifactEvidence = passRules.flatMap(({ rule }) =>
+    rule.evidenceRefs
+      .map((ref) => store.artifacts.get(ref.artifactId))
+      .filter((artifact): artifact is Artifact => Boolean(artifact)),
+  );
+  const fileArtifactsMissingDigest = artifactEvidence.filter((artifact) => (
+    artifact.uri.startsWith('file://') && !artifact.sha256
+  ));
+
+  const latestAcceptanceGate = gates
+    .filter((gate) => gate.gateId === 'acceptance_gate')
+    .at(-1);
+  const hasAcceptanceTraceEvidence = gates
+    .filter((gate) => gate.gateId === 'acceptance_gate')
+    .some((gate) => {
+      const passRuleIds = new Set(
+        gate.ruleResults.filter((rule) => rule.status === 'pass').map((rule) => rule.ruleId),
+      );
+      return (
+        passRuleIds.has('acceptance.diff_present')
+        && passRuleIds.has('acceptance.review_present')
+        && passRuleIds.has('acceptance.test_gate_passed')
+        && gate.evidenceRefs.some((ref) => Boolean(resolveEvidenceRef(ref)))
+      );
+    });
+  const uiVerifier = evaluateUiVerifierEvidence(params.workflowRunId);
+
+  const results: RuleResult[] = [
+    {
+      ruleId: 'evidence.pass_rules_have_refs',
+      status: missingEvidence.length === 0 ? 'pass' : 'fail',
+      message: missingEvidence.length === 0
+        ? `${passRules.length} passing rule(s) have evidence or are explicitly non-evidentiary`
+        : `passing rule(s) missing evidence: ${missingEvidence
+          .slice(0, 6)
+          .map(({ gate, rule }) => `${gate.gateId}/${rule.ruleId}`)
+          .join(', ')}${missingEvidence.length > 6 ? '...' : ''}`,
+      evidenceRefs: [],
+    },
+    {
+      ruleId: 'evidence.refs_resolve',
+      status: unresolvedEvidence.length === 0 ? 'pass' : 'fail',
+      message: unresolvedEvidence.length === 0
+        ? 'all evidence refs resolve to an Artifact or CommandRun'
+        : `unresolved evidence refs: ${unresolvedEvidence.slice(0, 6).join(', ')}${unresolvedEvidence.length > 6 ? '...' : ''}`,
+      evidenceRefs: [],
+    },
+    {
+      ruleId: 'evidence.command_digests_present',
+      status: compileTestGatesMissingCommandEvidence.length === 0 && commandsMissingDigest.length === 0
+        ? 'pass'
+        : 'fail',
+      message: compileTestGatesMissingCommandEvidence.length === 0 && commandsMissingDigest.length === 0
+        ? `${commandEvidence.length} compile/test command evidence item(s) carry SHA-256 digests`
+        : compileTestGatesMissingCommandEvidence.length > 0
+          ? `passing compile/test gate(s) missing command evidence: ${compileTestGatesMissingCommandEvidence
+            .map(({ gate }) => `${gate.gateId}:${gate.id}`)
+            .join(', ')}`
+        : `command evidence missing digest: ${commandsMissingDigest.map((cmd) => cmd.id).join(', ')}`,
+      evidenceRefs: commandEvidence.map((cmd) => ({
+        artifactId: cmd.id,
+        claim: `${cmd.command} digest=${cmd.combinedSha256 ?? '(missing)'}`,
+      })),
+    },
+    {
+      ruleId: 'evidence.artifact_digests_present',
+      status: fileArtifactsMissingDigest.length === 0 ? 'pass' : 'warn',
+      message: fileArtifactsMissingDigest.length === 0
+        ? `${artifactEvidence.length} artifact evidence item(s) carry digest or do not require one`
+        : `file artifact evidence missing digest: ${fileArtifactsMissingDigest.map((artifact) => artifact.id).join(', ')}`,
+      evidenceRefs: artifactEvidence.map((artifact) => ({
+        artifactId: artifact.id,
+        claim: `artifact digest=${artifact.sha256 ?? '(missing)'}`,
+      })),
+    },
+    {
+      ruleId: 'evidence.acceptance_has_execution_evidence',
+      status: !latestAcceptanceGate || hasAcceptanceTraceEvidence ? 'pass' : 'fail',
+      message: !latestAcceptanceGate
+        ? 'no acceptance gate recorded yet'
+        : hasAcceptanceTraceEvidence
+          ? 'acceptance is backed by diff/review/test evidence'
+          : 'acceptance has no implementation/test/log evidence beyond human decision',
+      evidenceRefs: gates
+        .filter((gate) => gate.gateId === 'acceptance_gate')
+        .flatMap((gate) => gate.evidenceRefs),
+    },
+    {
+      ruleId: 'evidence.ui_verifier_matrix_present',
+      status: !uiVerifier.required || uiVerifier.matrixArtifact ? 'pass' : 'fail',
+      message: !uiVerifier.required
+        ? `not applicable: ${uiVerifier.reason}`
+        : uiVerifier.matrixArtifact
+          ? `UI verifier AC matrix present (${uiVerifier.matrixArtifact.id})`
+          : `UI verifier required but no ${VERIFIER_AC_MATRIX_SCHEMA_VERSION} artifact was found`,
+      evidenceRefs: uiVerifier.matrixArtifact
+        ? [{ artifactId: uiVerifier.matrixArtifact.id, claim: 'UI verifier AC-to-evidence matrix' }]
+        : [],
+    },
+    {
+      ruleId: 'evidence.ui_verifier_media_refs_present',
+      status: !uiVerifier.required || uiVerifier.criteriaCovered ? 'pass' : 'fail',
+      message: !uiVerifier.required
+        ? `not applicable: ${uiVerifier.reason}`
+        : uiVerifier.criteriaCovered
+          ? `${uiVerifier.criteria.length} UI acceptance criterion/criteria cite before+after screenshots or video evidence`
+          : uiVerifier.coverageFailures.length > 0
+            ? `UI verifier evidence missing for: ${uiVerifier.coverageFailures.slice(0, 6).join(', ')}${uiVerifier.coverageFailures.length > 6 ? '...' : ''}`
+            : 'UI verifier matrix has no acceptance criteria with media evidence refs',
+      evidenceRefs: [
+        ...(uiVerifier.matrixArtifact
+          ? [{ artifactId: uiVerifier.matrixArtifact.id, claim: 'UI verifier AC-to-evidence matrix' }]
+          : []),
+        ...uiVerifier.mediaArtifacts.map((artifact) => ({
+          artifactId: artifact.id,
+          claim: `UI verifier media evidence (${verifierMediaRole(artifact) ?? artifact.contentType})`,
+        })),
+      ],
+    },
+    {
+      ruleId: 'evidence.ui_verifier_artifact_digests_present',
+      status: !uiVerifier.required
+        || (uiVerifier.verifierArtifacts.length > 0 && uiVerifier.digestFailures.length === 0)
+        ? 'pass'
+        : 'fail',
+      message: !uiVerifier.required
+        ? `not applicable: ${uiVerifier.reason}`
+        : uiVerifier.verifierArtifacts.length === 0
+          ? 'UI verifier required but no verifier artifacts were found'
+          : uiVerifier.digestFailures.length === 0
+          ? `${uiVerifier.verifierArtifacts.length} verifier artifact(s) carry SHA-256 digests`
+          : `verifier artifact evidence missing digest: ${uiVerifier.digestFailures.map((artifact) => artifact.id).join(', ')}`,
+      evidenceRefs: uiVerifier.verifierArtifacts.map((artifact) => ({
+        artifactId: artifact.id,
+        claim: `verifier artifact digest=${artifact.sha256 ?? '(missing)'}`,
+      })),
+    },
+  ];
+
+  return record(params.workflowRunId, params.stepRunId, 'evidence_gate', results);
+}
+
+function isEvidenceOptionalPassRule(rule: RuleResult): boolean {
+  return rule.ruleId === 'manual.human_decision'
+    || rule.message.startsWith('not applicable:');
+}
+
+function resolveEvidenceRef(ref: EvidenceRef): Artifact | CommandRun | null {
+  return store.artifacts.get(ref.artifactId)
+    ?? store.commandRuns.get(ref.artifactId)
+    ?? null;
+}
+
+function commandEvidenceForGate(gate: GateRun): CommandRun[] {
+  const ids = new Set<string>();
+  for (const id of gate.commandRunIds) {
+    if (store.commandRuns.get(id)) ids.add(id);
+  }
+  for (const ref of gate.evidenceRefs) {
+    if (store.commandRuns.get(ref.artifactId)) ids.add(ref.artifactId);
+  }
+  return [...ids]
+    .map((id) => store.commandRuns.get(id))
+    .filter((cmd): cmd is NonNullable<typeof cmd> => Boolean(cmd));
+}
+
+function uniqueCommands(commands: CommandRun[]): CommandRun[] {
+  const seen = new Set<string>();
+  const unique: CommandRun[] = [];
+  for (const command of commands) {
+    if (seen.has(command.id)) continue;
+    seen.add(command.id);
+    unique.push(command);
+  }
+  return unique;
+}
+
+function isAcceptanceReviewArtifact(artifact: Artifact): boolean {
+  return artifact.metadata.subStage !== 'verifier'
+    && !isVerifierAcMatrixArtifact(artifact)
+    && !isVerifierMediaArtifact(artifact);
+}
+
+interface ParsedVerifierCriterion {
+  id: string;
+  status: VerifierStatus;
+  evidenceRefs: Array<EvidenceRef & { role?: VerifierMediaRole | 'ac_matrix' }>;
+}
+
+interface UiVerifierEvidenceEvaluation {
+  required: boolean;
+  reason: string;
+  matrixArtifact: Artifact | null;
+  criteria: ParsedVerifierCriterion[];
+  mediaArtifacts: Artifact[];
+  verifierArtifacts: Artifact[];
+  coverageFailures: string[];
+  digestFailures: Artifact[];
+  criteriaCovered: boolean;
+}
+
+function evaluateUiVerifierEvidence(workflowRunId: WorkflowRunId): UiVerifierEvidenceEvaluation {
+  const artifacts = store.artifacts.byWorkflow(workflowRunId);
+  const matrixArtifact = artifacts.filter(isVerifierAcMatrixArtifact).at(-1) ?? null;
+  const matrix = matrixArtifact ? parseVerifierAcMatrix(matrixArtifact) : null;
+  const requirement = uiVerifierRequirement(workflowRunId, artifacts, matrix);
+  const criteria = matrix?.acceptanceCriteria ?? [];
+  const mediaArtifacts = uniqueArtifacts(criteria.flatMap((criterion) =>
+    criterion.evidenceRefs
+      .map((ref) => store.artifacts.get(ref.artifactId))
+      .filter((artifact): artifact is Artifact => Boolean(artifact))
+      .filter(isVerifierMediaArtifact),
+  ));
+  const verifierArtifacts = uniqueArtifacts([
+    ...(matrixArtifact ? [matrixArtifact] : []),
+    ...mediaArtifacts,
+  ]);
+  const coverageFailures = requirement.required
+    ? criteria
+      .filter((criterion) => !criterionCoveredByVerifierMedia(criterion))
+      .map((criterion) => criterion.id)
+    : [];
+  const digestFailures = requirement.required
+    ? verifierArtifacts.filter((artifact) => !artifact.sha256)
+    : [];
+
+  return {
+    required: requirement.required,
+    reason: requirement.reason,
+    matrixArtifact,
+    criteria,
+    mediaArtifacts,
+    verifierArtifacts,
+    coverageFailures,
+    digestFailures,
+    criteriaCovered: criteria.length > 0 && coverageFailures.length === 0,
+  };
+}
+
+function uiVerifierRequirement(
+  workflowRunId: WorkflowRunId,
+  artifacts: Artifact[],
+  matrix: Pick<VerifierAcMatrix, 'verifierRequired'> | null,
+): { required: boolean; reason: string } {
+  if (matrix?.verifierRequired === true) {
+    return { required: true, reason: 'verifier AC matrix marks verifierRequired=true' };
+  }
+  if (artifacts.some((artifact) => artifact.metadata.verifierRequired === true)) {
+    return { required: true, reason: 'artifact metadata marks verifierRequired=true' };
+  }
+  const run = store.workflowRuns.get(workflowRunId);
+  if (run && isUiTaskTitle(run.title)) {
+    return { required: true, reason: 'workflow title matches UI verifier keywords' };
+  }
+  return { required: false, reason: 'UI verifier not required for this run' };
+}
+
+function isUiTaskTitle(title: string): boolean {
+  return /\b(ui|ux|frontend|front-end|web|browser|dom|css|html|page|screen|modal|button|form|visual|responsive)\b|前端|界面|页面|按钮|表单|截图|浏览器|样式/i
+    .test(title);
+}
+
+function isVerifierAcMatrixArtifact(artifact: Artifact): boolean {
+  return artifact.metadata.schemaVersion === VERIFIER_AC_MATRIX_SCHEMA_VERSION
+    || artifact.metadata.reportKind === 'verifier_ac_matrix'
+    || artifact.metadata.verifierArtifactType === 'ac_matrix';
+}
+
+function isVerifierMediaArtifact(artifact: Artifact): boolean {
+  return artifact.metadata.schemaVersion === VERIFIER_MEDIA_SCHEMA_VERSION
+    || artifact.metadata.reportKind === 'verifier_media'
+    || parseVerifierMediaRole(artifact.metadata.verifierArtifactType) !== null
+    || parseVerifierMediaRole(artifact.metadata.verifierRole) !== null
+    || (
+      artifact.metadata.subStage === 'verifier'
+      && (
+        parseVerifierMediaRole(artifact.metadata.artifactRole) !== null
+        || captureToVerifierRole(artifact.metadata.capture) !== null
+      )
+    );
+}
+
+function parseVerifierAcMatrix(artifact: Artifact): { verifierRequired: boolean; acceptanceCriteria: ParsedVerifierCriterion[] } | null {
+  try {
+    const parsed = JSON.parse(readArtifactText(artifact)) as Record<string, unknown>;
+    if (parsed.schemaVersion !== VERIFIER_AC_MATRIX_SCHEMA_VERSION) return null;
+    const rawCriteria = Array.isArray(parsed.acceptanceCriteria)
+      ? parsed.acceptanceCriteria
+      : [];
+    return {
+      verifierRequired: parsed.verifierRequired === true,
+      acceptanceCriteria: rawCriteria
+        .map(parseVerifierCriterion)
+        .filter((criterion): criterion is ParsedVerifierCriterion => Boolean(criterion)),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseVerifierCriterion(value: unknown): ParsedVerifierCriterion | null {
+  if (!value || typeof value !== 'object') return null;
+  const recordValue = value as Record<string, unknown>;
+  const id = typeof recordValue.id === 'string' && recordValue.id.trim()
+    ? recordValue.id.trim()
+    : null;
+  if (!id) return null;
+  const status = parseVerifierStatus(recordValue.status);
+  const refs = Array.isArray(recordValue.evidenceRefs)
+    ? recordValue.evidenceRefs.map(parseVerifierEvidenceRef).filter((ref): ref is ParsedVerifierCriterion['evidenceRefs'][number] => Boolean(ref))
+    : [];
+  return { id, status, evidenceRefs: refs };
+}
+
+function parseVerifierStatus(value: unknown): VerifierStatus {
+  return value === 'pass' || value === 'fail' || value === 'blocked'
+    ? value
+    : 'blocked';
+}
+
+function parseVerifierEvidenceRef(value: unknown): ParsedVerifierCriterion['evidenceRefs'][number] | null {
+  if (typeof value === 'string') {
+    const artifactId = value.startsWith('artifact:') ? value.slice('artifact:'.length) : value;
+    return artifactId ? { artifactId, claim: 'verifier media evidence' } : null;
+  }
+  if (!value || typeof value !== 'object') return null;
+  const recordValue = value as Record<string, unknown>;
+  if (typeof recordValue.artifactId !== 'string' || recordValue.artifactId.trim().length === 0) {
+    return null;
+  }
+  const role = parseVerifierMediaRole(recordValue.role);
+  return {
+    artifactId: recordValue.artifactId,
+    claim: typeof recordValue.claim === 'string' ? recordValue.claim : 'verifier media evidence',
+    ...(role ? { role } : {}),
+  };
+}
+
+function criterionCoveredByVerifierMedia(criterion: ParsedVerifierCriterion): boolean {
+  if (criterion.status !== 'pass') return false;
+  const roles = new Set<VerifierMediaRole>();
+  for (const ref of criterion.evidenceRefs) {
+    const artifact = store.artifacts.get(ref.artifactId);
+    if (!artifact || !isVerifierMediaArtifact(artifact)) return false;
+    const role = parseVerifierMediaRole(ref.role) ?? verifierMediaRole(artifact);
+    if (role) roles.add(role);
+  }
+  return roles.has('video')
+    || (roles.has('screenshot_before') && roles.has('screenshot_after'));
+}
+
+function verifierMediaRole(artifact: Artifact): VerifierMediaRole | null {
+  return parseVerifierMediaRole(artifact.metadata.verifierArtifactType)
+    ?? parseVerifierMediaRole(artifact.metadata.verifierRole)
+    ?? parseVerifierMediaRole(artifact.metadata.artifactRole)
+    ?? captureToVerifierRole(artifact.metadata.capture)
+    ?? contentTypeToVerifierRole(artifact.contentType);
+}
+
+function parseVerifierMediaRole(value: unknown): VerifierMediaRole | null {
+  if (
+    value === 'screenshot_before'
+    || value === 'before_screenshot'
+    || value === 'before'
+  ) {
+    return 'screenshot_before';
+  }
+  if (
+    value === 'screenshot_after'
+    || value === 'after_screenshot'
+    || value === 'after'
+  ) {
+    return 'screenshot_after';
+  }
+  if (value === 'video' || value === 'screen_video') return 'video';
+  return null;
+}
+
+function captureToVerifierRole(value: unknown): VerifierMediaRole | null {
+  if (value === 'before') return 'screenshot_before';
+  if (value === 'after') return 'screenshot_after';
+  return null;
+}
+
+function contentTypeToVerifierRole(contentType: string): VerifierMediaRole | null {
+  if (contentType.startsWith('video/')) return 'video';
+  return null;
+}
+
+function uniqueArtifacts(artifacts: Artifact[]): Artifact[] {
+  const seen = new Set<string>();
+  const unique: Artifact[] = [];
+  for (const artifact of artifacts) {
+    if (seen.has(artifact.id)) continue;
+    seen.add(artifact.id);
+    unique.push(artifact);
+  }
+  return unique;
 }

@@ -1,9 +1,10 @@
 import { join } from 'node:path';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import type {
   AgentTaskKind,
+  Artifact,
   ArtifactKind,
   ContextPack,
   ContextRequest,
@@ -17,7 +18,11 @@ import type {
   WorkflowRunType,
   WorkflowStage,
   WorkspaceRef,
+  VerifierAcMatrix,
+  VerifierMediaRole,
+  VerifierStatus,
 } from '@ainp/shared';
+import { VERIFIER_AC_MATRIX_SCHEMA_VERSION, VERIFIER_MEDIA_SCHEMA_VERSION } from '@ainp/shared';
 import { api } from './api-client';
 import { runWhitelistedCommand } from './command-runner';
 import { TrustedLocalWorktreeEnvironment } from './worktree';
@@ -30,6 +35,7 @@ import { selectAgentBackend } from './backend-selection';
 import { generateProjectProfile, type ProjectProfileResult } from './profile';
 import { FLOW_REGISTRY } from './flows/registry';
 import {
+  acceptedKnowledgeMarkdownForContext,
   collectAcceptedKnowledge,
   persistKnowledgeCandidate,
   type KnowledgePromotionAction,
@@ -326,6 +332,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
         // approval poll + draft promotion run inline. WorkflowStage has no
         // `'acceptance'` value; that's why review owns both halves here.
         await runStage('review', 'other', null, { skipKindOverride: 'other' });
+        await executeVerifier(_ctx);
         await executeAcceptance(_ctx);
         return;
       case 'completion':
@@ -502,6 +509,72 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     }
   }
 
+  async function executeVerifier(c: RunCtx): Promise<void> {
+    if (!shouldRequireUiVerifier(c.run.title)) return;
+
+    const { step } = await api.stepStarted({
+      workflowRunId: c.run.id,
+      stage: 'review',
+      name: 'verifier',
+    });
+    const stepId = step.id;
+    const verifierDir = join(c.runArtifactsDir, 'verifier');
+    await mkdir(verifierDir, { recursive: true });
+
+    const mediaArtifacts = await persistVerifierMediaArtifacts(c, stepId, verifierDir);
+    const criterionIds = acceptanceCriterionIdsFromInputs(c.inputs);
+    const criterionStatus: VerifierStatus = verifierMediaSatisfiesCoverage(mediaArtifacts)
+      ? 'pass'
+      : 'blocked';
+    const matrix: VerifierAcMatrix = {
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      workflowRunId: c.run.id,
+      stepRunId: stepId,
+      verifierRequired: true,
+      verifierStatus: criterionStatus,
+      acceptanceCriteria: criterionIds.map((id) => ({
+        id,
+        status: criterionStatus,
+        evidenceRefs: mediaArtifacts.map(({ artifact, role }) => ({
+          artifactId: artifact.id,
+          role,
+          claim: `${role} verifier media for ${id}`,
+        })),
+        notes: criterionStatus === 'pass'
+          ? 'UI verifier media evidence present.'
+          : 'Missing before+after screenshots or video evidence under .ainp-verifier/.',
+      })),
+      createdAt: new Date().toISOString(),
+    };
+    const matrixBody = `${JSON.stringify(matrix, null, 2)}\n`;
+    const matrixPath = join(verifierDir, 'verifier-ac-matrix.json');
+    await writeFile(matrixPath, matrixBody, 'utf8');
+    const matrixArtifact = await api.postArtifact({
+      workflowRunId: c.run.id,
+      stepRunId: stepId,
+      kind: 'other',
+      uri: `file://${matrixPath}`,
+      size: Buffer.byteLength(matrixBody, 'utf8'),
+      contentType: 'application/json',
+      metadata: {
+        schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+        reportKind: 'verifier_ac_matrix',
+        verifierArtifactType: 'ac_matrix',
+        verifierRequired: true,
+        verifierStatus: criterionStatus,
+        stage: 'review',
+        subStage: 'verifier',
+        output: 'verifier-ac-matrix.json',
+      },
+    });
+    c.inputs['verifier-ac-matrix.json'] = matrixBody;
+    c.inputArtifactIds['verifier-ac-matrix.json'] = matrixArtifact.id;
+    console.log(
+      `[runner] verifier matrix ${matrixArtifact.id} (${criterionStatus}; media=${mediaArtifacts.length})`,
+    );
+    await api.stepFinished({ stepRunId: stepId, status: 'passed' });
+  }
+
   async function executeAcceptance(c: RunCtx): Promise<void> {
     const acceptanceTraceGate = await api.runGate({
       workflowRunId: c.run.id,
@@ -512,6 +585,16 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     if (acceptanceTraceGate.gate.status === 'fail') {
       c.ok.value = false;
       throw new Error('acceptance traceability failed');
+    }
+    const preAcceptanceEvidenceGate = await api.runGate({
+      workflowRunId: c.run.id,
+      stepRunId: null,
+      gateId: 'evidence_gate',
+    });
+    console.log(`[runner]   evidence_gate before acceptance -> ${preAcceptanceEvidenceGate.gate.status}`);
+    if (preAcceptanceEvidenceGate.gate.status === 'fail') {
+      c.ok.value = false;
+      throw new Error('evidence_gate failed before acceptance');
     }
     await api.awaitHuman({ workflowRunId: c.run.id, stage: 'review' });
     console.log(`[runner] awaiting acceptance_gate approval…`);
@@ -726,6 +809,16 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
 
   async function executeCompletion(c: RunCtx): Promise<void> {
     await api.stageTransition({ workflowRunId: c.run.id, stage: 'completion' });
+    const evidenceGate = await api.runGate({
+      workflowRunId: c.run.id,
+      stepRunId: null,
+      gateId: 'evidence_gate',
+    });
+    console.log(`[runner]   evidence_gate -> ${evidenceGate.gate.status}`);
+    if (evidenceGate.gate.status === 'fail') {
+      c.ok.value = false;
+      throw new Error('evidence_gate failed');
+    }
     const reportRes = await fetch(
       `${process.env.AINP_API_BASE ?? 'http://127.0.0.1:8787'}/workflow-runs/${c.run.id}/completion-report`,
       { method: 'POST' },
@@ -978,7 +1071,10 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       taskBrief: skillCtx.title,
       projectProfile: foundation.projectProfileResult?.profile ?? null,
       projectProfileMarkdown: foundation.projectProfileResult?.markdown ?? skillCtx.inputs['project_profile.md'],
-      acceptedKnowledgeMarkdown: foundation.acceptedKnowledge ?? skillCtx.inputs['accepted_knowledge.md'],
+      acceptedKnowledgeMarkdown: acceptedKnowledgeMarkdownForContext({
+        legacyMarkdown: foundation.acceptedKnowledge ?? skillCtx.inputs['accepted_knowledge.md'],
+        knowledgeArtifacts: foundation.knowledgeArtifacts,
+      }),
       knowledgeArtifacts: foundation.knowledgeArtifacts ?? [],
       runHistory: foundation.runHistory ?? [],
       inputNames: Object.keys(skillCtx.inputs),
@@ -1005,6 +1101,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
         .map((i) => inputArtifactIds[i.name])
         .filter((id): id is string => Boolean(id)),
     });
+    await recordSelectedKnowledgeUsage(contextPack, task.task.id);
     await recordKnowledgeReviewSignals(contextPack, task.task.id);
     try {
       const result = await backend.run(skill, enrichedCtx);
@@ -1093,8 +1190,11 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       projectProfile: input.foundation.projectProfileResult?.profile ?? null,
       projectProfileMarkdown: input.foundation.projectProfileResult?.markdown
         ?? input.skillCtx.inputs['project_profile.md'],
-      acceptedKnowledgeMarkdown: input.foundation.acceptedKnowledge
-        ?? input.skillCtx.inputs['accepted_knowledge.md'],
+      acceptedKnowledgeMarkdown: acceptedKnowledgeMarkdownForContext({
+        legacyMarkdown: input.foundation.acceptedKnowledge
+          ?? input.skillCtx.inputs['accepted_knowledge.md'],
+        knowledgeArtifacts: input.foundation.knowledgeArtifacts,
+      }),
       knowledgeArtifacts: input.foundation.knowledgeArtifacts ?? [],
       runHistory: input.foundation.runHistory ?? [],
       inputNames: Object.keys(input.skillCtx.inputs),
@@ -1164,6 +1264,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
         contextSelection: contextSelectionAudit(supplementPack),
       },
     });
+    await recordSelectedKnowledgeUsage(supplementPack, input.taskId);
 
     inputs[requestInputName] = requestBody;
     inputs[supplementInputName] = supplementBody;
@@ -1193,6 +1294,27 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       `[runner] context_request ${request.id} -> supplement ${supplementPack.id}`,
     );
     return capture;
+  }
+
+  async function recordSelectedKnowledgeUsage(
+    contextPack: ContextPack,
+    taskId: string,
+  ): Promise<void> {
+    const items = selectedKnowledgeUsageItems(contextPack);
+    if (items.length === 0) return;
+    try {
+      await api.recordKnowledgeUsage({
+        workflowRunId: contextPack.workflowRunId,
+        contextPackId: contextPack.id,
+        taskId,
+        actor: 'runner',
+        items,
+      });
+    } catch (err) {
+      console.warn(
+        `[runner] selected knowledge usage was not recorded: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   async function parseContextRequestFromRunResult(input: {
@@ -1293,6 +1415,115 @@ function isContextRequestParseableOutput(output: {
   return output.contentType === 'application/json'
     || output.contentType.startsWith('text/')
     || /\.(json|md|markdown|txt)$/i.test(output.name);
+}
+
+interface PersistedVerifierMediaArtifact {
+  artifact: Artifact;
+  role: VerifierMediaRole;
+}
+
+async function persistVerifierMediaArtifacts(
+  c: RunCtx,
+  stepRunId: string,
+  verifierDir: string,
+): Promise<PersistedVerifierMediaArtifact[]> {
+  const sourceDir = join(c.workspace.path, '.ainp-verifier');
+  if (!existsSync(sourceDir)) return [];
+
+  const entries = await readdir(sourceDir, { withFileTypes: true });
+  const persisted: PersistedVerifierMediaArtifact[] = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const contentType = verifierContentType(entry.name);
+    const role = verifierRoleForFilename(entry.name, contentType);
+    if (!contentType || !role) continue;
+
+    const outputName = safeVerifierFilename(entry.name);
+    const sourcePath = join(sourceDir, entry.name);
+    const destPath = join(verifierDir, outputName);
+    await copyFile(sourcePath, destPath);
+    const info = await stat(destPath);
+    const artifact = await api.postArtifact({
+      workflowRunId: c.run.id,
+      stepRunId,
+      kind: 'other',
+      uri: `file://${destPath}`,
+      size: info.size,
+      contentType,
+      metadata: {
+        schemaVersion: VERIFIER_MEDIA_SCHEMA_VERSION,
+        reportKind: 'verifier_media',
+        verifierArtifactType: role,
+        verifierRole: role,
+        capture: role === 'screenshot_before'
+          ? 'before'
+          : role === 'screenshot_after'
+            ? 'after'
+            : undefined,
+        stage: 'review',
+        subStage: 'verifier',
+        output: outputName,
+        source: `.ainp-verifier/${entry.name}`,
+      },
+    });
+    persisted.push({ artifact, role });
+  }
+  return persisted;
+}
+
+function shouldRequireUiVerifier(title: string): boolean {
+  return /\b(ui|ux|frontend|front-end|web|browser|dom|css|html|page|screen|modal|button|form|visual|responsive)\b|前端|界面|页面|按钮|表单|截图|浏览器|样式/i
+    .test(title);
+}
+
+function acceptanceCriterionIdsFromInputs(inputs: Record<string, string>): string[] {
+  const seen = new Set<string>();
+  for (const text of Object.values(inputs)) {
+    for (const match of text.matchAll(/\bAC-\d{3}\b/g)) {
+      seen.add(match[0].toUpperCase());
+    }
+  }
+  return [...seen].sort().slice(0, 50).length > 0
+    ? [...seen].sort().slice(0, 50)
+    : ['AC-UI-001'];
+}
+
+function verifierMediaSatisfiesCoverage(mediaArtifacts: PersistedVerifierMediaArtifact[]): boolean {
+  const roles = new Set(mediaArtifacts.map((item) => item.role));
+  return roles.has('video')
+    || (roles.has('screenshot_before') && roles.has('screenshot_after'));
+}
+
+function verifierRoleForFilename(
+  filename: string,
+  contentType: string | null,
+): VerifierMediaRole | null {
+  if (!contentType) return null;
+  if (contentType.startsWith('video/')) return 'video';
+  if (!contentType.startsWith('image/')) return null;
+  const normalized = filename.toLowerCase();
+  if (/\b(before|baseline|old|previous)\b|(^|[-_.])before([-_.]|$)/i.test(normalized)) {
+    return 'screenshot_before';
+  }
+  if (/\b(after|actual|result|new|current)\b|(^|[-_.])after([-_.]|$)/i.test(normalized)) {
+    return 'screenshot_after';
+  }
+  return null;
+}
+
+function verifierContentType(filename: string): string | null {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith('.png')) return 'image/png';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.webp')) return 'image/webp';
+  if (lower.endsWith('.webm')) return 'video/webm';
+  if (lower.endsWith('.mp4')) return 'video/mp4';
+  if (lower.endsWith('.mov')) return 'video/quicktime';
+  return null;
+}
+
+function safeVerifierFilename(filename: string): string {
+  return filename.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
 async function mustSkill(
@@ -1618,6 +1849,38 @@ function knowledgeReviewActionForSignal(recommendedAction: string): string {
     default:
       return recommendedAction;
   }
+}
+
+function selectedKnowledgeUsageItems(contextPack: ContextPack): Array<{
+  knowledgeArtifactId: string;
+  mode?: string;
+  score?: number;
+  sourceRefs?: string[];
+}> {
+  const seen = new Set<string>();
+  const items: Array<{
+    knowledgeArtifactId: string;
+    mode?: string;
+    score?: number;
+    sourceRefs?: string[];
+  }> = [];
+  for (const item of contextPack.manifest) {
+    if (item.sourceType !== 'knowledge_artifact') continue;
+    const knowledgeArtifactId = knowledgeArtifactIdFromManifestRef(item.ref);
+    if (!knowledgeArtifactId || seen.has(knowledgeArtifactId)) continue;
+    seen.add(knowledgeArtifactId);
+    items.push({
+      knowledgeArtifactId,
+      mode: item.mode,
+      score: item.score,
+      sourceRefs: item.sourceRefs,
+    });
+  }
+  return items;
+}
+
+function knowledgeArtifactIdFromManifestRef(ref: string): string | null {
+  return ref.startsWith('knowledge_') ? ref.slice('knowledge_'.length) : null;
 }
 
 // ---------------------------------------------------------------------------

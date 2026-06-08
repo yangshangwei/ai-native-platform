@@ -7,10 +7,17 @@ import {
   recordAcceptanceDecision,
   recordKnowledgeAction,
   recordRequirementAction,
+  recordWorkflowAction,
   retryStage,
   reEvaluateGate,
 } from '../workflow-engine';
-import { generateCompletionReport, generateKnowledgeCandidate } from '../reports';
+import {
+  generateCompletionReport,
+  generateKnowledgeCandidate,
+  generateRetroEvalScenarioDraft,
+  generateRetroReport,
+} from '../reports';
+import { runEvidenceGate } from '../gate-engine';
 import { buildContextGovernanceReadModel } from '../context-governance';
 import { subscribe } from '../agent-stream-bus';
 
@@ -255,8 +262,12 @@ workflowRuns.post('/:id/knowledge-actions', async (c) => {
 workflowRuns.post('/:id/completion-report', async (c) => {
   const id = c.req.param('id');
   if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
+  const evidenceGate = runEvidenceGate({ workflowRunId: id, stepRunId: null });
+  if (evidenceGate.status === 'fail') {
+    return c.json({ error: 'evidence_gate failed', gate: evidenceGate }, 409);
+  }
   const report = await generateCompletionReport(id);
-  return c.json({ ok: true, ...report }, 201);
+  return c.json({ ok: true, evidenceGate, ...report }, 201);
 });
 
 workflowRuns.post('/:id/retry-step', async (c) => {
@@ -302,6 +313,104 @@ workflowRuns.post('/:id/knowledge-candidate', async (c) => {
   const candidate = await generateKnowledgeCandidate(id);
   return c.json({ ok: true, ...candidate }, 201);
 });
+
+workflowRuns.post('/:id/retro', async (c) => {
+  const id = c.req.param('id');
+  if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
+  const retro = await generateRetroReport(id);
+  return c.json({ ok: true, ...retro }, 201);
+});
+
+workflowRuns.post('/:id/retro-actions', async (c) => {
+  const id = c.req.param('id');
+  if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
+  const body = (await c.req.json()) as {
+    candidateId?: string;
+    targetId?: string;
+    action?: string;
+    actor?: string;
+    payload?: Record<string, unknown>;
+  };
+  const targetId = body.targetId?.trim() || body.candidateId?.trim();
+  const actionName = body.action?.trim();
+  if (!targetId || !actionName) {
+    return c.json({ error: 'candidateId/targetId and action required' }, 400);
+  }
+  const payload = isRecord(body.payload) ? body.payload : {};
+  const actor = body.actor?.trim() || 'web';
+
+  if (
+    actionName === 'create_eval_scenario'
+    || actionName === 'create_eval_case'
+    || actionName === 'create_eval_candidate'
+  ) {
+    const artifact = await generateRetroEvalScenarioDraft(id, {
+      targetId,
+      actor,
+      payload,
+    });
+    const action = recordWorkflowAction({
+      workflowRunId: id,
+      kind: 'retro_candidate_action',
+      targetId,
+      action: 'create_eval_scenario',
+      actor,
+      payload: {
+        ...payload,
+        retroAction: actionName,
+        draftArtifactId: artifact.id,
+      },
+    });
+    return c.json({ ok: true, action, artifact }, 201);
+  }
+
+  const knowledgeAction = retroKnowledgeAction(actionName, payload);
+  if (!knowledgeAction) {
+    return c.json({ error: `unsupported retro action: ${actionName}` }, 400);
+  }
+  const action = recordKnowledgeAction({
+    workflowRunId: id,
+    targetId,
+    action: knowledgeAction,
+    actor,
+    payload: {
+      ...payload,
+      retroAction: actionName,
+      retroCandidateId: targetId,
+    },
+  });
+  return c.json({ ok: true, action }, 201);
+});
+
+function retroKnowledgeAction(actionName: string, payload: Record<string, unknown>): string | null {
+  const explicit = typeof payload.knowledgeAction === 'string' ? payload.knowledgeAction.trim() : '';
+  if (isKnowledgeReviewAction(explicit)) return explicit;
+  if (isKnowledgeReviewAction(actionName)) return actionName;
+  if (
+    actionName === 'record_knowledge_review'
+    || actionName === 'create_knowledge_review'
+    || actionName === 'review_before_knowledge_promotion'
+    || actionName === 'inspect_command_log'
+    || actionName === 'require_digest_backed_command_evidence'
+  ) {
+    return 'needs_review';
+  }
+  return null;
+}
+
+function isKnowledgeReviewAction(actionName: string): boolean {
+  return actionName === 'upgrade'
+    || actionName === 'downgrade'
+    || actionName === 'supersede'
+    || actionName === 'mark_stale'
+    || actionName === 'needs_review'
+    || actionName === 'upgrade_candidate'
+    || actionName === 'downgrade_candidate';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 /** History dump (no streaming). Use `?sinceSeq=N` to paginate. */
 workflowRuns.get('/:id/agent-events', (c) => {

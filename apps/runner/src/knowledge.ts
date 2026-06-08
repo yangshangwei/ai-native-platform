@@ -12,12 +12,27 @@
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { KnowledgeArtifact } from '@ainp/shared';
 import { profileDirFor } from './profile';
 
 export interface KnowledgePromotionAction {
   targetId: string | null;
   action: string;
   payload: Record<string, unknown>;
+}
+
+/**
+ * Structured KnowledgeArtifacts are already scored, bounded, and audited by
+ * ContextPack selection. Keep the legacy concatenated markdown only as a
+ * compatibility fallback for old local knowledge files or API-unavailable
+ * runs; otherwise it duplicates the same knowledge as an unbounded blob.
+ */
+export function acceptedKnowledgeMarkdownForContext(input: {
+  legacyMarkdown: string | null | undefined;
+  knowledgeArtifacts: readonly KnowledgeArtifact[] | null | undefined;
+}): string {
+  if ((input.knowledgeArtifacts ?? []).length > 0) return '';
+  return input.legacyMarkdown ?? '';
 }
 
 export async function collectAcceptedKnowledge(projectId: string): Promise<string> {

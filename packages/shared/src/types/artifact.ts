@@ -202,6 +202,49 @@ export type KnowledgeArtifactMetadata =
  */
 export type PerRunArtifactMetadata = Record<string, unknown>;
 
+// ---------------------------------------------------------------------------
+// Verifier evidence metadata (M3)
+// ---------------------------------------------------------------------------
+
+export const VERIFIER_AC_MATRIX_SCHEMA_VERSION = 'ainp.verifier_ac_matrix.v1' as const;
+export const VERIFIER_MEDIA_SCHEMA_VERSION = 'ainp.verifier_media.v1' as const;
+
+export type VerifierMediaRole = 'screenshot_before' | 'screenshot_after' | 'video';
+export type VerifierStatus = 'pass' | 'fail' | 'blocked';
+
+export interface VerifierEvidenceRef extends EvidenceRef {
+  role?: VerifierMediaRole | 'ac_matrix';
+}
+
+export interface VerifierAcceptanceCriterionEvidence {
+  id: string;
+  text?: string;
+  status: VerifierStatus;
+  evidenceRefs: VerifierEvidenceRef[];
+  notes?: string;
+}
+
+export interface VerifierAcMatrix {
+  schemaVersion: typeof VERIFIER_AC_MATRIX_SCHEMA_VERSION;
+  workflowRunId: WorkflowRunId;
+  stepRunId?: StepRunId | null;
+  verifierRequired: boolean;
+  verifierStatus: VerifierStatus;
+  acceptanceCriteria: VerifierAcceptanceCriterionEvidence[];
+  createdAt: Iso8601;
+}
+
+export interface VerifierArtifactMetadata extends PerRunArtifactMetadata {
+  schemaVersion?: typeof VERIFIER_AC_MATRIX_SCHEMA_VERSION | typeof VERIFIER_MEDIA_SCHEMA_VERSION;
+  reportKind?: 'verifier_ac_matrix' | 'verifier_media';
+  verifierRequired?: boolean;
+  verifierStatus?: VerifierStatus;
+  verifierArtifactType?: VerifierMediaRole | 'ac_matrix';
+  verifierRole?: VerifierMediaRole | 'ac_matrix';
+  capture?: 'before' | 'after';
+  subStage?: 'verifier';
+}
+
 export interface NormalizeKnowledgeContextMetadataOptions {
   status?: KnowledgeArtifactStatus;
   fallbackSourceRefs?: readonly string[];
@@ -372,6 +415,8 @@ export interface Artifact extends ArtifactRef {
   stepRunId: StepRunId | null;
   size: number;
   contentType: string;
+  /** SHA-256 digest of the referenced file content. Null for non-file or legacy artifacts. */
+  sha256?: string | null;
   createdAt: Iso8601;
   /** Free-form metadata, e.g. {testTotal: 3} */
   metadata: Record<string, unknown>;

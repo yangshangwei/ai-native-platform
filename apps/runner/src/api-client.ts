@@ -327,6 +327,34 @@ export const api = {
       },
     ).then((r) => r.action),
 
+  recordKnowledgeUsage: (params: {
+    workflowRunId: string;
+    contextPackId: string;
+    taskId?: string | null;
+    actor?: string;
+    items: Array<{
+      knowledgeArtifactId: string;
+      mode?: string;
+      score?: number;
+      sourceRefs?: string[];
+    }>;
+  }) =>
+    request<{
+      ok: boolean;
+      updated: KnowledgeArtifact[];
+      missing: string[];
+    }>(
+      'POST',
+      '/knowledge-artifacts/usage',
+      {
+        workflowRunId: params.workflowRunId,
+        contextPackId: params.contextPackId,
+        taskId: params.taskId ?? null,
+        actor: params.actor ?? 'runner',
+        items: params.items,
+      },
+    ),
+
   // ---- promote (V2 P0-2 / Q5=5-A) --------------------------------------
   // Single canonical entry point. The API runs the entire 6-step promote
   // pipeline (regex extract → max+1 fallback → version bump → supersede →
