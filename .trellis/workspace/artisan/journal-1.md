@@ -1009,3 +1009,36 @@ Completed and verified the active context-injection, Coordinator clarification, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: Optimize task detail review UI
+
+**Date**: 2026-06-10
+**Task**: Optimize task detail review UI
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Redesigned the task detail page around nontechnical review actions, moved Runner/Gate/stream diagnostics behind collapsed panels, fixed approval button feedback after recorded decisions, updated frontend UI spec, and verified with typecheck, web tests, and Playwright visual/click checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f4bc71d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
