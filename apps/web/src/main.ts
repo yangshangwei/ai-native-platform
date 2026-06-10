@@ -498,6 +498,157 @@ function metric(label: string, value: string, hint?: string, kind: StatusKind = 
   });
 }
 
+function requestTypeLabel(type: WorkflowRequestDto['type'] | string): string {
+  if (type === 'feature') return '功能需求';
+  if (type === 'bugfix') return '问题修复';
+  if (type === 'smoke') return '冒烟检查';
+  if (type === 'refactor') return '重构任务';
+  return type;
+}
+
+function stageStateLabel(state: 'done' | 'active' | 'blocked' | 'failed' | 'waiting'): string {
+  if (state === 'done') return '已完成';
+  if (state === 'active') return '进行中';
+  if (state === 'blocked') return '待确认';
+  if (state === 'failed') return '需处理';
+  return '未开始';
+}
+
+function stageCardHint(state: 'done' | 'active' | 'blocked' | 'failed' | 'waiting'): string {
+  if (state === 'done') return '这一阶段已完成';
+  if (state === 'active') return '系统正在处理';
+  if (state === 'blocked') return '等待你确认后继续';
+  if (state === 'failed') return '需要查看失败原因';
+  return '等待进入该阶段';
+}
+
+interface ReviewGateCopy {
+  title: string;
+  subtitle: string;
+  description: string;
+  approveLabel: string;
+  rejectLabel: string;
+  rejectTitle: string;
+  rejectPlaceholder: string;
+}
+
+function reviewGateCopy(gateId: string | null, stage?: Stage): ReviewGateCopy {
+  if (gateId === 'requirement_gate') {
+    return {
+      title: '请确认需求是否准确',
+      subtitle: '需求分析等待确认',
+      description: '重点看目标、验收标准、非目标和待确认问题。确认无误后批准进入方案设计。',
+      approveLabel: '批准需求',
+      rejectLabel: '打回修改',
+      rejectTitle: '打回需求 - 请说明需要调整的点',
+      rejectPlaceholder: '例如目标不准确、验收标准不完整、范围需要收紧，或还有必须补充的问题。',
+    };
+  }
+  if (gateId === 'design_gate') {
+    return {
+      title: '请确认方案是否可执行',
+      subtitle: '方案设计等待确认',
+      description: '重点看实现思路、影响范围、测试策略和风险。确认无误后批准进入代码实现。',
+      approveLabel: '批准方案',
+      rejectLabel: '打回方案',
+      rejectTitle: '打回方案 - 请说明需要修改的点',
+      rejectPlaceholder: '例如方案不符合预期、遗漏影响范围、测试策略不足，或风险需要重新评估。',
+    };
+  }
+  if (gateId === 'sensitive_change_gate') {
+    return {
+      title: '请确认敏感变更是否可以继续',
+      subtitle: '代码实现遇到敏感变更',
+      description: '请确认变更范围和风险可接受。批准后系统会继续执行后续检查。',
+      approveLabel: '允许继续',
+      rejectLabel: '要求修改',
+      rejectTitle: '要求修改 - 请说明敏感变更问题',
+      rejectPlaceholder: '请说明哪些变更不可接受、需要避开的文件或必须补充的验证。',
+    };
+  }
+  if (gateId === 'acceptance_gate') {
+    return {
+      title: '请确认交付是否可以验收',
+      subtitle: '验收确认等待决定',
+      description: '请逐项检查验收清单。证据不足但可接受时，需要显式接受风险。',
+      approveLabel: '接受风险并验收',
+      rejectLabel: '拒绝验收',
+      rejectTitle: '拒绝验收 - 请说明原因',
+      rejectPlaceholder: '请逐条说明 AC 哪些项证据不足或不达标，模型会据此修订重跑。',
+    };
+  }
+  if (gateId === 'knowledge_gate') {
+    return {
+      title: '请确认哪些经验需要沉淀',
+      subtitle: '知识沉淀等待确认',
+      description: '请检查候选知识是否值得保存到项目知识库，确认后用于后续任务复用。',
+      approveLabel: '确认入库',
+      rejectLabel: '暂不入库',
+      rejectTitle: '暂不入库 - 请说明原因',
+      rejectPlaceholder: '请说明哪些经验不准确、太具体、或暂时不适合作为项目知识沉淀。',
+    };
+  }
+  const stageLabel = stage ? STAGE_LABELS[stage] : '当前阶段';
+  return {
+    title: `请确认${stageLabel}结果`,
+    subtitle: `${stageLabel}等待确认`,
+    description: '请检查当前阶段产物和证据，确认无误后批准进入下一阶段。',
+    approveLabel: '批准继续',
+    rejectLabel: '打回修改',
+    rejectTitle: '打回修改 - 请说明原因',
+    rejectPlaceholder: '请说明该阶段评审为何不通过、需要补充的证据或修改方向。',
+  };
+}
+
+function gateDisplayLabel(gateId: string): string {
+  if (gateId === 'requirement_gate') return '需求确认';
+  if (gateId === 'design_gate') return '方案确认';
+  if (gateId === 'sensitive_change_gate') return '敏感变更确认';
+  if (gateId === 'acceptance_gate') return '验收确认';
+  if (gateId === 'knowledge_gate') return '知识沉淀确认';
+  if (gateId === 'compile_gate') return '编译检查';
+  if (gateId === 'test_gate') return '测试检查';
+  if (gateId === 'diff_scope_gate') return '变更范围检查';
+  if (gateId === 'evidence_gate') return '证据检查';
+  return gateId;
+}
+
+function taskFocusSummary(
+  request: WorkflowRequestDto,
+  detail: RunDetail | null,
+  projection: ReturnType<typeof buildRunProjection> | null,
+): { label: string; hint: string; kind: StatusKind } {
+  if (!detail || !projection) {
+    if (request.status === 'awaiting_clarification') return { label: '等待补充', hint: '请先回答需求澄清问题', kind: 'warn' };
+    if (request.status === 'pending') return { label: '等待开始', hint: 'Runner 会自动认领任务', kind: 'info' };
+    if (request.status === 'claimed') return { label: '准备运行', hint: 'Runner 正在创建工作流', kind: 'info' };
+    if (request.status === 'failed') return { label: '需要处理', hint: '任务创建或认领失败', kind: 'bad' };
+    if (request.status === 'completed') return { label: '已完成', hint: '任务已经结束', kind: 'good' };
+    return { label: requestStatusLabel(request.status), hint: '查看详情确认当前状态', kind: statusKind(request.status) };
+  }
+  if (projection.pendingGate) {
+    const copy = reviewGateCopy(projection.pendingGate, projection.currentStage);
+    return { label: '等待你确认', hint: copy.subtitle, kind: 'warn' };
+  }
+  if (detail.run.status === 'running') return { label: '自动执行中', hint: `${STAGE_LABELS[projection.currentStage]}正在处理`, kind: 'info' };
+  if (detail.run.status === 'completed') return { label: '已完成', hint: '可以查看交付报告和知识沉淀', kind: 'good' };
+  if (detail.run.status === 'failed') return { label: '需要处理', hint: `${STAGE_LABELS[projection.currentStage]}出现失败`, kind: 'bad' };
+  return { label: detail.run.status, hint: `${STAGE_LABELS[projection.currentStage]}当前状态`, kind: statusKind(detail.run.status) };
+}
+
+function taskProgressMetric(projection: ReturnType<typeof buildRunProjection> | null): { value: string; hint: string; kind: StatusKind } {
+  if (!projection) return { value: '尚未开始', hint: '等待 Runner 创建工作流', kind: 'muted' };
+  const total = projection.visibleStages.length;
+  const done = projection.visibleStages.filter((stage) => stage.state === 'done').length;
+  const failed = projection.visibleStages.some((stage) => stage.state === 'failed');
+  const blocked = projection.visibleStages.some((stage) => stage.state === 'blocked');
+  return {
+    value: `${done}/${total} 阶段`,
+    hint: failed ? '有阶段需要处理' : blocked ? '暂停等待确认' : '按流程自动推进',
+    kind: failed ? 'bad' : blocked ? 'warn' : done === total && total > 0 ? 'good' : 'info',
+  };
+}
+
 function field(label: string, value: Node | string): HTMLElement {
   const valueNode = typeof value === 'string' ? el('span', { text: value }) : value;
   return el('div', {
@@ -1227,6 +1378,7 @@ function renderTaskDetailPage(): HTMLElement {
   const projection = detail ? buildRunProjection(detail) : null;
   if (detail) clearCoordinatorReplyComposerState(request.id);
   const coordinatorPanel = renderCoordinatorChatPanel(request);
+  const nextActionPanel = () => renderTaskNextActionPanel(request, detail, projection);
   return el('section', {
     class: 'task-detail-grid',
     children: [
@@ -1234,19 +1386,20 @@ function renderTaskDetailPage(): HTMLElement {
         class: 'workspace-main',
         children: [
           renderTaskHero(request, detail, projection),
+          el('div', { class: 'mobile-next-action', children: [nextActionPanel()] }),
           coordinatorPanel,
           detail ? renderLifecycle(detail, projection!) : renderQueuedLifecycle(request),
-          detail ? renderContextGovernancePanel(detail) : null,
           renderCurrentStagePanel(request, detail, projection),
+          detail ? renderContextGovernancePanel(detail) : null,
           detail ? renderStageBackendDetails(detail, projection!) : renderQueuedBackendDetails(request),
         ],
       }),
       el('aside', {
         class: 'workspace-side',
         children: [
-          renderTaskNextActionPanel(request, detail, projection),
-          renderRunnerControlPanel(),
+          el('div', { class: 'desktop-next-action', children: [nextActionPanel()] }),
           detail ? renderEvidencePanel(detail) : renderRequestDebugPanel(request, 'side-panel'),
+          renderRunnerControlPanel(),
           detail ? renderAgentStreamPanel() : null,
         ],
       }),
@@ -1540,6 +1693,8 @@ function renderTaskHero(
 ): HTMLElement {
   const status = detail?.run.status ?? request.status;
   const current = detail && projection ? STAGE_LABELS[projection.currentStage] : request.status === 'pending' ? '等待本地 Runner 自动认领' : 'Runner 已认领，正在准备运行';
+  const focus = taskFocusSummary(request, detail, projection);
+  const progress = taskProgressMetric(projection);
   return el('section', {
     class: 'hero-card task-hero',
     children: [
@@ -1549,32 +1704,61 @@ function renderTaskHero(
           el('div', {
             class: 'run-meta-line',
             children: [
-              pill(status),
-              el('span', { text: shortId(request.id) }),
-              detail ? el('span', { text: `Run ${shortId(detail.run.id)}` }) : null,
-              el('span', { text: fmtTime(request.createdAt) }),
+              pill(focus.label, focus.kind),
+              pill(requestTypeLabel(request.type), 'muted'),
+              el('span', { text: `创建于 ${fmtTime(request.createdAt)}` }),
             ],
           }),
           el('h2', { text: request.title }),
           el('p', {
             text: detail
-              ? `当前阶段：${current} · Source Branch：${detail.run.sourceBranch ?? request.branch} · 工作分支：${detail.run.branch}`
-              : `当前阶段：${current} · Source Branch：${request.branch}`,
+              ? `${focus.hint}。当前阶段是 ${current}。`
+              : `${focus.hint}。当前阶段是 ${current}。`,
           }),
+          renderTaskTechnicalSummary(request, detail, status),
         ],
       }),
       el('div', {
         class: 'metric-grid',
         children: [
-          metric('Project', projectName(request.projectId), `用户标记: ${request.type}`, 'info'),
-          renderCoordinatorVerdictMetric(request),
-          metric('Source Branch', request.branch, '本次任务基础分支', 'muted'),
-          metric('Current', current, detail?.run.workspacePath ?? '尚未准备 worktree', detail ? statusKind(detail.run.status) : statusKind(request.status)),
-          metric('Evidence', projection ? `${projection.summary.gatesPassed}/${detail?.gates.length ?? 0} gates` : '尚未开始', projection ? `${projection.summary.commands} commands` : '等待 Runner', projection?.summary.gatesFailed ? 'bad' : 'muted'),
+          metric('当前关注', focus.label, focus.hint, focus.kind),
+          metric('当前阶段', current, projection ? STAGE_HELP[projection.currentStage] : '系统会自动进入主流程', detail ? statusKind(detail.run.status) : statusKind(request.status)),
+          metric('任务进度', progress.value, progress.hint, progress.kind),
+          metric('所属项目', projectName(request.projectId), requestTypeLabel(request.type), 'info'),
         ],
       }),
     ],
   });
+}
+
+function renderTaskTechnicalSummary(request: WorkflowRequestDto, detail: RunDetail | null, status: string): HTMLElement {
+  return el('details', {
+    class: 'raw-details task-technical-summary',
+    attrs: { 'data-details-key': `task-technical-summary:${request.id}` },
+    children: [
+      el('summary', { text: '查看技术标识' }),
+      field('Request', el('code', { text: request.id })),
+      detail ? field('Run', el('code', { text: detail.run.id })) : null,
+      field('状态', status),
+      field('Source Branch', detail?.run.sourceBranch ?? request.branch),
+      detail ? field('工作分支', detail.run.branch) : null,
+      detail ? field('Worktree', detail.run.workspacePath ?? '尚未准备') : null,
+      field('系统分诊', coordinatorVerdictText(request)),
+    ],
+  });
+}
+
+function coordinatorVerdictText(request: WorkflowRequestDto): string {
+  const state = coordinatorChats.get(request.id);
+  if (!state) {
+    void loadCoordinatorChat(request.id);
+    return `等待分诊（用户标记：${requestTypeLabel(request.type)}）`;
+  }
+  const decision = state.decision?.decision;
+  if (!decision) return `等待分诊（用户标记：${requestTypeLabel(request.type)}）`;
+  if (decision.action === 'proceed') return `${requestTypeLabel(decision.runType)} · ${decision.routeCase}`;
+  if (decision.action === 'pause_for_human') return `需要补充信息 · ${decision.questions.length} 个问题`;
+  return `已取消 · ${decision.reason}`;
 }
 
 function renderQueuedLifecycle(request: WorkflowRequestDto): HTMLElement {
@@ -1607,7 +1791,7 @@ function renderQueuedLifecycle(request: WorkflowRequestDto): HTMLElement {
               el('span', { class: 'stage-index', text: String(index + 1).padStart(2, '0') }),
               el('strong', { text: stage.label }),
               el('small', { text: stage.help }),
-              el('span', { class: `stage-state ${stage.state}`, text: stage.state }),
+              el('span', { class: `stage-state ${stage.state}`, text: stageStateLabel(stage.state) }),
             ],
           }),
         ),
@@ -1640,14 +1824,15 @@ function renderCurrentStagePanel(
   const stage = projection.currentStage;
   const pendingGate = projection.pendingGate;
   if (pendingGate) {
+    const copy = reviewGateCopy(pendingGate, stage);
     return el('section', {
       class: 'current-stage-panel',
       children: [
         el('div', {
           class: 'panel checkpoint',
           children: [
-            panelHeader('当前需要你确认', `${STAGE_LABELS[stage]} 暂停在 ${pendingGate}`),
-            el('p', { text: '请先查看下面当前阶段产物和右侧确认入口，再决定批准或打回。' }),
+            panelHeader('当前需要你确认', copy.subtitle),
+            el('p', { text: copy.description }),
           ],
         }),
         currentStageContent(detail, stage),
@@ -1734,33 +1919,40 @@ function renderContextGovernancePanel(detail: RunDetail): HTMLElement {
   const model = contextGovernanceByRun.get(detail.run.id) ?? null;
   if (!model) {
     return el('section', {
-      class: 'panel doc-panel',
+      class: 'panel doc-panel diagnostic-panel',
       children: [
-        panelHeader('Context Governance', '正在读取 manifest / sourceRefs / context_request history…'),
-        el('p', { class: 'muted compact', text: '数据来自 /workflow-runs/:id/context；失败时仍可在 Evidence Drill-down 查看原始 artifacts/actions。' }),
+        panelHeader('参考资料', '系统正在读取 Agent 使用的项目资料。'),
+        el('p', { class: 'muted compact', text: '暂时没有可展示的资料摘要；排查时可查看技术证据。' }),
       ],
     });
   }
 
   const metrics = model.metrics;
   return el('section', {
-    class: 'panel doc-panel structured-panel',
+    class: 'panel doc-panel structured-panel diagnostic-panel',
     children: [
-      panelHeader('Context Governance', '为什么 Agent 知道这些：Manifest、来源、预算与请求闭环'),
-      el('div', {
-        class: 'metric-grid',
+      panelHeader('参考资料', '排查 Agent 为什么这么判断时再展开。'),
+      el('details', {
+        class: 'raw-details diagnostic-shell',
+        attrs: { 'data-details-key': `context-governance:${detail.run.id}` },
         children: [
-          metric('Impact Coverage', formatPercent(metrics.impactCoverage.value), `${metrics.impactCoverage.numerator}/${metrics.impactCoverage.denominator} agent tasks`, metrics.impactCoverage.value >= 0.8 ? 'good' : 'warn'),
-          metric('Traceability', formatPercent(metrics.evidenceTraceability.value), `${metrics.evidenceTraceability.numerator}/${metrics.evidenceTraceability.denominator} manifest refs`, metrics.evidenceTraceability.value >= 0.8 ? 'good' : 'warn'),
-          metric('Irrelevant Ratio', formatPercent(metrics.irrelevantContextRatio.value), 'deterministic low-signal proxy', metrics.irrelevantContextRatio.value <= 0.2 ? 'good' : 'warn'),
-          metric('Context Requests', String(metrics.contextRequestCount.value), 'structured requests', metrics.contextRequestCount.value ? 'info' : 'muted'),
-          metric('Rework Signal', String(metrics.downstreamReworkSignal.value), 'rejects + failed gates/agents', metrics.downstreamReworkSignal.value ? 'warn' : 'good'),
+          el('summary', { text: '查看 Agent 使用了哪些资料' }),
+          el('div', {
+            class: 'metric-grid diagnostic-metrics',
+            children: [
+              metric('覆盖度', formatPercent(metrics.impactCoverage.value), `${metrics.impactCoverage.numerator}/${metrics.impactCoverage.denominator} agent tasks`, metrics.impactCoverage.value >= 0.8 ? 'good' : 'warn'),
+              metric('可追溯性', formatPercent(metrics.evidenceTraceability.value), `${metrics.evidenceTraceability.numerator}/${metrics.evidenceTraceability.denominator} manifest refs`, metrics.evidenceTraceability.value >= 0.8 ? 'good' : 'warn'),
+              metric('低相关资料', formatPercent(metrics.irrelevantContextRatio.value), 'deterministic low-signal proxy', metrics.irrelevantContextRatio.value <= 0.2 ? 'good' : 'warn'),
+              metric('补充请求', String(metrics.contextRequestCount.value), 'structured requests', metrics.contextRequestCount.value ? 'info' : 'muted'),
+              metric('返工信号', String(metrics.downstreamReworkSignal.value), 'rejects + failed gates/agents', metrics.downstreamReworkSignal.value ? 'warn' : 'good'),
+            ],
+          }),
+          renderContextManifestSummary(model.manifest),
+          renderContextBudgetSummary(model.budgetDecisions),
+          renderContextRequestHistory(model.contextRequests),
+          renderContextSourceRefs(model.sourceRefs),
         ],
       }),
-      renderContextManifestSummary(model.manifest),
-      renderContextBudgetSummary(model.budgetDecisions),
-      renderContextRequestHistory(model.contextRequests),
-      renderContextSourceRefs(model.sourceRefs),
     ],
   });
 }
@@ -1929,7 +2121,7 @@ function renderTaskNextActionPanel(
     class: 'panel side-panel',
     children: [
       panelHeader('下一步', '系统会自动推进到下一个阶段'),
-      el('p', { text: `当前正在 ${STAGE_LABELS[projection.currentStage]}。如果遇到 Requirement / Design / Sensitive Change / Acceptance / Knowledge 确认点，页面会在这里显示操作按钮。` }),
+      el('p', { text: `当前正在 ${STAGE_LABELS[projection.currentStage]}。需要你确认时，操作按钮会出现在这里。` }),
       detail.approvals.length
         ? el('div', { class: 'stack', children: detail.approvals.map(renderApprovalRow) })
         : el('p', { class: 'muted compact', text: '当前无需人工确认。' }),
@@ -1946,20 +2138,33 @@ function renderRunnerControlPanel(): HTMLElement {
   return el('section', {
     class: 'panel side-panel runner-control-panel',
     children: [
-      panelHeader('本地 Runner', 'UI 会自动托管 runner watch；命令行只作为兜底。'),
-      field('Control', control?.running ? el('span', { children: [pill('running', 'good'), document.createTextNode(` pid=${control.pid ?? '—'}`)] }) : pill('stopped', 'warn')),
-      field('Heartbeat', latest ? `${latest.status} · ${fmtTime(latest.lastSeenAt)}` : '尚未收到'),
-      control?.lastExit ? field('Last Exit', `code=${control.lastExit.code ?? 'null'} signal=${control.lastExit.signal ?? 'null'} · ${fmtTime(control.lastExit.at)}`) : null,
-      el('div', { class: 'button-row', children: [start] }),
-      control?.recentLogs?.length
-        ? el('details', {
-            class: 'raw-details',
+      panelHeader('运行环境', '正常时无需处理，排查时展开查看。'),
+      el('details', {
+        class: 'raw-details diagnostic-shell',
+        attrs: { 'data-details-key': 'runner-control' },
+        children: [
+          el('summary', {
             children: [
-              el('summary', { text: `Runner 控制日志 (${control.recentLogs.length})` }),
-              el('pre', { class: 'doc-preview code', text: control.recentLogs.slice(-30).join('\n') }),
+              el('span', { text: '查看 Runner 状态' }),
+              control?.running ? pill('运行中', 'good') : pill('未运行', 'warn'),
             ],
-          })
-        : el('p', { class: 'muted compact', text: '暂无 Runner 控制日志。' }),
+          }),
+          field('状态', control?.running ? el('span', { children: [pill('running', 'good'), document.createTextNode(` pid=${control.pid ?? '—'}`)] }) : pill('stopped', 'warn')),
+          field('心跳', latest ? `${latest.status} · ${fmtTime(latest.lastSeenAt)}` : '尚未收到'),
+          control?.lastExit ? field('上次退出', `code=${control.lastExit.code ?? 'null'} signal=${control.lastExit.signal ?? 'null'} · ${fmtTime(control.lastExit.at)}`) : null,
+          el('div', { class: 'button-row', children: [start] }),
+          control?.recentLogs?.length
+            ? el('details', {
+                class: 'raw-details',
+                attrs: { 'data-details-key': 'runner-control-logs' },
+                children: [
+                  el('summary', { text: `Runner 控制日志 (${control.recentLogs.length})` }),
+                  el('pre', { class: 'doc-preview code', text: control.recentLogs.slice(-30).join('\n') }),
+                ],
+              })
+            : el('p', { class: 'muted compact', text: '暂无 Runner 控制日志。' }),
+        ],
+      }),
     ],
   });
 }
@@ -2018,12 +2223,19 @@ function renderStageBackendDetails(
   projection: ReturnType<typeof buildRunProjection>,
 ): HTMLElement {
   return el('section', {
-    class: 'panel',
+    class: 'panel diagnostic-panel',
     children: [
-      panelHeader('系统准备 + 阶段后端细节', '任务受理/上下文准备是自动技术准备；需求分析之后才是用户主流程。展开后查看 Step、Agent、Gate、Command、Artifact、Audit。'),
-      el('div', {
-        class: 'stage-detail-list',
-        children: projection.stages.map((stage) => renderStageBackendDetail(detail, stage)),
+      panelHeader('技术运行详情', '排查失败、日志或产物问题时再展开。'),
+      el('details', {
+        class: 'raw-details diagnostic-shell',
+        attrs: { 'data-details-key': `stage-backend-details:${detail.run.id}` },
+        children: [
+          el('summary', { text: '查看阶段后端细节' }),
+          el('div', {
+            class: 'stage-detail-list',
+            children: projection.stages.map((stage) => renderStageBackendDetail(detail, stage)),
+          }),
+        ],
       }),
     ],
   });
@@ -2042,7 +2254,7 @@ function renderStageBackendDetail(detail: RunDetail, stage: ReturnType<typeof bu
       el('summary', {
         children: [
           el('strong', { text: stage.label }),
-          pill(stage.state, stage.state === 'done' ? 'good' : stage.state === 'failed' ? 'bad' : stage.state === 'blocked' ? 'warn' : stage.state === 'active' ? 'info' : 'muted'),
+          pill(stageStateLabel(stage.state), stage.state === 'done' ? 'good' : stage.state === 'failed' ? 'bad' : stage.state === 'blocked' ? 'warn' : stage.state === 'active' ? 'info' : 'muted'),
           el('span', { class: 'muted', text: `${gates.length} gates · ${commands.length} commands · ${artifacts.length} artifacts` }),
         ],
       }),
@@ -2131,18 +2343,17 @@ function renderLifecycle(detail: RunDetail, projection: ReturnType<typeof buildR
   return el('section', {
     class: 'panel',
     children: [
-      panelHeader('完整生命周期', lifecycleSubtitle(projection)),
+      panelHeader('任务进度', lifecycleSubtitle(projection)),
       el('div', {
         class: 'stage-board',
         children: projection.visibleStages.map((stage, index) => {
-          const step = detail.steps.find((s) => s.stage === stage.id);
           return el('article', {
             class: `stage-card ${stage.state}`,
             children: [
               el('span', { class: 'stage-index', text: String(index + 1).padStart(2, '0') }),
               el('strong', { text: stage.label }),
-              el('small', { text: step?.name ?? stage.gateId ?? '等待进入' }),
-              el('span', { class: `stage-state ${stage.state}`, text: stage.state }),
+              el('small', { text: stageCardHint(stage.state) }),
+              el('span', { class: `stage-state ${stage.state}`, text: stageStateLabel(stage.state) }),
             ],
           });
         }),
@@ -2275,7 +2486,7 @@ function renderRequirementPanel(detail: RunDetail): HTMLElement {
       renderAcList(req.acceptanceCriteria, detail),
       renderTextList('非目标', req.nonGoals),
       renderTextList('待确认', req.openQuestions),
-      gate ? renderRuleList('Requirement Gate', gate) : el('p', { class: 'muted compact', text: 'Requirement Gate 尚未运行。' }),
+      gate ? renderRuleList('需求质量检查', gate) : el('p', { class: 'muted compact', text: '需求质量检查尚未运行。' }),
       gate?.status === 'fail' ? renderStageRetryActions(detail.run.id, 'requirement', 'requirement_gate') : null,
       renderRawFallback(detail, 'requirement_draft'),
     ],
@@ -2293,7 +2504,7 @@ function renderDesignPanel(detail: RunDetail): HTMLElement {
       renderTextList('测试策略', design.testStrategy),
       renderTextList('风险', design.risks),
       renderTextList('影响文件', design.filesTouched),
-      gate ? renderRuleList('Design Gate', gate) : el('p', { class: 'muted compact', text: 'Design Gate 尚未运行。' }),
+      gate ? renderRuleList('方案质量检查', gate) : el('p', { class: 'muted compact', text: '方案质量检查尚未运行。' }),
       gate?.status === 'fail' ? renderStageRetryActions(detail.run.id, 'design', 'design_gate') : null,
       renderRawFallback(detail, 'design_doc'),
     ],
@@ -2675,14 +2886,18 @@ function renderApprovalPanel(detail: RunDetail, pendingGate: string | null, curr
     .find((g) => g.gateId === 'sensitive_change_gate' && g.status === 'warn');
   const sensitiveDecision = detail.approvals.find((a) => a.gateId === 'sensitive_change_gate');
   if ((!pendingGate || pendingGate === 'sensitive_change_gate') && sensitiveWarn && !sensitiveDecision) {
-    const approveBtn = button('批准敏感变更继续', 'button primary');
-    const rejectBtn = button('要求修改', 'button danger');
+    const copy = reviewGateCopy('sensitive_change_gate', currentStage);
+    const inFlight = approvalInFlight.has(`${detail.run.id}:sensitive_change_gate`);
+    const approveBtn = button(inFlight ? '提交中...' : copy.approveLabel, 'button primary');
+    const rejectBtn = button(inFlight ? '提交中...' : copy.rejectLabel, 'button danger');
+    approveBtn.disabled = inFlight;
+    rejectBtn.disabled = inFlight;
     approveBtn.onclick = () => void submitApproval(detail.run.id, 'sensitive_change_gate', true);
     rejectBtn.onclick = () => {
       void (async () => {
         const reason = await promptRejectReason({
-          title: '要求修改 — 请说明原因',
-          placeholder: '描述要修改的内容、风险点或证据缺失，提交后将作为反馈传给下一轮模型修订。',
+          title: copy.rejectTitle,
+          placeholder: copy.rejectPlaceholder,
           submitLabel: '提交并打回',
         });
         if (reason === null) return;
@@ -2692,9 +2907,9 @@ function renderApprovalPanel(detail: RunDetail, pendingGate: string | null, curr
     return el('section', {
       class: 'panel side-panel checkpoint',
       children: [
-        panelHeader('Sensitive Change Checkpoint', '发现敏感路径或高风险变更'),
-        renderRuleList('Sensitive Change Gate', sensitiveWarn),
-        el('p', { text: '请检查 diff、设计范围和风险说明后再决定是否继续。' }),
+        panelHeader('等待你确认', copy.subtitle),
+        el('p', { text: copy.description }),
+        renderRuleList('敏感变更检查', sensitiveWarn),
         el('div', { class: 'button-row', children: [approveBtn, rejectBtn] }),
       ],
     });
@@ -2712,10 +2927,16 @@ function renderApprovalPanel(detail: RunDetail, pendingGate: string | null, curr
     });
   }
 
+  const submittedApproval = pendingGate ? latestApprovalForGate(detail, pendingGate) : null;
+  if (pendingGate && submittedApproval) {
+    return renderSubmittedApprovalPanel(detail, pendingGate, currentStage, submittedApproval);
+  }
+
   const isAcceptance = pendingGate === 'acceptance_gate';
-  const approveBtn = button(isAcceptance ? '接受风险并验收' : `Approve ${pendingGate}`, 'button primary');
-  const rejectBtn = button('Reject', 'button danger');
+  const copy = reviewGateCopy(pendingGate, currentStage);
   const inFlight = approvalInFlight.has(`${detail.run.id}:${pendingGate}`);
+  const approveBtn = button(inFlight ? '提交中...' : copy.approveLabel, 'button primary');
+  const rejectBtn = button(inFlight ? '提交中...' : copy.rejectLabel, 'button danger');
   approveBtn.disabled = inFlight;
   rejectBtn.disabled = inFlight;
   approveBtn.onclick = () =>
@@ -2725,10 +2946,8 @@ function renderApprovalPanel(detail: RunDetail, pendingGate: string | null, curr
   rejectBtn.onclick = () => {
     void (async () => {
       const reason = await promptRejectReason({
-        title: isAcceptance ? '拒绝验收 — 请说明原因' : `Reject ${pendingGate} — 请说明原因`,
-        placeholder: isAcceptance
-          ? '请逐条说明 AC 哪些项证据不足或不达标，模型会据此修订重跑。'
-          : '请说明该阶段评审为何不通过、需要补充的证据或修改方向。',
+        title: copy.rejectTitle,
+        placeholder: copy.rejectPlaceholder,
         submitLabel: isAcceptance ? '提交并拒绝验收' : '提交并打回',
       });
       if (reason === null) return;
@@ -2743,9 +2962,45 @@ function renderApprovalPanel(detail: RunDetail, pendingGate: string | null, curr
   return el('section', {
     class: 'panel side-panel checkpoint',
     children: [
-      panelHeader('等待人工确认', `${STAGE_LABELS[currentStage]} 暂停在 ${pendingGate}`),
-      el('p', { text: isAcceptance ? '请逐项检查 AC checklist；若证据不足但可接受，需显式接受风险。' : '请先检查需求/设计/构建证据，再批准进入下一阶段。' }),
+      panelHeader('等待你确认', copy.subtitle),
+      el('p', { text: copy.description }),
       el('div', { class: 'button-row', children: [approveBtn, rejectBtn] }),
+    ],
+  });
+}
+
+function latestApprovalForGate(detail: RunDetail, gateId: string): RunDetail['approvals'][number] | null {
+  const latestAutomatedGate = [...detail.gates]
+    .reverse()
+    .find((gate) => gate.gateId === gateId && gate.ruleResults.every((rule) => rule.ruleId !== 'manual.human_decision'));
+  const approvals = detail.approvals.filter((approval) => approval.gateId === gateId);
+  const currentCycleApprovals = latestAutomatedGate
+    ? approvals.filter((approval) => approval.decidedAt >= latestAutomatedGate.decidedAt)
+    : approvals;
+  return currentCycleApprovals.sort((a, b) => a.decidedAt.localeCompare(b.decidedAt)).at(-1) ?? null;
+}
+
+function renderSubmittedApprovalPanel(
+  detail: RunDetail,
+  gateId: string,
+  currentStage: Stage,
+  approval: RunDetail['approvals'][number],
+): HTMLElement {
+  const approved = approval.decision === 'approved';
+  const copy = reviewGateCopy(gateId, currentStage);
+  return el('section', {
+    class: `panel side-panel checkpoint ${approved ? 'approval-submitted' : 'approval-rejected'}`,
+    children: [
+      panelHeader(approved ? '已批准，等待继续' : '已打回，等待修订', copy.subtitle),
+      el('p', {
+        text: approved
+          ? '已记录你的批准。Runner 会读取该决定并继续进入下一阶段。'
+          : '已记录你的打回意见。Runner 会读取反馈并等待修订。',
+      }),
+      renderApprovalRow(approval),
+      detail.run.status === 'awaiting_human'
+        ? el('p', { class: 'muted compact', text: '如果状态没有立即变化，请等待下一次 Runner 心跳刷新。' })
+        : null,
     ],
   });
 }
@@ -2754,7 +3009,7 @@ function renderApprovalRow(approval: { gateId: string; decision: string; actor: 
   return el('div', {
     class: 'approval-row',
     children: [
-      el('span', { children: [pill(approval.decision), document.createTextNode(` ${approval.gateId}`)] }),
+      el('span', { children: [pill(approval.decision), document.createTextNode(` ${gateDisplayLabel(approval.gateId)}`)] }),
       el('small', { text: `${approval.actor} · ${fmtTime(approval.decidedAt)}` }),
     ],
   });
@@ -2764,17 +3019,24 @@ function renderEvidencePanel(detail: RunDetail): HTMLElement {
   return el('section', {
     class: 'panel side-panel evidence-panel',
     children: [
-      panelHeader('Evidence Drill-down', '工程证据默认折叠'),
-      renderDetails('Gate Runs', detail.gates.map(renderGateRow)),
-      renderDetails('Command Runs', detail.commands.map(renderCommandRow)),
-      renderDetails('Artifacts', detail.artifacts.map((artifact) => renderArtifactRow(artifact, 'evidence'))),
-      renderDetails('Agent Audit', detail.agentTasks.map((task) => renderAgentTaskRow(task, detail))),
+      panelHeader('技术证据', '排查或审计时展开。'),
+      el('details', {
+        class: 'raw-details diagnostic-shell',
+        attrs: { 'data-details-key': `evidence-panel:${detail.run.id}` },
+        children: [
+          el('summary', { text: '查看 Gate、命令、产物和 Agent 记录' }),
+          renderDetails('Gate Runs', detail.gates.map(renderGateRow), `evidence-gates:${detail.run.id}`),
+          renderDetails('Command Runs', detail.commands.map(renderCommandRow), `evidence-commands:${detail.run.id}`),
+          renderDetails('Artifacts', detail.artifacts.map((artifact) => renderArtifactRow(artifact, 'evidence')), `evidence-artifacts:${detail.run.id}`),
+          renderDetails('Agent Audit', detail.agentTasks.map((task) => renderAgentTaskRow(task, detail)), `evidence-agent-audit:${detail.run.id}`),
+        ],
+      }),
     ],
   });
 }
 
-function renderDetails(title: string, children: HTMLElement[]): HTMLElement {
-  const details = el('details', { class: 'evidence-group' });
+function renderDetails(title: string, children: HTMLElement[], detailsKey?: string): HTMLElement {
+  const details = el('details', { class: 'evidence-group', attrs: detailsKey ? { 'data-details-key': detailsKey } : undefined });
   details.appendChild(el('summary', { text: `${title} (${children.length})` }));
   details.appendChild(children.length ? el('div', { class: 'stack', children }) : el('p', { class: 'muted compact', text: 'No evidence yet.' }));
   return details;
@@ -2930,7 +3192,14 @@ function renderAgentStreamPanel(): HTMLElement {
           }),
         ],
       }),
-      renderAgentStreamBody(view, { id: 'stream-body', scrollKeyPrefix: 'agent-stream' }),
+      el('details', {
+        class: 'raw-details stream-log-details',
+        attrs: { 'data-details-key': `agent-stream:${view.runId ?? 'none'}` },
+        children: [
+          el('summary', { text: '查看执行日志' }),
+          renderAgentStreamBody(view, { id: 'stream-body', scrollKeyPrefix: 'agent-stream' }),
+        ],
+      }),
     ],
   });
 }
@@ -4814,49 +5083,6 @@ async function sendCoordinatorReply(requestId: string, textArea: HTMLTextAreaEle
   }
 }
 
-/**
- * Surface the Coordinator's verdict next to the user-typed task type so the
- * user can see when the Coordinator has overridden their classification
- * (PR2, PRD §P1-5). Renders a placeholder while no decision exists yet.
- *
- * The metric grid sits alongside Project / Source Branch / Current /
- * Evidence at the top of the task detail page. When the user-marked type
- * and the Coordinator's runType disagree the metric is rendered in `warn`
- * kind to highlight the divergence.
- */
-function renderCoordinatorVerdictMetric(request: WorkflowRequestDto): HTMLElement {
-  const state = coordinatorChats.get(request.id);
-  if (!state || !state.decision) {
-    if (!state) void loadCoordinatorChat(request.id);
-    return metric('Coordinator 判定', '等待分诊', `用户标记 ${request.type}`, 'muted');
-  }
-  const decision = state.decision.decision;
-  const sourceLabel = state.decision.source === 'rules' ? '规则匹配' : state.decision.source === 'llm' ? 'LLM 判定' : '人工';
-  const confLabel = state.decision.confidence.toFixed(2);
-  if (decision.action === 'proceed') {
-    const mismatch = decision.runType !== request.type;
-    const value = `${decision.runType} (${decision.routeCase})`;
-    const hint = mismatch
-      ? `与用户标记 ${request.type} 不一致 · ${sourceLabel} ${confLabel}`
-      : `与用户标记一致 · ${sourceLabel} ${confLabel}`;
-    return metric('Coordinator 判定', value, hint, mismatch ? 'warn' : 'good');
-  }
-  if (decision.action === 'pause_for_human') {
-    return metric(
-      'Coordinator 判定',
-      `等待澄清 (${decision.questions.length})`,
-      `${sourceLabel} ${confLabel} · ${decision.reason}`,
-      'warn',
-    );
-  }
-  return metric(
-    'Coordinator 判定',
-    '已取消',
-    `${sourceLabel} ${confLabel} · ${decision.reason}`,
-    'bad',
-  );
-}
-
 function coordinatorStreamChannelForRequest(request: WorkflowRequestDto): StreamChannel {
   return request.workflowRunId
     ? { kind: 'run', id: request.workflowRunId }
@@ -6696,6 +6922,9 @@ async function submitApproval(
     });
     await loadRunDetail(workflowRunId, false);
     await loadData({ render: false, keepDetail: true });
+    lastError = null;
+  } catch (err) {
+    lastError = err instanceof Error ? err.message : String(err);
   } finally {
     approvalInFlight.delete(key);
     render();

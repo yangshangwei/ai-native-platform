@@ -1,0 +1,2 @@
+{"file":".trellis/spec/web/frontend/state-management.md","reason":"Check stable details keys and render-safe disclosure behavior after UI changes."}
+{"file":".trellis/spec/web/frontend/agent-backend-ui.md","reason":"Check that backend/stream diagnostics remain reachable and accurately labelled."}

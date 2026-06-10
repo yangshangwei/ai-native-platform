@@ -110,3 +110,96 @@ return tasks.at(-1)?.backend ?? 'native / codex / claude_code';
 ```ts
 return project.agentBackend ? agentBackendDisplayName(project.agentBackend) : '未配置';
 ```
+
+## Scenario: task detail review-first hierarchy
+
+### 1. Scope / Trigger
+
+- Trigger: changes to the workflow request detail page, approval checkpoints,
+  Runner panels, evidence drill-downs, or task lifecycle cards.
+- The task detail page is primarily a reviewer surface. It must answer "what
+  needs my attention?" before exposing execution internals.
+
+### 2. Signatures
+
+- Existing render entry points stay in `apps/web/src/main.ts`:
+  - `renderTaskHero(request, detail, projection)`
+  - `renderTaskNextActionPanel(request, detail, projection)`
+  - `renderCurrentStagePanel(request, detail, projection)`
+  - `renderEvidencePanel(detail)`
+  - `renderRunnerControlPanel()`
+  - `renderAgentStreamPanel()`
+- Do not change approval API calls from these UI changes:
+  - `submitApproval(runId, gateId, approved, reason?)`
+  - `submitAcceptanceDecision(runId, decision, reason?)`
+
+### 3. Contracts
+
+- Primary, always-visible copy should use user-facing Chinese labels:
+  `等待你确认`, `批准需求`, `打回修改`, `当前阶段`, `任务进度`.
+- Raw identifiers such as `requirement_gate`, run ids, request ids,
+  worktree paths, command counts, and Runner process ids belong in collapsed
+  diagnostics unless they are the exact thing the user must act on.
+- Technical `<details>` panels that can be opened during polling need stable
+  `data-details-key` values so disclosure state survives `render()` rebuilds.
+- Desktop may keep the checkpoint action in the right column. Mobile must show
+  the same next-action panel near the top of the task detail flow, before long
+  chat, lifecycle, or artifact sections.
+- After an approval/rejection is recorded for the current gate but the run is
+  still `awaiting_human`, the checkpoint panel must switch to an acknowledged
+  state such as `已批准，等待继续` or `已打回，等待修订`. Do not keep showing the
+  same action buttons, because that makes a successful click look inert.
+- Stream panels must keep the backend-specific title/status and recording
+  action visible, but the raw log body should be collapsed by default on the
+  task detail page.
+
+### 4. Validation & Error Matrix
+
+- Awaiting human gate -> show plain-language checkpoint copy and action labels;
+  do not show raw gate ids in the primary panel title or buttons.
+- Recorded approval while run is still awaiting human -> show the submitted
+  decision and wait message; do not offer the same approve/reject action again
+  unless a newer automated gate run supersedes that approval.
+- Running/no pending gate -> show that the system is progressing automatically;
+  do not ask the user to inspect Requirement/Design/Gate internals.
+- Runner stopped/error -> keep Runner controls reachable in the diagnostic
+  panel; do not remove the fallback start action.
+- Mobile viewport -> document `scrollWidth` should not exceed
+  `window.innerWidth`; wide lifecycle tracks should scroll inside their own
+  container.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `requirement_gate` pending renders `等待你确认`, `批准需求`, and
+  `打回修改`, with Gate Runs available only after expanding technical evidence.
+- Base: a running task with no pending gate shows progress and current stage;
+  the right column contains collapsed diagnostics.
+- Bad: the hero exposes `Approve requirement_gate`, worktree paths, command
+  counts, or Runner pids as default visible content.
+
+### 6. Tests Required
+
+- Typecheck `@ainp/web` after changing render helpers.
+- Run `vitest` for `apps/web/test` to protect projection and stream helpers.
+- Manual/Playwright visual check at desktop and mobile widths:
+  - no overlap between task hero and side panel;
+  - no mobile horizontal page overflow;
+  - approval action appears above long diagnostic sections on mobile;
+  - stream/evidence/Runner details remain reachable when expanded.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+panelHeader('等待人工确认', `${STAGE_LABELS[currentStage]} 暂停在 ${pendingGate}`);
+button(`Approve ${pendingGate}`, 'button primary');
+```
+
+#### Correct
+
+```ts
+const copy = reviewGateCopy(pendingGate, currentStage);
+panelHeader('等待你确认', copy.subtitle);
+button(copy.approveLabel, 'button primary');
+```

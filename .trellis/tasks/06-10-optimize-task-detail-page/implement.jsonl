@@ -1,0 +1,2 @@
+{"file":".trellis/spec/web/frontend/state-management.md","reason":"Frontend DOM app state rules, especially preserving user-owned disclosure state across polling renders."}
+{"file":".trellis/spec/web/frontend/agent-backend-ui.md","reason":"Runner/backend and stream diagnostics must remain accurate while becoming secondary in the task detail page."}
