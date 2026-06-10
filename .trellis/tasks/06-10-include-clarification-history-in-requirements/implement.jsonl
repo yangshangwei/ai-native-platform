@@ -1,0 +1,9 @@
+{"file":".trellis/spec/runner/backend/index.md","reason":"Runner is the primary implementation surface for watch/orchestrate handoff."}
+{"file":".trellis/spec/runner/backend/directory-structure.md","reason":"Confirms watch/orchestrator ownership and API client boundary."}
+{"file":".trellis/spec/runner/backend/database-guidelines.md","reason":"Runner must read request messages through api-client, not direct DB access."}
+{"file":".trellis/spec/runner/backend/error-handling.md","reason":"Preserve runner failure behavior while enriching request input."}
+{"file":".trellis/spec/runner/backend/quality-guidelines.md","reason":"Runner test/typecheck expectations."}
+{"file":".trellis/spec/api/backend/index.md","reason":"API message store boundary may be referenced by tests/contract."}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"Cross-layer type and test expectations for request messages."}
+{"file":".trellis/spec/guides/index.md","reason":"Required shared thinking guide index."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"This bug is a request-message to runner-agent data-flow issue."}

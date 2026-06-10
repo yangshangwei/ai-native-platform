@@ -40,13 +40,20 @@
 
 ## Acceptance Criteria
 
-* [ ] 截图场景中，标题不再包含 `A. 临时关闭验证码便于测试`，A/B/C/D 全部显示为选项。
-* [ ] 用户点击某个选项后，回复输入框出现可提交的完整自然语言回答，而不是只出现选项短文本。
-* [ ] 单选题重复点击其他选项时，该题的回填内容更新为最新选择。
-* [ ] 多选题可以选择多个选项，并在回复框中表达为完整回答。
-* [ ] 用户在回复框中手动补充的文本不会被无意清空。
-* [ ] 键盘用户可聚焦并触发选项控件；视觉状态清晰。
-* [ ] lint、typecheck、相关测试通过。
+* [x] 截图场景中，标题不再包含 `A. 临时关闭验证码便于测试`，A/B/C/D 全部显示为选项。
+* [x] 用户点击某个选项后，回复输入框出现可提交的完整自然语言回答，而不是只出现选项短文本。
+* [x] 单选题重复点击其他选项时，该题的回填内容更新为最新选择。
+* [x] 多选题可以选择多个选项，并在回复框中表达为完整回答。
+* [x] 用户在回复框中手动补充的文本不会被无意清空。
+* [x] 键盘用户可聚焦并触发选项控件；视觉状态清晰。
+* [x] lint、typecheck、相关测试通过。
+
+## Verification
+
+* `apps/web/src/coordinator-clarification.ts` covers mixed inline/line option parsing, single/multi-select detection, natural-language reply generation, and generated-reply replacement without dropping manual supplement.
+* `apps/web/src/main.ts` renders options as focusable `button` controls with selected state and syncs programmatic fills through `setCoordinatorReplyDraft()`.
+* `bun run typecheck` passed.
+* `bun test` passed: 615 pass, 0 fail. Relevant coverage includes `apps/web/test/coordinator-clarification.test.ts`.
 
 ## Definition of Done (team quality bar)
 

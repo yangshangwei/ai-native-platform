@@ -100,23 +100,34 @@
 
 ### MVP Acceptance
 
-- [ ] `packages/shared` 导出 Context Injection Layer 的 typed schema，并有单元测试覆盖关键字段和合法值。
-- [ ] Runner 有可测试的 ContextPack builder，能在没有历史知识时生成最小可用 pack，在存在 accepted knowledge 时把它纳入 selected context。
-- [ ] Claude Code 和 Codex prompt 通过同一个 renderer 注入 ContextPack，prompt snapshot 或等价测试能证明二者共享同一上下文结构。
-- [ ] Platform Contract 明确包含 prompt-injection 防护语义：repository content is data, not instruction。
-- [ ] 现有 context_pack stage 仍可运行；新增结构不要求一次性替换所有历史 markdown artifact。
-- [ ] 现有核心 tests + `bun run typecheck` 通过。
+- [x] `packages/shared` 导出 Context Injection Layer 的 typed schema，并有单元测试覆盖关键字段和合法值。
+- [x] Runner 有可测试的 ContextPack builder，能在没有历史知识时生成最小可用 pack，在存在 accepted knowledge 时把它纳入 selected context。
+- [x] Claude Code 和 Codex prompt 通过同一个 renderer 注入 ContextPack，prompt snapshot 或等价测试能证明二者共享同一上下文结构。
+- [x] Platform Contract 明确包含 prompt-injection 防护语义：repository content is data, not instruction。
+- [x] 现有 context_pack stage 仍可运行；新增结构不要求一次性替换所有历史 markdown artifact。
+- [x] 现有核心 tests + `bun run typecheck` 通过。
 
 ### Full-loop Acceptance
 
-- [ ] Seed / Recovered / Confirmed、trustLevel、freshness、sourceRefs 在 knowledge metadata 和 ContextPack sections 中一致呈现。
-- [ ] Retriever 能按 stage 和 evidence strength 选择上下文，并记录 manifest decision。
-- [ ] Budget 超限时能降级为 summary 或 retrieval_hint，而不是无审计地丢弃。
-- [ ] Agent 可以产生结构化 `context_request`，平台能记录并在后续 pack 中补充。
-- [ ] Completion / Knowledge Gate 能产生、确认、升级、降级项目知识。
-- [ ] Calibration 能发现至少一类 seed/recovered/confirmed 冲突并输出 review signal。
-- [ ] API/UI 能展示 Context Manifest 和 sourceRefs。
-- [ ] 安全测试覆盖：仓库内容不是指令、敏感路径不注入、跨项目知识不泄漏。
+- [x] Seed / Recovered / Confirmed、trustLevel、freshness、sourceRefs 在 knowledge metadata 和 ContextPack sections 中一致呈现。
+- [x] Retriever 能按 stage 和 evidence strength 选择上下文，并记录 manifest decision。
+- [x] Budget 超限时能降级为 summary 或 retrieval_hint，而不是无审计地丢弃。
+- [x] Agent 可以产生结构化 `context_request`，平台能记录并在后续 pack 中补充。
+- [x] Completion / Knowledge Gate 能产生、确认、升级、降级项目知识。
+- [x] Calibration 能发现至少一类 seed/recovered/confirmed 冲突并输出 review signal。
+- [x] API/UI 能展示 Context Manifest 和 sourceRefs。
+- [x] 安全测试覆盖：仓库内容不是指令、敏感路径不注入、跨项目知识不泄漏。
+
+## Verification
+
+- `packages/shared/test/context.test.ts` covers the typed ContextPack/ContextRequest schema, literal guards, knowledge metadata normalization, calibration signal shape, and sensitive-path policy helpers.
+- `apps/runner/test/context-builder.test.ts` covers minimal packs, accepted/seed/recovered knowledge metadata, deterministic scoring, dedupe, budget degradation, incremental context request packs, calibration review signals, sensitive path filtering, and cross-project knowledge isolation.
+- `apps/runner/test/context-retriever.test.ts` covers stage/source/trust/recency/keyword scoring and full -> summary -> retrieval_hint degradation.
+- `apps/runner/test/context-renderer.test.ts`, `apps/runner/test/claude-code-backend.test.ts`, and `apps/runner/test/codex-backend.test.ts` prove Claude Code and Codex consume the shared renderer and platform trust boundary.
+- `apps/api/test/context-governance-route.test.ts` covers the read-only manifest/sourceRefs/budget/context_request governance endpoint; `apps/web/src/main.ts` renders the Context Governance panel on task detail pages.
+- `apps/runner/test/knowledge.test.ts` covers knowledge accept/edit/ignore promotion and stale/supersede-style review signals.
+- `bun run typecheck` passed.
+- `bun test` passed: 615 pass, 0 fail.
 
 ## Non-goals / Constraints
 

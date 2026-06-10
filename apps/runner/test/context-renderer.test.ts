@@ -79,6 +79,35 @@ describe('provider-neutral context renderer', () => {
     expect(rendered.userPrompt).toContain('--- context_pack.md ---');
   });
 
+  test('uses inputs.user_request as the agent-facing request while preserving title metadata', () => {
+    const rendered = renderAgentPrompt({
+      skill: implementationSkill(),
+      workflowRunId: 'run_ctx',
+      workspacePath: '/tmp/workspace',
+      artifactsDir: '/tmp/artifacts',
+      branch: 'ai/run',
+      title: 'Build import workflow',
+      inputs: {
+        user_request: [
+          'Original request title:',
+          'Build import workflow',
+          '',
+          'Clarification conversation:',
+          '1. User: I need importing from CSV.',
+          '2. Coordinator: Which columns matter?',
+          '3. User: Name and email are required.',
+        ].join('\n'),
+      },
+      mode: 'implementation',
+      contextPack: contextPackFixture(),
+    });
+
+    expect(rendered.systemPrompt).toContain('Title: Build import workflow');
+    expect(rendered.userPrompt).toContain('USER REQUEST:');
+    expect(rendered.userPrompt).toContain('Coordinator: Which columns matter?');
+    expect(rendered.userPrompt).toContain('User: Name and email are required.');
+  });
+
   test('filters sensitive legacy input artifacts before rendering provider prompts', () => {
     const rendered = renderAgentPrompt({
       skill: implementationSkill(),

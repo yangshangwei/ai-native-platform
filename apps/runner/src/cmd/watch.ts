@@ -1,4 +1,10 @@
-import type { CoordinatorDecision, FlowDef, WorkflowRequest, WorkflowRunType } from '@ainp/shared';
+import type {
+  CoordinatorDecision,
+  FlowDef,
+  RequestMessage,
+  WorkflowRequest,
+  WorkflowRunType,
+} from '@ainp/shared';
 import { FLOW_REGISTRY } from '@ainp/shared';
 import { api } from '../api-client';
 import { sendHeartbeat } from '../heartbeat';
@@ -33,9 +39,11 @@ export interface ProcessNextWorkflowRequestDeps {
   listPending(): Promise<PendingRequest[]>;
   triage(req: PendingRequest): Promise<TriageOutcome>;
   claim(requestId: string, runnerId: string): Promise<ClaimedRequest | null>;
+  buildAgentTaskBrief?(request: ClaimedRequest): Promise<string>;
   orchestrate(
     request: ClaimedRequest,
     runType: WorkflowRunType,
+    agentTaskBrief?: string,
   ): Promise<{ workflowRunId: string; ok: boolean }>;
   complete(
     requestId: string,
@@ -78,7 +86,10 @@ export async function processNextWorkflowRequest(
   if (!claimed) return 'lost';
 
   try {
-    const result = await deps.orchestrate(claimed, runType);
+    const agentTaskBrief = deps.buildAgentTaskBrief
+      ? await deps.buildAgentTaskBrief(claimed)
+      : undefined;
+    const result = await deps.orchestrate(claimed, runType, agentTaskBrief);
     await deps.complete(claimed.id, {
       workflowRunId: result.workflowRunId,
       ok: result.ok,
@@ -93,6 +104,37 @@ export async function processNextWorkflowRequest(
     });
     return 'failed';
   }
+}
+
+export function buildClarifiedTaskBrief(input: {
+  title: string;
+  messages: ReadonlyArray<Pick<RequestMessage, 'role' | 'content'>>;
+}): string {
+  const title = input.title;
+  const lines = input.messages
+    .map((message) => ({ role: message.role, content: message.content.trim() }))
+    .filter((message) => message.content.length > 0)
+    .map((message, index) => {
+      const speaker = message.role === 'coordinator' ? 'Coordinator' : 'User';
+      return `${index + 1}. ${speaker}: ${message.content}`;
+    });
+
+  if (lines.length === 0) return title;
+
+  return [
+    'Original request title:',
+    title,
+    '',
+    'Clarification conversation:',
+    ...lines,
+    '',
+    'Use the full conversation above as the clarified task brief for downstream requirement generation.',
+  ].join('\n');
+}
+
+export async function defaultAgentTaskBrief(req: ClaimedRequest): Promise<string> {
+  const { messages } = await api.listRequestMessages(req.id);
+  return buildClarifiedTaskBrief({ title: req.title, messages });
 }
 
 /**
@@ -172,10 +214,12 @@ export async function cmdWatch(opts: WatchOpts = {}): Promise<void> {
       listPending: async () => (await api.listWorkflowRequests({ status: 'pending' })).items,
       triage: defaultTriage,
       claim: (requestId, id) => api.claimWorkflowRequest({ requestId, runnerId: id }),
-      orchestrate: (request, runType) =>
+      buildAgentTaskBrief: defaultAgentTaskBrief,
+      orchestrate: (request, runType, agentTaskBrief) =>
         cmdOrchestrate({
           project: request.projectId,
           title: request.title,
+          userRequest: agentTaskBrief,
           sourceBranch: request.branch,
           workflowRequestId: request.id,
           runType,

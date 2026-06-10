@@ -1,0 +1,7 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Web frontend task entry conventions"}
+{"file": ".trellis/spec/web/frontend/directory-structure.md", "reason": "Vanilla TS SPA layout and main.ts hot-path guidance"}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "Renderer and DOM event patterns"}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Preserve user-owned task form drafts across renders"}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Task creation backend gating and status display contract"}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "Frontend quality gates and hot-path cautions"}

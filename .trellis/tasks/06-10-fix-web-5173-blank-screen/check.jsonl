@@ -1,0 +1,5 @@
+{"file":".trellis/spec/web/frontend/index.md","reason":"Web frontend guideline index for post-change verification."}
+{"file":".trellis/spec/web/frontend/quality-guidelines.md","reason":"Defines test/typecheck gate for web changes."}
+{"file":".trellis/spec/web/frontend/type-safety.md","reason":"Verify the fix keeps cross-package type usage safe."}
+{"file":".trellis/spec/guides/index.md","reason":"Required shared thinking guide index."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check for missed duplicate flow/module-loading patterns."}

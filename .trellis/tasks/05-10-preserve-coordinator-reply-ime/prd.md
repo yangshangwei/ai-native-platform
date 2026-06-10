@@ -33,12 +33,21 @@
 
 ## 验收标准
 
-* [ ] 当用户在 `回复 Coordinator…` 里按中文拼音未选字时，触发 `loadCoordinatorChat` 或 3s 页面轮询的 `render()` 调用不会清除正在合成的拼音，光标不跳走。
-* [ ] composition 结束（`compositionend`）后，如果在合成期间曾有被推迟的 render，页面会自动补一次 render 以反映最新状态。
-* [ ] 没有 composition 时，现有草稿 / 焦点 / 选区保留行为与改动前一致。
-* [ ] 发送回复、请求离开 `awaiting_clarification`、切换任务详情页时，pending 的 defer flag 被正确清除，不会遗留状态。
-* [ ] `bun run typecheck` 通过。
-* [ ] `bunx --bun vitest run` 通过，或失败均为与本改动无关并被记录。
+* [x] 当用户在 `回复 Coordinator…` 里按中文拼音未选字时，触发 `loadCoordinatorChat` 或 3s 页面轮询的 `render()` 调用不会清除正在合成的拼音，光标不跳走。
+* [x] composition 结束（`compositionend`）后，如果在合成期间曾有被推迟的 render，页面会自动补一次 render 以反映最新状态。
+* [x] 没有 composition 时，现有草稿 / 焦点 / 选区保留行为与改动前一致。
+* [x] 发送回复、请求离开 `awaiting_clarification`、切换任务详情页时，pending 的 defer flag 被正确清除，不会遗留状态。
+* [x] `bun run typecheck` 通过。
+* [x] `bunx --bun vitest run` 通过，或失败均为与本改动无关并被记录。
+
+## Verification
+
+* `apps/web/src/main.ts` 的 `render()` 在 `coordinatorReplyComposing` 存在时短路并设置 `coordinatorReplyRenderDeferred`，避免 root rebuild 销毁正在 composition 的 textarea。
+* `compositionend` 将最终输入写回 `coordinatorReplyDrafts`，并在有 deferred render 时通过 `queueMicrotask(() => render())` 补刷新。
+* `clearCoordinatorReplyComposerState()`、不可回复状态、发送成功和真实 blur 路径会清理 composition/deferred 状态。
+* Headless Chrome against local `http://localhost:5173/#task/wreq_cea87d34636f` synthetic composition check passed: during composition the textarea node stayed identical after polling (`sameNode=true`, value `ni`, focused), and after `compositionend` the committed value `你` remained in the rehydrated reply box.
+* `bun run typecheck` passed.
+* `bun test` passed: 615 pass, 0 fail.
 
 ## Definition of Done
 

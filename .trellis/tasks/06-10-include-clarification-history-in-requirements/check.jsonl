@@ -1,0 +1,6 @@
+{"file":".trellis/spec/runner/backend/index.md","reason":"Runner check scope."}
+{"file":".trellis/spec/runner/backend/quality-guidelines.md","reason":"Runner test/typecheck expectations."}
+{"file":".trellis/spec/runner/backend/database-guidelines.md","reason":"Verify no direct DB access from runner."}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"Cross-layer API/message contract check."}
+{"file":".trellis/spec/guides/index.md","reason":"Required shared thinking guide index."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify request-message data flow across layers."}

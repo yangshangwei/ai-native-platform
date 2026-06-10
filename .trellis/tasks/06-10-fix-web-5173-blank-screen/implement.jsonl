@@ -1,0 +1,6 @@
+{"file":".trellis/spec/web/frontend/index.md","reason":"Web frontend guideline index for the target package."}
+{"file":".trellis/spec/web/frontend/directory-structure.md","reason":"Confirms the framework-free SPA shape and where projection/server changes belong."}
+{"file":".trellis/spec/web/frontend/quality-guidelines.md","reason":"Web quality gate and runtime safety constraints."}
+{"file":".trellis/spec/web/frontend/type-safety.md","reason":"Cross-package type/value import guidance for web code."}
+{"file":".trellis/spec/guides/index.md","reason":"Required Trellis shared thinking guide index."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"This fix touches shared flow constants/import strategy; search/reuse guidance applies."}

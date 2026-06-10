@@ -6,24 +6,28 @@
 
 ## TL;DR
 
-`apps/web/` is a **vanilla TypeScript SPA** built with Vite. There is no
-React, no Vue, no Svelte, no framework. The codebase is intentionally small:
-three TypeScript files plus an HTML entry point.
+`apps/web/` is a **vanilla TypeScript SPA** served by a lightweight Bun dev
+server (`serve.ts`). There is no React, no Vue, no Svelte, no framework. The
+codebase is intentionally small: a few TypeScript files plus an HTML entry
+point.
 
 ```
 apps/web/
-├── index.html                 # Vite HTML entry; loads /src/main.ts as a module
+├── index.html                 # HTML entry; loads /src/main.ts as a module
+├── serve.ts                   # Bun static/proxy server; bundles TS modules for the browser
 ├── src/
 │   ├── main.ts                # Application entry — DOM wiring + state
 │   ├── projection.ts          # Pure projection helpers: API DTOs → DOM-ready view models
 │   └── settings-projection.ts # Same idea, scoped to settings UI
 ├── package.json
-└── vite.config.ts             # If present; otherwise Vite defaults
 ```
 
-The dev server listens on **port 5173** (Vite default; documented in the
-project memory directive about UI design). The api proxy under `/api` is
-configured in `vite.config.ts`; `main.ts:29` codifies `const API_BASE = '/api'`.
+The dev server listens on **port 5173**. `serve.ts` serves `index.html`, proxies
+`/api` to the backend, and bundles requested `.ts` modules with `Bun.build({
+target: 'browser' })` before returning them. That bundling step is intentional:
+browser ESM cannot resolve workspace package specifiers such as
+`@ainp/shared` unless the dev server resolves them first. `main.ts` codifies
+`const API_BASE = '/api'`.
 
 ---
 

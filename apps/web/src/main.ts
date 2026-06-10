@@ -1,13 +1,12 @@
 import {
+  FLOW_LABELS,
   STAGE_HELP,
   STAGE_LABELS,
-  STAGES,
-  USER_VISIBLE_STAGES,
   STAGE_TO_GATE,
+  visibleStagesForRun,
   artifactViewerScrollKey,
   buildAcceptanceChecklist,
   buildRunProjection,
-  buildWorkbenchOverview,
   changedFilesFromDiff,
   isReadableFileArtifact,
   latestArtifactOfKind,
@@ -18,13 +17,14 @@ import {
   type KnowledgeSuggestion,
   type ArtifactDto,
   type DesignDoc,
+  type FlowId,
   type GateRunDto,
   type RequirementDoc,
   type RunDetail,
   type Stage,
   type WorkflowRunDto,
 } from './projection';
-import { buildSettingsViewModel } from './settings-projection';
+import { buildSettingsViewModel, type SettingsRowVM, type SettingsViewModel } from './settings-projection';
 import {
   buildCoordinatorChoiceReply,
   coordinatorQuestionKey,
@@ -44,6 +44,7 @@ import {
   type StreamChannel,
   type StreamEventCache,
 } from './stream-rendering';
+import type { KnowledgeArtifact } from '@ainp/shared';
 
 const API_BASE = '/api';
 
@@ -51,6 +52,10 @@ type Page = 'workbench' | 'task' | 'projects' | 'new-task' | 'reports' | 'knowle
 type StatusKind = 'good' | 'warn' | 'bad' | 'info' | 'muted';
 type ProjectAgentBackendKind = 'claude_code' | 'codex';
 type AgentBackendKind = ProjectAgentBackendKind | 'native';
+type KnowledgeArtifactDto = KnowledgeArtifact;
+type KnowledgeActionDecision = 'accepted' | 'ignored' | 'edited';
+type KnowledgeViewId = 'pending' | 'accepted' | 'usage' | 'maintenance';
+type ReportViewId = 'all' | 'attention' | 'acceptable' | 'running';
 
 interface ProjectDto {
   id: string;
@@ -183,6 +188,11 @@ interface WorkflowRequestDto {
   error: string | null;
   createdAt: string;
   updatedAt: string;
+  // V2 W2: optional UI overrides serialized by the API. Drive the queued
+  // lifecycle preview before a Workflow Run exists; null/absent → router
+  // picks the flow (preview as feature.standard).
+  flowId?: FlowId | null;
+  startStage?: Stage | null;
 }
 
 interface HealthDto {
@@ -305,6 +315,23 @@ interface RunnerControlStatusDto {
   latestHeartbeat: RunnerDto | null;
 }
 
+interface KnowledgeArtifactsState {
+  projectId: string | null;
+  loading: boolean;
+  loadedOnce: boolean;
+  error: string | null;
+  artifacts: KnowledgeArtifactDto[];
+}
+
+interface KnowledgeSuggestionItem {
+  suggestion: KnowledgeSuggestion;
+  index: number;
+  key: string;
+  targetId: string;
+  decision: KnowledgeActionDecision | undefined;
+  text: string;
+}
+
 interface AppData {
   health: HealthDto | null;
   projects: ProjectDto[];
@@ -331,6 +358,7 @@ let activeTaskRequestId: string | null = null;
 let loadingDetailFor: string | null = null;
 let runnerStartInFlight = false;
 let lastError: string | null = null;
+let projectsLoadError: string | null = null;
 const artifactContent = new Map<string, ArtifactContentDto | null>();
 const openArtifactViewers = new Set<string>();
 const scrollPositionState = new Map<string, { top: number; left: number }>();
@@ -340,8 +368,21 @@ const commandLogs = new Map<string, CommandLogsDto | null>();
 const contextGovernanceByRun = new Map<string, ContextGovernanceDto | null>();
 const contextGovernanceInFlight = new Set<string>();
 const detailsOpenState = new Map<string, boolean>();
-const knowledgeDecisions = new Map<string, 'accepted' | 'ignored' | 'edited'>();
+const knowledgeArtifactsState: KnowledgeArtifactsState = {
+  projectId: null,
+  loading: false,
+  loadedOnce: false,
+  error: null,
+  artifacts: [],
+};
+const knowledgeDecisions = new Map<string, KnowledgeActionDecision>();
 const knowledgeEdits = new Map<string, string>();
+const knowledgeEditing = new Set<string>();
+const knowledgeEditDrafts = new Map<string, string>();
+let knowledgeActiveView: KnowledgeViewId | null = null;
+let knowledgeEditComposing: { key: string } | null = null;
+let knowledgeEditRenderDeferred = false;
+let reportsActiveView: ReportViewId = 'all';
 const approvalInFlight = new Set<string>();
 const approvalLastSubmittedAt = new Map<string, number>();
 const projectActionInFlight = new Set<string>();
@@ -530,20 +571,29 @@ function agentBackendLabel(): string {
 }
 
 function agentBackendStatusForProject(project: ProjectDto | null): { label: string; kind: StatusKind } {
-  if (!project?.agentBackend) return { label: 'Needs setup', kind: 'warn' };
+  if (!project?.agentBackend) return { label: '待配置', kind: 'warn' };
   const check = preflightForProjectBackend(project);
-  if (!check) return { label: 'Not checked', kind: 'muted' };
-  if (check.runnable) return { label: 'Connected', kind: 'good' };
-  if (check.status === 'needs_login') return { label: 'Needs login', kind: 'warn' };
-  if (check.status === 'missing_cli') return { label: 'CLI missing', kind: 'bad' };
-  return { label: 'Check failed', kind: 'bad' };
+  if (!check) return { label: '未检测', kind: 'muted' };
+  if (check.runnable) return { label: '已连接', kind: 'good' };
+  if (check.status === 'needs_login') return { label: '需要登录', kind: 'warn' };
+  if (check.status === 'missing_cli') return { label: '缺少 CLI', kind: 'bad' };
+  return { label: '检测失败', kind: 'bad' };
+}
+
+function projectAvailability(project: ProjectDto): { label: string; kind: StatusKind } {
+  if ((project.status ?? 'active') === 'archived') return { label: '已归档', kind: 'warn' };
+  if (!project.agentBackend) return { label: '待配置', kind: 'warn' };
+  const backend = agentBackendStatusForProject(project);
+  if (backend.kind === 'bad') return { label: '检测失败', kind: 'bad' };
+  if (backend.label === '需要登录') return { label: '待配置', kind: 'warn' };
+  return { label: '可用', kind: 'good' };
 }
 
 function agentBackendContextLabel(project: ProjectDto | null): { value: string; kind: StatusKind } {
   const backend = agentBackendLabel();
   const status = agentBackendStatusForProject(project);
   return {
-    value: backend === '未配置' ? 'Needs setup' : `${backend} · ${status.label}`,
+    value: backend === '未配置' ? '待配置' : `${backend} · ${status.label}`,
     kind: status.kind,
   };
 }
@@ -598,14 +648,20 @@ async function loadData(opts: { render?: boolean; keepDetail?: boolean } = {}): 
   try {
     const [health, projects, runners, requests, runs, runnerControl] = await Promise.all([
       api<HealthDto>('/health').catch(() => null),
-      api<{ items: ProjectDto[] }>('/projects').then((r) => r.items).catch(() => []),
+      api<{ items: ProjectDto[] }>('/projects')
+        .then((r) => ({ items: r.items, error: null as string | null }))
+        .catch((err) => ({
+          items: [] as ProjectDto[],
+          error: err instanceof Error ? err.message : String(err),
+        })),
       api<{ items: RunnerDto[] }>('/runners').then((r) => r.items).catch(() => []),
       api<{ items: WorkflowRequestDto[] }>('/workflow-requests').then((r) => r.items).catch(() => []),
       api<{ items: WorkflowRunDto[] }>('/workflow-runs').then((r) => r.items).catch(() => []),
       api<RunnerControlStatusDto>('/runner/control/status').catch(() => null),
     ]);
     data.health = health;
-    data.projects = projects;
+    data.projects = projects.items;
+    projectsLoadError = projects.error;
     data.runners = runners;
     data.requests = requests;
     data.runs = [...runs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -708,6 +764,44 @@ async function ensureArtifactContent(artifactId: string): Promise<void> {
   if (data.activeDetail?.artifacts.some((a) => a.id === artifactId)) render();
 }
 
+function currentKnowledgeArtifacts(): KnowledgeArtifactDto[] {
+  const project = selectedProject();
+  if (!project || knowledgeArtifactsState.projectId !== project.id) return [];
+  return knowledgeArtifactsState.artifacts;
+}
+
+function ensureKnowledgeArtifacts(project: ProjectDto | null): void {
+  if (!project) return;
+  const staleProject = knowledgeArtifactsState.projectId !== project.id;
+  const shouldLoad = staleProject || (!knowledgeArtifactsState.loadedOnce && !knowledgeArtifactsState.loading);
+  if (shouldLoad) void loadKnowledgeArtifacts(project.id);
+}
+
+async function loadKnowledgeArtifacts(projectId: string, shouldRender = true): Promise<void> {
+  if (knowledgeArtifactsState.loading && knowledgeArtifactsState.projectId === projectId) return;
+  const staleProject = knowledgeArtifactsState.projectId !== projectId;
+  knowledgeArtifactsState.projectId = projectId;
+  knowledgeArtifactsState.loading = true;
+  knowledgeArtifactsState.error = null;
+  if (staleProject) {
+    knowledgeArtifactsState.loadedOnce = false;
+    knowledgeArtifactsState.artifacts = [];
+  }
+  try {
+    const body = await api<{ ok: boolean; artifacts: KnowledgeArtifactDto[] }>(
+      `/knowledge-artifacts/projects/${encodeURIComponent(projectId)}`,
+    );
+    knowledgeArtifactsState.artifacts = [...(body.artifacts ?? [])].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    knowledgeArtifactsState.loadedOnce = true;
+  } catch (err) {
+    knowledgeArtifactsState.error = err instanceof Error ? err.message : String(err);
+    knowledgeArtifactsState.artifacts = [];
+  } finally {
+    knowledgeArtifactsState.loading = false;
+  }
+  if (shouldRender && activePage === 'knowledge') render();
+}
+
 function render(): void {
   const root = document.getElementById('app');
   if (!root) return;
@@ -716,6 +810,10 @@ function render(): void {
   // pending render on the next microtask.
   if (coordinatorReplyComposing) {
     coordinatorReplyRenderDeferred = true;
+    return;
+  }
+  if (knowledgeEditComposing) {
+    knowledgeEditRenderDeferred = true;
     return;
   }
   captureDetailsOpenState(root);
@@ -855,7 +953,7 @@ function renderSidebar(): HTMLElement {
   const navItems: Array<{ page: Page; label: string; help: string; path: string }> = [
     { page: 'workbench', label: '工作台', help: '生命周期与人工确认', path: 'M4 6h16M4 12h10M4 18h16' },
     { page: 'projects', label: '项目接入', help: '注册本地/远端 Git', path: 'M3 7h18M6 7v12h12V7M9 7V5h6v2' },
-    { page: 'new-task', label: '新建任务', help: '进入 runner 队列', path: 'M12 5v14M5 12h14' },
+    { page: 'new-task', label: '新建任务', help: '说明想做什么', path: 'M12 5v14M5 12h14' },
     { page: 'reports', label: '报告', help: '交付证据汇总', path: 'M7 3h7l5 5v13H7zM14 3v6h6' },
     { page: 'knowledge', label: '知识库', help: '候选与沉淀', path: 'M4 19V5a2 2 0 012-2h12v16H6a2 2 0 01-2-2zM8 7h8M8 11h8M8 15h5' },
     { page: 'settings', label: '配置', help: '本地 worktree 模式', path: 'M12 8a4 4 0 100 8 4 4 0 000-8zM4 12h2m12 0h2M12 4v2m0 12v2' },
@@ -910,8 +1008,8 @@ function renderQueueSummary(): HTMLElement {
       el('div', {
         class: 'queue-stats',
         children: [
-          metric('Pending', String(pending), control?.running ? '自动认领中' : '等待 Runner', 'info'),
-          metric('Claimed', String(claimed), '执行中', 'warn'),
+          metric('等待开始', String(pending), control?.running ? '自动排队中' : '等待执行器', 'info'),
+          metric('执行中', String(claimed), 'AI 正在处理', 'warn'),
         ],
       }),
       last
@@ -923,10 +1021,37 @@ function renderQueueSummary(): HTMLElement {
 }
 
 function renderTopbar(): HTMLElement {
-  const project = selectedProject();
+  const project = activePage === 'new-task'
+    ? activeProjects().find((p) => p.id === newTaskFormDraft.projectId) ?? activeProjects()[0] ?? null
+    : selectedProject();
   const run = data.activeDetail?.run ?? data.runs[0] ?? null;
   const runner = latestRunner();
   const backend = agentBackendContextLabel(project);
+  const newTaskReadiness = newTaskReadinessSummary(project, runner);
+  const workbenchEnvironment = workbenchEnvironmentSummary(project, runner);
+  const projectOnboarding = projectOnboardingSummary();
+  const reportStatus = reportStatusSummary();
+  const knowledgeStatus = knowledgeStatusSummary();
+  const settingsRuntime = settingsRuntimeSummary(project, runner);
+  const contextItems = activePage === 'new-task'
+    ? [contextItem('创建准备', newTaskReadiness.value, newTaskReadiness.kind)]
+    : activePage === 'workbench'
+      ? [contextItem('执行环境', workbenchEnvironment.value, workbenchEnvironment.kind)]
+    : activePage === 'projects'
+      ? [contextItem('接入状态', projectOnboarding.value, projectOnboarding.kind)]
+    : activePage === 'reports'
+      ? [contextItem('交付状态', reportStatus.value, reportStatus.kind)]
+    : activePage === 'knowledge'
+      ? [contextItem('知识状态', knowledgeStatus.value, knowledgeStatus.kind)]
+    : activePage === 'settings'
+      ? [contextItem('运行状态', settingsRuntime.value, settingsRuntime.kind)]
+    : [
+        contextItem('Project', project?.name ?? '未接入', 'info'),
+        contextItem('Branch', run?.branch ?? project?.defaultBranch ?? '—', 'muted'),
+        contextItem('Runner', runner ? runner.status : 'offline', runner ? statusKind(runner.status) : 'bad'),
+        contextItem('Agent Backend', backend.value, backend.kind),
+        contextItem('Build Env', buildEnvLabel(), runner ? 'good' : 'warn'),
+      ];
   return el('header', {
     class: 'topbar',
     children: [
@@ -939,16 +1064,79 @@ function renderTopbar(): HTMLElement {
       }),
       el('div', {
         class: 'context-strip',
-        children: [
-          contextItem('Project', project?.name ?? '未接入', 'info'),
-          contextItem('Branch', run?.branch ?? project?.defaultBranch ?? '—', 'muted'),
-          contextItem('Runner', runner ? runner.status : 'offline', runner ? statusKind(runner.status) : 'bad'),
-          contextItem('Agent Backend', backend.value, backend.kind),
-          contextItem('Build Env', buildEnvLabel(), runner ? 'good' : 'warn'),
-        ],
+        children: contextItems,
       }),
     ],
   });
+}
+
+function newTaskReadinessSummary(project: ProjectDto | null, runner: RunnerDto | null): { value: string; kind: StatusKind } {
+  if (projectsLoadError) return { value: '项目加载失败', kind: 'bad' };
+  if (!project) return { value: '需要连接项目', kind: 'warn' };
+  if (!project.agentBackend) return { value: '需要配置执行方式', kind: 'warn' };
+  const preflight = preflightForProjectBackend(project);
+  if (preflight && !preflight.runnable) return { value: '执行方式需处理', kind: 'bad' };
+  if (!runner) return { value: '可创建 · 执行器待启动', kind: 'warn' };
+  return { value: '可创建', kind: 'good' };
+}
+
+function workbenchEnvironmentSummary(project: ProjectDto | null, runner: RunnerDto | null): { value: string; kind: StatusKind } {
+  if (!project) return { value: '需要连接项目', kind: 'warn' };
+  if (!project.agentBackend) return { value: '需要配置执行方式', kind: 'warn' };
+  if (!runner) return { value: '执行器待启动', kind: 'warn' };
+  const backend = agentBackendStatusForProject(project);
+  if (backend.kind === 'bad') return { value: '执行方式需处理', kind: 'bad' };
+  if (backend.kind === 'warn') return { value: '执行方式待处理', kind: 'warn' };
+  return { value: '正常', kind: 'good' };
+}
+
+function projectOnboardingSummary(): { value: string; kind: StatusKind } {
+  if (projectsLoadError) return { value: '项目加载失败', kind: 'bad' };
+  if (!data.projects.length) return { value: '还没有项目', kind: 'warn' };
+
+  const active = activeProjects();
+  const available = active.filter((project) => projectAvailability(project).label === '可用').length;
+  const pending = active.length - available;
+  const archived = data.projects.length - active.length;
+  const suffix = archived > 0 ? ` · ${archived} 个已归档` : '';
+  const kind: StatusKind = available > 0 && pending === 0 ? 'good' : available > 0 ? 'warn' : 'warn';
+  return { value: `${available} 个项目可用 · ${pending} 个待配置${suffix}`, kind };
+}
+
+function reportStatusSummary(): { value: string; kind: StatusKind } {
+  const stats = reportStats(data.runs);
+  if (stats.total === 0) return { value: '暂无报告', kind: 'muted' };
+  if (stats.attention > 0) return { value: `${stats.attention} 个需处理`, kind: 'warn' };
+  if (stats.running > 0) return { value: `${stats.running} 个执行中`, kind: 'info' };
+  if (stats.acceptable > 0) return { value: `${stats.acceptable} 个可验收`, kind: 'good' };
+  return { value: `${stats.total} 个报告`, kind: 'muted' };
+}
+
+function knowledgeStatusSummary(): { value: string; kind: StatusKind } {
+  const project = selectedProject();
+  if (!project) return { value: '需要连接项目', kind: 'warn' };
+  if (knowledgeArtifactsState.error) return { value: '知识加载失败', kind: 'bad' };
+  const detail = data.activeDetail;
+  const suggestions = detail ? parsedKnowledge(detail) : [];
+  const pending = detail ? knowledgeSuggestionItems(detail, suggestions).filter((item) => !item.decision).length : 0;
+  if (pending > 0) return { value: `${pending} 条待确认`, kind: 'warn' };
+  if (knowledgeArtifactsState.loading && knowledgeArtifactsState.projectId === project.id) {
+    return { value: '正在加载知识', kind: 'info' };
+  }
+  const accepted = currentKnowledgeArtifacts().filter((artifact) => artifact.status === 'accepted').length;
+  if (accepted > 0) return { value: `${accepted} 条已收录`, kind: 'good' };
+  return { value: '等待沉淀', kind: 'muted' };
+}
+
+function settingsRuntimeSummary(project: ProjectDto | null, runner: RunnerDto | null): { value: string; kind: StatusKind } {
+  if (settingsConfig.error) return { value: '配置加载失败', kind: 'bad' };
+  if (settingsConfig.drafts.size > 0) return { value: `${settingsConfig.drafts.size} 项未保存`, kind: 'warn' };
+  if (!project) return { value: '需要连接项目', kind: 'warn' };
+  if (!project.agentBackend) return { value: '执行方式待配置', kind: 'warn' };
+  const backend = agentBackendStatusForProject(project);
+  if (backend.kind === 'bad') return { value: '执行方式需处理', kind: 'bad' };
+  if (!runner) return { value: '执行器待启动', kind: 'warn' };
+  return { value: '可运行', kind: 'good' };
 }
 
 function titleForPage(): string {
@@ -966,7 +1154,7 @@ function titleForPage(): string {
     case 'settings':
       return '运行配置';
     default:
-      return data.activeDetail?.run.title ?? '工作台首页';
+      return '工作台';
   }
 }
 
@@ -978,7 +1166,7 @@ function contextItem(label: string, value: string, kind: StatusKind): HTMLElemen
 }
 
 function renderPage(): HTMLElement {
-  if (lastError) {
+  if (lastError && activePage !== 'new-task') {
     return el('section', { class: 'page-stack', children: [renderError(lastError), renderCurrentPage()] });
   }
   return renderCurrentPage();
@@ -1014,9 +1202,10 @@ function renderWorkbenchPage(): HTMLElement {
   return el('section', {
     class: 'page-grid',
     children: [
+      renderWorkbenchActionPanel(),
       renderWorkbenchOverviewPanel(),
       renderTaskListPanel(),
-      renderRunnerControlPanel(),
+      renderWorkbenchEnvironmentPanel(),
     ],
   });
 }
@@ -1065,49 +1254,208 @@ function renderTaskDetailPage(): HTMLElement {
   });
 }
 
-function renderWorkbenchOverviewPanel(): HTMLElement {
-  const overview = buildWorkbenchOverview({
-    runs: data.runs,
-    requests: data.requests,
-    detailsByRunId: data.activeDetail ? { [data.activeDetail.run.id]: data.activeDetail } : {},
+type WorkbenchActionItem =
+  | { kind: 'request'; request: WorkflowRequestDto; reason: string; actionLabel: string; statusLabel: string; statusKind: StatusKind }
+  | { kind: 'run'; run: WorkflowRunDto; request: WorkflowRequestDto | null; reason: string; actionLabel: string; statusLabel: string; statusKind: StatusKind };
+
+function requestStatusLabel(status: WorkflowRequestDto['status']): string {
+  if (status === 'pending') return '等待开始';
+  if (status === 'awaiting_clarification') return '等待补充信息';
+  if (status === 'claimed') return '执行中';
+  if (status === 'completed') return '已完成';
+  if (status === 'failed') return '需要处理';
+  if (status === 'cancelled') return '已取消';
+  return status;
+}
+
+function requestActionLabel(status: WorkflowRequestDto['status']): string {
+  if (status === 'awaiting_clarification') return '回答问题';
+  if (status === 'completed') return '查看结果';
+  if (status === 'failed') return '查看问题';
+  if (status === 'cancelled') return '查看记录';
+  return '查看进度';
+}
+
+function isRequestUserAction(request: WorkflowRequestDto): boolean {
+  return request.status === 'awaiting_clarification' || request.status === 'failed';
+}
+
+function isRequestInProgress(request: WorkflowRequestDto): boolean {
+  return request.status === 'pending' || request.status === 'claimed';
+}
+
+function workbenchActionItems(): WorkbenchActionItem[] {
+  const requestActions: WorkbenchActionItem[] = data.requests
+    .filter(isRequestUserAction)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .map((request) => ({
+      kind: 'request' as const,
+      request,
+      reason: request.status === 'awaiting_clarification' ? 'AI 需要你补充信息后才能继续。' : '任务处理失败，需要查看原因。',
+      actionLabel: requestActionLabel(request.status),
+      statusLabel: requestStatusLabel(request.status),
+      statusKind: statusKind(request.status),
+    }));
+
+  const runActions: WorkbenchActionItem[] = data.runs
+    .filter((run) => run.status === 'awaiting_human')
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map((run) => ({
+      kind: 'run' as const,
+      run,
+      request: data.requests.find((candidate) => candidate.workflowRunId === run.id) ?? null,
+      reason: `${STAGE_LABELS[run.currentStage]} 等待你确认。`,
+      actionLabel: '查看证据',
+      statusLabel: '等待确认',
+      statusKind: 'warn' as const,
+    }));
+
+  return [...requestActions, ...runActions];
+}
+
+function openWorkbenchAction(item: WorkbenchActionItem): void {
+  if (item.kind === 'request') {
+    setHash('task', item.request.id);
+    return;
+  }
+  if (item.request) setHash('task', item.request.id);
+  else setHash('workbench', item.run.id);
+}
+
+function renderWorkbenchActionPanel(): HTMLElement {
+  const actions = workbenchActionItems();
+  if (!actions.length) {
+    return el('section', {
+      class: 'panel workbench-action-panel empty-action-panel',
+      children: [
+        panelHeader('需要我处理', '暂无需要你处理的任务。'),
+        el('p', { class: 'muted compact', text: 'AI 会继续推进运行中的任务；你也可以创建一个新任务。' }),
+        el('div', { class: 'button-row', children: [actionLink('新建任务', 'new-task')] }),
+      ],
+    });
+  }
+
+  const primary = actions[0]!;
+  const open = button(primary.actionLabel, 'button primary');
+  open.onclick = () => openWorkbenchAction(primary);
+  const title = primary.kind === 'request' ? primary.request.title : primary.run.title;
+  const meta = primary.kind === 'request'
+    ? `${projectName(primary.request.projectId)} · ${fmtTime(primary.request.updatedAt)}`
+    : `${projectName(primary.run.projectId)} · ${fmtTime(primary.run.createdAt)}`;
+  return el('section', {
+    class: 'panel workbench-action-panel',
+    children: [
+      panelHeader('需要我处理', `${actions.length} 个任务等待你的输入或确认。`),
+      el('article', {
+        class: 'workbench-primary-action',
+        children: [
+          el('div', {
+            class: 'workbench-primary-copy',
+            children: [
+              pill(primary.statusLabel, primary.statusKind),
+              el('strong', { text: title }),
+              el('p', { class: 'muted compact', text: primary.reason }),
+              el('small', { text: meta }),
+            ],
+          }),
+          open,
+        ],
+      }),
+      actions.length > 1
+        ? el('div', {
+            class: 'workbench-secondary-actions',
+            children: actions.slice(1, 4).map((item) => {
+              const secondaryOpen = button(item.actionLabel, 'button secondary small');
+              secondaryOpen.onclick = () => openWorkbenchAction(item);
+              return el('div', {
+                class: 'mini-row',
+                children: [
+                  el('span', { text: item.kind === 'request' ? item.request.title : item.run.title }),
+                  secondaryOpen,
+                ],
+              });
+            }),
+          })
+        : null,
+    ],
   });
+}
+
+function renderWorkbenchOverviewPanel(): HTMLElement {
+  const actions = workbenchActionItems();
+  const active = [
+    ...data.requests.filter(isRequestInProgress).map((request) => request.title),
+    ...data.runs.filter((run) => run.status === 'running').map((run) => run.title),
+  ];
+  const completed = data.runs.filter((run) => statusKind(run.status) === 'good').slice(0, 5);
   return el('section', {
     class: 'panel overview-panel',
     children: [
-      panelHeader('工作台首页', '待我处理、失败 Gate、运行中任务、最近报告'),
+      panelHeader('工作台概览', '按你的下一步行动组织任务。'),
       el('div', {
         class: 'overview-grid',
         children: [
-          renderOverviewBucket('待我处理', overview.toConfirm, 'warn'),
-          renderFailedGateBucket(overview.failedGates),
-          renderOverviewBucket('运行中 Agent', overview.running, 'info'),
-          renderRequestBucket(overview.pendingRequests),
-          renderOverviewBucket('最近完成 Report', overview.recentReports, 'good'),
+          renderWorkbenchStatCard(
+            '需要我处理',
+            actions.length,
+            actions.length ? '有任务等待输入或确认。' : '暂无需要你处理的任务。',
+            actions.map((item) => (item.kind === 'request' ? item.request.title : item.run.title)),
+            actions.length ? 'warn' : 'good',
+          ),
+          renderWorkbenchStatCard(
+            'AI 正在处理',
+            active.length,
+            active.length ? '这些任务正在排队或执行。' : '当前没有执行中的任务。',
+            active,
+            active.length ? 'info' : 'muted',
+          ),
+          renderWorkbenchStatCard(
+            '最近完成',
+            completed.length,
+            completed.length ? '最近交付结果可查看。' : '还没有完成的任务。',
+            completed.map((run) => run.title),
+            completed.length ? 'good' : 'muted',
+          ),
         ],
       }),
     ],
   });
 }
 
+function renderWorkbenchStatCard(title: string, count: number, emptyText: string, items: string[], kind: StatusKind): HTMLElement {
+  return el('article', {
+    class: 'overview-card workbench-stat-card',
+    children: [
+      el('div', { class: 'overview-card-head', children: [el('strong', { text: title }), pill(String(count), kind)] }),
+      items.length
+        ? el('div', {
+            class: 'stack',
+            children: items.slice(0, 3).map((item) => el('div', { class: 'mini-row', children: [el('span', { text: item })] })),
+          })
+        : el('p', { class: 'muted compact', text: emptyText }),
+    ],
+  });
+}
+
 function renderTaskListPanel(): HTMLElement {
   const latestRequests = [...data.requests].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const latestRuns = data.runs.slice(0, 8);
+  const needsAction = latestRequests.filter(isRequestUserAction);
+  const inProgress = latestRequests.filter(isRequestInProgress);
+  const completed = latestRequests.filter((request) => request.status === 'completed');
   return el('section', {
     class: 'panel',
     children: [
-      panelHeader('任务总览', '工作台只做全局导航；点击某个任务进入完整工作流详情页。'),
+      panelHeader('任务列表', '按你最常处理的工作状态分组。'),
+      renderTaskListSection('需要处理', needsAction, '暂无需要你处理的任务。'),
+      renderTaskListSection('进行中', inProgress, '暂无进行中的任务。'),
+      renderTaskListSection('已完成', completed, '暂无已完成的任务。', 5),
       latestRequests.length
-        ? el('div', {
-            class: 'task-list',
-            children: latestRequests.slice(0, 12).map(renderTaskListItem),
-          })
-        : el('p', { class: 'muted', text: '暂无任务请求。' }),
-      latestRuns.length
         ? el('details', {
-            class: 'raw-details',
+            class: 'raw-details workbench-all-tasks',
+            attrs: { 'data-details-key': 'workbench-all-tasks' },
             children: [
-              el('summary', { text: `最近 Workflow Run (${latestRuns.length})` }),
-              el('div', { class: 'run-list', children: latestRuns.map(renderRunListItem) }),
+              el('summary', { text: `全部任务 (${latestRequests.length})` }),
+              renderTaskListSection('', latestRequests.slice(0, 12), '暂无任务。'),
             ],
           })
         : null,
@@ -1115,19 +1463,32 @@ function renderTaskListPanel(): HTMLElement {
   });
 }
 
+function renderTaskListSection(title: string, requests: WorkflowRequestDto[], emptyText: string, limit = 8): HTMLElement {
+  return el('section', {
+    class: 'workbench-task-section',
+    children: [
+      title ? el('div', { class: 'workbench-section-head', children: [el('h3', { text: title }), pill(String(requests.length), requests.length ? 'info' : 'muted')] }) : null,
+      requests.length
+        ? el('div', { class: 'task-list', children: requests.slice(0, limit).map(renderTaskListItem) })
+        : el('p', { class: 'muted compact', text: emptyText }),
+    ],
+  });
+}
+
 function renderTaskListItem(request: WorkflowRequestDto): HTMLElement {
-  const open = button('查看工作流', 'button secondary small');
+  const open = button(requestActionLabel(request.status), 'button secondary small');
   open.onclick = () => setHash('task', request.id);
   return el('article', {
     class: 'task-list-item',
     children: [
       el('div', {
+        class: 'task-list-main',
         children: [
           el('strong', { text: request.title }),
-          el('small', { text: `${projectName(request.projectId)} · ${request.type} · Source ${request.branch}` }),
+          el('small', { text: `${projectName(request.projectId)} · ${fmtTime(request.updatedAt)}` }),
         ],
       }),
-      pill(request.status),
+      pill(requestStatusLabel(request.status), statusKind(request.status)),
       open,
     ],
   });
@@ -1148,55 +1509,26 @@ function renderRunListItem(run: WorkflowRunDto): HTMLElement {
   return item;
 }
 
-function renderOverviewBucket(title: string, runs: WorkflowRunDto[], kind: StatusKind): HTMLElement {
-  return el('article', {
-    class: 'overview-card',
+function renderWorkbenchEnvironmentPanel(): HTMLElement {
+  const project = selectedProject();
+  const runner = latestRunner();
+  const summary = workbenchEnvironmentSummary(project, runner);
+  const details = document.createElement('details');
+  details.className = 'raw-details workbench-environment-details';
+  details.setAttribute('data-details-key', 'workbench-environment');
+  details.append(
+    el('summary', { children: [el('span', { text: '查看执行环境细节' }), pill(summary.value, summary.kind)] }),
+    field('项目', project?.name ?? '未连接'),
+    field('基础分支', project?.defaultBranch ?? '—'),
+    field('执行器', runner ? runner.status : '未连接'),
+    field('执行方式', agentBackendContextLabel(project).value),
+    field('构建环境', buildEnvLabel()),
+  );
+  return el('section', {
+    class: 'panel workbench-environment-panel',
     children: [
-      el('div', { class: 'overview-card-head', children: [el('strong', { text: title }), pill(String(runs.length), kind)] }),
-      runs.length
-        ? el('div', {
-            class: 'stack',
-            children: runs.slice(0, 3).map((run) => {
-              const open = button(shortId(run.id), 'button ghost small');
-              const request = data.requests.find((candidate) => candidate.workflowRunId === run.id);
-              open.onclick = () => (request ? setHash('task', request.id) : setHash('workbench', run.id));
-              return el('div', {
-                class: 'mini-row',
-                children: [el('span', { text: run.title }), open],
-              });
-            }),
-          })
-        : el('p', { class: 'muted compact', text: '暂无。' }),
-    ],
-  });
-}
-
-function renderFailedGateBucket(items: Array<{ runId: string; gateId: string }>): HTMLElement {
-  return el('article', {
-    class: 'overview-card',
-    children: [
-      el('div', { class: 'overview-card-head', children: [el('strong', { text: '失败 Gate' }), pill(String(items.length), items.length ? 'bad' : 'good')] }),
-      items.length
-        ? el('div', {
-            class: 'stack',
-            children: items.map((item) => el('div', { class: 'mini-row', children: [el('span', { text: item.gateId }), el('code', { text: shortId(item.runId) })] })),
-          })
-        : el('p', { class: 'muted compact', text: '没有失败 Gate。' }),
-    ],
-  });
-}
-
-function renderRequestBucket(requests: Array<{ title: string; status: string }>): HTMLElement {
-  return el('article', {
-    class: 'overview-card',
-    children: [
-      el('div', { class: 'overview-card-head', children: [el('strong', { text: '待认领任务' }), pill(String(requests.length), requests.length ? 'info' : 'muted')] }),
-      requests.length
-        ? el('div', {
-            class: 'stack',
-            children: requests.slice(0, 3).map((request) => el('div', { class: 'mini-row', children: [el('span', { text: request.title }), pill(request.status)] })),
-          })
-        : el('p', { class: 'muted compact', text: '队列为空。' }),
+      panelHeader('执行环境', summary.kind === 'good' ? '正常时无需处理。' : '需要处理时再展开查看细节。'),
+      details,
     ],
   });
 }
@@ -1248,15 +1580,24 @@ function renderTaskHero(
 function renderQueuedLifecycle(request: WorkflowRequestDto): HTMLElement {
   const queuedDone = request.status !== 'pending';
   const runnerActive = request.status === 'claimed';
+  // Preview the lifecycle the runner will execute. When the request pins a
+  // flow we honor it; otherwise the router decides at claim time, so we
+  // preview the feature.standard track (the conservative default) and label
+  // it as such.
+  const previewFlow = request.flowId ?? 'feature.standard';
+  const visibleStages = visibleStagesForRun(previewFlow, request.startStage ?? null);
   const states: Array<{ label: string; state: 'done' | 'active' | 'waiting' | 'failed'; help: string }> = [
     { label: '任务入队', state: queuedDone ? 'done' : request.status === 'pending' ? 'active' : 'waiting', help: '任务已创建，等待自动执行' },
     { label: 'Runner 自动开始', state: runnerActive ? 'active' : 'waiting', help: '等待本地 Runner 认领并创建运行' },
-    ...USER_VISIBLE_STAGES.map((stage) => ({ label: STAGE_LABELS[stage], state: 'waiting' as const, help: '等待进入该阶段' })),
+    ...visibleStages.map((stage) => ({ label: STAGE_LABELS[stage], state: 'waiting' as const, help: '等待进入该阶段' })),
   ];
+  const subtitle = request.flowId
+    ? `预定 Flow：${request.flowId}（共 ${visibleStages.length} 个用户阶段）`
+    : 'Flow 由 router 在认领时决定；下面按 feature.standard 预览。';
   return el('section', {
     class: 'panel',
     children: [
-      panelHeader('完整流程', '用户主流程从需求分析开始；系统准备阶段只放在后端细节里。'),
+      panelHeader('完整流程', subtitle),
       el('div', {
         class: 'stage-board',
         children: states.map((stage, index) =>
@@ -1329,7 +1670,52 @@ function currentStageContent(detail: RunDetail, stage: Stage): HTMLElement {
   if (stage === 'review') return renderAcceptancePanel(detail);
   if (stage === 'knowledge') return renderKnowledgeSuggestionsPanel(detail);
   if (stage === 'completion') return renderCompletionSnapshotPanel(detail);
+  // V2 W2-2a/2b: issue.standard (report → analyze) and refactor.standard
+  // (scan → plan) agent stages. These emit kind='other' markdown artifacts
+  // tagged with metadata.stage; render the latest one so a non-feature run
+  // never falls through to the context-prep snapshot.
+  if (stage === 'report' || stage === 'analyze' || stage === 'scan' || stage === 'plan') {
+    return renderAgentStagePanel(detail, stage);
+  }
   return renderContextSnapshotPanel(detail);
+}
+
+// Generic panel for agent stages whose only artifact is a markdown document
+// tagged via `metadata.stage` (report / analyze / scan / plan). Unlike the
+// feature stages there is no structured schema or gate, so we surface the
+// step status plus a preview of the stage's latest markdown artifact.
+function renderAgentStagePanel(detail: RunDetail, stage: Stage): HTMLElement {
+  const step = detail.steps.find((s) => s.stage === stage);
+  const text = stageMarkdownArtifactText(detail, stage);
+  return el('article', {
+    class: 'panel doc-panel',
+    children: [
+      panelHeader(STAGE_LABELS[stage], STAGE_HELP[stage]),
+      step
+        ? field('Step', el('span', { children: [pill(step.status), document.createTextNode(` ${step.name}`)] }))
+        : el('p', { class: 'muted', text: '等待进入该阶段。' }),
+      text
+        ? el('pre', { class: 'doc-preview', text: previewText(text) })
+        : el('p', { class: 'muted compact', text: '该阶段产物加载中或尚未生成。' }),
+    ],
+  });
+}
+
+// Latest markdown text of the artifact a given agent stage produced. The
+// runner persists these as kind='other' with `metadata.stage` set, so we
+// filter on that tag rather than artifact kind (which is shared across stages).
+function stageMarkdownArtifactText(detail: RunDetail, stage: Stage): string {
+  const artifact = detail.artifacts
+    .filter((candidate) => candidate.metadata?.stage === stage)
+    .filter(
+      (candidate) =>
+        candidate.contentType.includes('markdown') ||
+        (typeof candidate.metadata?.output === 'string' && candidate.metadata.output.endsWith('.md')),
+    )
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .at(-1);
+  if (!artifact) return '';
+  return artifactContent.get(artifact.id)?.text ?? '';
 }
 
 function renderContextSnapshotPanel(detail: RunDetail): HTMLElement {
@@ -1731,15 +2117,24 @@ function renderRunHero(detail: RunDetail, projection: ReturnType<typeof buildRun
   });
 }
 
+// Flow-aware lifecycle subtitle: names the active flow and the user-facing
+// stage count so a non-feature run (issue/refactor/fastforward) no longer
+// reads as the 7-stage feature pipeline. Driven by `projection.flowId` /
+// `visibleStages` (resolved from `run.flowId` in buildRunProjection).
+function lifecycleSubtitle(projection: ReturnType<typeof buildRunProjection>): string {
+  const total = projection.visibleStages.length;
+  const flowLabel = FLOW_LABELS[projection.flowId] ?? projection.flowId;
+  return `${flowLabel} · ${total} 个用户阶段`;
+}
+
 function renderLifecycle(detail: RunDetail, projection: ReturnType<typeof buildRunProjection>): HTMLElement {
   return el('section', {
     class: 'panel',
     children: [
-      panelHeader('完整生命周期', '从需求分析到知识沉淀的端到端闭环'),
+      panelHeader('完整生命周期', lifecycleSubtitle(projection)),
       el('div', {
         class: 'stage-board',
-        children: USER_VISIBLE_STAGES.map((stageId, index) => {
-          const stage = projection.stages.find((candidate) => candidate.id === stageId)!;
+        children: projection.visibleStages.map((stage, index) => {
           const step = detail.steps.find((s) => s.stage === stage.id);
           return el('article', {
             class: `stage-card ${stage.state}`,
@@ -2249,13 +2644,14 @@ function renderAcceptancePanel(detail: RunDetail): HTMLElement {
 
 function renderKnowledgeSuggestionsPanel(detail: RunDetail): HTMLElement {
   const suggestions = parsedKnowledge(detail);
+  const items = knowledgeSuggestionItems(detail, suggestions);
   return el('article', {
     class: 'panel doc-panel structured-panel',
     children: [
       panelHeader('知识沉淀候选', '候选经验，人工接受后才入库'),
-      suggestions.length
-        ? el('div', { class: 'stack', children: suggestions.map((suggestion, index) => renderKnowledgeSuggestion(suggestion, index, detail)) })
-        : el('p', { class: 'muted', text: '暂无 Knowledge 候选。' }),
+      items.length
+        ? el('div', { class: 'stack', children: items.map((item) => renderKnowledgeSuggestion(item, detail)) })
+        : el('p', { class: 'muted', text: '当前任务还没有可沉淀的知识建议。' }),
     ],
   });
 }
@@ -2711,22 +3107,29 @@ function renderProjectsPage(): HTMLElement {
   };
 
   const isEditing = Boolean(projectSourceForm.editingProjectId);
+  const actionState = projectFormActionState();
   form.append(
-    panelHeader(isEditing ? '编辑项目' : '接入项目', isEditing ? '右侧已接入项目点击后会回填到这里；修改连接信息后建议重新检测，再保存。' : '先选择接入类型；按类型填写连接信息；点击检测拉取项目名、分支和元数据；确认无误后接入。'),
-    el('label', { class: 'input-block', children: [el('span', { text: 'Source Type' }), sourceSelect] }),
-    ...renderProjectSourceDynamicFields(),
-    renderAgentBackendConfigFields(),
+    panelHeader(isEditing ? '编辑项目' : '接入项目', isEditing ? '修改来源、默认分支或 AI 执行方式后，建议重新检测再保存。' : '按步骤连接项目，检测通过后即可用于新任务。'),
+    renderProjectOnboardingStep(1, '选择来源', '告诉系统项目从哪里来。', [
+      el('label', { class: 'input-block', children: [el('span', { text: '项目来源' }), sourceSelect] }),
+      ...renderProjectSourceDynamicFields(),
+    ]),
+    renderProjectOnboardingStep(2, '设置默认项', '确认项目名称和默认工作分支。', renderProjectDefaultsFields()),
+    renderProjectOnboardingStep(3, '配置 AI 执行方式', '后续任务会默认使用这里选择的工具。', [renderAgentBackendConfigFields()]),
     renderProjectDetectPanel(),
   );
 
-  const detect = el('button', { class: 'button secondary', text: projectSourceForm.detecting ? '检测中…' : '检测', attrs: { type: 'button' } });
+  const detect = el('button', { class: 'button secondary', text: projectSourceForm.detecting ? '检测中…' : '检测项目连接', attrs: { type: 'button' } });
   detect.disabled = projectSourceForm.detecting;
   detect.onclick = () => void detectProjectSource();
-  const submit = el('button', { class: 'button primary', text: isEditing ? '保存修改' : '接入这个项目', attrs: { type: 'submit' } });
-  submit.disabled = !projectSourceForm.detectResult?.ok || projectSourceForm.detecting;
+  const submit = el('button', { class: 'button primary', text: actionState.submitLabel, attrs: { type: 'submit' } });
+  submit.disabled = !actionState.canSubmit;
   const cancelEdit = isEditing ? el('button', { class: 'button ghost', text: '取消编辑', attrs: { type: 'button' } }) : null;
   if (cancelEdit) cancelEdit.onclick = () => { resetProjectSourceForm(); render(); };
-  form.appendChild(el('div', { class: 'button-row', children: [detect, submit, cancelEdit] }));
+  form.append(
+    el('div', { class: 'project-form-actions', children: [detect, submit, cancelEdit] }),
+    el('p', { class: `compact project-submit-hint ${actionState.blocker ? 'warn' : 'good'}`, text: actionState.blocker ?? '检测已通过，可以接入并用于新任务。' }),
+  );
   form.onsubmit = (event) => void submitProject(event);
 
   return el('section', {
@@ -2746,6 +3149,59 @@ function renderProjectsPage(): HTMLElement {
       }),
     ],
   });
+}
+
+function renderProjectOnboardingStep(index: number, title: string, description: string, children: Array<Node | null>): HTMLElement {
+  return el('section', {
+    class: 'project-onboarding-step',
+    children: [
+      el('div', {
+        class: 'project-step-header',
+        children: [
+          el('span', { class: 'project-step-index', text: String(index) }),
+          el('div', { children: [el('h3', { text: title }), el('p', { text: description })] }),
+        ],
+      }),
+      el('div', { class: 'project-step-body', children }),
+    ],
+  });
+}
+
+function renderProjectDefaultsFields(): HTMLElement[] {
+  return [
+    controlledInput('项目名称', 'name', '检测通过后自动填充，也可手动修改', projectSourceForm.name, (v) => {
+      projectSourceForm.name = v;
+    }),
+    renderBranchControl(),
+  ];
+}
+
+function projectFormActionState(): { submitLabel: string; blocker: string | null; canSubmit: boolean } {
+  const sourceValue = projectSourceForm.sourceValue.trim();
+  if (projectSourceForm.detecting) {
+    return { submitLabel: '等待检测完成', blocker: '正在检测项目连接，请稍候。', canSubmit: false };
+  }
+  if (!sourceValue) {
+    return { submitLabel: '填写项目来源', blocker: '先填写仓库地址或本地路径。', canSubmit: false };
+  }
+  const result = projectSourceForm.detectResult;
+  if (!result) {
+    return { submitLabel: '先检测项目', blocker: '检测通过后才能接入项目。', canSubmit: false };
+  }
+  if (!result.ok) {
+    return { submitLabel: '重新检测项目', blocker: '检测失败，请修改来源或访问方式后重新检测。', canSubmit: false };
+  }
+  if (!(projectSourceForm.name.trim() || result.projectName.trim())) {
+    return { submitLabel: '填写项目名称', blocker: '请填写一个便于识别的项目名称。', canSubmit: false };
+  }
+  if (!projectSourceForm.agentBackend) {
+    return { submitLabel: '选择执行方式', blocker: '请选择 Claude Code 或 Codex 作为这个项目的 AI 执行方式。', canSubmit: false };
+  }
+  return {
+    submitLabel: projectSourceForm.editingProjectId ? '保存修改' : '接入这个项目',
+    blocker: null,
+    canSubmit: true,
+  };
 }
 
 function projectSourceOptions(): Array<{ value: ProjectSourceKind; label: string }> {
@@ -2772,11 +3228,7 @@ function defaultAuthKind(sourceKind: ProjectSourceKind): ProjectSourceAuthKind {
 
 function renderProjectSourceDynamicFields(): HTMLElement[] {
   const sourceKind = projectSourceForm.sourceKind;
-  const fields: HTMLElement[] = [
-    controlledInput('Project Name', 'name', '检测通过后自动填充，也可手动修改', projectSourceForm.name, (v) => {
-      projectSourceForm.name = v;
-    }),
-  ];
+  const fields: HTMLElement[] = [];
 
   if (sourceKind === 'local') {
     fields.push(
@@ -2784,7 +3236,6 @@ function renderProjectSourceDynamicFields(): HTMLElement[] {
       el('p', { class: 'muted compact', text: '本地项目不需要 Token；检测会确认该路径是 Git 仓库并读取本地分支。' }),
     );
     if (localDirectoryPicker.open) fields.push(renderLocalDirectoryPicker());
-    fields.push(renderBranchControl());
     return fields;
   }
 
@@ -2794,14 +3245,13 @@ function renderProjectSourceDynamicFields(): HTMLElement[] {
       projectSourceForm.detectResult = null;
     }),
     renderAuthFields(sourceKind),
-    renderBranchControl(),
   );
   return fields;
 }
 
 function renderAgentBackendConfigFields(): HTMLElement {
   const select = el('select', { attrs: { name: 'agentBackend' } });
-  select.appendChild(el('option', { text: '请选择真实 Agent Backend', attrs: { value: '' } }));
+  select.appendChild(el('option', { text: '请选择 AI 执行方式', attrs: { value: '' } }));
   for (const option of agentBackendOptions()) {
     const node = el('option', { text: option.label, attrs: { value: option.value } });
     if (option.value === projectSourceForm.agentBackend) node.setAttribute('selected', 'selected');
@@ -2826,11 +3276,11 @@ function renderAgentBackendConfigFields(): HTMLElement {
   test.onclick = () => void checkAgentBackend(projectSourceForm.agentBackend || null, projectSourceForm.editingProjectId ?? null);
 
   return el('article', {
-    class: 'runner-card',
+    class: 'runner-card project-agent-card',
     children: [
-      panelHeader('Agent Backend', '项目级默认；只能选择 Claude Code 或 Codex。保存后后续任务默认沿用。'),
-      el('label', { class: 'input-block', children: [el('span', { text: 'Backend' }), select] }),
-      matchingCheck ? renderAgentBackendCheck(matchingCheck) : el('p', { class: 'muted compact', text: '保存或创建任务前会要求完成连接检测；检测会调用真实 CLI。' }),
+      panelHeader('AI 执行方式', '项目级默认；只能选择 Claude Code 或 Codex。'),
+      el('label', { class: 'input-block', children: [el('span', { text: '执行工具' }), select] }),
+      matchingCheck ? renderAgentBackendCheck(matchingCheck) : el('p', { class: 'muted compact', text: '检测会确认本机 CLI 可用；创建任务时也会自动检查。' }),
       el('div', { class: 'button-row', children: [test] }),
     ],
   });
@@ -2860,7 +3310,7 @@ function renderLocalPathPickerField(): HTMLElement {
   return el('label', {
     class: 'input-block',
     children: [
-      el('span', { text: 'Local Path' }),
+      el('span', { text: '本地路径' }),
       el('div', { class: 'button-row', children: [input, browse] }),
     ],
   });
@@ -2901,7 +3351,7 @@ function renderLocalDirectoryPicker(): HTMLElement {
   rows.push(close);
   return el('article', {
     class: 'runner-card',
-    children: [panelHeader('选择本地文件夹', '浏览 API/runner 所在机器上的目录，选中后会填入 Local Path。'), ...rows],
+    children: [panelHeader('选择本地文件夹', '浏览 API/runner 所在机器上的目录，选中后会填入本地路径。'), ...rows],
   });
 }
 
@@ -2933,10 +3383,10 @@ function chooseLocalDirectory(path: string): void {
 }
 
 function sourceUrlLabel(sourceKind: ProjectSourceKind): string {
-  if (sourceKind === 'github') return 'GitHub Repository';
-  if (sourceKind === 'gitee') return 'Gitee Repository';
-  if (sourceKind === 'gitlab') return 'GitLab Repository URL';
-  return 'Repository URL';
+  if (sourceKind === 'github') return 'GitHub 仓库';
+  if (sourceKind === 'gitee') return 'Gitee 仓库';
+  if (sourceKind === 'gitlab') return 'GitLab 仓库地址';
+  return '仓库地址';
 }
 
 function sourceUrlPlaceholder(sourceKind: ProjectSourceKind): string {
@@ -2961,12 +3411,12 @@ function renderAuthFields(sourceKind: ProjectSourceKind): HTMLElement {
   };
 
   const children: Array<Node | null> = [
-    el('label', { class: 'input-block', children: [el('span', { text: 'Authentication' }), authSelect] }),
+    el('label', { class: 'input-block', children: [el('span', { text: '访问方式' }), authSelect] }),
   ];
 
   if (projectSourceForm.sourceAuthKind === 'token') {
     children.push(
-      controlledInput('Token', 'sourceCredential', 'Personal Access Token / Access Token', projectSourceForm.sourceCredential, (v) => {
+      controlledInput('访问令牌', 'sourceCredential', 'Personal Access Token / Access Token', projectSourceForm.sourceCredential, (v) => {
         projectSourceForm.sourceCredential = v;
         projectSourceForm.detectResult = null;
       }, 'password'),
@@ -2974,11 +3424,11 @@ function renderAuthFields(sourceKind: ProjectSourceKind): HTMLElement {
   }
   if (projectSourceForm.sourceAuthKind === 'basic') {
     children.push(
-      controlledInput('Username', 'sourceUsername', '用于 HTTPS Basic Auth 的用户名', projectSourceForm.sourceUsername, (v) => {
+      controlledInput('用户名', 'sourceUsername', '用于 HTTPS Basic Auth 的用户名', projectSourceForm.sourceUsername, (v) => {
         projectSourceForm.sourceUsername = v;
         projectSourceForm.detectResult = null;
       }),
-      controlledInput('Password', 'sourceCredential', '密码或应用专用密码', projectSourceForm.sourceCredential, (v) => {
+      controlledInput('密码', 'sourceCredential', '密码或应用专用密码', projectSourceForm.sourceCredential, (v) => {
         projectSourceForm.sourceCredential = v;
         projectSourceForm.detectResult = null;
       }, 'password'),
@@ -3034,9 +3484,9 @@ function renderBranchControl(): HTMLElement {
     select.onchange = () => {
       projectSourceForm.defaultBranch = select.value;
     };
-    return el('label', { class: 'input-block', children: [el('span', { text: 'Default Branch' }), select] });
+    return el('label', { class: 'input-block', children: [el('span', { text: '默认分支' }), select] });
   }
-  return controlledInput('Default Branch', 'defaultBranch', 'main', projectSourceForm.defaultBranch, (v) => {
+  return controlledInput('默认分支', 'defaultBranch', 'main', projectSourceForm.defaultBranch, (v) => {
     projectSourceForm.defaultBranch = v || 'main';
   });
 }
@@ -3044,22 +3494,35 @@ function renderBranchControl(): HTMLElement {
 function renderProjectDetectPanel(): HTMLElement {
   const result = projectSourceForm.detectResult;
   if (projectSourceForm.detecting) {
-    return el('article', { class: 'runner-card', children: [field('检测状态', '正在连接远端并读取分支…')] });
+    return renderProjectDetectState('正在检测项目连接', '正在确认项目是否可访问，并读取默认分支。', 'info');
   }
   if (!result) {
-    return el('article', { class: 'runner-card', children: [field('检测状态', '尚未检测'), field('下一步', '点击“检测”拉取项目名称、分支列表和元数据。')] });
+    return renderProjectDetectState('先检测项目连接', '检测会确认来源、访问方式和默认分支。', 'muted');
   }
   if (!result.ok) {
-    return el('article', { class: 'runner-card', children: [field('检测状态', pill('failed', 'bad')), field('错误', result.error)] });
+    return renderProjectDetectState('检测失败', '请修改项目来源或访问方式后重新检测。', 'bad', [
+      field('错误', result.error),
+    ]);
   }
-  return el('article', {
-    class: 'runner-card',
-    children: [
-      field('检测状态', pill('passed', 'good')),
+  return renderProjectDetectState('检测通过，可以接入', '确认这些信息后即可保存为可用项目。', 'good', [
       field('项目名', result.projectName),
       field('默认分支', result.defaultBranch),
-      field('分支列表', result.branches.join(', ') || '—'),
-      field('元数据', Object.entries(result.metadata).map(([k, v]) => `${k}=${v}`).join(' · ') || '—'),
+      field('可用分支', result.branches.length ? `${result.branches.length} 个` : '未返回分支列表'),
+  ]);
+}
+
+function renderProjectDetectState(title: string, message: string, kind: StatusKind, details: HTMLElement[] = []): HTMLElement {
+  return el('article', {
+    class: `project-detect-card ${kind}`,
+    children: [
+      el('div', {
+        class: 'project-detect-head',
+        children: [
+          pill(title, kind),
+          el('p', { class: 'compact', text: message }),
+        ],
+      }),
+      ...details,
     ],
   });
 }
@@ -3071,25 +3534,31 @@ function renderProjectProfilePreview(): HTMLElement {
   return el('details', {
     class: 'raw-details',
     children: [
-      el('summary', { text: '最近运行的 Project Profile 预览' }),
-      el('p', { class: 'muted compact', text: '说明：这里展示的是当前工作台选中 workflow run 的 project_profile 产物，不是右侧点击选中的项目配置；只有跑过 workflow 才会生成。' }),
+      el('summary', { text: '最近项目画像预览' }),
+      el('p', { class: 'muted compact', text: '用于排查项目画像生成结果；不影响当前项目接入配置。' }),
       text
         ? el('pre', { class: 'doc-preview', text: previewText(text) })
-        : el('p', { class: 'muted compact', text: '当前没有可预览的 project_profile。' }),
+        : el('p', { class: 'muted compact', text: '当前没有可预览的项目画像。' }),
     ],
   });
 }
 
 function renderToolchainReadiness(): HTMLElement {
   const runner = latestRunner();
-  return el('article', {
-    class: 'runner-card',
+  return el('details', {
+    class: 'raw-details project-diagnostics-details',
     children: [
-      panelHeader('Local Runner / Toolchain', runner ? `${runner.status} · ${fmtTime(runner.lastSeenAt)}` : '尚未连接'),
-      field('JDK', runner?.jdkVersion ?? '—'),
-      field('Maven', runner?.mavenVersion?.split('\n')[0] ?? '—'),
-      field('Git', runner?.gitVersion ?? '—'),
-      el('code', { class: 'command-chip', text: 'bun run runner -- doctor && bun run runner -- watch' }),
+      el('summary', { text: '本地执行环境诊断' }),
+      el('article', {
+        class: 'runner-card',
+        children: [
+          panelHeader('执行器状态', runner ? `${runner.status} · ${fmtTime(runner.lastSeenAt)}` : '尚未连接'),
+          field('JDK', runner?.jdkVersion ?? '—'),
+          field('Maven', runner?.mavenVersion?.split('\n')[0] ?? '—'),
+          field('Git', runner?.gitVersion ?? '—'),
+          el('code', { class: 'command-chip', text: 'bun run runner -- doctor && bun run runner -- watch' }),
+        ],
+      }),
     ],
   });
 }
@@ -3099,8 +3568,8 @@ function renderAgentBackendCheck(check: AgentBackendPreflightDto): HTMLElement {
     class: 'agent-backend-check',
     children: [
       field('状态', pill(preflightStatusLabel(check), preflightStatusKind(check))),
-      field('CLI', check.bin ?? '—'),
-      field('Version', check.version ?? '—'),
+      field('命令行工具', check.bin ?? '—'),
+      field('版本', check.version ?? '—'),
       check.error ? field('错误', check.error) : null,
       field('修复提示', check.remediationHint),
     ],
@@ -3108,11 +3577,11 @@ function renderAgentBackendCheck(check: AgentBackendPreflightDto): HTMLElement {
 }
 
 function preflightStatusLabel(check: AgentBackendPreflightDto): string {
-  if (check.runnable) return 'Connected';
-  if (check.status === 'not_configured') return 'Needs setup';
-  if (check.status === 'missing_cli') return 'CLI missing';
-  if (check.status === 'needs_login') return 'Needs login';
-  return 'Check failed';
+  if (check.runnable) return '已连接';
+  if (check.status === 'not_configured') return '待配置';
+  if (check.status === 'missing_cli') return '缺少 CLI';
+  if (check.status === 'needs_login') return '需要登录';
+  return '检测失败';
 }
 
 function preflightStatusKind(check: AgentBackendPreflightDto): StatusKind {
@@ -3159,6 +3628,10 @@ function renderProjectCard(project: ProjectDto): HTMLElement {
   const sourceKind = project.sourceKind ?? 'local';
   const status = project.status ?? 'active';
   const backendStatus = agentBackendStatusForProject(project);
+  const availability = projectAvailability(project);
+  const backendLabel = project.agentBackend
+    ? `${agentBackendDisplayName(project.agentBackend)} · ${backendStatusText(backendStatus.label)}`
+    : `未配置 · ${backendStatusText(backendStatus.label)}`;
   const action = el('button', {
     class: status === 'archived' ? 'button ghost small' : 'button danger small',
     text: projectActionInFlight.has(project.id) ? '处理中…' : status === 'archived' ? '已归档' : '删除 / 归档',
@@ -3171,7 +3644,7 @@ function renderProjectCard(project: ProjectDto): HTMLElement {
   };
   const backendCheck = el('button', {
     class: 'button secondary small',
-    text: agentBackendPreflightInFlight.has(project.id) ? '检测中…' : '检测 Backend',
+    text: agentBackendPreflightInFlight.has(project.id) ? '检测中…' : '检测连接',
     attrs: { type: 'button' },
   });
   backendCheck.disabled = !project.agentBackend || agentBackendPreflightInFlight.has(project.id);
@@ -3180,21 +3653,49 @@ function renderProjectCard(project: ProjectDto): HTMLElement {
     void checkAgentBackend(project.agentBackend ?? null, project.id);
   };
 
+  const sourceValue = project.sourceUrl ?? project.localPath;
+  const details = el('details', {
+    class: 'project-card-details',
+    children: [
+      el('summary', { text: '连接详情' }),
+      el('div', {
+        class: 'project-card-detail-list',
+        children: [
+          field('访问方式', authSummary(project)),
+          field(sourceKind === 'local' ? '本地路径' : '仓库地址', el('code', { class: 'project-detail-code', text: sourceValue })),
+          sourceKind !== 'local' ? field('托管路径', el('code', { class: 'project-detail-code', text: project.localPath })) : null,
+          field('接入时间', fmtTime(project.registeredAt)),
+          status === 'archived' ? field('归档时间', fmtTime(project.archivedAt)) : null,
+        ],
+      }),
+    ],
+  });
+  details.onclick = (event) => event.stopPropagation();
+  details.onkeydown = (event) => event.stopPropagation();
+
   const card = el('article', {
     class: `project-card ${projectSourceForm.editingProjectId === project.id ? 'active' : ''}`,
     attrs: { role: 'button', tabindex: '0', title: '点击回填到左侧编辑' },
     children: [
-      el('div', { children: [el('strong', { text: project.name }), pill(status === 'archived' ? '已归档' : sourceKindLabel(sourceKind), status === 'archived' ? 'warn' : 'muted')] }),
-      field('Branch', project.defaultBranch),
-      field('Auth', authSummary(project)),
-      field('Agent Backend', el('span', { children: [
-        document.createTextNode(project.agentBackend ? agentBackendDisplayName(project.agentBackend) : '未配置'),
-        document.createTextNode(' · '),
-        pill(backendStatus.label, backendStatus.kind),
-      ] })),
-      status === 'archived' ? field('Archived', fmtTime(project.archivedAt)) : null,
-      field(sourceKind === 'local' ? 'Path' : 'Repo URL', el('code', { text: project.sourceUrl ?? project.localPath })),
-      sourceKind !== 'local' ? field('Managed', el('code', { text: project.localPath })) : null,
+      el('div', {
+        class: 'project-card-main',
+        children: [
+          el('div', {
+            class: 'project-card-head',
+            children: [el('strong', { text: project.name }), pill(availability.label, availability.kind)],
+          }),
+          el('div', {
+            class: 'project-summary-grid',
+            children: [
+              projectSummaryItem('来源', sourceKindLabel(sourceKind)),
+              projectSummaryItem('默认分支', project.defaultBranch),
+              projectSummaryItem('AI 执行方式', el('span', { class: backendStatus.kind, text: backendLabel })),
+              projectSummaryItem('接入状态', pill(availability.label, availability.kind)),
+            ],
+          }),
+        ],
+      }),
+      details,
       el('div', {
         class: 'project-card-footer',
         children: [
@@ -3206,12 +3707,22 @@ function renderProjectCard(project: ProjectDto): HTMLElement {
   });
   card.onclick = () => editProject(project);
   card.onkeydown = (event) => {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (target?.closest('button, details, summary')) return;
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       editProject(project);
     }
   };
   return card;
+}
+
+function projectSummaryItem(label: string, value: Node | string): HTMLElement {
+  const valueNode = typeof value === 'string' ? el('strong', { text: value }) : value;
+  return el('div', {
+    class: 'project-summary-item',
+    children: [el('span', { text: label }), valueNode],
+  });
 }
 
 async function deleteOrArchiveProject(project: ProjectDto): Promise<void> {
@@ -3402,12 +3913,12 @@ async function detectProjectSource(): Promise<void> {
 async function submitProject(event: SubmitEvent): Promise<void> {
   event.preventDefault();
   if (!projectSourceForm.detectResult?.ok) {
-    lastError = '请先检测项目源，确认无误后再接入。';
+    lastError = '请先检测项目连接，确认无误后再接入。';
     render();
     return;
   }
   if (!projectSourceForm.agentBackend) {
-    lastError = '请选择 Claude Code 或 Codex 作为项目级 Agent Backend。';
+    lastError = '请选择 Claude Code 或 Codex 作为项目的 AI 执行方式。';
     render();
     return;
   }
@@ -3443,9 +3954,74 @@ function resetProjectSourceForm(): void {
   projectSourceForm.detecting = false;
 }
 
+function renderNewTaskProcessPanel(): HTMLElement {
+  return el('aside', {
+    class: 'panel new-task-guide',
+    children: [
+      panelHeader('创建后，AI 会', '页面会在需要你确认时停下来。'),
+      el('ol', {
+        class: 'ordered-list',
+        children: [
+          el('li', { text: '理解目标，必要时先提出澄清问题。' }),
+          el('li', { text: '准备隔离工作区和任务上下文。' }),
+          el('li', { text: '按阶段实现、检查并汇总证据。' }),
+          el('li', { text: '把需要人工确认的节点展示给你审批。' }),
+        ],
+      }),
+    ],
+  });
+}
+
+function renderNewTaskInlineNotice(kind: StatusKind, title: string, message: string, actions: HTMLElement[] = []): HTMLElement {
+  return el('div', {
+    class: `notice-inline ${kind}`,
+    children: [
+      el('strong', { text: title }),
+      el('p', { class: 'compact', text: message }),
+      actions.length ? el('div', { class: 'button-row', children: actions }) : null,
+    ],
+  });
+}
+
+function renderNewTaskNoProjectPage(): HTMLElement {
+  const refresh = button('刷新', 'button secondary');
+  refresh.onclick = () => void loadData({ keepDetail: true });
+  return el('section', {
+    class: 'page-grid two-col',
+    children: [
+      el('div', {
+        class: 'empty-state new-task-empty',
+        children: [
+          el('h2', { text: '还没有连接项目' }),
+          el('p', { text: '先接入一个项目，才能创建任务并交给 AI 执行。' }),
+          el('div', { class: 'button-row', children: [actionLink('连接项目', 'projects'), refresh] }),
+        ],
+      }),
+      renderNewTaskProcessPanel(),
+    ],
+  });
+}
+
+function backendStatusText(label: string): string {
+  if (label === 'Connected') return '已连接';
+  if (label === 'Not checked') return '待检测';
+  if (label === 'Needs setup') return '待配置';
+  if (label === 'Needs login') return '需要登录';
+  if (label === 'CLI missing') return '缺少 CLI';
+  if (label === 'Check failed') return '检测失败';
+  if (label === '未检测') return '未检测';
+  return label;
+}
+
+function buildNewTaskFirstMessage(title: string, details: string): string {
+  return details ? `目标：${title}\n\n补充说明：\n${details}` : title;
+}
+
 function renderNewTaskPage(): HTMLElement {
-  const form = el('form', { class: 'form-card wide' });
   const projects = activeProjects();
+  if (!projects.length && !projectsLoadError) return renderNewTaskNoProjectPage();
+
+  const form = el('form', { class: 'form-card wide new-task-form' });
   const projectSelect = el('select', { attrs: { name: 'projectId' } });
   for (const project of projects) {
     projectSelect.appendChild(el('option', { text: project.name, attrs: { value: project.id } }));
@@ -3498,11 +4074,27 @@ function renderNewTaskPage(): HTMLElement {
   }
   const startStageRow = el('label', {
     class: 'input-block',
-    children: [el('span', { text: 'Start Stage（仅 feature.standard 可用）' }), startStageSelect],
+    children: [el('span', { text: '起始阶段（仅 feature.standard 可用）' }), startStageSelect],
   });
-  const title = el('textarea', { attrs: { name: 'title', rows: '7', 'data-new-task-title': 'true', placeholder: '描述业务目标、验收标准、约束。例如：为报告页增加导出按钮，并确保 mvn test 通过。' } });
+  const title = el('input', {
+    attrs: {
+      name: 'title',
+      'data-new-task-title': 'true',
+      placeholder: '例如：优化新建任务页面，让普通用户更容易创建任务',
+    },
+  });
+  const details = el('textarea', {
+    class: 'new-task-details',
+    attrs: {
+      name: 'details',
+      rows: '5',
+      'data-new-task-details': 'true',
+      placeholder: '可补充验收标准、约束、参考页面或不希望改变的内容。',
+    },
+  });
   // Hydrate the user-owned draft fields (see state-management.md).
   title.value = newTaskFormDraft.title;
+  details.value = newTaskFormDraft.details;
   if (newTaskFormDraft.type) typeSelect.value = newTaskFormDraft.type;
   if (newTaskFormDraft.flowId) flowSelect.value = newTaskFormDraft.flowId;
   if (newTaskFormDraft.startStage) startStageSelect.value = newTaskFormDraft.startStage;
@@ -3533,10 +4125,12 @@ function renderNewTaskPage(): HTMLElement {
   const branchRefresh = el('button', { class: 'button secondary small', text: '刷新分支', attrs: { type: 'button' } });
   const branchHint = el('p', { class: 'muted compact' });
   const backendHint = el('p', { class: 'muted compact' });
-  const backendCheck = el('button', { class: 'button secondary small', text: '检测 Backend', attrs: { type: 'button' } });
+  const backendCheck = el('button', { class: 'button secondary small', text: '检测连接', attrs: { type: 'button' } });
   const backendLabel = el('strong', { text: '未选择项目' });
   const clickedBranchProjects = new Set<string>();
-  const submit = el('button', { class: 'button primary', text: 'Create Workflow Request', attrs: { type: 'submit' } });
+  const submit = el('button', { class: 'button primary', text: '创建任务', attrs: { type: 'submit' } });
+  const submitHint = el('p', { class: 'compact muted' });
+  const readiness = el('div', { class: 'new-task-readiness' });
 
   // V2 W2-4 / PR4 + 2026-05-06 router-driven defaults: 智能推荐 card with
   // two-stage preview pipeline.
@@ -3554,7 +4148,7 @@ function renderNewTaskPage(): HTMLElement {
   // Coordinator path doesn't yet plumb flowId/startStage through
   // workflow_requests. The card is informational: ordinary task creation uses
   // conservative server defaults unless a future explicit override is sent.
-  const recoCard = el('div', { class: 'panel compact' });
+  const recoCard = el('div', { class: 'inline-panel compact' });
   recoCard.style.display = 'none';
   let recoLastKey = '';
   let recoInFlight = false;
@@ -3591,12 +4185,10 @@ function renderNewTaskPage(): HTMLElement {
     recoInFlight = true;
     recoCard.style.display = 'block';
     recoCard.replaceChildren(
-      panelHeader('智能推荐', '正在加载…'),
+      panelHeader('执行建议', '正在判断建议路径…'),
       el('p', {
         class: 'muted compact',
-        text: userOverrideType
-          ? 'POST /router/recommend (按 Type override)'
-          : 'POST /coordinator/preview → /router/recommend',
+        text: userOverrideType ? '将参考你指定的任务类型。' : '仅作参考，创建时仍会按默认流程判断。',
       }),
     );
     try {
@@ -3625,9 +4217,9 @@ function renderNewTaskPage(): HTMLElement {
       const minsApprox = Math.round(reco.estimates.timeSec / 60);
       const children: HTMLElement[] = [
         panelHeader(
-          '智能推荐',
+          '执行建议',
           userOverrideType
-            ? '使用你在「高级覆盖」里指定的 Type'
+            ? '使用你在高级设置里指定的任务类型'
             : '仅作参考；创建任务默认从完整流程开始',
         ),
       ];
@@ -3665,15 +4257,14 @@ function renderNewTaskPage(): HTMLElement {
           class: 'muted compact',
           text: `预估 ~${minsApprox} 分钟 / ~${reco.estimates.tokens} tokens`,
         }),
-        el('p', {
-          class: 'muted compact',
-          text: `规则: ${reco.rulesFired.join(' / ') || '(none)'}`,
-        }),
       );
+      if (reco.rulesFired.length) {
+        children.push(el('p', { class: 'muted compact', text: `命中规则: ${reco.rulesFired.join(' / ')}` }));
+      }
       recoCard.replaceChildren(...children);
     } catch (err) {
       recoCard.replaceChildren(
-        panelHeader('智能推荐', '获取失败'),
+        panelHeader('执行建议', '暂时不可用'),
         el('p', {
           class: 'muted compact',
           text: err instanceof Error ? err.message : String(err),
@@ -3697,25 +4288,57 @@ function renderNewTaskPage(): HTMLElement {
   projectSelect.addEventListener('change', () => {
     recoLastKey = '';
     newTaskFormDraft.projectId = projectSelect.value;
+    updateSubmitState();
   });
   title.addEventListener('input', () => {
     newTaskFormDraft.title = title.value;
+    updateSubmitState();
   });
   title.addEventListener('blur', () => {
     newTaskFormDraft.title = title.value;
     if (!isReplacingAppRootForRender) newTaskTitleFocus = null;
   });
+  details.addEventListener('input', () => {
+    newTaskFormDraft.details = details.value;
+  });
+  details.addEventListener('blur', () => {
+    newTaskFormDraft.details = details.value;
+    if (!isReplacingAppRootForRender) newTaskTitleFocus = null;
+  });
+  const updateSubmitState = () => {
+    const project = projects.find((p) => p.id === projectSelect.value) ?? projects[0] ?? null;
+    const preflight = preflightForProjectBackend(project);
+    const runner = latestRunner();
+    let blocker: string | null = null;
+    if (projectsLoadError) blocker = '项目列表加载失败，重试成功后才能创建任务。';
+    else if (!project) blocker = '请先连接项目。';
+    else if (!title.value.trim()) blocker = '请填写任务目标。';
+    else if (!project.agentBackend) blocker = '请先为这个项目配置执行方式。';
+    else if (preflight && !preflight.runnable) blocker = '执行方式连接检测未通过，请处理后重试。';
+
+    submit.disabled = Boolean(blocker);
+    submitHint.textContent = blocker
+      ?? (runner ? '准备就绪，创建后会进入任务工作流。' : '本地执行器当前未连接，创建后会尝试自动启动；需要时可到运行配置检查。');
+    submitHint.className = `compact ${blocker ? 'warn' : runner ? 'good' : 'muted'}`;
+    readiness.replaceChildren(
+      pill(project ? '项目已选择' : projectsLoadError ? '项目加载失败' : '等待项目', project ? 'good' : projectsLoadError ? 'bad' : 'warn'),
+      pill(project?.agentBackend ? '执行方式已配置' : '执行方式待配置', project?.agentBackend ? 'good' : 'warn'),
+      pill(runner ? '执行器在线' : '执行器待启动', runner ? statusKind(runner.status) : 'warn'),
+    );
+  };
   const updateBackendHint = (projectId: string) => {
     const project = projects.find((p) => p.id === projectId) ?? projects[0] ?? null;
     const status = agentBackendStatusForProject(project);
     backendHint.textContent = project?.agentBackend
-      ? `Agent Backend: ${agentBackendDisplayName(project.agentBackend)} · ${status.label}。创建任务前会自动做一次真实 CLI preflight；失败时不会入队。`
-      : '这个项目还没有配置 Agent Backend。请到“项目接入”编辑项目，选择 Claude Code 或 Codex。';
-    backendLabel.textContent = agentBackendLabelForProject(project);
+      ? `${agentBackendDisplayName(project.agentBackend)} · ${backendStatusText(status.label)}。创建时会自动检测本机 CLI 连接。`
+      : '这个项目还没有选择执行方式。请到“项目接入”编辑项目，选择 Claude Code 或 Codex。';
+    backendLabel.textContent = project?.agentBackend
+      ? `${agentBackendLabelForProject(project)} · ${backendStatusText(status.label)}`
+      : agentBackendLabelForProject(project);
     backendHint.className = `muted compact ${status.kind}`;
     backendCheck.disabled = !project?.agentBackend || agentBackendPreflightInFlight.has(project.id);
-    backendCheck.textContent = project && agentBackendPreflightInFlight.has(project.id) ? '检测中…' : '检测 Backend';
-    submit.disabled = !projects.length || !project?.agentBackend;
+    backendCheck.textContent = project && agentBackendPreflightInFlight.has(project.id) ? '检测中…' : '检测连接';
+    updateSubmitState();
   };
   const updateBranchSelect = (projectId: string, preferredBranch: string | null = branchSelect.value || null) => {
     const project = projects.find((p) => p.id === projectId) ?? projects[0] ?? null;
@@ -3739,8 +4362,8 @@ function renderNewTaskPage(): HTMLElement {
     branchRefresh.textContent = refreshing ? '加载中…' : '刷新分支';
     branchRefresh.disabled = !project || refreshing;
     branchHint.textContent = project
-      ? `默认带入项目接入配置的默认分支 ${project.defaultBranch || 'main'}；点击 Source Branch 会从当前 Project 的源地址加载分支列表，也可以在这里为本次任务临时切换。`
-      : '请先接入一个 active 项目。';
+      ? `默认使用 ${project.defaultBranch || 'main'}；只有本次任务需要切换基础分支时才调整。`
+      : '请先连接项目。';
     updateBackendHint(projectId);
   };
   const refreshBranches = (projectId: string, force = false) => {
@@ -3775,7 +4398,7 @@ function renderNewTaskPage(): HTMLElement {
   // default). This is the path that survives render() rebuilds.
   updateBranchSelect(projectSelect.value, newTaskFormDraft.branch || null);
   refreshBranches(projectSelect.value);
-  if (!projects.length) submit.setAttribute('disabled', 'disabled');
+  updateSubmitState();
   // 2026-05-06 router advisory defaults: Type is no longer prominent in the
   // main form. The Coordinator still decides runType, while Smart Router output
   // is preview/audit only. Power users / refactor / smoke paths open the
@@ -3784,45 +4407,66 @@ function renderNewTaskPage(): HTMLElement {
   // FlowDef.kind (PRD Q1=A). Start Stage is only meaningful for
   // `feature.standard` and is auto-hidden otherwise.
   const advanced = document.createElement('details');
-  advanced.appendChild(el('summary', { text: '高级覆盖（手动指定 Type / Flow / 起始阶段）' }));
+  advanced.className = 'new-task-advanced';
+  advanced.setAttribute('data-details-key', 'new-task-advanced');
+  advanced.appendChild(el('summary', { text: '高级设置（分支、执行路径、后端诊断）' }));
+  advanced.appendChild(
+    el('div', {
+      class: 'input-block',
+      children: [
+        el('span', { text: '基于哪个分支' }),
+        el('div', { class: 'branch-select-row', children: [branchSelect, branchRefresh] }),
+        branchHint,
+      ],
+    }),
+  );
+  advanced.appendChild(
+    el('div', {
+      class: 'input-block',
+      children: [
+        el('span', { text: '执行方式' }),
+        el('div', { class: 'branch-select-row', children: [backendLabel, backendCheck] }),
+        backendHint,
+      ],
+    }),
+  );
   advanced.appendChild(
     el('label', {
       class: 'input-block',
-      children: [el('span', { text: 'Type（留空让 AI 判定）' }), typeSelect],
+      children: [el('span', { text: '任务类型覆盖（留空让 AI 判定）' }), typeSelect],
     }),
   );
   advanced.appendChild(
     el('label', {
       class: 'input-block',
       children: [
-        el('span', { text: 'Flow（留空让 router 推荐；指定 = 跳过 Coordinator）' }),
+        el('span', { text: '执行路径覆盖（留空自动推荐）' }),
         flowSelect,
       ],
     }),
   );
   advanced.appendChild(startStageRow);
+  advanced.appendChild(recoCard);
+
+  const retryProjects = button('重试', 'button secondary small');
+  retryProjects.onclick = () => void loadData({ keepDetail: true });
+  const projectIssue = projectsLoadError
+    ? renderNewTaskInlineNotice('bad', '项目列表加载失败', projectsLoadError, [retryProjects, actionLink('检查项目接入', 'projects')])
+    : null;
+  const submitIssue = lastError && !projectsLoadError
+    ? renderNewTaskInlineNotice('warn', '暂时无法创建任务', lastError)
+    : null;
   form.append(
-    panelHeader('创建任务请求', 'UI 只入队；本地 runner watch 负责认领、建 worktree、执行 gate、等待人工确认。'),
-    el('label', { class: 'input-block', children: [el('span', { text: 'Project' }), projectSelect] }),
-    el('label', { class: 'input-block', children: [el('span', { text: 'Task Title / Intent' }), title] }),
-    recoCard,
+    panelHeader('创建任务', '只需要说明目标；工程设置默认自动处理。'),
+    el('label', { class: 'input-block', children: [el('span', { text: '项目' }), projectSelect, projectIssue] }),
+    el('label', { class: 'input-block', children: [el('span', { text: '任务目标' }), title] }),
+    el('label', { class: 'input-block', children: [el('span', { text: '补充说明（可选）' }), details] }),
     advanced,
-    el('div', {
-      class: 'input-block',
-      children: [
-        el('span', { text: 'Source Branch' }),
-        el('div', { class: 'branch-select-row', children: [branchSelect, branchRefresh] }),
-        branchHint,
-      ],
-    }),
-    el('div', {
-      class: 'input-block',
-      children: [
-        el('span', { text: 'Agent Backend' }),
-        el('div', { class: 'branch-select-row', children: [backendLabel, backendCheck] }),
-        backendHint,
-      ],
-    }),
+    readiness,
+  );
+  if (submitIssue) form.append(submitIssue);
+  form.append(
+    submitHint,
     el('div', { class: 'button-row', children: [submit, actionLink('查看工作台', 'workbench')] }),
   );
   form.onsubmit = (event) => void submitWorkflowRequest(event, form);
@@ -3831,22 +4475,7 @@ function renderNewTaskPage(): HTMLElement {
     class: 'page-grid two-col',
     children: [
       form,
-      el('aside', {
-        class: 'panel',
-        children: [
-          panelHeader('端到端闭环', '下一步'),
-          el('ol', {
-            class: 'ordered-list',
-            children: [
-              el('li', { text: '创建 Workflow Request。' }),
-              el('li', { text: '本地运行 `bun run runner -- watch`。' }),
-              el('li', { text: 'Runner 使用 Git worktree 执行需求、设计、实现、编译测试。' }),
-              el('li', { text: 'UI 在人工确认点展示证据并审批。' }),
-            ],
-          }),
-          el('code', { class: 'command-chip large', text: 'bun run runner -- watch --keep-worktree' }),
-        ],
-      }),
+      renderNewTaskProcessPanel(),
     ],
   });
 }
@@ -3857,10 +4486,13 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
   const projectId = String(fd.get('projectId') ?? '');
   const project = data.projects.find((p) => p.id === projectId);
   const title = String(fd.get('title') ?? '').trim();
+  const details = String(fd.get('details') ?? '').trim();
   try {
     if (!project) throw new Error('请选择一个已接入项目。');
+    if (!title) throw new Error('请先填写任务目标。');
     const ready = await ensureProjectAgentBackendReady(project);
     if (!ready) return;
+    const firstMessage = buildNewTaskFirstMessage(title, details);
     // 2026-05-06: omit `type` when user left it as "(让 AI 自动判定)" so the
     // server-side Coordinator can classify runType. Smart Router output is
     // advisory until a future request override path sends flowId/startStage.
@@ -3885,7 +4517,7 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
         // watch loop never races between request creation and the
         // initial chat turn. The previous two-step (POST + follow-up
         // POST /messages) is dropped.
-        firstMessage: title.length > 0 ? { role: 'user' as const, content: title } : undefined,
+        firstMessage: { role: 'user' as const, content: firstMessage },
       }),
     });
     form.reset();
@@ -3909,7 +4541,7 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
 
 async function ensureProjectAgentBackendReady(project: ProjectDto): Promise<boolean> {
   if (!project.agentBackend) {
-    lastError = '这个项目还没有配置 Agent Backend。请先到“项目接入”编辑项目，选择 Claude Code 或 Codex。';
+    lastError = '这个项目还没有配置执行方式。请先到“项目接入”编辑项目，选择 Claude Code 或 Codex。';
     render();
     return false;
   }
@@ -3918,7 +4550,7 @@ async function ensureProjectAgentBackendReady(project: ProjectDto): Promise<bool
   const checked = await checkAgentBackend(project.agentBackend, project.id);
   if (checked?.runnable) return true;
   if (!checked) {
-    lastError = 'Agent Backend 连接检测未完成，任务不会入队。';
+    lastError = '执行方式连接检测未完成，任务不会入队。';
   }
   render();
   return false;
@@ -3970,6 +4602,7 @@ const newTaskFormDraft: {
   projectId: string;
   type: '' | 'feature' | 'bugfix' | 'smoke' | 'refactor';
   title: string;
+  details: string;
   branch: string;
   flowId: '' | 'feature.standard' | 'feature.fastforward' | 'issue.standard' | 'refactor.standard';
   startStage:
@@ -3982,11 +4615,13 @@ const newTaskFormDraft: {
     | 'review'
     | 'completion'
     | 'knowledge';
-} = { projectId: '', type: '', title: '', branch: '', flowId: '', startStage: '' };
+} = { projectId: '', type: '', title: '', details: '', branch: '', flowId: '', startStage: '' };
 
-const NEW_TASK_TITLE_SELECTOR = 'textarea[data-new-task-title]';
+const NEW_TASK_TITLE_SELECTOR = '[data-new-task-title]';
+const NEW_TASK_DETAILS_SELECTOR = '[data-new-task-details]';
 
 let newTaskTitleFocus: {
+  selector: typeof NEW_TASK_TITLE_SELECTOR | typeof NEW_TASK_DETAILS_SELECTOR;
   selectionStart: number;
   selectionEnd: number;
   selectionDirection: 'forward' | 'backward' | 'none';
@@ -4068,19 +4703,29 @@ function normalizeSelectionDirection(direction: string | null): 'forward' | 'bac
 }
 
 function captureNewTaskFormState(root: HTMLElement): void {
-  const titleArea = root.querySelector<HTMLTextAreaElement>(NEW_TASK_TITLE_SELECTOR);
-  if (!titleArea) {
+  const titleControl = root.querySelector<HTMLInputElement | HTMLTextAreaElement>(NEW_TASK_TITLE_SELECTOR);
+  const detailsControl = root.querySelector<HTMLInputElement | HTMLTextAreaElement>(NEW_TASK_DETAILS_SELECTOR);
+  if (!titleControl && !detailsControl) {
     newTaskTitleFocus = null;
     return;
   }
   // Sync DOM value into the draft so keystrokes that have not yet fired an
   // 'input' event (e.g. mid-IME composition) still survive the rebuild.
-  newTaskFormDraft.title = titleArea.value;
-  if (document.activeElement === titleArea) {
+  if (titleControl) newTaskFormDraft.title = titleControl.value;
+  if (detailsControl) newTaskFormDraft.details = detailsControl.value;
+  if (titleControl && document.activeElement === titleControl) {
     newTaskTitleFocus = {
-      selectionStart: titleArea.selectionStart,
-      selectionEnd: titleArea.selectionEnd,
-      selectionDirection: normalizeSelectionDirection(titleArea.selectionDirection),
+      selector: NEW_TASK_TITLE_SELECTOR,
+      selectionStart: titleControl.selectionStart ?? 0,
+      selectionEnd: titleControl.selectionEnd ?? 0,
+      selectionDirection: normalizeSelectionDirection(titleControl.selectionDirection),
+    };
+  } else if (detailsControl && document.activeElement === detailsControl) {
+    newTaskTitleFocus = {
+      selector: NEW_TASK_DETAILS_SELECTOR,
+      selectionStart: detailsControl.selectionStart ?? 0,
+      selectionEnd: detailsControl.selectionEnd ?? 0,
+      selectionDirection: normalizeSelectionDirection(detailsControl.selectionDirection),
     };
   }
 }
@@ -4088,14 +4733,14 @@ function captureNewTaskFormState(root: HTMLElement): void {
 function restoreNewTaskFormFocus(root: HTMLElement): void {
   if (!newTaskTitleFocus) return;
   const focus = newTaskTitleFocus;
-  const titleArea = root.querySelector<HTMLTextAreaElement>(NEW_TASK_TITLE_SELECTOR);
-  if (!titleArea) {
+  const control = root.querySelector<HTMLInputElement | HTMLTextAreaElement>(focus.selector);
+  if (!control) {
     newTaskTitleFocus = null;
     return;
   }
-  titleArea.focus({ preventScroll: true });
-  const len = titleArea.value.length;
-  titleArea.setSelectionRange(
+  control.focus({ preventScroll: true });
+  const len = control.value.length;
+  control.setSelectionRange(
     Math.min(focus.selectionStart, len),
     Math.min(focus.selectionEnd, len),
     focus.selectionDirection,
@@ -4107,6 +4752,7 @@ function clearNewTaskFormDraft(): void {
   newTaskFormDraft.projectId = '';
   newTaskFormDraft.type = '';
   newTaskFormDraft.title = '';
+  newTaskFormDraft.details = '';
   newTaskFormDraft.branch = '';
   newTaskFormDraft.flowId = '';
   newTaskFormDraft.startStage = '';
@@ -4603,39 +5249,201 @@ function renderCoordinatorStreamDetails(
   });
 }
 
+function reportStats(runs: WorkflowRunDto[]): { total: number; attention: number; acceptable: number; running: number; completed: number; failed: number } {
+  return {
+    total: runs.length,
+    attention: runs.filter((run) => reportNeedsAttention(run)).length,
+    acceptable: runs.filter((run) => reportIsAcceptable(run)).length,
+    running: runs.filter((run) => reportIsRunning(run)).length,
+    completed: runs.filter((run) => run.status === 'completed').length,
+    failed: runs.filter((run) => run.status === 'failed').length,
+  };
+}
+
+function reportNeedsAttention(run: WorkflowRunDto): boolean {
+  return run.status === 'failed' || run.status === 'awaiting_human' || run.status === 'awaiting_clarification';
+}
+
+function reportIsAcceptable(run: WorkflowRunDto): boolean {
+  return run.status === 'completed';
+}
+
+function reportIsRunning(run: WorkflowRunDto): boolean {
+  return run.status === 'running' || run.status === 'pending' || run.status === 'claimed';
+}
+
+function reportStatusLabel(status: string): string {
+  if (status === 'completed') return '可验收';
+  if (status === 'failed') return '失败';
+  if (status === 'awaiting_human') return '待确认';
+  if (status === 'awaiting_clarification') return '待澄清';
+  if (status === 'running' || status === 'claimed') return '执行中';
+  if (status === 'pending') return '等待执行';
+  return status;
+}
+
+function reportNextAction(run: WorkflowRunDto): string {
+  if (run.status === 'failed') return '查看失败证据并决定是否重试。';
+  if (run.status === 'awaiting_human') return '处理人工确认点，确认后继续流转。';
+  if (run.status === 'awaiting_clarification') return '补充澄清信息后继续。';
+  if (run.status === 'completed') return '查看交付摘要，决定是否验收。';
+  if (reportIsRunning(run)) return '等待 Runner 完成，报告会持续更新。';
+  return '查看任务详情确认状态。';
+}
+
+function reportEvidenceSummary(run: WorkflowRunDto): string {
+  const detail = data.activeDetail?.run.id === run.id ? data.activeDetail : null;
+  if (!detail) return `当前阶段：${STAGE_LABELS[run.currentStage] ?? run.currentStage}`;
+  const projection = buildRunProjection(detail);
+  const reportArtifact = latestArtifactOfKind(detail.artifacts, 'completion_report');
+  const tests = projection.summary.testsTotal
+    ? `${projection.summary.testsPassed}/${projection.summary.testsTotal} 测试通过`
+    : '暂无测试摘要';
+  const gates = `${projection.summary.gatesPassed}/${detail.gates.length} Gate 通过`;
+  return `${reportArtifact ? '报告已生成' : '报告未生成'} · ${gates} · ${tests}`;
+}
+
+function filteredReportRuns(): WorkflowRunDto[] {
+  if (reportsActiveView === 'attention') return data.runs.filter(reportNeedsAttention);
+  if (reportsActiveView === 'acceptable') return data.runs.filter(reportIsAcceptable);
+  if (reportsActiveView === 'running') return data.runs.filter(reportIsRunning);
+  return data.runs;
+}
+
+function setReportsView(view: ReportViewId): void {
+  reportsActiveView = view;
+  render();
+}
+
 function renderReportsPage(): HTMLElement {
+  const stats = reportStats(data.runs);
+  const rows = filteredReportRuns();
   return el('section', {
-    class: 'page-stack',
+    class: 'reports-page stack',
     children: [
+      renderReportsOverview(stats),
       renderActiveReportDetail(),
       el('section', {
-        class: 'panel',
+        class: 'panel reports-list-panel',
         children: [
-          panelHeader('Completion Reports', '按 run 聚合状态、测试、gate 与报告产物'),
-          data.runs.length
-            ? el('div', { class: 'report-list', children: data.runs.map(renderReportRow) })
-            : el('p', { class: 'muted', text: '暂无报告。' }),
+          panelHeader('交付报告中心', '按验收状态、失败风险和证据完整度查看交付结果。'),
+          renderReportTabs(stats),
+          rows.length
+            ? el('div', { class: 'report-list', children: rows.map(renderReportRow) })
+            : renderReportsEmptyState(),
         ],
       }),
     ],
   });
 }
 
+function renderReportsOverview(stats: ReturnType<typeof reportStats>): HTMLElement {
+  return el('section', {
+    class: 'reports-overview-grid',
+    children: [
+      el('article', {
+        class: 'panel reports-overview-card',
+        children: [
+          panelHeader('交付概览', '先判断哪些交付可以验收。'),
+          el('div', {
+            class: 'settings-kpi-row',
+            children: [metric('可验收', String(stats.acceptable), '已完成交付', stats.acceptable ? 'good' : 'muted'), metric('需处理', String(stats.attention), '失败或等待人工', stats.attention ? 'warn' : 'good')],
+          }),
+          configSummaryItem('报告总数', `${stats.total} 个`),
+        ],
+      }),
+      el('article', {
+        class: 'panel reports-overview-card',
+        children: [
+          panelHeader('风险队列', '优先处理失败和等待确认。'),
+          metric('失败', String(stats.failed), '需要看证据', stats.failed ? 'bad' : 'good'),
+          el('p', { class: 'muted compact', text: stats.attention ? '先打开需处理项，查看失败证据或人工确认点。' : '当前没有阻塞交付的报告。' }),
+        ],
+      }),
+      el('article', {
+        class: 'panel reports-overview-card',
+        children: [
+          panelHeader('执行进度', '还在生成中的交付。'),
+          metric('执行中', String(stats.running), '报告会自动更新', stats.running ? 'info' : 'muted'),
+          configSummaryItem('已完成', `${stats.completed} 个`),
+        ],
+      }),
+    ],
+  });
+}
+
+function renderReportTabs(stats: ReturnType<typeof reportStats>): HTMLElement {
+  const tabs: Array<{ id: ReportViewId; label: string; hint: string }> = [
+    { id: 'all', label: '全部', hint: `${stats.total} 个报告` },
+    { id: 'attention', label: '需处理', hint: `${stats.attention} 个需处理` },
+    { id: 'acceptable', label: '可验收', hint: `${stats.acceptable} 个可验收` },
+    { id: 'running', label: '执行中', hint: `${stats.running} 个执行中` },
+  ];
+  return el('div', {
+    class: 'reports-tabs',
+    children: tabs.map((tab) => {
+      const btn = button(tab.label, reportsActiveView === tab.id ? 'tab-button active' : 'tab-button');
+      btn.title = tab.hint;
+      btn.onclick = () => setReportsView(tab.id);
+      return btn;
+    }),
+  });
+}
+
+function renderReportsEmptyState(): HTMLElement {
+  return el('div', {
+    class: 'empty-state reports-empty-state',
+    children: [
+      el('strong', { text: '当前视角没有报告' }),
+      el('p', { class: 'muted compact', text: '切换到“全部”查看所有交付记录，或回到工作台查看正在执行的任务。' }),
+      actionLink('去工作台', 'workbench'),
+    ],
+  });
+}
+
 function renderReportRow(run: WorkflowRunDto): HTMLElement {
-  const open = button('Open', 'button secondary small');
   const request = data.requests.find((candidate) => candidate.workflowRunId === run.id);
+  const open = button('打开任务', 'button secondary small');
   open.onclick = () => (request ? setHash('task', request.id) : setHash('workbench', run.id));
-  const viewReport = button('Report', 'button secondary small');
+  const viewReport = button('查看报告', 'button secondary small');
   viewReport.onclick = () => {
     activeRunId = run.id;
     void loadRunDetail(run.id, true);
   };
   return el('article', {
-    class: 'report-row',
+    class: `report-row report-card ${run.status}`,
     children: [
-      el('div', { children: [el('strong', { text: run.title }), el('small', { text: `${projectName(run.projectId)} · ${fmtTime(run.createdAt)}` })] }),
-      pill(run.status),
-      el('div', { class: 'button-row', children: [viewReport, open] }),
+      el('div', {
+        class: 'report-card-main',
+        children: [
+          el('div', {
+            class: 'report-title-copy',
+            children: [
+              el('strong', { text: run.title }),
+              el('small', { text: `${projectName(run.projectId)} · ${fmtTime(run.createdAt)}` }),
+            ],
+          }),
+          pill(reportStatusLabel(run.status), statusKind(run.status)),
+        ],
+      }),
+      el('div', {
+        class: 'report-card-summary',
+        children: [
+          configSummaryItem('证据摘要', reportEvidenceSummary(run)),
+          configSummaryItem('下一步', reportNextAction(run)),
+        ],
+      }),
+      el('details', {
+        class: 'report-tech-details',
+        attrs: { 'data-details-key': `report-run-tech:${run.id}` },
+        children: [
+          el('summary', { text: '技术详情' }),
+          field('Run', el('code', { text: run.id })),
+          field('分支', el('code', { text: run.branch })),
+          run.workspacePath ? field('Worktree', el('code', { text: run.workspacePath })) : null,
+        ],
+      }),
+      el('div', { class: 'button-row report-actions', children: [viewReport, open] }),
     ],
   });
 }
@@ -4647,109 +5455,568 @@ function renderActiveReportDetail(): HTMLElement | null {
   const reportJson = structuredArtifactText(detail, 'completion_report');
   if (!reportMarkdown && !reportJson) return null;
   const report = parseCompletionReportArtifact(reportMarkdown, reportJson);
+  const reportArtifact = latestArtifactOfKind(detail.artifacts, 'completion_report');
+  const projection = buildRunProjection(detail);
   return el('section', {
     class: 'panel report-detail',
     children: [
-      panelHeader(report.title, `Run ${shortId(detail.run.id)} · 每段可追溯到 evidence`),
-      report.summary.length ? el('div', { class: 'summary-list', children: report.summary.map((item) => el('div', { class: 'summary-item', text: item })) }) : null,
+      panelHeader(report.title, `${reportStatusLabel(detail.run.status)} · ${projectName(detail.run.projectId)} · ${fmtTime(detail.run.createdAt)}`),
+      el('div', {
+        class: 'report-detail-metrics',
+        children: [
+          metric('Gate', `${projection.summary.gatesPassed}/${detail.gates.length}`, `${projection.summary.gatesWarned} warn · ${projection.summary.gatesFailed} fail`, projection.summary.gatesFailed ? 'bad' : 'good'),
+          metric('测试', `${projection.summary.testsPassed}/${projection.summary.testsTotal}`, '自动化测试摘要', projection.summary.testsTotal ? 'good' : 'muted'),
+          metric('命令', String(projection.summary.commands), '执行证据', projection.summary.commands ? 'info' : 'muted'),
+          metric('构建', projection.summary.buildStatus, '构建状态', statusKind(projection.summary.buildStatus)),
+        ],
+      }),
+      report.summary.length
+        ? el('div', { class: 'summary-list', children: report.summary.map((item) => el('div', { class: 'summary-item', text: item })) })
+        : el('p', { class: 'muted compact', text: '报告已生成，但没有结构化摘要。' }),
       ...report.sections.map((section) =>
         el('details', {
           class: 'report-section',
+          attrs: { 'data-details-key': `completion-report-section:${detail.run.id}:${section.title}` },
           children: [
             el('summary', { text: section.title }),
             el('pre', { class: 'doc-preview', text: previewText(section.body) }),
           ],
         }),
       ),
+      el('details', {
+        class: 'report-tech-details',
+        attrs: { 'data-details-key': `completion-report-tech:${detail.run.id}` },
+        children: [
+          el('summary', { text: '报告来源详情' }),
+          field('Run', el('code', { text: detail.run.id })),
+          reportArtifact ? field('Artifact', el('code', { text: reportArtifact.id })) : null,
+          reportArtifact ? field('URI', el('code', { text: reportArtifact.uri })) : null,
+          field('Worktree', el('code', { text: detail.run.workspacePath ?? '尚未准备' })),
+        ],
+      }),
     ],
   });
 }
 
-function renderKnowledgeSuggestion(
-  suggestion: KnowledgeSuggestion,
-  index: number,
-  detail: RunDetail,
-): HTMLElement {
-  const runId = detail.run.id;
-  const key = `${runId}:${index}`;
-  const targetId = `KS-${String(index + 1).padStart(3, '0')}`;
-  const persisted = detail.actions
-    .filter((action) => action.kind === 'knowledge_suggestion_action' && action.targetId === targetId)
-    .at(-1);
-  const decision = persisted?.action ?? knowledgeDecisions.get(key);
-  const persistedText = typeof persisted?.payload.text === 'string' ? persisted.payload.text : null;
-  const text = persistedText ?? knowledgeEdits.get(key) ?? suggestion.text;
-  const accept = button(decision === 'accepted' ? '已接受' : '接受', 'button secondary small');
-  const edit = button(decision === 'edited' ? '已编辑' : '编辑', 'button secondary small');
-  const ignore = button(decision === 'ignored' ? '已忽略' : '忽略', 'button secondary small');
-  accept.onclick = () => void submitKnowledgeAction(detail.run.id, targetId, 'accepted', {
-    text,
-    kind: suggestion.kind,
-    evidence: suggestion.evidence,
+function knowledgeDecision(value: string | undefined): KnowledgeActionDecision | undefined {
+  if (value === 'accepted' || value === 'edited' || value === 'ignored') return value;
+  return undefined;
+}
+
+function knowledgeSuggestionItems(detail: RunDetail, suggestions: KnowledgeSuggestion[]): KnowledgeSuggestionItem[] {
+  return suggestions.map((suggestion, index) => {
+    const key = `${detail.run.id}:${index}`;
+    const targetId = `KS-${String(index + 1).padStart(3, '0')}`;
+    const persisted = detail.actions
+      .filter((action) => action.kind === 'knowledge_suggestion_action' && action.targetId === targetId)
+      .at(-1);
+    const decision = knowledgeDecision(persisted?.action) ?? knowledgeDecisions.get(key);
+    const persistedText = typeof persisted?.payload.text === 'string' ? persisted.payload.text : null;
+    return {
+      suggestion,
+      index,
+      key,
+      targetId,
+      decision,
+      text: persistedText ?? knowledgeEdits.get(key) ?? suggestion.text,
+    };
   });
-  edit.onclick = () => {
-    const next = window.prompt('编辑 Knowledge 候选', text);
-    if (next !== null && next.trim()) {
-      void submitKnowledgeAction(detail.run.id, targetId, 'edited', {
-        text: next.trim(),
-        originalText: suggestion.text,
-        kind: suggestion.kind,
-        evidence: suggestion.evidence,
-      });
+}
+
+function knowledgeSuggestionKindLabel(kind: KnowledgeSuggestion['kind']): string {
+  switch (kind) {
+    case 'Decision': return '决策';
+    case 'Pitfall': return '踩坑';
+    case 'Pattern': return '模式';
+    case 'Lesson': return '经验';
+  }
+}
+
+function knowledgeSuggestionImpact(kind: KnowledgeSuggestion['kind']): string {
+  switch (kind) {
+    case 'Decision': return '后续遇到同类取舍时，可减少重复讨论。';
+    case 'Pitfall': return '后续任务可优先避开同类失败路径。';
+    case 'Pattern': return '后续实现可复用这套做法，保持项目一致性。';
+    case 'Lesson': return '后续任务可把这条经验放入上下文，减少返工。';
+  }
+}
+
+function knowledgeActionLabel(action: KnowledgeActionDecision | undefined): string {
+  if (action === 'accepted') return '已收录';
+  if (action === 'edited') return '编辑后收录';
+  if (action === 'ignored') return '已忽略';
+  return '待确认';
+}
+
+function knowledgeActionKind(action: KnowledgeActionDecision | undefined): StatusKind {
+  if (action === 'accepted' || action === 'edited') return 'good';
+  if (action === 'ignored') return 'muted';
+  return 'warn';
+}
+
+function knowledgeSuggestionTitle(item: KnowledgeSuggestionItem): string {
+  const text = item.text.trim();
+  const firstSentence = text.split(/[。.!?？]/).find((part) => part.trim())?.trim() ?? text;
+  if (!firstSentence) return `${knowledgeSuggestionKindLabel(item.suggestion.kind)}建议 ${item.index + 1}`;
+  return firstSentence.length > 32 ? `${firstSentence.slice(0, 31)}…` : firstSentence;
+}
+
+function renderKnowledgeSuggestionEditor(item: KnowledgeSuggestionItem, detail: RunDetail): HTMLElement {
+  const draft = knowledgeEditDrafts.get(item.key) ?? item.text;
+  const editor = el('textarea', {
+    class: 'knowledge-edit-textarea',
+    attrs: {
+      rows: '5',
+      'data-knowledge-edit-key': item.key,
+      placeholder: '编辑后收录为项目知识…',
+    },
+  });
+  editor.value = draft;
+  editor.addEventListener('input', () => knowledgeEditDrafts.set(item.key, editor.value));
+  editor.addEventListener('compositionstart', () => {
+    knowledgeEditComposing = { key: item.key };
+  });
+  editor.addEventListener('compositionend', () => {
+    knowledgeEditDrafts.set(item.key, editor.value);
+    knowledgeEditComposing = null;
+    if (knowledgeEditRenderDeferred) {
+      knowledgeEditRenderDeferred = false;
+      queueMicrotask(() => render());
     }
-  };
-  ignore.onclick = () => void submitKnowledgeAction(detail.run.id, targetId, 'ignored', {
-    text,
-    kind: suggestion.kind,
-    evidence: suggestion.evidence,
+  });
+  editor.addEventListener('blur', () => {
+    if (knowledgeEditComposing?.key === item.key) {
+      knowledgeEditComposing = null;
+      if (knowledgeEditRenderDeferred) {
+        knowledgeEditRenderDeferred = false;
+        queueMicrotask(() => render());
+      }
+    }
   });
 
-  // Optimistic local fallback is kept only for transient render state before
-  // the persisted workflow action comes back in the run detail.
-  accept.onmousedown = () => {
-    knowledgeDecisions.set(key, 'accepted');
+  const save = button('保存为知识', 'button primary small');
+  save.onclick = () => {
+    const next = (knowledgeEditDrafts.get(item.key) ?? editor.value).trim();
+    if (!next) return;
+    knowledgeEditing.delete(item.key);
+    void submitKnowledgeAction(detail.run.id, item.targetId, 'edited', {
+      text: next,
+      originalText: item.suggestion.text,
+      kind: item.suggestion.kind,
+      evidence: item.suggestion.evidence,
+    });
   };
-  ignore.onmousedown = () => {
-    knowledgeDecisions.set(key, 'ignored');
+  const cancel = button('取消', 'button secondary small');
+  cancel.onclick = () => {
+    knowledgeEditing.delete(item.key);
+    knowledgeEditDrafts.delete(item.key);
+    render();
   };
+
+  return el('div', {
+    class: 'knowledge-edit-box',
+    children: [editor, el('div', { class: 'button-row', children: [save, cancel] })],
+  });
+}
+
+function renderKnowledgeSuggestion(item: KnowledgeSuggestionItem, detail: RunDetail): HTMLElement {
+  const accept = button(item.decision === 'accepted' ? '已收录' : '收录', 'button secondary small');
+  accept.onclick = () => void submitKnowledgeAction(detail.run.id, item.targetId, 'accepted', {
+    text: item.text,
+    kind: item.suggestion.kind,
+    evidence: item.suggestion.evidence,
+  });
+
+  const edit = button(item.decision === 'edited' ? '已编辑' : '编辑后收录', 'button secondary small');
+  edit.onclick = () => {
+    knowledgeEditing.add(item.key);
+    knowledgeEditDrafts.set(item.key, item.text);
+    render();
+  };
+
+  const ignore = button(item.decision === 'ignored' ? '已忽略' : '忽略', 'button secondary small');
+  ignore.onclick = () => void submitKnowledgeAction(detail.run.id, item.targetId, 'ignored', {
+    text: item.text,
+    kind: item.suggestion.kind,
+    evidence: item.suggestion.evidence,
+  });
+
   return el('article', {
-    class: `knowledge-card ${decision ?? ''}`,
+    class: `knowledge-card ${item.decision ?? ''}`,
     children: [
-      el('div', { class: 'knowledge-head', children: [pill(suggestion.kind, 'info'), decision ? pill(decision, decision === 'ignored' ? 'muted' : 'good') : null] }),
-      el('p', { text }),
-      suggestion.evidence ? el('small', { text: `Evidence: ${suggestion.evidence}` }) : null,
+      el('div', {
+        class: 'knowledge-head',
+        children: [
+          el('div', {
+            class: 'knowledge-title-copy',
+            children: [
+              el('strong', { text: knowledgeSuggestionTitle(item) }),
+              el('small', { text: `${knowledgeSuggestionKindLabel(item.suggestion.kind)} · 来自 ${detail.run.title}` }),
+            ],
+          }),
+          el('div', { class: 'chip-row', children: [pill(knowledgeActionLabel(item.decision), knowledgeActionKind(item.decision))] }),
+        ],
+      }),
+      el('p', { class: 'knowledge-summary', text: item.text }),
+      el('div', {
+        class: 'knowledge-impact-grid',
+        children: [
+          configSummaryItem('为什么值得收录', item.suggestion.evidence || '来自本次任务执行证据，可帮助后续任务复用判断。'),
+          configSummaryItem('后续价值', knowledgeSuggestionImpact(item.suggestion.kind)),
+        ],
+      }),
+      knowledgeEditing.has(item.key) ? renderKnowledgeSuggestionEditor(item, detail) : null,
       el('div', { class: 'button-row', children: [accept, edit, ignore] }),
+      el('details', {
+        class: 'knowledge-source-details',
+        attrs: { 'data-details-key': `knowledge-suggestion-source:${item.key}` },
+        children: [
+          el('summary', { text: '来源详情' }),
+          field('来源任务', detail.run.title),
+          field('建议编号', item.targetId),
+          field('Run', el('code', { text: detail.run.id })),
+          item.suggestion.evidence ? field('证据', item.suggestion.evidence) : null,
+        ],
+      }),
+    ],
+  });
+}
+
+function knowledgeArtifactKindLabel(kind: string): string {
+  const labels: Record<string, string> = {
+    requirement: '需求',
+    design: '设计',
+    architecture: '架构',
+    roadmap: '路线图',
+    decision: '决策',
+    lesson: '经验',
+    pattern: '模式',
+    explore: '调研',
+    dev_guide: '开发指南',
+    api_doc: 'API 文档',
+  };
+  return labels[kind] ?? kind;
+}
+
+function knowledgeStatusLabel(status: KnowledgeArtifactDto['status']): string {
+  if (status === 'accepted') return '已收录';
+  if (status === 'draft') return '草稿';
+  return '已被替代';
+}
+
+function knowledgeStatusKind(status: KnowledgeArtifactDto['status']): StatusKind {
+  if (status === 'accepted') return 'good';
+  if (status === 'draft') return 'warn';
+  return 'muted';
+}
+
+function metadataString(artifact: KnowledgeArtifactDto, key: string): string | null {
+  const value = artifact.metadata[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function metadataNumber(artifact: KnowledgeArtifactDto, key: string): number | null {
+  const value = artifact.metadata[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function metadataStringArray(artifact: KnowledgeArtifactDto, key: string): string[] {
+  const value = artifact.metadata[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
+}
+
+function knowledgeArtifactTitle(artifact: KnowledgeArtifactDto): string {
+  return metadataString(artifact, 'title')
+    ?? artifact.entityId
+    ?? `${knowledgeArtifactKindLabel(artifact.kind)} ${shortId(artifact.id)}`;
+}
+
+function knowledgeArtifactSummary(artifact: KnowledgeArtifactDto): string {
+  const text = metadataString(artifact, 'text') ?? metadataString(artifact, 'summary') ?? '';
+  if (text) return text.length > 180 ? `${text.slice(0, 179)}…` : text;
+  const sourceRefs = metadataStringArray(artifact, 'sourceRefs');
+  if (sourceRefs.length) return `从 ${sourceRefs.slice(0, 2).join('、')} 沉淀。`;
+  return '这条知识已进入项目知识库，可被后续任务检索引用。';
+}
+
+function knowledgeArtifactTrustLabel(artifact: KnowledgeArtifactDto): string {
+  const knowledgeClass = metadataString(artifact, 'knowledgeClass');
+  const trustLevel = metadataString(artifact, 'trustLevel');
+  if (knowledgeClass === 'confirmed') return '已确认';
+  if (knowledgeClass === 'seed') return '种子知识';
+  if (knowledgeClass === 'recovered') return '恢复知识';
+  if (trustLevel === 'accepted_knowledge') return '已验收';
+  if (trustLevel === 'source') return '源码依据';
+  return '待校准';
+}
+
+function knowledgeArtifactLastUsed(artifact: KnowledgeArtifactDto): string {
+  const lastUsedAt = metadataString(artifact, 'lastUsedAt');
+  if (lastUsedAt) return fmtTime(lastUsedAt);
+  const hitCount = metadataNumber(artifact, 'hitCount');
+  if (hitCount && hitCount > 0) return `${hitCount} 次引用`;
+  return '尚未引用';
+}
+
+function knowledgeArtifactNeedsMaintenance(artifact: KnowledgeArtifactDto): boolean {
+  if (artifact.status !== 'accepted') return true;
+  if (metadataString(artifact, 'freshness') === 'possibly_stale') return true;
+  const confidence = metadataNumber(artifact, 'confidence');
+  return confidence !== null && confidence < 0.55;
+}
+
+function renderKnowledgeArtifactCard(artifact: KnowledgeArtifactDto): HTMLElement {
+  const sourceRefs = metadataStringArray(artifact, 'sourceRefs');
+  const lastUsedRun = metadataString(artifact, 'lastUsedInWorkflowRunId');
+  return el('article', {
+    class: `knowledge-asset-card ${artifact.status}`,
+    children: [
+      el('div', {
+        class: 'knowledge-head',
+        children: [
+          el('div', {
+            class: 'knowledge-title-copy',
+            children: [
+              el('strong', { text: knowledgeArtifactTitle(artifact) }),
+              el('small', { text: `${knowledgeArtifactKindLabel(artifact.kind)} · v${artifact.version}` }),
+            ],
+          }),
+          el('div', { class: 'chip-row', children: [pill(knowledgeStatusLabel(artifact.status), knowledgeStatusKind(artifact.status)), pill(knowledgeArtifactTrustLabel(artifact), 'info')] }),
+        ],
+      }),
+      el('p', { class: 'knowledge-summary', text: knowledgeArtifactSummary(artifact) }),
+      el('div', {
+        class: 'knowledge-impact-grid',
+        children: [
+          configSummaryItem('适用范围', metadataString(artifact, 'subtype') ?? artifact.subtype ?? knowledgeArtifactKindLabel(artifact.kind)),
+          configSummaryItem('最近引用', knowledgeArtifactLastUsed(artifact)),
+        ],
+      }),
+      el('details', {
+        class: 'knowledge-source-details',
+        attrs: { 'data-details-key': `knowledge-artifact-tech:${artifact.id}` },
+        children: [
+          el('summary', { text: '技术详情' }),
+          field('Artifact', el('code', { text: artifact.id })),
+          artifact.entityId ? field('Entity', el('code', { text: artifact.entityId })) : null,
+          field('URI', el('code', { text: artifact.uri })),
+          field('更新时间', fmtTime(artifact.updatedAt)),
+          lastUsedRun ? field('最近引用 Run', el('code', { text: lastUsedRun })) : null,
+          sourceRefs.length ? field('来源', sourceRefs.join('、')) : null,
+        ],
+      }),
+    ],
+  });
+}
+
+function setKnowledgeView(view: KnowledgeViewId): void {
+  knowledgeActiveView = view;
+  render();
+}
+
+function selectedKnowledgeView(pendingCount: number): KnowledgeViewId {
+  if (knowledgeActiveView) return knowledgeActiveView;
+  return pendingCount > 0 ? 'pending' : 'accepted';
+}
+
+function renderKnowledgeEmptyState(title: string, message: string, actions: HTMLElement[] = []): HTMLElement {
+  return el('div', {
+    class: 'empty-state knowledge-empty-state',
+    children: [
+      el('strong', { text: title }),
+      el('p', { class: 'muted compact', text: message }),
+      actions.length ? el('div', { class: 'button-row', children: actions }) : null,
+    ],
+  });
+}
+
+function renderKnowledgeOverview(
+  project: ProjectDto | null,
+  detail: RunDetail | null,
+  items: KnowledgeSuggestionItem[],
+  artifacts: KnowledgeArtifactDto[],
+): HTMLElement {
+  const pending = items.filter((item) => !item.decision).length;
+  const accepted = artifacts.filter((artifact) => artifact.status === 'accepted').length;
+  const maintenance = artifacts.filter(knowledgeArtifactNeedsMaintenance).length;
+  const lastUsed = artifacts
+    .map((artifact) => metadataString(artifact, 'lastUsedAt'))
+    .filter((value): value is string => Boolean(value))
+    .sort((a, b) => b.localeCompare(a))[0] ?? null;
+  const refresh = button(knowledgeArtifactsState.loading ? '刷新中…' : '刷新知识', 'button secondary small');
+  refresh.disabled = !project || knowledgeArtifactsState.loading;
+  refresh.onclick = () => {
+    if (project) void loadKnowledgeArtifacts(project.id);
+  };
+  const openCurrentTask = button(detail ? '查看任务结果' : '去工作台', 'button secondary');
+  openCurrentTask.onclick = () => {
+    const request = detail ? data.requests.find((candidate) => candidate.workflowRunId === detail.run.id) : null;
+    if (request) setHash('task', request.id);
+    else setHash('workbench');
+  };
+
+  return el('section', {
+    class: 'knowledge-overview-grid',
+    children: [
+      el('article', {
+        class: 'panel knowledge-overview-card',
+        children: [
+          panelHeader('知识库概览', '项目经验如何影响后续任务。'),
+          el('div', {
+            class: 'settings-kpi-row',
+            children: [metric('已收录', String(accepted), project?.name ?? '未选择项目', accepted ? 'good' : 'muted'), metric('待维护', String(maintenance), '过期、草稿或低可信', maintenance ? 'warn' : 'good')],
+          }),
+          configSummaryItem('最近引用', lastUsed ? fmtTime(lastUsed) : '尚未被后续任务引用'),
+          refresh,
+        ],
+      }),
+      el('article', {
+        class: 'panel knowledge-overview-card',
+        children: [
+          panelHeader('待确认建议', '任务结束后先由人判断是否值得沉淀。'),
+          metric('待处理', String(pending), items.length ? `${items.length} 条来自当前任务` : '当前任务暂无建议', pending ? 'warn' : 'good'),
+          el('p', { class: 'muted compact', text: pending ? '先处理建议，再确认入库，后续任务才会引用。' : '当前没有需要你处理的知识建议。' }),
+          openCurrentTask,
+        ],
+      }),
+      el('article', {
+        class: 'panel knowledge-overview-card',
+        children: [
+          panelHeader('已收录知识', '可被 ContextPack 放入后续任务上下文。'),
+          metric('项目知识', String(artifacts.length), `${accepted} 条可用`, accepted ? 'good' : 'muted'),
+          configSummaryItem('知识类型', `${new Set(artifacts.map((artifact) => artifact.kind)).size} 类`),
+          el('p', { class: 'muted compact', text: '点击下方“已收录”查看摘要，技术来源默认折叠。' }),
+        ],
+      }),
+    ],
+  });
+}
+
+function renderKnowledgePendingView(detail: RunDetail | null, items: KnowledgeSuggestionItem[]): HTMLElement {
+  const pendingKnowledge = detail?.run.status === 'awaiting_human' && detail.run.currentStage === 'knowledge';
+  const approve = pendingKnowledge ? button('确认已处理建议并入库', 'button primary') : null;
+  if (approve && detail) {
+    approve.onclick = async () => {
+      await submitApproval(detail.run.id, 'knowledge_gate', true);
+      const project = selectedProject();
+      if (project) await loadKnowledgeArtifacts(project.id, false);
+      render();
+    };
+  }
+  const openTask = button(detail ? '查看任务结果' : '去工作台', 'button secondary');
+  openTask.onclick = () => {
+    const request = detail ? data.requests.find((candidate) => candidate.workflowRunId === detail.run.id) : null;
+    if (request) setHash('task', request.id);
+    else setHash('workbench');
+  };
+
+  return el('div', {
+    class: 'stack',
+    children: [
+      items.length && detail
+        ? el('div', { class: 'knowledge-list', children: items.map((item) => renderKnowledgeSuggestion(item, detail)) })
+        : renderKnowledgeEmptyState('当前没有待确认的知识建议', '任务完成并生成可复用经验后，会在这里显示建议。你可以先查看已收录知识，或回到工作台选择一个任务。', [openTask]),
+      approve,
+    ],
+  });
+}
+
+function renderKnowledgeAcceptedView(artifacts: KnowledgeArtifactDto[]): HTMLElement {
+  if (knowledgeArtifactsState.loading) {
+    return renderKnowledgeEmptyState('正在读取项目知识', '系统正在加载这个项目已经收录的知识。');
+  }
+  if (knowledgeArtifactsState.error) {
+    return renderKnowledgeEmptyState('知识加载失败', knowledgeArtifactsState.error);
+  }
+  if (!artifacts.length) {
+    return renderKnowledgeEmptyState('还没有已收录知识', '当任务产生有价值的经验并经过确认后，会出现在这里，供后续任务自动引用。');
+  }
+  return el('div', { class: 'knowledge-list', children: artifacts.map(renderKnowledgeArtifactCard) });
+}
+
+function renderKnowledgeUsageView(artifacts: KnowledgeArtifactDto[]): HTMLElement {
+  const used = artifacts.filter((artifact) => metadataString(artifact, 'lastUsedAt') || (metadataNumber(artifact, 'hitCount') ?? 0) > 0);
+  if (!used.length) {
+    return renderKnowledgeEmptyState('暂无引用记录', '当后续任务把某条知识放入上下文后，这里会显示最近引用时间、任务和引用方式。');
+  }
+  return el('div', {
+    class: 'knowledge-list',
+    children: used.map((artifact) => el('article', {
+      class: 'knowledge-usage-row',
+      children: [
+        el('strong', { text: knowledgeArtifactTitle(artifact) }),
+        field('最近引用', knowledgeArtifactLastUsed(artifact)),
+        metadataString(artifact, 'lastUsedMode') ? field('引用方式', metadataString(artifact, 'lastUsedMode')!) : null,
+        metadataString(artifact, 'lastUsedInWorkflowRunId') ? field('来源任务', el('code', { text: metadataString(artifact, 'lastUsedInWorkflowRunId')! })) : null,
+      ],
+    })),
+  });
+}
+
+function renderKnowledgeMaintenanceView(artifacts: KnowledgeArtifactDto[]): HTMLElement {
+  const maintenance = artifacts.filter(knowledgeArtifactNeedsMaintenance);
+  if (!maintenance.length) {
+    return renderKnowledgeEmptyState('当前没有需要维护的知识', '已收录知识没有明显过期、草稿或低可信信号。');
+  }
+  return el('div', {
+    class: 'knowledge-list',
+    children: maintenance.map((artifact) => renderKnowledgeArtifactCard(artifact)),
+  });
+}
+
+function renderKnowledgeWorkspace(
+  detail: RunDetail | null,
+  items: KnowledgeSuggestionItem[],
+  artifacts: KnowledgeArtifactDto[],
+): HTMLElement {
+  const pending = items.filter((item) => !item.decision).length;
+  const activeView = selectedKnowledgeView(pending);
+  const tabs: Array<{ id: KnowledgeViewId; label: string; hint: string }> = [
+    { id: 'pending', label: '待确认', hint: `${pending} 条待处理` },
+    { id: 'accepted', label: '已收录', hint: `${artifacts.filter((artifact) => artifact.status === 'accepted').length} 条可用` },
+    { id: 'usage', label: '引用记录', hint: '后续任务使用情况' },
+    { id: 'maintenance', label: '维护', hint: `${artifacts.filter(knowledgeArtifactNeedsMaintenance).length} 条需关注` },
+  ];
+
+  const content = activeView === 'pending'
+    ? renderKnowledgePendingView(detail, items)
+    : activeView === 'accepted'
+      ? renderKnowledgeAcceptedView(artifacts)
+    : activeView === 'usage'
+      ? renderKnowledgeUsageView(artifacts)
+    : renderKnowledgeMaintenanceView(artifacts);
+
+  return el('section', {
+    class: 'panel knowledge-workspace-panel',
+    children: [
+      panelHeader('项目知识资产', '确认新知识、浏览已收录内容，并检查后续任务是否真的引用。'),
+      el('div', {
+        class: 'knowledge-tabs',
+        children: tabs.map((tab) => {
+          const btn = button(tab.label, activeView === tab.id ? 'tab-button active' : 'tab-button');
+          btn.title = tab.hint;
+          btn.onclick = () => setKnowledgeView(tab.id);
+          return btn;
+        }),
+      }),
+      content,
     ],
   });
 }
 
 function renderKnowledgePage(): HTMLElement {
+  const project = selectedProject();
+  ensureKnowledgeArtifacts(project);
   const detail = data.activeDetail;
   const suggestions = detail ? parsedKnowledge(detail) : [];
-  const pendingKnowledge = detail?.run.status === 'awaiting_human' && detail.run.currentStage === 'knowledge';
-  const approve = pendingKnowledge ? button('确认 accepted/edited 候选入库', 'button primary') : null;
-  if (approve && detail) approve.onclick = () => void submitApproval(detail.run.id, 'knowledge_gate', true);
+  const items = detail ? knowledgeSuggestionItems(detail, suggestions) : [];
+  const artifacts = currentKnowledgeArtifacts();
+
   return el('section', {
-    class: 'page-grid two-col',
+    class: 'knowledge-page stack',
     children: [
-      el('section', {
-        class: 'panel',
-        children: [
-          panelHeader('Knowledge Suggestions', '接受 / 编辑 / 忽略，人工确认后才进入长期 Knowledge Store'),
-          suggestions.length && detail
-            ? el('div', { class: 'stack', children: suggestions.map((s, i) => renderKnowledgeSuggestion(s, i, detail)) })
-            : el('p', { class: 'muted', text: '当前选中的 run 尚未生成 Knowledge Candidate。' }),
-          approve,
-        ],
-      }),
-      el('aside', {
-        class: 'panel',
-        children: [
-          panelHeader('Knowledge Store', '当前 MVP 存储在本地项目知识目录'),
-          detail ? field('Run', shortId(detail.run.id)) : null,
-          el('p', { class: 'muted', text: '下一步可增加按项目浏览 accepted knowledge、失效条件、检索排序。' }),
-        ],
-      }),
+      renderKnowledgeOverview(project, detail, items, artifacts),
+      renderKnowledgeWorkspace(detail, items, artifacts),
     ],
   });
 }
@@ -5037,14 +6304,56 @@ function renderConfigHistoryPanel(key: string): HTMLElement {
   });
 }
 
-function renderConfigRow(key: string): HTMLElement {
-  if (!settingsConfig.registry) return el('div', {});
-  const entry = settingsConfig.registry.entries[key];
-  if (!entry) return el('div', {});
-  const override = settingsConfig.overrides[key];
-  const isOverridden = !!override;
-  const draft = settingsConfig.drafts.get(key);
-  const dirty = draft !== undefined;
+function configStateLabel(row: SettingsRowVM): string {
+  if (row.hasDraft) return '未保存';
+  if (row.hasOverride) return '已覆盖';
+  return '默认值';
+}
+
+function configStateKind(row: SettingsRowVM): StatusKind {
+  if (row.hasDraft) return 'warn';
+  if (row.hasOverride) return 'info';
+  return 'muted';
+}
+
+function configRiskLabel(risk: SettingsRowVM['risk']): string {
+  if (risk === 'high') return '高风险';
+  if (risk === 'medium') return '中风险';
+  return '低风险';
+}
+
+function configRiskKind(risk: SettingsRowVM['risk']): StatusKind {
+  if (risk === 'high') return 'bad';
+  if (risk === 'medium') return 'warn';
+  return 'good';
+}
+
+function configTypeLabel(entry: ConfigEntryDto): string {
+  const parts: string[] = [];
+  if (entry.type === 'number') parts.push('数字');
+  else if (entry.type === 'string_array') parts.push('列表');
+  else parts.push('文本');
+  if (entry.multiline) parts.push('多行');
+  if (entry.min !== undefined) parts.push(`最小 ${entry.min}`);
+  if (entry.max !== undefined) parts.push(`最大 ${entry.max}`);
+  return parts.join(' · ');
+}
+
+function configSummaryItem(label: string, value: Node | string): HTMLElement {
+  const valueNode = typeof value === 'string' ? el('strong', { text: value }) : value;
+  return el('div', {
+    class: 'settings-summary-item',
+    children: [el('span', { text: label }), valueNode],
+  });
+}
+
+function renderConfigRow(row: SettingsRowVM): HTMLElement {
+  const key = row.key;
+  const entry = row.entry;
+  const override = row.override;
+  const isOverridden = row.hasOverride;
+  const draft = row.draftValue;
+  const dirty = row.hasDraft;
   const saving = settingsConfig.saving.has(key);
   const editorValue = draft ?? effectiveValueAsEditorString(entry, override);
   const expandedHistory = settingsConfig.expandedHistory.has(key);
@@ -5065,27 +6374,60 @@ function renderConfigRow(key: string): HTMLElement {
   const historyBtn = button(expandedHistory ? '收起历史' : '历史', 'button secondary');
   historyBtn.onclick = () => void toggleConfigHistory(key);
 
-  const metaParts: string[] = [entry.type];
-  if (entry.multiline) metaParts.push('multiline');
-  if (entry.min !== undefined) metaParts.push(`min=${entry.min}`);
-  if (entry.max !== undefined) metaParts.push(`max=${entry.max}`);
+  const editDetails = el('details', {
+    class: 'config-edit-details',
+    attrs: { 'data-details-key': `settings-edit:${key}` },
+    children: [
+      el('summary', { text: '编辑配置' }),
+      editor,
+      el('div', {
+        class: 'config-actions',
+        children: [saveBtn, resetBtn, copyBtn, historyBtn],
+      }),
+    ],
+  });
+  if (dirty) editDetails.open = true;
+
+  const technicalDetails = el('details', {
+    class: 'config-technical-details',
+    attrs: { 'data-details-key': `settings-tech:${key}` },
+    children: [
+      el('summary', { text: '技术详情' }),
+      field('配置键', el('code', { text: key })),
+      field('类型约束', configTypeLabel(entry)),
+      field('默认来源', el('code', { text: entry.source })),
+      override ? field('覆盖时间', fmtTime(override.updatedAt)) : null,
+    ],
+  });
 
   const children: Array<Node | null | false | undefined> = [
     el('header', {
       class: 'config-row-header',
       children: [
-        el('strong', { class: 'config-key', text: key }),
-        pill(isOverridden ? 'overridden' : 'default'),
-        el('span', { class: 'config-meta', text: metaParts.join(' · ') }),
+        el('div', {
+          class: 'config-title-copy',
+          children: [
+            el('strong', { class: 'config-title', text: row.displayName }),
+            el('p', { class: 'config-description', text: row.displayDescription }),
+          ],
+        }),
+        el('div', {
+          class: 'config-row-badges',
+          children: [pill(configStateLabel(row), configStateKind(row)), pill(configRiskLabel(row.risk), configRiskKind(row.risk))],
+        }),
       ],
     }),
-    el('p', { class: 'muted config-description', text: entry.description }),
-    el('p', { class: 'muted config-source', text: `default 来源: ${entry.source}` }),
-    editor,
     el('div', {
-      class: 'config-actions',
-      children: [saveBtn, resetBtn, copyBtn, historyBtn],
+      class: 'settings-summary-grid config-summary-grid',
+      children: [
+        configSummaryItem('当前值', row.valuePreview),
+        configSummaryItem('状态', configStateLabel(row)),
+        configSummaryItem('风险', configRiskLabel(row.risk)),
+        configSummaryItem('最近变更', row.latestAuditAt ? fmtTime(row.latestAuditAt) : '暂无记录'),
+      ],
     }),
+    editDetails,
+    technicalDetails,
   ];
 
   if (expandedHistory) children.push(renderConfigHistoryPanel(key));
@@ -5096,14 +6438,24 @@ function renderConfigRow(key: string): HTMLElement {
   });
 }
 
-function renderConfigSection(): HTMLElement {
+function currentSettingsViewModel(): SettingsViewModel | null {
+  if (!settingsConfig.registry) return null;
+  return buildSettingsViewModel({
+    registry: settingsConfig.registry,
+    overrides: settingsConfig.overrides,
+    drafts: settingsConfig.drafts,
+    audits: settingsConfig.audits,
+  });
+}
+
+function renderConfigSection(vm: SettingsViewModel | null): HTMLElement {
   if (!settingsConfig.registry) {
     if (settingsConfig.loading) {
       return el('section', {
         class: 'panel',
         children: [
-          panelHeader('运行时配置', '加载中…'),
-          el('p', { class: 'muted', text: '正在拉取 /config/registry 与 /config/overrides…' }),
+          panelHeader('运行配置', '加载中…'),
+          el('p', { class: 'muted', text: '正在读取配置项和当前覆盖值。' }),
         ],
       });
     }
@@ -5111,23 +6463,17 @@ function renderConfigSection(): HTMLElement {
       return el('section', {
         class: 'panel',
         children: [
-          panelHeader('运行时配置', '加载失败'),
+          panelHeader('运行配置', '加载失败'),
           el('p', { class: 'error', text: settingsConfig.error }),
         ],
       });
     }
     return el('section', {
       class: 'panel',
-      children: [panelHeader('运行时配置', '准备加载…')],
+      children: [panelHeader('运行配置', '准备加载…')],
     });
   }
-
-  const vm = buildSettingsViewModel({
-    registry: settingsConfig.registry,
-    overrides: settingsConfig.overrides,
-    drafts: settingsConfig.drafts,
-    audits: settingsConfig.audits,
-  });
+  if (!vm) return el('section', { class: 'panel', children: [panelHeader('运行配置', '准备加载…')] });
 
   const tabBar = el('div', {
     class: 'config-tabs',
@@ -5143,23 +6489,25 @@ function renderConfigSection(): HTMLElement {
   });
 
   const activeTabVm = vm.tabs.find((t) => t.id === settingsConfig.activeTab);
-  const categoryKeys = activeTabVm ? activeTabVm.rows.map((r) => r.key) : [];
+  const categoryRows = activeTabVm?.rows ?? [];
 
   const errorBanner = settingsConfig.error
     ? el('div', { class: 'error-banner', text: settingsConfig.error })
     : null;
 
-  const summarySubtitle = `默认 ⊕ DB override → runner ≤2s 生效 (${vm.summary.totalKeys} keys · ${vm.summary.overrideCount} override · ${vm.summary.dirtyCount} 未保存)`;
+  const summarySubtitle = activeTabVm
+    ? `${activeTabVm.help} · ${categoryRows.length} 项`
+    : `${vm.summary.totalKeys} 项配置`;
 
   const sectionChildren: Array<Node | null> = [
-    panelHeader('运行时配置', summarySubtitle),
+    panelHeader('运行配置', summarySubtitle),
     errorBanner,
     tabBar,
     el('div', {
       class: 'config-list',
-      children: categoryKeys.length === 0
+      children: categoryRows.length === 0
         ? [el('p', { class: 'muted', text: '该分类下暂无配置项。' })]
-        : categoryKeys.map(renderConfigRow),
+        : categoryRows.map(renderConfigRow),
     }),
   ];
 
@@ -5169,56 +6517,129 @@ function renderConfigSection(): HTMLElement {
   });
 }
 
-function renderSettingsPage(): HTMLElement {
-  if (!settingsConfig.loadedOnce && !settingsConfig.loading && !settingsConfig.error) {
-    void loadSettingsConfig();
-  }
-  const backend = agentBackendLabel();
-  const project = selectedProject();
-  const backendStatus = agentBackendStatusForProject(project);
+function settingsOperationalState(project: ProjectDto | null, runner: RunnerDto | null): { label: string; kind: StatusKind; detail: string } {
+  if (settingsConfig.error) return { label: '配置加载失败', kind: 'bad', detail: settingsConfig.error };
+  if (!project) return { label: '需要连接项目', kind: 'warn', detail: '先接入项目后，运行配置才有默认执行上下文。' };
+  if (!project.agentBackend) return { label: '执行方式待配置', kind: 'warn', detail: '项目还没有选择 Claude Code 或 Codex。' };
+  const backend = agentBackendStatusForProject(project);
+  if (backend.kind === 'bad') return { label: '执行方式需处理', kind: 'bad', detail: backend.label };
+  if (!runner) return { label: '执行器待启动', kind: 'warn', detail: '配置可编辑；创建任务时会尝试启动 Runner。' };
+  return { label: '可运行', kind: 'good', detail: `${project.name} · ${agentBackendDisplayName(project.agentBackend)} · Runner ${runner.status}` };
+}
 
-  const decisionsAndRunner = el('section', {
-    class: 'page-grid two-col',
+function renderSettingsOverview(vm: SettingsViewModel | null): HTMLElement {
+  const project = selectedProject();
+  const runner = latestRunner();
+  const operational = settingsOperationalState(project, runner);
+  const overrideCount = vm?.summary.overrideCount ?? Object.keys(settingsConfig.overrides).length;
+  const dirtyCount = vm?.summary.dirtyCount ?? settingsConfig.drafts.size;
+  const totalKeys = vm?.summary.totalKeys ?? settingsConfig.registry?.keys.length ?? 0;
+  const backend = agentBackendStatusForProject(project);
+
+  const refresh = button(settingsConfig.loading ? '刷新中…' : '刷新配置', 'button secondary');
+  refresh.disabled = settingsConfig.loading;
+  refresh.onclick = () => void loadSettingsConfig();
+
+  const checkBackend = button(agentBackendPreflightInFlight.has(project?.id ?? '') ? '检测中…' : '检测执行方式', 'button secondary');
+  checkBackend.disabled = !project?.agentBackend || agentBackendPreflightInFlight.has(project?.id ?? '');
+  checkBackend.onclick = () => {
+    if (project?.agentBackend) void checkAgentBackend(project.agentBackend, project.id);
+  };
+
+  const startRunner = button(runnerStartInFlight ? '启动中…' : '启动执行器', 'button secondary');
+  startRunner.disabled = Boolean(runner) || runnerStartInFlight;
+  startRunner.onclick = () => void ensureRunnerStarted();
+
+  return el('section', {
+    class: 'settings-overview-grid',
     children: [
-      el('section', {
-        class: 'panel',
+      el('article', {
+        class: 'panel settings-overview-card',
         children: [
-          panelHeader('运行决策', 'Local Runner + Git worktree'),
+          panelHeader('运行状态', '当前是否具备执行任务的基础条件。'),
+          pill(operational.label, operational.kind),
+          el('p', { class: 'muted compact', text: operational.detail }),
           el('div', {
-            class: 'decision-list',
+            class: 'settings-summary-grid',
             children: [
-              field('Execution', '本地编译环境（host JDK / Maven / Git）'),
-              field('Isolation', 'Git worktree 隔离工作目录与分支；不是安全沙箱'),
-              field('Quality Boundary', '真实命令 + Gate + Diff + Approval + Audit'),
-              field('Sandbox Policy', '不做 Docker/K8s/microVM/tool-policy 级强制'),
-            ],
-          }),
-          el('div', {
-            class: 'config-grid',
-            children: [
-              metric('Workflow Template', 'Java Maven Standard', '9-stage lifecycle', 'info'),
-              metric('Agent Backend', `${backend} · ${backendStatus.label}`, project ? `Project default: ${project.name}` : 'Project default', backendStatus.kind),
-              metric('Gate Rule Set', 'MVP deterministic', 'requirement/design/diff/build/test', 'good'),
-              metric('Skill Version', 'built-in', 'context/req/design/impl/review', 'muted'),
+              configSummaryItem('项目', project?.name ?? '未接入'),
+              configSummaryItem('执行方式', project?.agentBackend ? `${agentBackendDisplayName(project.agentBackend)} · ${backend.label}` : '未配置'),
+              configSummaryItem('Runner', runner ? runner.status : '未连接'),
+              configSummaryItem('配置项', totalKeys ? `${totalKeys} 项` : '加载中'),
             ],
           }),
         ],
       }),
-      el('section', {
-        class: 'panel',
+      el('article', {
+        class: 'panel settings-overview-card',
         children: [
-          panelHeader('Runner Status', '工具链 heartbeat'),
-          latestRunner()
-            ? el('div', { class: 'stack', children: data.runners.map(renderRunnerCard) })
-            : el('p', { class: 'muted', text: '尚未收到 runner heartbeat。运行 `bun run runner -- doctor` 或 `watch`。' }),
+          panelHeader('配置变更', '只显示需要注意的变更状态。'),
+          el('div', {
+            class: 'settings-kpi-row',
+            children: [
+              metric('已覆盖', String(overrideCount), '覆盖默认值', overrideCount ? 'info' : 'muted'),
+              metric('未保存', String(dirtyCount), dirtyCount ? '需要保存或放弃' : '没有草稿', dirtyCount ? 'warn' : 'good'),
+            ],
+          }),
+          el('p', { class: 'muted compact', text: dirtyCount ? '保存后 Runner 会在短时间内读取新配置。' : '当前没有待保存修改。' }),
+        ],
+      }),
+      el('article', {
+        class: 'panel settings-overview-card',
+        children: [
+          panelHeader('常用操作', '优先处理连接、刷新和执行器状态。'),
+          el('div', { class: 'settings-action-list', children: [refresh, checkBackend, startRunner] }),
+          el('p', { class: 'muted compact', text: '高级配置在下方卡片中单项保存，历史记录按配置项查看。' }),
         ],
       }),
     ],
   });
+}
+
+function renderSettingsDiagnostics(): HTMLElement {
+  const runner = latestRunner();
+  return el('details', {
+    class: 'panel settings-diagnostics',
+    attrs: { 'data-details-key': 'settings-runtime-diagnostics' },
+    children: [
+      el('summary', { text: '运行环境详情' }),
+      el('div', {
+        class: 'settings-diagnostics-grid',
+        children: [
+          el('article', {
+            class: 'inline-panel',
+            children: [
+              panelHeader('执行策略', 'Local Runner + Git worktree'),
+              field('执行环境', '本机 JDK / Maven / Git'),
+              field('隔离方式', 'Git worktree 隔离工作目录与分支'),
+              field('质量边界', '真实命令 + Gate + Diff + Approval + Audit'),
+              field('安全边界', '不做容器或微虚拟机级强制沙箱'),
+            ],
+          }),
+          el('article', {
+            class: 'inline-panel',
+            children: [
+              panelHeader('执行器诊断', runner ? `${runner.status} · ${fmtTime(runner.lastSeenAt)}` : '尚未连接'),
+              runner
+                ? el('div', { class: 'stack', children: data.runners.map(renderRunnerCard) })
+                : el('p', { class: 'muted compact', text: '尚未收到 Runner heartbeat。需要时可启动执行器或在命令行排查。' }),
+            ],
+          }),
+        ],
+      }),
+    ],
+  });
+}
+
+function renderSettingsPage(): HTMLElement {
+  if (!settingsConfig.loadedOnce && !settingsConfig.loading && !settingsConfig.error) {
+    void loadSettingsConfig();
+  }
+  const vm = currentSettingsViewModel();
 
   return el('section', {
-    class: 'stack',
-    children: [decisionsAndRunner, renderConfigSection()],
+    class: 'settings-page stack',
+    children: [renderSettingsOverview(vm), renderSettingsDiagnostics(), renderConfigSection(vm)],
   });
 }
 
@@ -5364,6 +6785,8 @@ async function submitKnowledgeAction(
         payload,
       }),
     });
+    knowledgeEditing.delete(key);
+    knowledgeEditDrafts.delete(key);
     await loadRunDetail(workflowRunId, false);
     await loadData({ render: false, keepDetail: true });
   } catch (err) {

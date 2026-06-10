@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { USER_VISIBLE_STAGES, artifactViewerScrollKey, buildRunProjection, isReadableFileArtifact, latestArtifactOfKind } from '../src/projection';
+import {
+  USER_VISIBLE_STAGES,
+  artifactViewerScrollKey,
+  buildRunProjection,
+  isReadableFileArtifact,
+  latestArtifactOfKind,
+  stagesForRun,
+  visibleStagesForRun,
+} from '../src/projection';
 
 describe('web workflow run projection', () => {
   it('marks the current awaiting-human stage as blocked with the matching approval gate', () => {
@@ -152,5 +160,141 @@ describe('web workflow run projection', () => {
         'design_doc',
       )?.id,
     ).toBe('new');
+  });
+});
+
+describe('flow-aware lifecycle stages', () => {
+  it('shows the feature.fastforward subset (implementation → completion)', () => {
+    expect(visibleStagesForRun('feature.fastforward', null)).toEqual([
+      'implementation',
+      'build_test',
+      'review',
+      'completion',
+    ]);
+  });
+
+  it('shows the issue.standard track starting at report', () => {
+    expect(visibleStagesForRun('issue.standard', null)).toEqual([
+      'report',
+      'analyze',
+      'implementation',
+      'build_test',
+      'review',
+      'completion',
+    ]);
+  });
+
+  it('shows the refactor.standard track starting at scan', () => {
+    expect(visibleStagesForRun('refactor.standard', null)).toEqual([
+      'scan',
+      'plan',
+      'implementation',
+      'build_test',
+      'review',
+      'completion',
+    ]);
+  });
+
+  it('drops only context_pack for the standard feature flow', () => {
+    expect(stagesForRun('feature.standard', null)).toContain('context_pack');
+    expect(visibleStagesForRun('feature.standard', null)).not.toContain('context_pack');
+    expect(visibleStagesForRun('feature.standard', null)).toEqual(USER_VISIBLE_STAGES);
+  });
+
+  it('slices the flow at startStage', () => {
+    expect(visibleStagesForRun('feature.standard', 'implementation')).toEqual([
+      'implementation',
+      'build_test',
+      'review',
+      'completion',
+      'knowledge',
+    ]);
+  });
+
+  it('falls back to feature.standard for a missing/unknown flowId', () => {
+    expect(stagesForRun(undefined, null)).toEqual(stagesForRun('feature.standard', null));
+  });
+});
+
+describe('buildRunProjection for non-feature flows', () => {
+  it('projects a refactor run against its own stages, not the feature pipeline', () => {
+    const projection = buildRunProjection({
+      run: {
+        id: 'run_refactor',
+        title: 'Extract service layer',
+        status: 'running',
+        currentStage: 'plan',
+        flowId: 'refactor.standard',
+        startStage: null,
+        branch: 'ai/run_refactor-extract',
+        workspacePath: '/tmp/worktree',
+        projectId: 'proj_1',
+        createdAt: '2026-05-01T00:00:00.000Z',
+      },
+      steps: [
+        { id: 'step_scan', stage: 'scan', name: 'scan', status: 'passed' },
+        { id: 'step_plan', stage: 'plan', name: 'plan', status: 'running' },
+      ],
+      commands: [],
+      gates: [],
+      artifacts: [],
+      builds: [],
+      tests: [],
+      approvals: [],
+      agentTasks: [],
+      agentResults: [],
+      audit: [],
+    });
+
+    expect(projection.flowId).toBe('refactor.standard');
+    expect(projection.visibleStages.map((s) => s.id)).toEqual([
+      'scan',
+      'plan',
+      'implementation',
+      'build_test',
+      'review',
+      'completion',
+    ]);
+    expect(projection.stages.find((s) => s.id === 'scan')?.state).toBe('done');
+    expect(projection.stages.find((s) => s.id === 'plan')?.state).toBe('active');
+    // Feature-only stages must not appear for a refactor run.
+    expect(projection.stages.find((s) => s.id === 'requirement')).toBeUndefined();
+    expect(projection.stages.find((s) => s.id === 'design')).toBeUndefined();
+  });
+
+  it('marks an issue run blocked at its acceptance gate', () => {
+    const projection = buildRunProjection({
+      run: {
+        id: 'run_issue',
+        title: 'Fix null pointer',
+        status: 'awaiting_human',
+        currentStage: 'review',
+        flowId: 'issue.standard',
+        startStage: null,
+        branch: 'ai/run_issue-npe',
+        workspacePath: '/tmp/worktree',
+        projectId: 'proj_1',
+        createdAt: '2026-05-01T00:00:00.000Z',
+      },
+      steps: [
+        { id: 'step_report', stage: 'report', name: 'report', status: 'passed' },
+        { id: 'step_analyze', stage: 'analyze', name: 'analyze', status: 'passed' },
+        { id: 'step_impl', stage: 'implementation', name: 'implementation', status: 'passed' },
+        { id: 'step_review', stage: 'review', name: 'review', status: 'running' },
+      ],
+      commands: [],
+      gates: [{ id: 'g_acc', gateId: 'acceptance_gate', status: 'pass', decidedAt: '', ruleResults: [] }],
+      artifacts: [],
+      builds: [],
+      tests: [],
+      approvals: [],
+      agentTasks: [],
+      agentResults: [],
+      audit: [],
+    });
+
+    expect(projection.pendingGate).toBe('acceptance_gate');
+    expect(projection.stages.find((s) => s.id === 'report')?.state).toBe('done');
+    expect(projection.stages.find((s) => s.id === 'review')?.state).toBe('blocked');
   });
 });

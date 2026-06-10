@@ -16,6 +16,32 @@ function fakeDecision(overrides: Partial<CoordinatorDecision> = {}): Coordinator
 }
 
 describe('runner watch workflow request processing', () => {
+  it('builds an agent-facing brief from the persisted clarification conversation', async () => {
+    const { buildClarifiedTaskBrief } = await import('../src/cmd/watch');
+
+    const brief = buildClarifiedTaskBrief({
+      title: 'Build import workflow',
+      messages: [
+        { role: 'user', content: 'I need importing from CSV.' },
+        { role: 'coordinator', content: 'Which columns and validation rules matter?' },
+        { role: 'user', content: 'Name and email are required; duplicates should be skipped.' },
+      ],
+    });
+
+    expect(brief).toContain('Original request title:');
+    expect(brief).toContain('Build import workflow');
+    expect(brief).toContain('Coordinator: Which columns and validation rules matter?');
+    expect(brief).toContain('User: Name and email are required; duplicates should be skipped.');
+  });
+
+  it('keeps title-only behavior when no clarification messages exist', async () => {
+    const { buildClarifiedTaskBrief } = await import('../src/cmd/watch');
+
+    expect(buildClarifiedTaskBrief({ title: '  Build import workflow  ', messages: [] })).toBe(
+      '  Build import workflow  ',
+    );
+  });
+
   it('claims the oldest pending request, orchestrates it, and completes it', async () => {
     const { processNextWorkflowRequest } = await import('../src/cmd/watch');
     const calls: string[] = [];
@@ -49,6 +75,55 @@ describe('runner watch workflow request processing', () => {
       'orchestrate:proj_1:build UI workbench:develop:feature',
       'complete:wreq_1:run_1:true',
     ]);
+  });
+
+  it('passes a clarified brief to orchestration while preserving the request title', async () => {
+    const { buildClarifiedTaskBrief, processNextWorkflowRequest } = await import('../src/cmd/watch');
+    const calls: string[] = [];
+    const captured: { title?: string; agentTaskBrief?: string } = {};
+
+    const result = await processNextWorkflowRequest({
+      runnerId: 'runner@test',
+      listPending: async () => [
+        { id: 'wreq_chat', projectId: 'proj_1', title: 'Build import workflow', branch: 'main' },
+      ],
+      triage: async () => ({ action: 'proceed', runType: 'feature', decision: fakeDecision() }),
+      claim: async (requestId) => ({
+        id: requestId,
+        projectId: 'proj_1',
+        title: 'Build import workflow',
+        branch: 'main',
+      }),
+      buildAgentTaskBrief: async (request) => {
+        calls.push(`brief:${request.id}:${request.title}`);
+        return buildClarifiedTaskBrief({
+          title: request.title,
+          messages: [
+            { role: 'user', content: 'I need importing from CSV.' },
+            { role: 'coordinator', content: 'Which columns and validation rules matter?' },
+            { role: 'user', content: 'Name and email are required; duplicates should be skipped.' },
+          ],
+        });
+      },
+      orchestrate: async (request, runType, agentTaskBrief) => {
+        calls.push(`orchestrate:${request.title}:${runType}`);
+        captured.title = request.title;
+        captured.agentTaskBrief = agentTaskBrief;
+        return { workflowRunId: 'run_chat', ok: true };
+      },
+      complete: async () => {},
+    });
+
+    expect(result).toBe('processed');
+    expect(calls).toEqual([
+      'brief:wreq_chat:Build import workflow',
+      'orchestrate:Build import workflow:feature',
+    ]);
+    expect(captured.title).toBe('Build import workflow');
+    expect(captured.agentTaskBrief).toContain('Coordinator: Which columns and validation rules matter?');
+    expect(captured.agentTaskBrief).toContain(
+      'User: Name and email are required; duplicates should be skipped.',
+    );
   });
 
   it('marks the request failed when orchestration throws after claim', async () => {

@@ -78,6 +78,7 @@ describe('buildSettingsViewModel — registry → 4 tabs grouping', () => {
     });
 
     expect(vm.tabs.map((t) => t.id)).toEqual(['coordinator', 'skill_prompts', 'runtime', 'context_policy']);
+    expect(vm.tabs.map((t) => t.label)).toEqual(['任务理解', '提示词', '运行环境', '上下文策略']);
     expect(vm.tabs.find((t) => t.id === 'coordinator')!.rows).toHaveLength(14);
     expect(vm.tabs.find((t) => t.id === 'skill_prompts')!.rows).toHaveLength(5);
     expect(vm.tabs.find((t) => t.id === 'runtime')!.rows).toHaveLength(5);
@@ -98,6 +99,31 @@ describe('buildSettingsViewModel — registry → 4 tabs grouping', () => {
     });
     expect(vm.perKey.size).toBe(1);
     expect(vm.perKey.has('missing')).toBe(false);
+  });
+
+  it('adds user-facing row names, value previews, and risk levels for settings cards', () => {
+    const vm = buildSettingsViewModel({
+      registry: {
+        keys: ['coordinator.confidence_threshold', 'skill.implementation.instructions'],
+        entries: {
+          'coordinator.confidence_threshold': entry('coordinator', 'number', 0.65, '规则置信度 ≥ 此值则跳过 LLM 兜底'),
+          'skill.implementation.instructions': entry('skill_prompts', 'string', '第一行\n第二行', 'Stage 3 implementation 的 prompt'),
+        },
+      },
+      overrides: {},
+      drafts: new Map(),
+      audits: new Map(),
+    });
+
+    const confidence = vm.perKey.get('coordinator.confidence_threshold')!;
+    expect(confidence.displayName).toBe('自动判定置信度');
+    expect(confidence.valuePreview).toBe('0.65');
+    expect(confidence.risk).toBe('low');
+
+    const prompt = vm.perKey.get('skill.implementation.instructions')!;
+    expect(prompt.displayName).toBe('实现阶段提示词');
+    expect(prompt.valuePreview).toBe('第一行');
+    expect(prompt.risk).toBe('high');
   });
 });
 

@@ -31,6 +31,7 @@ export interface RenderedAgentPrompt {
 }
 
 export function renderAgentPrompt(input: RenderAgentPromptInput): RenderedAgentPrompt {
+  const userRequest = userRequestForPrompt(input.title, input.inputs);
   const writableGlobs = input.skill.toolPolicy.writableGlobs.length > 0
     ? input.skill.toolPolicy.writableGlobs.join(', ')
     : '(none)';
@@ -111,11 +112,11 @@ export function renderAgentPrompt(input: RenderAgentPromptInput): RenderedAgentP
       'The user intent below describes what the FINISHED system should do — your task is to capture it as a requirement, not to build it.',
       '',
       'USER INTENT:',
-      input.title,
+      userRequest,
       '',
     );
   } else {
-    userLines.push('USER REQUEST:', input.title, '');
+    userLines.push('USER REQUEST:', userRequest, '');
   }
 
   const sensitivePathPatterns = normalizeSensitivePathPatterns(input.sensitivePathPatterns);
@@ -145,6 +146,11 @@ export function renderAgentPrompt(input: RenderAgentPromptInput): RenderedAgentP
     systemPrompt: systemLines.join('\n'),
     userPrompt: userLines.join('\n'),
   };
+}
+
+function userRequestForPrompt(title: string, inputs: Readonly<Record<string, string>>): string {
+  const userRequest = inputs.user_request?.trim();
+  return userRequest && userRequest.length > 0 ? userRequest : title;
 }
 
 export function renderCombinedAgentPrompt(prompt: RenderedAgentPrompt): string {

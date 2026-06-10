@@ -1,3 +1,22 @@
+import { FLOW_REGISTRY, type FlowId, type WorkflowStage } from '@ainp/shared';
+
+export type { FlowId };
+
+/**
+ * A lifecycle stage. Aliased to the shared {@link WorkflowStage} so the web
+ * projection covers every stage any flow in {@link FLOW_REGISTRY} can emit —
+ * including the non-feature stages `report` / `analyze` (issue.standard) and
+ * `scan` / `plan` (refactor.standard). Previously this was a web-local subset
+ * hard-coded to the feature pipeline, which mis-rendered other flows.
+ */
+export type Stage = WorkflowStage;
+
+/**
+ * Feature-pipeline stage ordering. Retained as a stable reference for the
+ * V1-equivalent `feature.standard` flow and for label/iteration fallbacks;
+ * the source of truth for any given run is now `FLOW_REGISTRY[run.flowId]`
+ * via {@link stagesForRun}.
+ */
 export const STAGES = [
   'init',
   'context_pack',
@@ -10,8 +29,29 @@ export const STAGES = [
   'knowledge',
 ] as const;
 
-export type Stage = (typeof STAGES)[number];
+/** Every stage value, for membership checks against arbitrary run data. */
+export const ALL_STAGES = [
+  'init',
+  'context_pack',
+  'requirement',
+  'design',
+  'implementation',
+  'build_test',
+  'review',
+  'completion',
+  'knowledge',
+  'report',
+  'analyze',
+  'scan',
+  'plan',
+] as const satisfies readonly Stage[];
 
+/**
+ * User-facing feature lifecycle (feature.standard minus the technical
+ * `context_pack` prep stage). Kept for the queued-lifecycle fallback and for
+ * regression-pinning the feature flow; flow-aware rendering should prefer
+ * {@link visibleStagesForRun} / `RunProjection.visibleStages`.
+ */
 export const USER_VISIBLE_STAGES = [
   'requirement',
   'design',
@@ -32,6 +72,10 @@ export const STAGE_LABELS: Record<Stage, string> = {
   review: '验收确认',
   completion: '交付报告',
   knowledge: '知识沉淀',
+  report: '问题报告',
+  analyze: '根因分析',
+  scan: '现状扫描',
+  plan: '重构方案',
 };
 
 export const STAGE_HELP: Record<Stage, string> = {
@@ -44,6 +88,10 @@ export const STAGE_HELP: Record<Stage, string> = {
   review: '汇总验收清单、测试证据和风险，等待用户验收。',
   completion: '生成交付报告，汇总阶段、Gate、命令、产物和审批证据。',
   knowledge: '抽取可复用经验，用户确认后沉淀到项目知识库。',
+  report: 'Agent 整理问题现象、复现步骤和影响范围，作为后续分析的输入。',
+  analyze: 'Agent 定位根因、评估影响面，给出修复方向。',
+  scan: 'Agent 扫描目标代码，识别坏味道、重复和结构问题。',
+  plan: 'Agent 制定重构方案与步骤，明确改动边界和回归风险。',
 };
 
 export const STAGE_TO_GATE: Partial<Record<Stage, string>> = {
@@ -54,12 +102,66 @@ export const STAGE_TO_GATE: Partial<Record<Stage, string>> = {
   knowledge: 'knowledge_gate',
 };
 
+/** Short human-readable labels for each flow, surfaced in lifecycle headers. */
+export const FLOW_LABELS: Record<FlowId, string> = {
+  'feature.standard': '标准功能流程',
+  'feature.fastforward': '快速功能流程',
+  'issue.standard': '问题修复流程',
+  'refactor.standard': '重构流程',
+};
+
+const FALLBACK_FLOW_ID: FlowId = 'feature.standard';
+
+/**
+ * Ordered stage list a run actually executes, driven by the shared
+ * {@link FLOW_REGISTRY} rather than a hard-coded feature pipeline. Mirrors the
+ * runner's `sliceStagesFromStartStage` contract:
+ *   - unknown/missing `flowId` falls back to `feature.standard` (never throws);
+ *   - `startStage` null/absent → the flow's full stage list;
+ *   - `startStage` present and matched → the list sliced from that stage;
+ *   - `startStage` not in the flow → ignored (full list) so the UI degrades
+ *     gracefully instead of rendering an empty track.
+ *
+ * Excludes the `init` status placeholder (which is not a flow step).
+ */
+export function stagesForRun(
+  flowId: FlowId | null | undefined,
+  startStage: Stage | null | undefined,
+): Stage[] {
+  const flow = FLOW_REGISTRY[(flowId ?? FALLBACK_FLOW_ID) as FlowId] ?? FLOW_REGISTRY[FALLBACK_FLOW_ID];
+  const stages = flow.stages.map((step) => step.stage);
+  if (!startStage) return stages;
+  const fromIdx = stages.indexOf(startStage);
+  return fromIdx <= 0 ? stages : stages.slice(fromIdx);
+}
+
+/**
+ * The user-facing lifecycle track for a run: its flow stages minus the
+ * technical `context_pack` prep stage. `context_pack` stays available for the
+ * backend-detail drill-down but never shows in the main lifecycle.
+ */
+export function visibleStagesForRun(
+  flowId: FlowId | null | undefined,
+  startStage: Stage | null | undefined,
+): Stage[] {
+  return stagesForRun(flowId, startStage).filter((stage) => stage !== 'context_pack');
+}
+
 export interface WorkflowRunDto {
   id: string;
   projectId: string;
   title: string;
   status: string;
   currentStage: Stage;
+  /**
+   * V2 W2-1: which flow definition this run executes. Serialized by the API
+   * on the full `run` object. Optional here so legacy fixtures that predate
+   * flow-awareness still typecheck; absent/unknown falls back to
+   * `feature.standard` in {@link stagesForRun}.
+   */
+  flowId?: FlowId;
+  /** V2 W2-4: stage the run starts at; null = the flow's first stage. */
+  startStage?: Stage | null;
   sourceBranch?: string;
   branch: string;
   workspacePath: string | null;
@@ -166,7 +268,23 @@ export interface StageProjection {
 export interface RunProjection {
   currentStage: Stage;
   pendingGate: string | null;
+  /**
+   * The run's flow, resolved from `run.flowId` (falling back to
+   * `feature.standard`). Surfaced so the UI can show `flowId` / `startStage`
+   * / `N/M` position without re-deriving them.
+   */
+  flowId: FlowId;
+  startStage: Stage | null;
+  /**
+   * Every stage the run's flow executes, in order, with computed state.
+   * Drives the backend drill-down (which still wants `context_pack`).
+   */
   stages: StageProjection[];
+  /**
+   * User-facing lifecycle track: {@link stages} minus `context_pack`. Drives
+   * `renderLifecycle()`; non-feature flows here only carry their own stages.
+   */
+  visibleStages: StageProjection[];
   summary: {
     commands: number;
     gatesPassed: number;
@@ -199,14 +317,17 @@ export function latestArtifactOfKind<T extends Pick<ArtifactDto, 'kind' | 'creat
 }
 
 export function buildRunProjection(detail: RunDetail): RunProjection {
+  const flowId = (detail.run.flowId ?? FALLBACK_FLOW_ID) as FlowId;
+  const startStage = detail.run.startStage ?? null;
+  const flowStages = stagesForRun(flowId, startStage);
   const effectiveCurrentStage = effectiveStageForProjection(detail);
-  const currentIndex = STAGES.indexOf(effectiveCurrentStage);
+  const currentIndex = flowStages.indexOf(effectiveCurrentStage);
   const pendingGate =
     detail.run.status === 'awaiting_human'
       ? (STAGE_TO_GATE[effectiveCurrentStage] ?? null)
       : null;
 
-  const stages = STAGES.map<StageProjection>((stage) => {
+  const stages = flowStages.map<StageProjection>((stage) => {
     const step = detail.steps.find((s) => s.stage === stage);
     const gateId = STAGE_TO_GATE[stage] ?? null;
     const gate = gateId ? ([...detail.gates].reverse().find((g) => g.gateId === gateId) ?? null) : null;
@@ -235,8 +356,11 @@ export function buildRunProjection(detail: RunDetail): RunProjection {
 
   return {
     currentStage: effectiveCurrentStage,
+    flowId,
+    startStage,
     pendingGate,
     stages,
+    visibleStages: stages.filter((stage) => stage.id !== 'context_pack'),
     summary: {
       commands: detail.commands.length,
       gatesPassed: detail.gates.filter((g) => g.status === 'pass').length,
@@ -275,7 +399,7 @@ function lastStepStage(detail: RunDetail): Stage | null {
 }
 
 function isStage(value: unknown): value is Stage {
-  return typeof value === 'string' && (STAGES as readonly string[]).includes(value);
+  return typeof value === 'string' && (ALL_STAGES as readonly string[]).includes(value);
 }
 
 function stageHasDoneEvidence(

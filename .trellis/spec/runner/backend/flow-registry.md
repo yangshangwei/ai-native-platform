@@ -19,6 +19,7 @@
 - `executeImplementation(c: RunCtx)` / `executeBuildTest(c)` / `executeAcceptance(c)` / `executeCompletion(c)` / `executeKnowledgePromotion(c)` — inner functions of `cmdOrchestrate`, 1:1 lifts of the V1 inline blocks.
 - `RunCtx` — file-private interface in `orchestrator.ts`; carries `project`, `run`, `workspace`, `backend`, `tools`, `opts`, `runArtifactsDir`, `inputs`, `inputArtifactIds`, `draftsToPromote`, `ok` across step implementations. **Not exported**.
 - `OrchestrateOpts.flowId?: FlowId` (`apps/runner/src/orchestrator.ts`) — W2-3 PR2: optional flow id on the runner CLI/orchestrator entry; forwarded to `api.createWorkflowRun`.
+- `OrchestrateOpts.userRequest?: string` (`apps/runner/src/orchestrator.ts`) — optional agent-facing clarified task brief. It seeds `inputs.user_request` and the ContextPack task brief; it must NOT replace the WorkflowRun/UI `title` passed to `api.createWorkflowRun`.
 - `api.createWorkflowRun({ projectName, title, type?, sourceBranch?, flowId? })` (`apps/runner/src/api-client.ts`) — runner-side HTTP wrapper; threads flowId through the body.
 - `POST /workflow-runs` (`apps/api/src/routes/workflow-runs.ts`) — body shape includes `flowId?: string`. Validated against `KNOWN_FLOW_IDS`; unknown values return HTTP 400. Forwards to `createWorkflowRun({ ..., flowId })`.
 - `runner orchestrate --flow-id <FlowId>` — CLI flag (W2-3 PR2). `parseFlowIdFlag` exits 2 on unknown value.
@@ -135,6 +136,13 @@ UI override (W2-4 PR4):
   - Runner CLI: `runner orchestrate --project foo --title bar --flow-id feature.fastforward` → `parseFlowIdFlag` validates → `cmdOrchestrate({ flowId })` → `api.createWorkflowRun({ flowId })` → same body path.
   - Runner watch loop (`cmdWatch`): currently does NOT supply flowId; feature requests default to `'feature.standard'`. Applying a fastforward/startStage recommendation requires an explicit future override path.
   - Runner smoke (`cmdRun`): does NOT use FLOW_REGISTRY at all (it runs a single whitelisted command, not a pipeline).
+
+#### Entry contract — title vs. agent-facing request brief
+
+- `WorkflowRun.title` / UI title is the original request title. Watch-mode orchestration must pass this exact title to `api.createWorkflowRun` so the visible run remains stable across Coordinator clarification turns.
+- `inputs.user_request` is the agent-facing task brief. For direct `runner orchestrate`, it defaults to the title. For watch-mode requests with persisted chat messages, `cmdWatch` builds a clarified brief from the ordered Coordinator conversation and passes it as `OrchestrateOpts.userRequest`.
+- ContextPack construction must use `inputs.user_request` as `taskBrief` when present, not `title`. Provider prompts may still include `Title: ...` metadata, but their user request/body should render the clarified brief so downstream requirement generation sees later user replies.
+- Do not rebuild the clarified brief from web state or direct DB access. The runner reads persisted request messages only through `api.listRequestMessages(requestId)`.
 
 #### `executeXxx(ctx: RunCtx)` invariants
 

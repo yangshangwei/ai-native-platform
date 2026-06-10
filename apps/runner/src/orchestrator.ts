@@ -55,6 +55,8 @@ import {
 export interface OrchestrateOpts {
   project: string;
   title: string;
+  /** Agent-facing clarified request brief. The WorkflowRun title remains `title`. */
+  userRequest?: string;
   sourceBranch?: string;
   workflowRequestId?: string;
   /** Coordinator-decided run type. Defaults to 'feature' if omitted. */
@@ -232,7 +234,9 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
   const runArtifactsDir = join(ARTIFACTS_BASE, run.id);
   await mkdir(runArtifactsDir, { recursive: true });
 
-  const inputs: Record<string, string> = { user_request: opts.title };
+  const inputs: Record<string, string> = {
+    user_request: agentUserRequestForOrchestrate(opts),
+  };
   const inputArtifactIds: Record<string, string> = {};
   const contextFoundation: RunCtx['contextFoundation'] = {
     projectProfileResult: null,
@@ -1061,6 +1065,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     skillCtx: Parameters<AgentBackend['run']>[1],
   ): Promise<InvokedAgent> {
     const foundation = await ensureContextFoundation(ctx);
+    const taskBrief = agentTaskBriefForContext(skillCtx.title, skillCtx.inputs);
     const contextPack = buildContextPack({
       project,
       run,
@@ -1068,7 +1073,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       stepRunId: skillCtx.stepRunId ?? null,
       workspacePath: skillCtx.workspacePath,
       branch: skillCtx.branch,
-      taskBrief: skillCtx.title,
+      taskBrief,
       projectProfile: foundation.projectProfileResult?.profile ?? null,
       projectProfileMarkdown: foundation.projectProfileResult?.markdown ?? skillCtx.inputs['project_profile.md'],
       acceptedKnowledgeMarkdown: acceptedKnowledgeMarkdownForContext({
@@ -1186,7 +1191,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       stepRunId: input.skillCtx.stepRunId ?? null,
       workspacePath: input.skillCtx.workspacePath,
       branch: input.skillCtx.branch,
-      taskBrief: input.skillCtx.title,
+      taskBrief: agentTaskBriefForContext(input.skillCtx.title, input.skillCtx.inputs),
       projectProfile: input.foundation.projectProfileResult?.profile ?? null,
       projectProfileMarkdown: input.foundation.projectProfileResult?.markdown
         ?? input.skillCtx.inputs['project_profile.md'],
@@ -1532,6 +1537,21 @@ async function mustSkill(
   const s = await findSkillForStage(stage);
   if (!s) throw new Error(`no skill for stage ${stage}`);
   return s;
+}
+
+export function agentUserRequestForOrchestrate(
+  opts: Pick<OrchestrateOpts, 'title' | 'userRequest'>,
+): string {
+  const clarified = opts.userRequest?.trim();
+  return clarified && clarified.length > 0 ? clarified : opts.title;
+}
+
+export function agentTaskBriefForContext(
+  title: string,
+  inputs: Readonly<Record<string, string>>,
+): string {
+  const userRequest = inputs.user_request?.trim();
+  return userRequest && userRequest.length > 0 ? userRequest : title;
 }
 
 // ---------------------------------------------------------------------------

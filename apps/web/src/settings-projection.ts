@@ -43,6 +43,10 @@ export interface ProjectionConfigAudit {
 
 export interface SettingsRowVM {
   key: string;
+  displayName: string;
+  displayDescription: string;
+  valuePreview: string;
+  risk: 'low' | 'medium' | 'high';
   entry: ProjectionConfigEntry;
   override: ProjectionConfigOverride | undefined;
   effectiveValue: unknown;
@@ -81,25 +85,63 @@ export interface BuildSettingsViewModelInput {
 const TABS_CONFIG: ReadonlyArray<{ id: SettingsTabId; label: string; help: string }> = [
   {
     id: 'coordinator',
-    label: 'Coordinator',
-    help: '关键词字典 / 阈值 / 系统 prompt / 兜底 questions',
+    label: '任务理解',
+    help: '任务分类、澄清问题和 Coordinator 判断策略',
   },
   {
     id: 'skill_prompts',
-    label: 'Skill Prompts',
-    help: '5 个阶段的方法论 prompt',
+    label: '提示词',
+    help: '各执行阶段交给 AI 的方法论提示词',
   },
   {
     id: 'runtime',
-    label: 'Runtime',
-    help: 'timeout / poll / 缓存 TTL',
+    label: '运行环境',
+    help: 'Runner 超时、轮询和日志限制',
   },
   {
     id: 'context_policy',
-    label: 'Context Policy',
-    help: 'ContextPack 预算 / 敏感路径过滤',
+    label: '上下文策略',
+    help: 'ContextPack 预算、预留 token 和敏感路径过滤',
   },
 ];
+
+const CONFIG_DISPLAY_NAMES: Record<string, string> = {
+  'coordinator.confidence_threshold': '自动判定置信度',
+  'coordinator.bug_keywords': 'Bug 关键词',
+  'coordinator.feature_keywords': '功能关键词',
+  'coordinator.large_scope_keywords': '大范围需求关键词',
+  'coordinator.large_scope_regex': '大范围需求规则',
+  'coordinator.refactor_keywords': '重构关键词',
+  'coordinator.system_prompt': 'Coordinator 系统提示词',
+  'coordinator.fallback.too_short_questions': '目标过短时的追问',
+  'coordinator.fallback.large_scope_template': '大范围需求首问模板',
+  'coordinator.fallback.large_scope_followup': '大范围需求追问补充',
+  'coordinator.fallback.llm_unavailable': 'AI 不可用时的提示',
+  'coordinator.fallback.llm_invocation_failed': 'AI 调用失败时的提示',
+  'coordinator.fallback.llm_empty': 'AI 空响应时的提示',
+  'coordinator.fallback.llm_invalid_json': 'AI 返回格式错误时的提示',
+  'coordinator.fallback.llm_unknown_action': 'AI 判断动作未知时的提示',
+  'skill.context_pack.instructions': '上下文收集提示词',
+  'skill.requirement_draft.instructions': '需求草稿提示词',
+  'skill.design.instructions': '设计阶段提示词',
+  'skill.implementation.instructions': '实现阶段提示词',
+  'skill.review.instructions': '评审阶段提示词',
+  'runner.coordinator.oneshot_timeout_ms': '任务理解超时时间',
+  'runner.watch.poll_ms': 'Runner 轮询间隔',
+  'runner.command.default_timeout_ms': '命令默认超时',
+  'runner.command.max_log_bytes': '命令日志上限',
+  'runner.config.cache_ttl_ms': '配置缓存时间',
+  'context.policy.max_tokens': '上下文总预算',
+  'context.policy.reserved_for_reasoning': '推理预留预算',
+  'context.policy.reserved_for_output': '输出预留预算',
+  'context.policy.sensitive_path_patterns': '敏感路径过滤规则',
+};
+
+const CONFIG_DISPLAY_DESCRIPTIONS: Record<string, string> = {
+  'coordinator.confidence_threshold': '分数达到该阈值时直接进入推荐流程；低于阈值时会先澄清或调用 AI 兜底。',
+  'coordinator.system_prompt': '影响 Coordinator 如何理解用户目标和输出判断结果。',
+  'context.policy.sensitive_path_patterns': '命中的文件不会进入 AI 上下文，避免把敏感信息带入任务。',
+};
 
 /**
  * Build a tab-grouped view model from current registry / overrides / drafts /
@@ -153,6 +195,10 @@ export function buildSettingsViewModel(
 
     const row: SettingsRowVM = {
       key,
+      displayName: displayNameForKey(key),
+      displayDescription: displayDescriptionForKey(key, entry),
+      valuePreview: valuePreview(effectiveValue, entry),
+      risk: riskForKey(key, entry),
       entry,
       override,
       effectiveValue,
@@ -182,6 +228,39 @@ export function buildSettingsViewModel(
     },
     perKey,
   };
+}
+
+function displayNameForKey(key: string): string {
+  return CONFIG_DISPLAY_NAMES[key] ?? key
+    .split('.')
+    .at(-1)!
+    .replace(/_/g, ' ');
+}
+
+function displayDescriptionForKey(key: string, entry: ProjectionConfigEntry): string {
+  return CONFIG_DISPLAY_DESCRIPTIONS[key] ?? entry.description;
+}
+
+function valuePreview(value: unknown, entry: ProjectionConfigEntry): string {
+  if (entry.type === 'string_array') {
+    const items = Array.isArray(value) ? value.map(String) : [];
+    if (!items.length) return '空列表';
+    const joined = items.slice(0, 4).join('、');
+    return items.length > 4 ? `${items.length} 项：${joined}…` : `${items.length} 项：${joined}`;
+  }
+  if (entry.type === 'number') return String(value ?? '—');
+  const text = String(value ?? '').trim();
+  if (!text) return '空';
+  const firstLine = text.split('\n').find((line) => line.trim().length > 0)?.trim() ?? text;
+  return firstLine.length > 120 ? `${firstLine.slice(0, 119)}…` : firstLine;
+}
+
+function riskForKey(key: string, entry: ProjectionConfigEntry): SettingsRowVM['risk'] {
+  if (entry.multiline || key.includes('system_prompt') || key.includes('instructions')) return 'high';
+  if (key.includes('sensitive_path') || key.includes('max_tokens') || key.includes('max_log_bytes')) return 'high';
+  if (key.includes('timeout') || key.includes('poll') || key.includes('cache_ttl')) return 'medium';
+  if (key.includes('keywords') || key.includes('regex') || key.includes('fallback')) return 'medium';
+  return 'low';
 }
 
 /** Parse the user's raw editor string into the type the registry declares. */
