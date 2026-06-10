@@ -976,3 +976,36 @@ Implemented digest-backed evidence gates, verifier media ingestion, eval scenari
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: Complete active Trellis task queue
+
+**Date**: 2026-06-10
+**Task**: Complete active Trellis task queue
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Completed and verified the active context-injection, Coordinator clarification, web dev-server, clarification-history, and web usability tasks; archived all 12 active tasks after quality checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `eae35c9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
