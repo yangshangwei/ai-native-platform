@@ -203,12 +203,14 @@ export function claimWorkflowRequest(params: {
   requestId: string;
   runnerId: string;
 }): WorkflowRequest | null {
-  const request = store.workflowRequests.get(params.requestId);
-  if (!request || request.status !== 'pending') return null;
-  request.status = 'claimed';
-  request.claimedBy = params.runnerId;
-  request.updatedAt = nowIso();
-  store.workflowRequests.set(request.id, request);
+  // Atomic UPDATE ... WHERE status = 'pending' — under concurrent claims of
+  // the same request exactly one caller wins; the rest get null (TOCTOU fix).
+  const request = store.workflowRequests.claimIfPending({
+    id: params.requestId,
+    runnerId: params.runnerId,
+    updatedAt: nowIso(),
+  });
+  if (!request) return null;
   audit(null, 'workflow_request.claimed', {
     requestId: request.id,
     runnerId: params.runnerId,
@@ -220,12 +222,19 @@ export function markWorkflowRequestRunStarted(params: {
   requestId: string;
   workflowRunId: WorkflowRunId;
 }): WorkflowRequest {
-  const request = store.workflowRequests.get(params.requestId);
-  if (!request) throw new Error(`workflow request not found: ${params.requestId}`);
-  if (request.status !== 'claimed') throw new Error(`workflow request is not claimed: ${params.requestId}`);
-  request.workflowRunId = params.workflowRunId;
-  request.updatedAt = nowIso();
-  store.workflowRequests.set(request.id, request);
+  // Atomic UPDATE ... WHERE status = 'claimed'. The post-failure read is only
+  // for the error message (404 vs 409 at the route layer) — never for a write.
+  const request = store.workflowRequests.markRunStartedIfClaimed({
+    id: params.requestId,
+    workflowRunId: params.workflowRunId,
+    updatedAt: nowIso(),
+  });
+  if (!request) {
+    if (!store.workflowRequests.get(params.requestId)) {
+      throw new Error(`workflow request not found: ${params.requestId}`);
+    }
+    throw new Error(`workflow request is not claimed: ${params.requestId}`);
+  }
   audit(params.workflowRunId, 'workflow_request.run_started', {
     requestId: request.id,
   });
@@ -238,13 +247,16 @@ export function completeWorkflowRequest(params: {
   ok: boolean;
   error: string | null;
 }): WorkflowRequest {
-  const request = store.workflowRequests.get(params.requestId);
+  // Atomic UPDATE ... WHERE id = ? — existence is the only precondition,
+  // matching the previous behaviour. A null workflowRunId keeps the stored one.
+  const request = store.workflowRequests.complete({
+    id: params.requestId,
+    status: params.ok ? 'completed' : 'failed',
+    workflowRunId: params.workflowRunId,
+    error: params.error,
+    updatedAt: nowIso(),
+  });
   if (!request) throw new Error(`workflow request not found: ${params.requestId}`);
-  request.status = params.ok ? 'completed' : 'failed';
-  request.workflowRunId = params.workflowRunId ?? request.workflowRunId;
-  request.error = params.error;
-  request.updatedAt = nowIso();
-  store.workflowRequests.set(request.id, request);
   audit(params.workflowRunId, 'workflow_request.completed', {
     requestId: request.id,
     ok: params.ok,

@@ -352,6 +352,78 @@ const workflowRequests = {
     this.set(id, next);
     return next;
   },
+  // -- Atomic state transitions (TOCTOU fix, task 06-12) ---------------------
+  // Each folds the old "read, check status, write back" two-step into a single
+  // UPDATE with the status precondition in the WHERE clause; `changes` decides
+  // success. SQLite's single-writer lock then guarantees that concurrent
+  // callers cannot both pass the check. These are persistence primitives only:
+  // decisions and audit stay in workflow-engine (the sole state writer).
+  /**
+   * Claim a pending request: UPDATE ... WHERE id = ? AND status = 'pending'.
+   * Returns the post-update entity, or null when the row is missing or not
+   * pending (exactly one of N concurrent claimers wins).
+   */
+  claimIfPending(params: {
+    id: string;
+    runnerId: string;
+    updatedAt: string;
+  }): WorkflowRequest | null {
+    const res = db
+      .prepare(
+        `UPDATE workflow_requests
+            SET status = 'claimed', claimed_by = ?, updated_at = ?
+          WHERE id = ? AND status = 'pending'`,
+      )
+      .run(params.runnerId, params.updatedAt, params.id);
+    if (res.changes === 0) return null;
+    return workflowRequestsTable.byId(params.id) ?? null;
+  },
+  /**
+   * Attach the workflow run id to a claimed request (status stays 'claimed'):
+   * UPDATE ... WHERE id = ? AND status = 'claimed'. Returns null when the row
+   * is missing or not claimed.
+   */
+  markRunStartedIfClaimed(params: {
+    id: string;
+    workflowRunId: string;
+    updatedAt: string;
+  }): WorkflowRequest | null {
+    const res = db
+      .prepare(
+        `UPDATE workflow_requests
+            SET workflow_run_id = ?, updated_at = ?
+          WHERE id = ? AND status = 'claimed'`,
+      )
+      .run(params.workflowRunId, params.updatedAt, params.id);
+    if (res.changes === 0) return null;
+    return workflowRequestsTable.byId(params.id) ?? null;
+  },
+  /**
+   * Terminal transition: UPDATE ... WHERE id = ? (existence is the only
+   * precondition, matching the engine's historical behaviour). A null
+   * workflowRunId keeps the existing value (COALESCE); error is always
+   * overwritten. Returns null when the row is missing.
+   */
+  complete(params: {
+    id: string;
+    status: 'completed' | 'failed';
+    workflowRunId: string | null;
+    error: string | null;
+    updatedAt: string;
+  }): WorkflowRequest | null {
+    const res = db
+      .prepare(
+        `UPDATE workflow_requests
+            SET status = ?,
+                workflow_run_id = COALESCE(?, workflow_run_id),
+                error = ?,
+                updated_at = ?
+          WHERE id = ?`,
+      )
+      .run(params.status, params.workflowRunId, params.error, params.updatedAt, params.id);
+    if (res.changes === 0) return null;
+    return workflowRequestsTable.byId(params.id) ?? null;
+  },
   get size(): number {
     return workflowRequestsTable.count();
   },
