@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Confirm render/state changes do not violate frontend conventions."}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Confirm new-task/project setup error states remain user-facing and verifiable."}

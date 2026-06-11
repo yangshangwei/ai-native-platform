@@ -4248,12 +4248,49 @@ function renderNewTaskProcessPanel(): HTMLElement {
   });
 }
 
-function renderNewTaskInlineNotice(kind: StatusKind, title: string, message: string, actions: HTMLElement[] = []): HTMLElement {
+interface InlineNoticeDiagnostics {
+  summary: string;
+  body: string;
+  detailsKey: string;
+}
+
+function summarizeProjectLoadError(error: string): string {
+  const status = error.match(/^api\s+\/projects:\s+(\d{3})\b/i)?.[1] ?? null;
+  const isHtmlError = /<!doctype\s+html|<html[\s>]|<body[\s>]|<script[\s>]/i.test(error);
+  if (isHtmlError) {
+    return status
+      ? `项目接口返回 ${status}，前端收到的是服务错误页。请确认 API 服务和代理正常后重试。`
+      : '项目接口返回了服务错误页。请确认 API 服务和代理正常后重试。';
+  }
+  if (/failed to fetch|networkerror|load failed/i.test(error)) {
+    return '无法连接项目接口。请确认 API 服务正在运行，然后重试。';
+  }
+  if (status) return `项目接口返回 ${status}。请确认 API 服务正常后重试。`;
+  return '项目接口暂时不可用。请重试，或展开技术细节查看原始错误。';
+}
+
+function renderNewTaskInlineNotice(
+  kind: StatusKind,
+  title: string,
+  message: string,
+  actions: HTMLElement[] = [],
+  diagnostics?: InlineNoticeDiagnostics,
+): HTMLElement {
   return el('div', {
     class: `notice-inline ${kind}`,
     children: [
       el('strong', { text: title }),
-      el('p', { class: 'compact', text: message }),
+      el('p', { class: 'compact notice-inline-message', text: message }),
+      diagnostics
+        ? el('details', {
+            class: 'notice-inline-diagnostics',
+            attrs: { 'data-details-key': diagnostics.detailsKey },
+            children: [
+              el('summary', { text: diagnostics.summary }),
+              el('pre', { class: 'notice-inline-raw', text: diagnostics.body }),
+            ],
+          })
+        : null,
       actions.length ? el('div', { class: 'button-row', children: actions }) : null,
     ],
   });
@@ -4727,7 +4764,17 @@ function renderNewTaskPage(): HTMLElement {
   const retryProjects = button('重试', 'button secondary small');
   retryProjects.onclick = () => void loadData({ keepDetail: true });
   const projectIssue = projectsLoadError
-    ? renderNewTaskInlineNotice('bad', '项目列表加载失败', projectsLoadError, [retryProjects, actionLink('检查项目接入', 'projects')])
+    ? renderNewTaskInlineNotice(
+        'bad',
+        '项目列表加载失败',
+        summarizeProjectLoadError(projectsLoadError),
+        [retryProjects, actionLink('检查项目接入', 'projects')],
+        {
+          summary: '查看技术细节',
+          body: projectsLoadError,
+          detailsKey: 'new-task-project-load-error-details',
+        },
+      )
     : null;
   const submitIssue = lastError && !projectsLoadError
     ? renderNewTaskInlineNotice('warn', '暂时无法创建任务', lastError)

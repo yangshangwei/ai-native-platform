@@ -59,7 +59,19 @@ export function createWebServer(options: { port?: number; apiBase?: string } = {
           headers: req.headers,
           body: req.method === 'GET' || req.method === 'HEAD' ? undefined : await req.arrayBuffer(),
         };
-        return fetch(target, init);
+        try {
+          return await fetch(target, init);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return Response.json(
+            {
+              error: 'api proxy unavailable',
+              detail: message,
+              apiBase,
+            },
+            { status: 502 },
+          );
+        }
       }
 
       let path = url.pathname === '/' ? '/index.html' : url.pathname;

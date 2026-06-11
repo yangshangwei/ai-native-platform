@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Web app state/render convention for module-scope state and render rebuilds."}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "New-task/project setup UI expectations and verification guidance."}

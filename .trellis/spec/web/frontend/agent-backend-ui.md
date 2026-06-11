@@ -65,6 +65,11 @@
 - Clickable clarification options may update the reply composer, but they must reuse the existing draft/focus/IME preservation path. Generated option replies should be replaceable as a block so changing a selection does not erase user-written supplements.
 - When the request gains `workflowRunId`, close the request-channel `EventSource` and switch to the run-channel stream without clearing cached history for either channel. The switch must preserve `sinceSeq` resume semantics per channel and avoid opening duplicate SSE connections.
 - Cached preflight status is valid only when its `backend` matches the current project backend.
+- Project/task-creation API load failures must show concise user-facing Chinese
+  copy in the primary form flow. Do not render raw backend payloads, HTML error
+  pages, stack traces, or proxy diagnostics as default-visible form text. Keep
+  those details in a collapsed technical disclosure with a stable
+  `data-details-key`.
 
 ### 4. Validation & Error Matrix
 
@@ -75,6 +80,9 @@
 - SSE malformed event -> ignore that event, keep connection alive.
 - SSE reconnect -> replay history greater than `sinceSeq` and continue live tail without duplicate lines.
 - Request→run channel switch -> old request SSE is closed, new run SSE is opened with the run channel's last sequence; request partial output remains visible where cached, but live tail follows the active channel.
+- `/projects` or related setup endpoints return an HTML/Bun error page -> show
+  a short failure summary, keep retry/setup actions visible, and keep the raw
+  response available only inside collapsed diagnostics.
 
 ### 5. Good/Base/Bad Cases
 
@@ -109,6 +117,81 @@ return tasks.at(-1)?.backend ?? 'native / codex / claude_code';
 
 ```ts
 return project.agentBackend ? agentBackendDisplayName(project.agentBackend) : '未配置';
+```
+
+## Scenario: new-task API failure handling
+
+### 1. Scope / Trigger
+
+- Trigger: changes to `apps/web/serve.ts` `/api/*` proxy behavior, new-task
+  project loading, or form-level API failure notices.
+- The UI must keep task creation readable even when the API process is down,
+  while preserving enough diagnostics for local operators.
+
+### 2. Signatures
+
+- Browser API base remains `const API_BASE = '/api'` in `apps/web/src/main.ts`.
+- Web dev proxy entry point:
+  `createWebServer({ apiBase?: string }).fetch('/api/<path>')`.
+- Proxy target default:
+  `process.env.AINP_API_BASE ?? 'http://127.0.0.1:8787'`.
+
+### 3. Contracts
+
+- Successful proxy responses are passed through from the API unchanged.
+- A network-level proxy failure returns JSON, not Bun's HTML fallback:
+  `{ error: 'api proxy unavailable', detail: string, apiBase: string }` with
+  HTTP `502`.
+- New-task project load errors show concise Chinese primary copy. Raw payloads,
+  proxy diagnostics, HTML pages, or stack traces belong only inside a collapsed
+  technical disclosure with a stable `data-details-key`.
+- The retry action and project setup action stay visible when project loading
+  fails.
+
+### 4. Validation & Error Matrix
+
+- API process not listening on `AINP_API_BASE` -> proxy returns JSON `502`.
+- `/projects` returns a Bun/HTML error page -> primary form notice summarizes
+  the failure and keeps the raw response collapsed.
+- `/projects` returns JSON `{ items }` -> project select lists projects and the
+  project-load notice is absent.
+- Very long diagnostic strings -> wrap or scroll inside the notice without
+  increasing document horizontal scroll width.
+
+### 5. Good/Base/Bad Cases
+
+- Good: API is running; `/api/projects` returns `200 application/json`, and the
+  new-task form shows registered projects.
+- Base: API is down; `/api/projects` returns JSON `502`, the form shows a short
+  failure notice plus retry/setup actions.
+- Bad: API is down and the browser receives a `text/html` Bun error page, or
+  the form renders raw HTML as default-visible text.
+
+### 6. Tests Required
+
+- `apps/web/test/serve.test.ts` should cover unreachable proxy target -> JSON
+  `502`.
+- Typecheck `@ainp/web` after touching the proxy or render helper.
+- Manual or Playwright smoke should verify `/api/projects` through the web
+  origin returns JSON when the API is running, and that the new-task form no
+  longer shows `项目列表加载失败`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+return fetch(target, init);
+```
+
+#### Correct
+
+```ts
+try {
+  return await fetch(target, init);
+} catch {
+  return Response.json({ error: 'api proxy unavailable' }, { status: 502 });
+}
 ```
 
 ## Scenario: task detail review-first hierarchy

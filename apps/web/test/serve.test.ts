@@ -17,4 +17,21 @@ describe('web dev server', () => {
       server.stop(true);
     }
   });
+
+  it('returns JSON when the API proxy target is unavailable', async () => {
+    const server = createWebServer({ port: 0, apiBase: 'http://127.0.0.1:1' });
+    try {
+      const res = await fetch(`http://127.0.0.1:${server.port}/api/projects`);
+      expect(res.status).toBe(502);
+      expect(res.headers.get('content-type')).toContain('application/json');
+
+      const body = await res.json();
+      expect(body).toMatchObject({
+        error: 'api proxy unavailable',
+        apiBase: 'http://127.0.0.1:1',
+      });
+    } finally {
+      server.stop(true);
+    }
+  });
 });
