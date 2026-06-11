@@ -1042,3 +1042,36 @@ Redesigned the task detail page around nontechnical review actions, moved Runner
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: Architecture review and behavior-preserving refactor
+
+**Date**: 2026-06-12
+**Task**: Architecture review and behavior-preserving refactor
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Analyzed all four packages via parallel research agents (reports in task research/). Verdict: layering and invariants healthy; main debt is mechanical duplication and monolith files. Executed behavior-preserving refactor: shared now derives KNOWN_FLOW_IDS/isFlowId from FLOW_REGISTRY and exports isWorkflowStage + errorMessage (removed 3 guard copies, 49 ternary copies); api gained store table factory (22 repos deduped), audit.ts, routes/helpers.ts, persistReportPair; runner gained agents/types.ts (AgentBackend contract out of stub), cli-common.ts, coordinator/decision.ts, merged 4 copy-pasted stage executors. Specs updated (flow-registry, error-handling, 2x directory-structure). Verified: typecheck + 626 tests green before and after, independent diff review found no behavior drift. Net -160 lines. Roadmap left in PRD: web/main.ts split (9-step plan), claimWorkflowRequest TOCTOU fix, orchestrator de-closure, preflight spawn dedup via node-only shared entry, Maven hardcode removal.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `57ac80f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
