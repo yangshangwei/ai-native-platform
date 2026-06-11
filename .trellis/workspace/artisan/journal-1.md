@@ -1075,3 +1075,36 @@ Analyzed all four packages via parallel research agents (reports in task researc
 ### Next Steps
 
 - None - task complete
+
+
+## Session 29: Atomic workflow request claim (roadmap T1.1)
+
+**Date**: 2026-06-12
+**Task**: Atomic workflow request claim (roadmap T1.1)
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Fixed TOCTOU race in workflow request claim/run-started/complete: store layer gained single-statement conditional UPDATEs judged by affected-row count, engine preconditions preserved (pending/claimed/existence-only), race regression tests proven red on old code. 630 tests green. Roadmap T1.1 done; next: T2.1 web base-layer split and T3.1 orchestrator de-closure.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f0e983a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 28
+- **Total Sessions**: 29
 - **Last Active**: 2026-06-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1077 | Active |
+| `journal-1.md` | ~1110 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 29 | 2026-06-12 | Atomic workflow request claim (roadmap T1.1) | `f0e983a` | `feat/context-injection-layer-mvp` |
 | 28 | 2026-06-12 | Architecture review and behavior-preserving refactor | `57ac80f` | `feat/context-injection-layer-mvp` |
 | 27 | 2026-06-10 | Optimize task detail review UI | `f4bc71d` | `feat/context-injection-layer-mvp` |
 | 26 | 2026-06-10 | Complete active Trellis task queue | `eae35c9` | `feat/context-injection-layer-mvp` |
