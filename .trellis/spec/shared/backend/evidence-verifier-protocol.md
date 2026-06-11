@@ -28,6 +28,10 @@
   - Input directory: `<worktree>/.ainp-verifier/`
   - Output artifact directory: `<runArtifactsDir>/verifier/`
   - Matrix output: `verifier-ac-matrix.json`
+- Completion report sidecar schema:
+  - Markdown artifact: `kind='completion_report'`, `contentType='text/markdown'`
+  - JSON artifact: `kind='completion_report'`, `contentType='application/json'`, `metadata.structured=true`, `metadata.schemaVersion='ainp.completion_report.v1'`
+  - JSON payload: `{ schemaVersion, title, workflowRunId, run, summary, sections, contextRequests, knowledgeReviewSignals, contextGovernanceMetrics, generatedAt }`
 - API routes:
   - `POST /runner/events/artifact`
   - `POST /runner/events/run-gate` with `gateId: 'evidence_gate'`
@@ -48,6 +52,8 @@
   - acceptance has no persisted implementation/review/test evidence;
   - a UI run requires verifier evidence but lacks a verifier AC matrix, tagged media refs, or verifier artifact digests.
 - `POST /workflow-runs/:id/completion-report` must run `evidence_gate` before report generation and return HTTP 409 if it fails.
+- Completion report generation must create both the markdown report and the structured JSON sidecar from the same stored run/evidence snapshot. UI code should prefer the JSON sidecar when available and use markdown parsing only as a fallback.
+- Completion report summaries must label run state as `Status at report generation` in markdown and JSON summary entries. Do not use a bare `Status` label because the artifact is a point-in-time snapshot, not a live workflow state contract.
 - Runner review flow must run the verifier sub-stage for UI-titled tasks before human acceptance, then run `evidence_gate` before waiting for acceptance.
 - Verifier media artifacts must be explicitly tagged with verifier metadata. Plain `image/*` or `video/*` artifacts must not satisfy verifier evidence by content type alone.
 - Verifier artifacts currently use `kind='other'`, but they must not count as the generic acceptance review artifact.
@@ -65,6 +71,8 @@
 - Verifier matrix cites untagged images or videos -> `evidence.ui_verifier_media_refs_present` fail.
 - Verifier artifact lacks `sha256` -> `evidence.ui_verifier_artifact_digests_present` fail.
 - Completion report requested while Evidence Gate fails -> HTTP 409 and no completion report artifact.
+- Completion report generated without a structured JSON sidecar -> contract violation; fix report generation rather than making the UI parse markdown as the primary path.
+- Completion report summary uses `Status: <run.status>` -> contract violation; replace with `Status at report generation: <run.status>`.
 
 ### 5. Good/Base/Bad Cases
 
@@ -72,9 +80,11 @@
 - Good: a UI run has one tagged `video` verifier artifact and a matrix row citing it; media coverage passes.
 - Base: a non-UI run has no verifier artifacts; verifier rules pass as not applicable.
 - Base: legacy artifacts without digests still load; digest-sensitive gate rules warn or fail only where required.
+- Base: a completed run with `run.status='passed'` generates a markdown report plus JSON sidecar; both summaries include `Status at report generation: passed`.
 - Bad: a generated verifier matrix is the newest `kind='other'` artifact and is treated as the review artifact.
 - Bad: a matrix cites two plain `image/png` artifacts with before/after roles but no verifier metadata; the UI verifier rule must fail.
 - Bad: completion report generation skips Evidence Gate because the runner already ran it earlier.
+- Bad: report markdown or JSON summary says `Status: passed`, implying the artifact is a live status field instead of a generation-time snapshot.
 
 ### 6. Tests Required
 
@@ -90,6 +100,7 @@
   - `/runner/events/artifact` persists verifier screenshots and matrix with SHA-256 metadata;
   - `/runner/events/run-gate` can run `evidence_gate`;
   - completion report route returns 409 before artifact creation when Evidence Gate fails.
+  - completion report route emits both markdown and JSON artifacts, with JSON `metadata.structured=true`, `schemaVersion='ainp.completion_report.v1'`, and no bare `Status:` summary line.
 - Content route tests:
   - command log tampering flips digest verification to false;
   - artifact file tampering flips digest verification to false.
@@ -129,4 +140,19 @@ Plain screenshots are not enough; the artifact must be tagged as verifier eviden
 const isVerifierMedia =
   artifact.metadata.schemaVersion === VERIFIER_MEDIA_SCHEMA_VERSION
   || artifact.metadata.reportKind === 'verifier_media';
+```
+
+#### Wrong
+
+```md
+- **Status:** passed
+```
+
+The report artifact is a historical handoff. A bare status label reads like a
+live workflow field and becomes ambiguous after the run continues or is retried.
+
+#### Correct
+
+```md
+- **Status at report generation:** passed
 ```

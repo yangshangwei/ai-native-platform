@@ -93,9 +93,6 @@ export class ClaudeCodeBackend implements AgentBackend {
   ): Promise<AgentRunResult> {
     const expected = pickFileOutput(skill);
     const targetPath = join(ctx.artifactsDir, expected.name);
-    // Pre-create an empty target file so the model has a clear write target;
-    // also makes "did it produce something" detection less ambiguous.
-    if (!existsSync(targetPath)) await writeFile(targetPath, '', 'utf8');
 
     const { systemPrompt, userPrompt } = buildPrompts(skill, ctx, {
       mode: 'produce_file',
@@ -175,7 +172,9 @@ export class ClaudeCodeBackend implements AgentBackend {
     skill: SkillSpec,
   ): Promise<{ exitCode: number; lastMessage: string | null }> {
     const allowedTools = computeAllowedTools(skill);
-    const disallowedTools = ['WebFetch', 'WebSearch'];
+    const disallowedTools = ['WebFetch', 'WebSearch', 'Bash', 'Skill'];
+    const allowedToolArg = allowedTools.join(',');
+    const disallowedToolArg = disallowedTools.join(',');
     // User-level `~/.claude/settings.json` may register hooks (Stop,
     // PreToolUse, ...) that don't make sense in a runner-driven session — most
     // notably a Stop hook that reads a per-session transcript file. Inside our
@@ -184,31 +183,34 @@ export class ClaudeCodeBackend implements AgentBackend {
     // synthetic user message, the model answers again, the hook fires again,
     // and the loop only ends at the 10-minute hard timeout (exit 143).
     //
-    // Fix: pass a local `--settings` JSON with every known hook event set to
-    // an empty array. Do NOT use `--setting-sources project,local`: that also
-    // hides the user's env block and breaks third-party-router auth. The
-    // explicit settings overlay keeps user config visible while neutralizing
-    // hooks for runner-driven sessions.
+    // Fix: run in Claude Code safe mode by default and also pass a local
+    // `--settings` JSON with every known hook event set to an empty array.
+    // Safe mode disables plugin/hook/MCP customizations while preserving auth,
+    // model selection, built-in tools, and permission handling; the settings
+    // overlay covers older CLI behavior and keeps the audit contract explicit.
+    // Do NOT use `--setting-sources project,local`: that also hides the user's
+    // env block and breaks third-party-router auth.
     //
     // Escape hatch: AINP_CLAUDE_LOAD_USER_SETTINGS=1 keeps user settings
     // active (hooks fire too), for debugging hook behavior.
     const keepUserHooks = process.env.AINP_CLAUDE_LOAD_USER_SETTINGS === '1';
-    const settingsArgs = keepUserHooks
+    const customizationIsolationArgs = keepUserHooks
       ? []
-      : ['--settings', JSON.stringify({ hooks: emptyClaudeHooksSettings() })];
+      : ['--safe-mode', '--settings', JSON.stringify({ hooks: emptyClaudeHooksSettings() })];
     const args = [
       '--print',
       '--output-format', 'stream-json',
       '--verbose',
       '--include-partial-messages',
       '--no-session-persistence',
-      ...settingsArgs,
+      ...customizationIsolationArgs,
       '--permission-mode', this.opts.permissionMode ?? 'acceptEdits',
       '--max-budget-usd', String(this.opts.maxBudgetUsd ?? DEFAULT_BUDGET_USD),
       '--add-dir', ctx.workspacePath,
       '--add-dir', ctx.artifactsDir,
-      '--allowed-tools', allowedTools.join(' '),
-      '--disallowed-tools', disallowedTools.join(' '),
+      '--tools', allowedToolArg,
+      '--allowed-tools', allowedToolArg,
+      '--disallowed-tools', disallowedToolArg,
       '--append-system-prompt', systemPrompt,
       userPrompt,
     ];
@@ -226,6 +228,7 @@ export class ClaudeCodeBackend implements AgentBackend {
       allowedTools,
       disallowedTools,
       userHooksOverridden: !keepUserHooks,
+      safeMode: !keepUserHooks,
     });
 
     // Default to the user's local Claude Code environment so OAuth/keychain

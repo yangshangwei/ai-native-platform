@@ -7,6 +7,7 @@ import { api } from '../src/api-client';
 import { CodexBackend } from '../src/agents/codex';
 
 const ORIGINAL_CAPTURE_ARGS = process.env.CAPTURE_CODEX_ARGS;
+const ORIGINAL_CAPTURE_ENV = process.env.CAPTURE_CODEX_ENV;
 const ORIGINAL_CAPTURE_STDIN = process.env.CAPTURE_CODEX_STDIN;
 const ORIGINAL_CODEX_BIN = process.env.AINP_CODEX_BIN;
 const TEST_CODEX_TIMEOUT_MS = 10_000;
@@ -15,6 +16,8 @@ afterEach(() => {
   vi.restoreAllMocks();
   if (ORIGINAL_CAPTURE_ARGS === undefined) delete process.env.CAPTURE_CODEX_ARGS;
   else process.env.CAPTURE_CODEX_ARGS = ORIGINAL_CAPTURE_ARGS;
+  if (ORIGINAL_CAPTURE_ENV === undefined) delete process.env.CAPTURE_CODEX_ENV;
+  else process.env.CAPTURE_CODEX_ENV = ORIGINAL_CAPTURE_ENV;
   if (ORIGINAL_CAPTURE_STDIN === undefined) delete process.env.CAPTURE_CODEX_STDIN;
   else process.env.CAPTURE_CODEX_STDIN = ORIGINAL_CAPTURE_STDIN;
   if (ORIGINAL_CODEX_BIN === undefined) delete process.env.AINP_CODEX_BIN;
@@ -30,7 +33,9 @@ describe('CodexBackend runtime invocation', () => {
     mkdirSync(artifactsDir, { recursive: true });
 
     const capturePath = join(root, 'args.bin');
+    const envPath = join(root, 'env.txt');
     process.env.CAPTURE_CODEX_ARGS = capturePath;
+    process.env.CAPTURE_CODEX_ENV = envPath;
     vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
 
     await new CodexBackend({ bin: fakeCodexBin(root), timeoutMs: TEST_CODEX_TIMEOUT_MS }).run(implementationSkill(), {
@@ -47,6 +52,13 @@ describe('CodexBackend runtime invocation', () => {
     expect(args).toContain('exec');
     expect(args).toContain('--json');
     expect(args).toContain('--ephemeral');
+    expect(args).toContain('--ignore-rules');
+    expect(args).toContain('--disable');
+    expect(args[args.indexOf('--disable') + 1]).toBe('hooks');
+    // Keep user config loaded so production Codex auth/provider routing remains
+    // visible; hook/rule isolation is handled by --disable hooks,
+    // --ignore-rules, plus the CODEX_NON_INTERACTIVE env marker below.
+    expect(args).not.toContain('--ignore-user-config');
     expect(args).toContain('--skip-git-repo-check');
     expect(args).toContain('--cd');
     expect(args).toContain(workspacePath);
@@ -62,6 +74,7 @@ describe('CodexBackend runtime invocation', () => {
     const approvalIndex = args.indexOf('-c');
     expect(approvalIndex).toBeGreaterThanOrEqual(0);
     expect(args[approvalIndex + 1]).toBe('approval_policy="never"');
+    expect(readFileSync(envPath, 'utf8')).toBe('CODEX_NON_INTERACTIVE=1\n');
   });
 
   it('keeps running when agent stream upload fails', async () => {
@@ -274,6 +287,9 @@ function fakeCodexBin(dir: string, opts: { stderrLine?: string } = {}): string {
     'if [ -n "$CAPTURE_CODEX_ARGS" ]; then',
     '  : > "$CAPTURE_CODEX_ARGS"',
     '  for arg in "$@"; do printf "%s\\0" "$arg" >> "$CAPTURE_CODEX_ARGS"; done',
+    'fi',
+    'if [ -n "$CAPTURE_CODEX_ENV" ]; then',
+    '  printf "CODEX_NON_INTERACTIVE=%s\\n" "${CODEX_NON_INTERACTIVE:-}" > "$CAPTURE_CODEX_ENV"',
     'fi',
     'if [ -n "$CAPTURE_CODEX_STDIN" ]; then cat > "$CAPTURE_CODEX_STDIN"; else cat >/dev/null; fi',
     opts.stderrLine ? `printf "%s\\n" '${opts.stderrLine}' >&2` : '',

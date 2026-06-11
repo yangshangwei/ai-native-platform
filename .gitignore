@@ -30,6 +30,7 @@ logs/
 .playwright-mcp/
 .omx/
 .gstack/
+.trellis/tasks/**/runtime/
 .claude/worktrees/
 .claude/scheduled_tasks.lock
 .claude/scheduled_tasks.json

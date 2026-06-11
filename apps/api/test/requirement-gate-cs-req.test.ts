@@ -76,6 +76,90 @@ describe('runRequirementGate cs-req rules', () => {
     expect(findRule(gate.ruleResults, 'requirement.boundary_present')?.status).toBe('pass');
   });
 
+  test('passes explicit AC bullet lines without requiring a prose acceptance label', () => {
+    const a = artifactFor(`---
+doc_type: requirement
+id: REQ-001
+pitch: 让 Calculator 像处理加法和乘法一样，可靠地完成整数减法。
+status: draft
+---
+
+## 用户故事 (User Stories)
+
+- 作为维护示例计算能力的开发者，我希望能直接表达两个整数相减，而不是把减法绕成加负数或临时手算。
+- 作为补充计算器测试的开发者，我希望减法结果能被自动验收，而不是只能靠人工判断这次改动是否正确。
+
+## 为什么需要 (Why)
+
+现在的计算器已经能覆盖常见的加法和乘法，但缺少减法会让一个很基础的计算场景断掉。
+
+## 怎么解决 (How)
+
+使用者可以在同一个计算器能力里选择做整数减法，输入两个整数后得到前者减去后者的结果。
+
+## 边界 (Boundaries)
+
+- **目标**：覆盖两个整数之间的基础减法。
+- **范围**：只关注 Calculator 的整数减法能力；上下文证据来自 \`src/main/java/sample/Calculator.java\`。
+- **非目标**：不扩展小数、货币、表达式解析、连续运算、溢出特殊处理或界面交互。
+- **AC-001**：给定两个整数，使用者能得到第一个整数减去第二个整数的结果。
+- **AC-002**：项目标准验收命令 \`mvn test\` 通过。
+`);
+    const gate = gates.runRequirementGate({
+      workflowRunId: 'run_csreq',
+      stepRunId: 'step_csreq',
+      artifact: a,
+    });
+
+    expect(gate.status).toBe('pass');
+    expect(findRule(gate.ruleResults, 'requirement.acceptance_criteria_present')?.status).toBe('pass');
+  });
+
+  test('passes numbered level-2 cs-req headings from real agent output', () => {
+    const a = artifactFor(`---
+doc_type: requirement
+req_id: REQ-002
+status: draft
+pitch: 让 Calculator 像做加法一样轻松做减法。
+---
+
+# REQ-002: 为 Calculator 增加整数减法能力
+
+## 1. 用户故事
+
+- 作为调用 sample.Calculator 的业务开发者，我希望能直接求两个整数的差，而不是为了做个减法还得自己写 add(a, -b)。
+- 作为这个计算工具的维护者，我希望减法和已有的加法、乘法摆在一起，而不是让调用方记两套不一样的用法。
+
+## 2. 为什么需要
+
+今天这个计算工具能做加法、能做乘法，唯独不能做减法。缺了它，任何需要求差的人都得绕路。
+
+## 3. 怎么解决
+
+给使用者一个减法能力：传入两个整数，立刻拿到前者减后者的结果。
+
+### 验收标准
+
+- **AC-001 减法结果正确**：给定任意两个整数 a、b，求差返回 a - b。
+- **AC-002 mvn test 通过**：测试套件在 Maven 下全部通过。
+
+## 4. 边界
+
+- 目标：补齐整数减法。
+- 非目标：不做小数、大数、溢出安全运算。
+- 范围：只关注 Calculator 的整数减法能力；上下文证据来自 \`src/main/java/sample/Calculator.java\`。
+`);
+    const gate = gates.runRequirementGate({
+      workflowRunId: 'run_csreq',
+      stepRunId: 'step_csreq',
+      artifact: a,
+    });
+
+    expect(gate.status).toBe('pass');
+    expect(findRule(gate.ruleResults, 'requirement.four_sections_present')?.status).toBe('pass');
+    expect(findRule(gate.ruleResults, 'requirement.boundary_present')?.status).toBe('pass');
+  });
+
   test('fails when pitch frontmatter is missing', () => {
     const a = artifactFor(VALID_CS_REQ.replace(/^pitch: .*$\n/m, ''));
     const gate = gates.runRequirementGate({

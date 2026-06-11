@@ -31,6 +31,7 @@
   - `AINP_CLAUDE_BIN` optionally overrides the Claude Code binary.
   - `AINP_CODEX_BIN` optionally overrides the Codex binary.
   - `AINP_AGENT_PREFLIGHT_TIMEOUT_MS` optionally overrides preflight timeout.
+  - Runner Codex runtime sets `CODEX_NON_INTERACTIVE=1` for the child process.
 - Cross-platform CLI resolution is a shared contract between API preflight,
   Runner preflight, and Runner runtime invocation:
   - macOS/Linux candidates are the ordinary `claude` / `codex` commands unless
@@ -82,7 +83,7 @@
 
 - Shared: assert product backend guard accepts only `codex` / `claude_code`.
 - API: create/update project stores backend, rejects invalid backend, normalizes legacy invalid DB values to `null`, and blocks workflow request/run without backend.
-- Runner: backend selection reads only project config, uses the backend-specific preflight contract, Codex runtime does not pass `--ask-for-approval` to `codex exec` (the flag is interactive-only) and instead pins `-c approval_policy="never"` so the sandbox is the sole gate, stages produce-file artifacts inside the workspace at `<workspace>/.ainp-artifacts/<stage>/<name>` (then copies them to `ctx.artifactsDir`) because Codex's `codex_core::tools::router` hard-rejects any `apply_patch` whose target sits outside `--cd` regardless of `--add-dir` or approval policy, and fail-fast errors include remediation.
+- Runner: backend selection reads only project config, uses the backend-specific preflight contract, Codex runtime does not pass `--ask-for-approval` to `codex exec` (the flag is interactive-only) and instead pins `-c approval_policy="never"` so the sandbox is the sole gate, passes `--ignore-rules --disable hooks` plus `CODEX_NON_INTERACTIVE=1` while keeping user config loaded for auth/provider routing, stages produce-file artifacts inside the workspace at `<workspace>/.ainp-artifacts/<stage>/<name>` (then copies them to `ctx.artifactsDir`) because Codex's `codex_core::tools::router` hard-rejects any `apply_patch` whose target sits outside `--cd` regardless of `--add-dir` or approval policy, and fail-fast errors include remediation.
 - Web: project form/task form renders only Claude Code/Codex, disables task creation without backend, and labels stream events with display names.
 - Shared/API: stream-channel tests must prove `workflowRunId | workflowRequestId` mutual exclusion, per-channel sequence independence, and request/run live-tail isolation.
 

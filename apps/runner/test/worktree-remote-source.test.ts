@@ -44,6 +44,7 @@ describe('TrustedLocalWorktreeEnvironment remote sources', () => {
   test('clones a registered remote Git source into the managed localPath before creating worktree', async () => {
     const remoteRepo = await makeRemoteRepo();
     const managedSource = join(mkdtempSync(join(tmpdir(), 'ainp-managed-source-')), 'source');
+    const worktreesDir = mkdtempSync(join(tmpdir(), 'ainp-worktrees-'));
     const project: Project = {
       id: newId('proj'),
       name: 'remote-fixture',
@@ -57,7 +58,7 @@ describe('TrustedLocalWorktreeEnvironment remote sources', () => {
       registeredAt: nowIso(),
     };
     const run = workflowRun(project.id);
-    const env = new TrustedLocalWorktreeEnvironment(project);
+    const env = new TrustedLocalWorktreeEnvironment(project, { worktreesDir });
 
     const workspace = await env.prepare(run);
 
@@ -69,6 +70,7 @@ describe('TrustedLocalWorktreeEnvironment remote sources', () => {
   test('uses the workflow sourceBranch as the worktree base branch', async () => {
     const remoteRepo = await makeRemoteRepo(['main', 'develop']);
     const managedSource = join(mkdtempSync(join(tmpdir(), 'ainp-managed-source-')), 'source');
+    const worktreesDir = mkdtempSync(join(tmpdir(), 'ainp-worktrees-'));
     const project: Project = {
       id: newId('proj'),
       name: 'remote-source-branch-fixture',
@@ -82,7 +84,7 @@ describe('TrustedLocalWorktreeEnvironment remote sources', () => {
       registeredAt: nowIso(),
     };
     const run = workflowRun(project.id, 'develop');
-    const env = new TrustedLocalWorktreeEnvironment(project);
+    const env = new TrustedLocalWorktreeEnvironment(project, { worktreesDir });
 
     const workspace = await env.prepare(run);
 

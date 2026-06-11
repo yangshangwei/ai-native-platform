@@ -492,7 +492,10 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     await api.commandRun(cr);
     console.log(`[runner] build_test command ${cr.status} (exit=${cr.exitCode})`);
 
-    const reports = await collectReports(c.workspace.path);
+    const reports = await collectReports(
+      c.workspace.path,
+      join(c.runArtifactsDir, 'build_test', 'maven-reports'),
+    );
     const result = await api.mavenBuild({
       workflowRunId: c.run.id,
       stepRunId: stepId,
@@ -1625,9 +1628,10 @@ function safeJsonSchemaVersion(text: string): string | null {
 
 async function collectReports(
   workspacePath: string,
+  outputDir: string,
 ): Promise<Parameters<typeof api.mavenBuild>[0]['reports']> {
-  const { collectMavenReports } = await import('./reports');
-  const reports = await collectMavenReports(workspacePath);
+  const { collectMavenReports, persistMavenReports } = await import('./reports');
+  const reports = await persistMavenReports(await collectMavenReports(workspacePath), outputDir);
   const out: Parameters<typeof api.mavenBuild>[0]['reports'] = [];
   if (reports.surefire) {
     out.push({

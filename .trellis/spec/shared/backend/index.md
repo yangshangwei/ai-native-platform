@@ -21,7 +21,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [Agent Backend Contract](./agent-backend-contract.md) | Project-level real backend type/API/DB contract | Current |
 | [Context Injection Protocol](./context-injection-protocol.md) | Provider-neutral ContextPack type/render/audit contract | Current |
-| [Evidence and Verifier Protocol](./evidence-verifier-protocol.md) | Digest-backed evidence gates, completion blocking, and UI verifier artifacts | Current |
+| [Evidence and Verifier Protocol](./evidence-verifier-protocol.md) | Digest-backed evidence gates, completion reports, and UI verifier artifacts | Current |
 
 ---
 

@@ -156,6 +156,9 @@ export class CodexBackend implements AgentBackend {
       'exec',
       '--json',
       '--ephemeral',
+      '--ignore-rules',
+      '--disable',
+      'hooks',
       '--skip-git-repo-check',
       // Pin approval_policy=never so non-interactive runner sessions aren't
       // silently rejected by a user's default `on-request` policy. This is
@@ -181,12 +184,23 @@ export class CodexBackend implements AgentBackend {
     });
     const bin = invocation.bin;
 
-    await emitMeta(ctx, 'started', { bin, stage: skill.stage, skillId: skill.id, sandbox: 'workspace-write' });
+    await emitMeta(ctx, 'started', {
+      bin,
+      stage: skill.stage,
+      skillId: skill.id,
+      sandbox: 'workspace-write',
+      isolation: {
+        ignoreRules: true,
+        ignoreUserConfig: false,
+        hooksDisabled: true,
+        nonInteractive: true,
+      },
+    });
 
     const child = spawn(invocation.command, invocation.args, {
       cwd: ctx.workspacePath,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env },
+      env: { ...process.env, CODEX_NON_INTERACTIVE: '1' },
       shell: invocation.shell,
       windowsHide: invocation.windowsHide,
     });

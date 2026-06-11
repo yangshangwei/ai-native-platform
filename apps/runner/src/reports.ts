@@ -1,5 +1,5 @@
-import { readdir, readFile, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { copyFile, mkdir, readdir, readFile, stat } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import {
   aggregateSurefire,
@@ -25,6 +25,16 @@ export async function collectMavenReports(workspacePath: string): Promise<Collec
   };
 }
 
+export async function persistMavenReports(
+  reports: CollectedReports,
+  outputDir: string,
+): Promise<CollectedReports> {
+  return {
+    surefire: await persistOne(reports.surefire, outputDir, 'surefire-reports'),
+    failsafe: await persistOne(reports.failsafe, outputDir, 'failsafe-reports'),
+  };
+}
+
 async function collectOne(
   workspacePath: string,
   dir: string,
@@ -45,6 +55,23 @@ async function collectOne(
   }
   if (parsed.length === 0) return null;
   return aggregateSurefire(framework, parsed);
+}
+
+async function persistOne(
+  aggregate: SurefireAggregate | null,
+  outputDir: string,
+  reportsDirName: string,
+): Promise<SurefireAggregate | null> {
+  if (!aggregate) return null;
+  const targetDir = join(outputDir, reportsDirName);
+  await mkdir(targetDir, { recursive: true });
+  const reportPaths: string[] = [];
+  for (const sourcePath of aggregate.reportPaths) {
+    const targetPath = join(targetDir, basename(sourcePath));
+    await copyFile(sourcePath, targetPath);
+    reportPaths.push(targetPath);
+  }
+  return { ...aggregate, reportPaths };
 }
 
 export async function fileSize(path: string): Promise<number> {

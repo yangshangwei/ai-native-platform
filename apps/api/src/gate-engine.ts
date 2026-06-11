@@ -267,7 +267,7 @@ export function runRequirementGate(params: {
   const evidence = artifactEvidence(params.artifact, 'requirement draft markdown');
   const hasArtifact = Boolean(params.artifact);
   const hasReqId = /\bREQ-\d{3}\b/i.test(text);
-  const hasAcceptance = /\bAC-\d{3}\b/i.test(text) && /acceptance criteria|验收标准/i.test(text);
+  const hasAcceptance = hasAcceptanceCriteria(text);
   const hasScope = /goals?|目标|non-goals?|非目标|scope|范围/i.test(text);
   const hasContextEvidence =
     /context pack|context evidence|relevant code|evidence refs|`src\//i.test(text);
@@ -275,13 +275,14 @@ export function runRequirementGate(params: {
   // ≥2 specific user stories, and a substantive 边界 section.
   const hasPitch = /^pitch:\s*\S+/m.test(text);
   const hasFourSections =
-    /##\s*用户故事/i.test(text) &&
-    /##\s*为什么需要/i.test(text) &&
-    /##\s*怎么解决/i.test(text) &&
-    /##\s*边界/i.test(text);
+    hasRequirementSection(text, '用户故事') &&
+    hasRequirementSection(text, '为什么需要') &&
+    hasRequirementSection(text, '怎么解决') &&
+    hasRequirementSection(text, '边界');
   const userStoryBullets = (text.match(/^-\s+作为/gm) ?? []).length;
   const hasUserStoriesMin2 = userStoryBullets >= 2;
-  const hasBoundary = /##\s*边界[\s\S]{20,}/i.test(text);
+  const boundaryBody = matchRequirementSection(text, '边界')?.[0].replace(/^##[^\n]*\n?/i, '').trim() ?? '';
+  const hasBoundary = boundaryBody.length >= 20;
 
   const results: RuleResult[] = [
     {
@@ -353,6 +354,23 @@ export function runRequirementGate(params: {
   return record(params.workflowRunId, params.stepRunId, 'requirement_gate', results);
 }
 
+function hasAcceptanceCriteria(text: string): boolean {
+  if (/\bAC-\d{3}\b/i.test(text) && /acceptance criteria|验收标准/i.test(text)) return true;
+  return /(?:^|\n)\s*(?:[-*]\s*)?(?:\*\*)?AC-\d{3}(?:\*\*)?\s*[:：-]/i.test(text);
+}
+
+function hasRequirementSection(text: string, title: string): boolean {
+  return Boolean(matchRequirementSection(text, title));
+}
+
+function matchRequirementSection(text: string, title: string): RegExpMatchArray | null {
+  const escaped = escapeRegExp(title);
+  return text.match(new RegExp(
+    String.raw`^##\s*(?:\d+\.\s*)?(?:\*\*)?\s*${escaped}(?:\s|\*\*|$)[\s\S]*?(?=^##\s|(?![\s\S]))`,
+    'im',
+  ));
+}
+
 export function runDesignGate(params: {
   workflowRunId: WorkflowRunId;
   stepRunId: StepRunId | null;
@@ -371,10 +389,10 @@ export function runDesignGate(params: {
   // cs-feat-design (Phase A.5): explicit DSN id, 现状/变化 two-段式,
   // 挂载点 count in 3-5, 推进策略 section.
   const hasDsnId = /^design_id:\s*DSN-\d{3}/m.test(text);
-  const hasCurrentStateSection = /##\s*(\d+\.\s*)?现状/i.test(text);
-  const hasChangesSection = /##\s*(\d+\.\s*)?变化/i.test(text);
-  const hasRolloutSection = /##\s*(\d+\.\s*)?推进策略/i.test(text);
-  const mountSectionMatch = text.match(/##\s*(\d+\.\s*)?挂载点[\s\S]*?(?=\n##\s|\n*$)/i);
+  const hasCurrentStateSection = hasDesignSection(text, '现状');
+  const hasChangesSection = hasDesignSection(text, '变化');
+  const hasRolloutSection = hasDesignSection(text, '推进策略');
+  const mountSectionMatch = matchDesignSection(text, '挂载点');
   const mountBulletCount = mountSectionMatch
     ? (mountSectionMatch[0].match(/^\s*\d+\.\s+\S|\n\s*-\s+\S/gm) ?? []).length
     : 0;
@@ -455,6 +473,22 @@ export function runDesignGate(params: {
   ];
 
   return record(params.workflowRunId, params.stepRunId, 'design_gate', results);
+}
+
+function hasDesignSection(text: string, title: string): boolean {
+  return Boolean(matchDesignSection(text, title));
+}
+
+function matchDesignSection(text: string, title: string): RegExpMatchArray | null {
+  const escaped = escapeRegExp(title);
+  return text.match(new RegExp(
+    String.raw`^##\s*(?:\d+\.\s*)?(?:\*\*)?\s*${escaped}(?:\s|\*\*|$)[\s\S]*?(?=^##\s|(?![\s\S]))`,
+    'im',
+  ));
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 export function runAcceptanceTraceabilityGate(params: {

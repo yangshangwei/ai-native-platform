@@ -175,7 +175,7 @@ export async function generateCompletionReport(
     `- **Project:** ${project?.name ?? run.projectId}`,
     `- **Branch:** \`${run.branch}\``,
     `- **Workspace:** \`${run.workspacePath ?? '-'}\``,
-    `- **Status:** ${run.status}`,
+    `- **Status at report generation:** ${run.status}`,
     ``,
     `## Stage timeline`,
     ``,
@@ -242,7 +242,7 @@ export async function generateCompletionReport(
       `Workflow Run: ${run.id}`,
       `Title: ${run.title}`,
       `Project: ${project?.name ?? run.projectId}`,
-      `Status: ${run.status}`,
+      `Status at report generation: ${run.status}`,
     ],
     sections: [
       { title: 'Stage timeline', body: stageTimeline },

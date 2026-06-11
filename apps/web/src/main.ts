@@ -14,6 +14,11 @@ import {
   parseDesignArtifact,
   parseKnowledgeArtifact,
   parseRequirementArtifact,
+  reportIsAcceptable,
+  reportIsRunning,
+  reportNeedsAttention,
+  reportStats,
+  reportStatusLabel,
   type KnowledgeSuggestion,
   type ArtifactDto,
   type DesignDoc,
@@ -631,7 +636,9 @@ function taskFocusSummary(
     return { label: '等待你确认', hint: copy.subtitle, kind: 'warn' };
   }
   if (detail.run.status === 'running') return { label: '自动执行中', hint: `${STAGE_LABELS[projection.currentStage]}正在处理`, kind: 'info' };
-  if (detail.run.status === 'completed') return { label: '已完成', hint: '可以查看交付报告和知识沉淀', kind: 'good' };
+  if (detail.run.status === 'passed' || detail.run.status === 'completed') {
+    return { label: '已完成', hint: '可以查看交付报告和知识沉淀', kind: 'good' };
+  }
   if (detail.run.status === 'failed') return { label: '需要处理', hint: `${STAGE_LABELS[projection.currentStage]}出现失败`, kind: 'bad' };
   return { label: detail.run.status, hint: `${STAGE_LABELS[projection.currentStage]}当前状态`, kind: statusKind(detail.run.status) };
 }
@@ -5475,44 +5482,11 @@ function renderCoordinatorStreamDetails(
   });
 }
 
-function reportStats(runs: WorkflowRunDto[]): { total: number; attention: number; acceptable: number; running: number; completed: number; failed: number } {
-  return {
-    total: runs.length,
-    attention: runs.filter((run) => reportNeedsAttention(run)).length,
-    acceptable: runs.filter((run) => reportIsAcceptable(run)).length,
-    running: runs.filter((run) => reportIsRunning(run)).length,
-    completed: runs.filter((run) => run.status === 'completed').length,
-    failed: runs.filter((run) => run.status === 'failed').length,
-  };
-}
-
-function reportNeedsAttention(run: WorkflowRunDto): boolean {
-  return run.status === 'failed' || run.status === 'awaiting_human' || run.status === 'awaiting_clarification';
-}
-
-function reportIsAcceptable(run: WorkflowRunDto): boolean {
-  return run.status === 'completed';
-}
-
-function reportIsRunning(run: WorkflowRunDto): boolean {
-  return run.status === 'running' || run.status === 'pending' || run.status === 'claimed';
-}
-
-function reportStatusLabel(status: string): string {
-  if (status === 'completed') return '可验收';
-  if (status === 'failed') return '失败';
-  if (status === 'awaiting_human') return '待确认';
-  if (status === 'awaiting_clarification') return '待澄清';
-  if (status === 'running' || status === 'claimed') return '执行中';
-  if (status === 'pending') return '等待执行';
-  return status;
-}
-
 function reportNextAction(run: WorkflowRunDto): string {
   if (run.status === 'failed') return '查看失败证据并决定是否重试。';
   if (run.status === 'awaiting_human') return '处理人工确认点，确认后继续流转。';
   if (run.status === 'awaiting_clarification') return '补充澄清信息后继续。';
-  if (run.status === 'completed') return '查看交付摘要，决定是否验收。';
+  if (reportIsAcceptable(run)) return '查看交付摘要，决定是否验收。';
   if (reportIsRunning(run)) return '等待 Runner 完成，报告会持续更新。';
   return '查看任务详情确认状态。';
 }

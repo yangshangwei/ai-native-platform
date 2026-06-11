@@ -64,7 +64,7 @@ The goal is to help later stages know where to look, not decide how to change th
     instructions: [
       'Turn the user request into a structured requirement document following CodeStable cs-req methodology.',
       '',
-      'Output a markdown file with EXACTLY four sections in this order:',
+      'Output a markdown file with EXACTLY four level-2 Markdown headings in this order: `## 用户故事`, `## 为什么需要`, `## 怎么解决`, `## 边界`. Do NOT prefix these headings with numbers.',
       '',
       '1. **用户故事 (User Stories)** — 2 to 4 bullets. Each bullet must describe a SPECIFIC scenario:',
       '   `作为 {具体角色}，我希望 {能做什么}，而不是 {现在怎么难受}`. No generic "希望系统好用" wording.',

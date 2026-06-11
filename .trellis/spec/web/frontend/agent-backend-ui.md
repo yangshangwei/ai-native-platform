@@ -203,3 +203,97 @@ const copy = reviewGateCopy(pendingGate, currentStage);
 panelHeader('等待你确认', copy.subtitle);
 button(copy.approveLabel, 'button primary');
 ```
+
+## Scenario: report center status projection
+
+### 1. Scope / Trigger
+
+- Trigger: changes to the reports page, report status labels, report filtering,
+  completion-report detail rendering, or `apps/web/src/projection.ts` helpers
+  used by those views.
+- The reports page is an operational acceptance surface. It must classify
+  finished workflow runs by acceptance readiness, not by internal terminal enum
+  names.
+
+### 2. Signatures
+
+- Projection helpers in `apps/web/src/projection.ts`:
+  - `reportStats(runs: WorkflowRunDto[]): ReportStats`
+  - `reportNeedsAttention(run: WorkflowRunDto): boolean`
+  - `reportIsAcceptable(run: WorkflowRunDto): boolean`
+  - `reportIsRunning(run: WorkflowRunDto): boolean`
+  - `reportStatusLabel(status: string): string`
+- `ReportStats` fields: `{ total, attention, acceptable, running, completed, failed }`.
+- Reports page render entry points in `apps/web/src/main.ts`:
+  - `renderReportsPage()`
+  - `renderReportsOverview(stats)`
+  - `renderReportTabs(stats)`
+  - `renderReportRow(run)`
+  - `renderActiveReportDetail()`
+
+### 3. Contracts
+
+- `run.status === 'passed'` is a successful terminal run and must be treated as
+  report-acceptable everywhere the reports page counts, filters, or labels
+  acceptable work.
+- `run.status === 'completed'` remains acceptable for legacy/imported data.
+- `ReportStats.completed` is intentionally the same count as `acceptable`
+  until the backend exposes a separate product-level completion state. Do not
+  count only `status === 'completed'`, because current workflow success writes
+  `status='passed'`.
+- `reportStatusLabel('passed')` and `reportStatusLabel('completed')` both
+  return `可验收`.
+- Attention statuses are `failed`, `awaiting_human`, and
+  `awaiting_clarification`.
+- Running statuses are `running`, `pending`, and `claimed`.
+- Report detail should parse the structured completion-report JSON sidecar when
+  present; markdown parsing is a fallback only.
+
+### 4. Validation & Error Matrix
+
+- `passed` run appears on reports page -> count under `可验收`, not `执行中` or
+  `需处理`.
+- `passed` run filtered by acceptable tab -> row remains visible.
+- `failed` run -> count under both `需处理` and `失败`.
+- `awaiting_human` / `awaiting_clarification` -> count under `需处理`, not
+  `可验收`.
+- `pending` / `claimed` / `running` -> count under `执行中`.
+- Completion report has JSON sidecar -> render sidecar title/summary/sections
+  instead of scraping markdown.
+
+### 5. Good/Base/Bad Cases
+
+- Good: one `passed`, one `failed`, and one `running` run produce stats
+  `{ acceptable: 1, completed: 1, attention: 1, running: 1, failed: 1 }`.
+- Base: legacy `completed` runs still display `可验收`.
+- Bad: a passed run is missing from the acceptable tab because the UI filters
+  only `status === 'completed'`.
+- Bad: the overview says zero completed reports while all current successful
+  runs have `status === 'passed'`.
+
+### 6. Tests Required
+
+- Projection tests must cover `passed` as acceptable, `completed` aliasing, and
+  mixed-status stats.
+- Sidecar projection tests must cover `ainp.completion_report.v1` JSON
+  preferred over markdown fallback.
+- Manual/Playwright report-page smoke should verify the `可验收` tab and KPI
+  count are nonzero after a passing end-to-end run.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+export function reportIsAcceptable(run: WorkflowRunDto): boolean {
+  return run.status === 'completed';
+}
+```
+
+#### Correct
+
+```ts
+export function reportIsAcceptable(run: WorkflowRunDto): boolean {
+  return run.status === 'passed' || run.status === 'completed';
+}
+```

@@ -22,7 +22,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Agent Backend Runtime](./agent-backend-runtime.md) | Runner backend selection, preflight, and streaming execution | Current |
 | [Flow Registry](./flow-registry.md) | FLOW_REGISTRY semantics, runWorkflow dispatch, and W2-3+ extension contract | Current |
 | [Context Injection Protocol](../../shared/backend/context-injection-protocol.md) | Provider-neutral ContextPack build/render/audit contract used by runner backends | Current |
-| [Evidence and Verifier Protocol](../../shared/backend/evidence-verifier-protocol.md) | Digest-backed evidence gates, completion blocking, and UI verifier artifacts | Current |
+| [Evidence and Verifier Protocol](../../shared/backend/evidence-verifier-protocol.md) | Digest-backed evidence gates, completion reports, and UI verifier artifacts | Current |
 
 ---
 

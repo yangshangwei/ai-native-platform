@@ -517,6 +517,49 @@ export interface WorkbenchOverview {
   recentReports: WorkflowRunDto[];
 }
 
+export interface ReportStats {
+  total: number;
+  attention: number;
+  acceptable: number;
+  running: number;
+  completed: number;
+  failed: number;
+}
+
+export function reportStats(runs: WorkflowRunDto[]): ReportStats {
+  const acceptable = runs.filter((run) => reportIsAcceptable(run)).length;
+  return {
+    total: runs.length,
+    attention: runs.filter((run) => reportNeedsAttention(run)).length,
+    acceptable,
+    running: runs.filter((run) => reportIsRunning(run)).length,
+    completed: acceptable,
+    failed: runs.filter((run) => run.status === 'failed').length,
+  };
+}
+
+export function reportNeedsAttention(run: WorkflowRunDto): boolean {
+  return run.status === 'failed' || run.status === 'awaiting_human' || run.status === 'awaiting_clarification';
+}
+
+export function reportIsAcceptable(run: WorkflowRunDto): boolean {
+  return run.status === 'passed' || run.status === 'completed';
+}
+
+export function reportIsRunning(run: WorkflowRunDto): boolean {
+  return run.status === 'running' || run.status === 'pending' || run.status === 'claimed';
+}
+
+export function reportStatusLabel(status: string): string {
+  if (status === 'passed' || status === 'completed') return '可验收';
+  if (status === 'failed') return '失败';
+  if (status === 'awaiting_human') return '待确认';
+  if (status === 'awaiting_clarification') return '待澄清';
+  if (status === 'running' || status === 'claimed') return '执行中';
+  if (status === 'pending') return '等待执行';
+  return status;
+}
+
 export function parseRequirementDocument(markdown: string): RequirementDoc {
   const title = firstHeading(markdown) ?? 'Requirement Draft';
   const sections = splitSections(markdown);

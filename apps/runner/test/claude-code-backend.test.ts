@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -63,6 +63,9 @@ describe('ClaudeCodeBackend runtime invocation', () => {
     expect(args).toContain('stream-json');
     expect(args).toContain('--no-session-persistence');
     expect(args).not.toContain('--bare');
+    expect(toolArg(args, '--tools')).toEqual(['Read', 'Glob', 'Grep', 'Edit', 'Write']);
+    expect(toolArg(args, '--allowed-tools')).toEqual(['Read', 'Glob', 'Grep', 'Edit', 'Write']);
+    expect(toolArg(args, '--disallowed-tools')).toEqual(['WebFetch', 'WebSearch', 'Bash', 'Skill']);
   });
 
   it('uses the shared env override resolver when no constructor bin is provided', async () => {
@@ -175,7 +178,7 @@ describe('ClaudeCodeBackend runtime invocation', () => {
     expect(env.XDG_CONFIG_HOME).toBeUndefined();
   });
 
-  it('passes --settings hook overrides by default without dropping user settings sources', async () => {
+  it('uses safe mode plus --settings hook overrides by default without dropping user settings sources', async () => {
     const root = mkdtempSync(join(tmpdir(), 'ainp-claude-backend-settings-'));
     const workspacePath = join(root, 'workspace');
     const artifactsDir = join(root, 'artifacts');
@@ -198,6 +201,7 @@ describe('ClaudeCodeBackend runtime invocation', () => {
     });
 
     const args = readFileSync(capturePath).toString('utf8').split('\0').filter(Boolean);
+    expect(args).toContain('--safe-mode');
     expect(args).not.toContain('--setting-sources');
     const idx = args.indexOf('--settings');
     expect(idx).toBeGreaterThanOrEqual(0);
@@ -231,6 +235,7 @@ describe('ClaudeCodeBackend runtime invocation', () => {
     });
 
     const args = readFileSync(capturePath).toString('utf8').split('\0').filter(Boolean);
+    expect(args).not.toContain('--safe-mode');
     expect(args).not.toContain('--settings');
     expect(args).not.toContain('--setting-sources');
   });
@@ -266,6 +271,36 @@ describe('ClaudeCodeBackend runtime invocation', () => {
     expect(systemPrompt).toContain('CONTEXT-PACK CONSTRAINTS');
     expect(systemPrompt).toContain('DO NOT plan changes');
     expect(systemPrompt).toContain('≤ 2 KB');
+  });
+
+  it('does not pre-create produce-file artifacts before Claude writes them', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ainp-claude-backend-no-precreate-'));
+    const workspacePath = join(root, 'workspace');
+    const artifactsDir = join(root, 'artifacts');
+    mkdirSync(workspacePath, { recursive: true });
+    mkdirSync(artifactsDir, { recursive: true });
+
+    const outputName = 'context_pack.md';
+    const targetPath = join(artifactsDir, outputName);
+    expect(existsSync(targetPath)).toBe(false);
+    vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
+
+    const result = await new ClaudeCodeBackend({
+      bin: fakeClaudeBinThatFailsIfArtifactPreexists(root, artifactsDir, outputName),
+      timeoutMs: 3_000,
+    }).run(contextPackSkill(), {
+      workflowRunId: 'run_claude_no_precreate',
+      stepRunId: 'step_claude_no_precreate',
+      workspacePath,
+      branch: 'main',
+      title: 'exercise no artifact precreate',
+      artifactsDir,
+      inputs: {},
+    });
+
+    expect(result.outputs).toHaveLength(1);
+    expect(result.outputs[0]?.path).toBe(targetPath);
+    expect(readFileSync(targetPath, 'utf8')).toContain('fake context pack body');
   });
 
   it('injects the shared ContextPack rendering into the Claude system prompt', async () => {
@@ -371,6 +406,30 @@ function fakeClaudeBinThatProducesArtifact(dir: string, artifactsDir: string, ou
   ].join('\n'), 'utf8');
   chmodSync(bin, 0o755);
   return bin;
+}
+
+function fakeClaudeBinThatFailsIfArtifactPreexists(dir: string, artifactsDir: string, outputName: string): string {
+  const bin = join(dir, 'claude-no-precreate');
+  const targetPath = join(artifactsDir, outputName);
+  writeFileSync(bin, [
+    '#!/bin/sh',
+    `if [ -e "${targetPath}" ]; then`,
+    '  printf "%s\\n" \'{"type":"result","subtype":"error","result":"target preexisted"}\'',
+    '  exit 7',
+    'fi',
+    `printf "%s\\n" "fake context pack body" > "${targetPath}"`,
+    'printf "%s\\n" \'{"type":"result","subtype":"success","result":"done"}\'',
+    'exit 0',
+    '',
+  ].join('\n'), 'utf8');
+  chmodSync(bin, 0o755);
+  return bin;
+}
+
+function toolArg(args: string[], flag: string): string[] {
+  const idx = args.indexOf(flag);
+  expect(idx).toBeGreaterThanOrEqual(0);
+  return args[idx + 1]!.split(',').filter(Boolean);
 }
 
 function contextPackFixture(): ContextPack {

@@ -115,14 +115,22 @@ test('completion report route emits markdown plus structured JSON sidecar artifa
     metadata: { structured: true, schemaVersion: 'ainp.completion_report.v1' },
   });
 
+  const markdown = await app.request(`/artifacts/${body.artifact.id}/content`);
+  const markdownText = ((await markdown.json()) as { text: string }).text;
+  expect(markdownText).toContain('**Status at report generation:**');
+  expect(markdownText).not.toContain('**Status:** running');
+
   const json = await app.request(`/artifacts/${body.sidecar.id}/content`);
   const parsed = JSON.parse(((await json.json()) as { text: string }).text) as {
     schemaVersion: string;
+    summary: string[];
     sections: Array<{ title: string; body: string }>;
     contextRequests: Array<{ id: string; supplementContextPackId: string }>;
     knowledgeReviewSignals: Array<{ kind: string; recommendedAction: string }>;
   };
   expect(parsed.schemaVersion).toBe('ainp.completion_report.v1');
+  expect(parsed.summary.some((item) => item.startsWith('Status at report generation: '))).toBe(true);
+  expect(parsed.summary.some((item) => item.startsWith('Status: '))).toBe(false);
   expect(parsed.sections.length).toBeGreaterThan(0);
   expect(parsed.contextRequests).toMatchObject([
     { id: 'ctxreq_report', supplementContextPackId: 'ctxpack_supplement' },

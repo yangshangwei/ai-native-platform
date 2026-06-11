@@ -1,0 +1,8 @@
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Check ContextPack governance, context_request, metrics, and safety contracts after verification/fixes."}
+{"file":".trellis/spec/shared/backend/evidence-verifier-protocol.md","reason":"Check that success claims are supported by persisted evidence and verifier rules."}
+{"file":".trellis/spec/runner/backend/agent-backend-runtime.md","reason":"Check Runner backend/preflight/runtime behavior and stream contracts."}
+{"file":".trellis/spec/runner/backend/flow-registry.md","reason":"Check flow dispatch/stage-order behavior and watch/orchestrate compatibility."}
+{"file":".trellis/spec/web/frontend/agent-backend-ui.md","reason":"Check browser-facing workflow and task-detail review hierarchy."}
+{"file":".trellis/spec/web/frontend/directory-structure.md","reason":"Check Web changes stay inside existing SPA boundaries."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check data survives cross-layer round trips and UI/API/runner formats align."}
+{"file":".trellis/tasks/06-10-business-flow-end-to-end-audit/research/current-business-flow-map.md","reason":"Use the current flow map to verify all intended surfaces were covered."}

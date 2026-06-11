@@ -5,6 +5,9 @@ import {
   buildRunProjection,
   isReadableFileArtifact,
   latestArtifactOfKind,
+  reportIsAcceptable,
+  reportStats,
+  reportStatusLabel,
   stagesForRun,
   visibleStagesForRun,
 } from '../src/projection';
@@ -74,6 +77,35 @@ describe('web workflow run projection', () => {
       testsTotal: 3,
       testsPassed: 3,
       buildStatus: 'passed',
+    });
+  });
+
+  it('treats passed workflow runs as acceptable reports', () => {
+    const passedRun = {
+      id: 'run_passed',
+      title: 'Shipped task',
+      status: 'passed',
+      currentStage: 'completion',
+      branch: 'ai/run_passed-task',
+      workspacePath: '/tmp/worktree',
+      projectId: 'proj_1',
+      createdAt: '2026-05-01T00:00:00.000Z',
+    };
+    const stats = reportStats([
+      passedRun,
+      { ...passedRun, id: 'run_failed', status: 'failed' },
+      { ...passedRun, id: 'run_running', status: 'running' },
+    ]);
+
+    expect(reportIsAcceptable(passedRun)).toBe(true);
+    expect(reportStatusLabel('passed')).toBe('可验收');
+    expect(stats).toMatchObject({
+      total: 3,
+      acceptable: 1,
+      completed: 1,
+      attention: 1,
+      running: 1,
+      failed: 1,
     });
   });
 

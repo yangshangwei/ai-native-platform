@@ -25,6 +25,8 @@ import { existsSync } from 'node:fs';
 const API_BASE = process.env.AINP_API_BASE ?? 'http://127.0.0.1:8787';
 const SAMPLE_PATH = resolve(import.meta.dir, '..', 'examples', 'java-maven-sample');
 const RUNNER = resolve(import.meta.dir, '..', 'apps', 'runner', 'src', 'index.ts');
+const AGENT_BACKEND = parseAgentBackend(process.env.AINP_E2E_AGENT_BACKEND ?? 'codex');
+const TITLE = '为 Calculator 增加 subtract(int,int) 方法，验收标准是 mvn test 通过';
 
 const STAGE_TO_GATE: Record<string, string> = {
   requirement: 'requirement_gate',
@@ -40,6 +42,11 @@ function fail(msg: string): never {
 
 function log(s: string): void {
   console.log(`[e2e] ${s}`);
+}
+
+function parseAgentBackend(value: string): 'claude_code' | 'codex' {
+  if (value === 'claude_code' || value === 'codex') return value;
+  fail(`AINP_E2E_AGENT_BACKEND must be claude_code or codex (got: ${value})`);
 }
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -67,11 +74,18 @@ async function ensureProject(): Promise<void> {
     fail(`sample is not a git repo. (cd ${SAMPLE_PATH} && git init && git add . && git commit -m initial)`);
   }
   // idempotent: API returns existing project if name already taken
-  await fetchJson(`/projects`, {
+  const project = await fetchJson<{ id: string; agentBackend: 'claude_code' | 'codex' | null }>(`/projects`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'java-sample', localPath: SAMPLE_PATH }),
+    body: JSON.stringify({ name: 'java-sample', localPath: SAMPLE_PATH, agentBackend: AGENT_BACKEND }),
   });
+  if (project.agentBackend !== AGENT_BACKEND) {
+    await fetchJson(`/projects/${project.id}/agent-backend`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agentBackend: AGENT_BACKEND }),
+    });
+  }
 }
 
 async function approveIfNeeded(workflowRunId: string, approved = new Set<string>()): Promise<void> {
@@ -108,9 +122,10 @@ async function findLatestRun(title: string): Promise<string | null> {
 
 async function main(): Promise<void> {
   log(`API: ${API_BASE}`);
+  log(`agentBackend: ${AGENT_BACKEND}`);
   await ensureProject();
 
-  const title = `e2e ${new Date().toISOString()}`;
+  const title = `${TITLE} — e2e ${new Date().toISOString()}`;
   log(`spawning orchestrator with title=${title}`);
   // The script's assertions require a full feature.standard run. Pass the
   // flow explicitly so the harness proves what it claims to prove even if

@@ -16,10 +16,17 @@ import type { ExecutionEnvironment, WorkflowRun, WorkspaceRef, CommandSpec, Comm
  * directory and branch — commands still run as the host user with host env.
  */
 export class TrustedLocalWorktreeEnvironment implements ExecutionEnvironment {
-  constructor(private readonly project: Pick<Project, 'id' | 'localPath' | 'sourceKind' | 'sourceUrl' | 'sourceAuthKind' | 'sourceUsername' | 'sourceCredential' | 'defaultBranch'>) {}
+  constructor(
+    private readonly project: Pick<Project, 'id' | 'localPath' | 'sourceKind' | 'sourceUrl' | 'sourceAuthKind' | 'sourceUsername' | 'sourceCredential' | 'defaultBranch'>,
+    private readonly options: { worktreesDir?: string } = {},
+  ) {}
+
+  private worktreesDir(): string {
+    return this.options.worktreesDir ?? WORKTREES_DIR;
+  }
 
   workspacePath(runId: string): string {
-    return join(WORKTREES_DIR, this.project.id, runId, 'workspace');
+    return join(this.worktreesDir(), this.project.id, runId, 'workspace');
   }
 
   async prepare(run: WorkflowRun): Promise<WorkspaceRef> {
@@ -30,7 +37,7 @@ export class TrustedLocalWorktreeEnvironment implements ExecutionEnvironment {
     if (existsSync(workspacePath)) {
       throw new Error(`worktree path already exists: ${workspacePath}`);
     }
-    await mkdir(join(WORKTREES_DIR, this.project.id, run.id), { recursive: true });
+    await mkdir(join(this.worktreesDir(), this.project.id, run.id), { recursive: true });
 
     // Create the worktree from the project's source repo.
     const result = await sh(

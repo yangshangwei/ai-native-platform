@@ -4,7 +4,7 @@ import { runWhitelistedCommand } from '../command-runner';
 import { TrustedLocalWorktreeEnvironment } from '../worktree';
 import { DEFAULT_MAX_LOG_BYTES, DEFAULT_TIMEOUT_MS, WORKTREES_DIR } from '../config';
 import { isWhitelisted, type CommandStage } from '@ainp/shared';
-import { collectMavenReports } from '../reports';
+import { collectMavenReports, persistMavenReports } from '../reports';
 import { sendHeartbeat } from '../heartbeat';
 
 export interface RunOpts {
@@ -79,7 +79,10 @@ export async function cmdRun(opts: RunOpts): Promise<void> {
     // If this is a Maven test command, ingest reports so the API can run
     // BuildRun + TestRun + Compile/Test gates from real evidence.
     if (stage === 'test' && opts.command.includes('test')) {
-      const reports = await collectMavenReports(workspace.path);
+      const reports = await persistMavenReports(
+        await collectMavenReports(workspace.path),
+        join(logDir, 'maven-reports'),
+      );
       const reportPayload: Parameters<typeof api.mavenBuild>[0]['reports'] = [];
       if (reports.surefire) {
         reportPayload.push({

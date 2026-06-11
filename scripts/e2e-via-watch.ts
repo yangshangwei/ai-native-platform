@@ -4,8 +4,8 @@
  * so the Coordinator triage runs (B7) and orchestrate is invoked with the
  * Coordinator-chosen runType.
  *
- * Uses AINP_AGENT_BACKEND from env (set claude_code to exercise real Claude;
- * leave unset for NativeBackend dry run).
+ * Uses a real configured project backend. Set AINP_E2E_AGENT_BACKEND to
+ * claude_code or codex; defaults to codex.
  *
  * Asserts:
  *   - CoordinatorDecision persisted with action=proceed and source=rules
@@ -20,10 +20,11 @@ import { existsSync } from 'node:fs';
 const API_BASE = process.env.AINP_API_BASE ?? 'http://127.0.0.1:8787';
 const SAMPLE_PATH = resolve(import.meta.dir, '..', 'examples', 'java-maven-sample');
 const RUNNER = resolve(import.meta.dir, '..', 'apps', 'runner', 'src', 'index.ts');
+const AGENT_BACKEND = parseAgentBackend(process.env.AINP_E2E_AGENT_BACKEND ?? 'codex');
 
 // Feature-clear title aligned with the Calculator sample workspace. Phrased
 // so the rule classifier routes confidently (>=0.65) without LLM fallback.
-const TITLE = '为 Calculator 增加 divide(int,int) 方法，验收标准是 mvn test 通过';
+const TITLE = '为 Calculator 增加 subtract(int,int) 方法，验收标准是 mvn test 通过';
 
 const STAGE_TO_GATE: Record<string, string> = {
   requirement: 'requirement_gate',
@@ -39,6 +40,11 @@ function fail(msg: string): never {
 
 function log(s: string): void {
   console.log(`[e2e-watch] ${s}`);
+}
+
+function parseAgentBackend(value: string): 'claude_code' | 'codex' {
+  if (value === 'claude_code' || value === 'codex') return value;
+  fail(`AINP_E2E_AGENT_BACKEND must be claude_code or codex (got: ${value})`);
 }
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -64,11 +70,22 @@ function spawnWatcher(): { done: Promise<{ code: number }> } {
 async function ensureProject(): Promise<{ id: string; name: string }> {
   if (!existsSync(SAMPLE_PATH)) fail(`sample missing: ${SAMPLE_PATH}`);
   if (!existsSync(`${SAMPLE_PATH}/.git`)) fail('sample has no .git — run git init first');
-  const project = await fetchJson<{ id: string; name: string }>('/projects', {
+  const project = await fetchJson<{
+    id: string;
+    name: string;
+    agentBackend: 'claude_code' | 'codex' | null;
+  }>('/projects', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'java-sample', localPath: SAMPLE_PATH }),
+    body: JSON.stringify({ name: 'java-sample', localPath: SAMPLE_PATH, agentBackend: AGENT_BACKEND }),
   });
+  if (project.agentBackend !== AGENT_BACKEND) {
+    return fetchJson<{ id: string; name: string }>(`/projects/${project.id}/agent-backend`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agentBackend: AGENT_BACKEND }),
+    });
+  }
   return project;
 }
 
@@ -96,7 +113,7 @@ async function approveIfNeeded(workflowRunId: string, approved: Set<string>): Pr
 
 async function main(): Promise<void> {
   log(`API: ${API_BASE}`);
-  log(`backend: ${process.env.AINP_AGENT_BACKEND ?? 'native'}`);
+  log(`agentBackend: ${AGENT_BACKEND}`);
   log(`title: ${TITLE}`);
 
   const project = await ensureProject();

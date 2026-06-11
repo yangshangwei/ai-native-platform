@@ -1,0 +1,9 @@
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Cross-layer ContextPack/context_request contracts are central to this branch and any fixes discovered by the audit."}
+{"file":".trellis/spec/shared/backend/evidence-verifier-protocol.md","reason":"End-to-end completion must be backed by persisted command/artifact/gate evidence."}
+{"file":".trellis/spec/runner/backend/agent-backend-runtime.md","reason":"Runner backend selection, CLI runtime, and stream behavior are part of the delivery workflow."}
+{"file":".trellis/spec/runner/backend/flow-registry.md","reason":"Workflow stage order, flow variants, and watch/orchestrate contracts define the audited business process."}
+{"file":".trellis/spec/web/frontend/agent-backend-ui.md","reason":"Browser validation covers project setup, task detail review hierarchy, and stream UI behavior."}
+{"file":".trellis/spec/web/frontend/directory-structure.md","reason":"Web fixes must follow the vanilla TypeScript SPA structure and projection boundaries."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"The task spans Web, API, Runner, shared types, storage, and browser validation."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Any fix should reuse existing helpers before adding new code."}
+{"file":".trellis/tasks/06-10-business-flow-end-to-end-audit/research/current-business-flow-map.md","reason":"Current flow map records the verification surfaces and architecture checkpoints for implementation."}
