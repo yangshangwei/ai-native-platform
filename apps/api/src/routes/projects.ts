@@ -4,6 +4,7 @@ import { readdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import {
+  errorMessage,
   isProjectAgentBackendKind,
   newId,
   nowIso,
@@ -98,7 +99,7 @@ projects.get('/local-directories', async (c) => {
       .sort((a, b) => a.name.localeCompare(b.name));
     return c.json({ path: currentPath, parent: dirname(currentPath), directories });
   } catch (err) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    return c.json({ error: errorMessage(err) }, 400);
   }
 });
 

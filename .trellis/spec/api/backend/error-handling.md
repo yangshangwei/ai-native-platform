@@ -63,16 +63,20 @@ User input crosses a boundary into a TypeScript union — guard it with a
 predicate before passing it downstream.
 
 ```ts
-// apps/api/src/routes/workflow-runs.ts:23
-const KNOWN_FLOW_IDS: readonly FlowId[] = [
-  'feature.standard', 'feature.fastforward', 'issue.standard', 'refactor.standard',
-];
-function isFlowId(value: unknown): value is FlowId {
-  return typeof value === 'string' && (KNOWN_FLOW_IDS as readonly string[]).includes(value);
+// Guards live in @ainp/shared and are derived from the source-of-truth —
+// do NOT re-declare local literal allow-lists at route boundaries.
+import { isFlowId, isWorkflowStage } from '@ainp/shared';
+// KNOWN_FLOW_IDS / isFlowId: derived from Object.keys(FLOW_REGISTRY)
+//   (packages/shared/src/flows/registry.ts)
+// WORKFLOW_STAGES / isWorkflowStage: packages/shared/src/types/workflow.ts
+
+if (body.flowId !== undefined && !isFlowId(body.flowId)) {
+  return c.json({ error: `unknown flowId: ${body.flowId}` }, 400);
 }
 ```
 
-Same pattern in `routes/workflow-runs.ts:34-51` for `WorkflowStage`. Reason:
+Consumers: `routes/workflow-runs.ts` (flowId + startStage), `routes/runner-events.ts`
+(stage), `routes/workflow-requests.ts`. Reason:
 `FLOW_REGISTRY[run.flowId]` and the orchestrator dispatcher would otherwise
 silently get garbage and crash deep inside the engine; the route is the right
 place to fail fast.

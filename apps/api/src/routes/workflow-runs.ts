@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import type { AgentStreamEvent, FlowId, GateRun, Project, WorkflowRunType, WorkflowStage } from '@ainp/shared';
+import { KNOWN_FLOW_IDS, WORKFLOW_STAGES, errorMessage, isFlowId, isWorkflowStage } from '@ainp/shared';
 import { store } from '../store/store';
 import {
   createWorkflowRun,
@@ -20,47 +21,9 @@ import {
 import { runEvidenceGate } from '../gate-engine';
 import { buildContextGovernanceReadModel } from '../context-governance';
 import { subscribe } from '../agent-stream-bus';
+import { jsonError, requireWorkflowRun } from './helpers';
 
 export const workflowRuns = new Hono();
-
-/**
- * Trust-boundary type guard for the FlowId union. Keep in sync with
- * `packages/shared/src/types/workflow.ts:FlowId`. The HTTP body can carry
- * any string; we reject anything that isn't a registered FlowId so the
- * downstream FLOW_REGISTRY[run.flowId] lookup never sees garbage. PRD
- * W2-3 ADR Q3 + R-Risk-3.
- */
-const KNOWN_FLOW_IDS: readonly FlowId[] = ['feature.standard', 'feature.fastforward', 'issue.standard', 'refactor.standard'];
-function isFlowId(value: unknown): value is FlowId {
-  return typeof value === 'string' && (KNOWN_FLOW_IDS as readonly string[]).includes(value);
-}
-export { KNOWN_FLOW_IDS, isFlowId };
-
-/**
- * V2 W2-4 / PR4: trust-boundary guard for `WorkflowStage`. Mirrors the
- * union in `packages/shared/src/types/workflow.ts:WorkflowStage` so a
- * stale list silently accepting an obsolete stage name is impossible
- * (TS exhaustiveness elsewhere catches the additions).
- */
-const KNOWN_WORKFLOW_STAGES: readonly WorkflowStage[] = [
-  'init',
-  'context_pack',
-  'requirement',
-  'design',
-  'implementation',
-  'build_test',
-  'review',
-  'completion',
-  'knowledge',
-  'report',
-  'analyze',
-  'scan',
-  'plan',
-];
-function isWorkflowStage(value: unknown): value is WorkflowStage {
-  return typeof value === 'string' && (KNOWN_WORKFLOW_STAGES as readonly string[]).includes(value);
-}
-export { KNOWN_WORKFLOW_STAGES, isWorkflowStage };
 
 workflowRuns.get('/', (c) => {
   const projectId = c.req.query('projectId');
@@ -75,9 +38,9 @@ workflowRuns.get('/:id/context', (c) => {
   try {
     return c.json(buildContextGovernanceReadModel(id));
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     const status = message.includes('not found') ? 404 : 400;
-    return c.json({ error: message }, status);
+    return jsonError(c, message, status);
   }
 });
 
@@ -96,16 +59,16 @@ workflowRuns.post('/', async (c) => {
   if (!projectId && body.projectName) {
     projectId = store.projectByName(body.projectName)?.id;
   }
-  if (!projectId) return c.json({ error: 'projectId or projectName required' }, 400);
+  if (!projectId) return jsonError(c, 'projectId or projectName required', 400);
   const project = store.projects.get(projectId);
   if (!project) {
-    return c.json({ error: `project ${projectId} not registered` }, 404);
+    return jsonError(c, `project ${projectId} not registered`, 404);
   }
-  if ((project.status ?? 'active') === 'archived') return c.json({ error: 'project is archived' }, 400);
+  if ((project.status ?? 'active') === 'archived') return jsonError(c, 'project is archived', 400);
   const runType = body.type ?? 'smoke';
   const backendError = runType === 'smoke' ? null : projectAgentBackendError(project);
   if (backendError) return c.json({ error: backendError, needsAgentBackendSetup: true }, 400);
-  if (!body.title) return c.json({ error: 'title required' }, 400);
+  if (!body.title) return jsonError(c, 'title required', 400);
 
   // V2 W2-3: optional flowId in body. If supplied, must be a registered
   // FlowId; otherwise createWorkflowRun() applies the conservative default for
@@ -132,7 +95,7 @@ workflowRuns.post('/', async (c) => {
       startStage = null;
     } else if (!isWorkflowStage(body.startStage)) {
       return c.json(
-        { error: `unknown startStage: ${body.startStage} (known: ${KNOWN_WORKFLOW_STAGES.join(', ')})` },
+        { error: `unknown startStage: ${body.startStage} (known: ${WORKFLOW_STAGES.join(', ')})` },
         400,
       );
     } else {
@@ -161,7 +124,7 @@ function projectAgentBackendError(project: Project): string | null {
 workflowRuns.get('/:id', (c) => {
   const id = c.req.param('id');
   const run = store.workflowRuns.get(id);
-  if (!run) return c.json({ error: 'not found' }, 404);
+  if (!run) return jsonError(c, 'not found', 404);
   const steps = store.stepRuns.byWorkflow(id);
   const commands = store.commandRunsByWorkflow(id);
   const gates = store.gateRuns.byWorkflow(id);
@@ -191,7 +154,8 @@ workflowRuns.get('/:id', (c) => {
 
 workflowRuns.post('/:id/requirement-actions', async (c) => {
   const id = c.req.param('id');
-  if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
+  const missing = requireWorkflowRun(c, id);
+  if (missing) return missing;
   const body = (await c.req.json()) as {
     targetId?: string;
     action?: string;
@@ -199,7 +163,7 @@ workflowRuns.post('/:id/requirement-actions', async (c) => {
     payload?: Record<string, unknown>;
   };
   if (!body.targetId || !body.action) {
-    return c.json({ error: 'targetId and action required' }, 400);
+    return jsonError(c, 'targetId and action required', 400);
   }
   const action = recordRequirementAction({
     workflowRunId: id,
@@ -213,18 +177,19 @@ workflowRuns.post('/:id/requirement-actions', async (c) => {
 
 workflowRuns.post('/:id/acceptance-decision', async (c) => {
   const id = c.req.param('id');
-  if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
+  const missing = requireWorkflowRun(c, id);
+  if (missing) return missing;
   const body = (await c.req.json()) as {
     decision?: string;
     actor?: string;
     comment?: string | null;
     payload?: Record<string, unknown>;
   };
-  if (!body.decision) return c.json({ error: 'decision required' }, 400);
+  if (!body.decision) return jsonError(c, 'decision required', 400);
   if (body.decision === 'reject') {
     const trimmed = typeof body.comment === 'string' ? body.comment.trim() : '';
     if (trimmed.length === 0) {
-      return c.json({ error: 'comment required and must be non-empty when decision is reject' }, 400);
+      return jsonError(c, 'comment required and must be non-empty when decision is reject', 400);
     }
   }
   const result = recordAcceptanceDecision({
@@ -239,7 +204,8 @@ workflowRuns.post('/:id/acceptance-decision', async (c) => {
 
 workflowRuns.post('/:id/knowledge-actions', async (c) => {
   const id = c.req.param('id');
-  if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
+  const missing = requireWorkflowRun(c, id);
+  if (missing) return missing;
   const body = (await c.req.json()) as {
     targetId?: string;
     action?: 'accepted' | 'edited' | 'ignored' | string;
@@ -247,7 +213,7 @@ workflowRuns.post('/:id/knowledge-actions', async (c) => {
     payload?: Record<string, unknown>;
   };
   if (!body.targetId || !body.action) {
-    return c.json({ error: 'targetId and action required' }, 400);
+    return jsonError(c, 'targetId and action required', 400);
   }
   const action = recordKnowledgeAction({
     workflowRunId: id,
@@ -261,7 +227,8 @@ workflowRuns.post('/:id/knowledge-actions', async (c) => {
 
 workflowRuns.post('/:id/completion-report', async (c) => {
   const id = c.req.param('id');
-  if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
+  const missing = requireWorkflowRun(c, id);
+  if (missing) return missing;
   const evidenceGate = runEvidenceGate({ workflowRunId: id, stepRunId: null });
   if (evidenceGate.status === 'fail') {
     return c.json({ error: 'evidence_gate failed', gate: evidenceGate }, 409);
@@ -272,11 +239,12 @@ workflowRuns.post('/:id/completion-report', async (c) => {
 
 workflowRuns.post('/:id/retry-step', async (c) => {
   const id = c.req.param('id');
-  if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
+  const missing = requireWorkflowRun(c, id);
+  if (missing) return missing;
   const body = (await c.req.json()) as { stage?: string; actor?: string };
-  if (!body.stage) return c.json({ error: 'stage required' }, 400);
+  if (!body.stage) return jsonError(c, 'stage required', 400);
   if (!isWorkflowStage(body.stage)) {
-    return c.json({ error: `unknown stage: ${body.stage}` }, 400);
+    return jsonError(c, `unknown stage: ${body.stage}`, 400);
   }
   try {
     const result = retryStage({
@@ -286,15 +254,16 @@ workflowRuns.post('/:id/retry-step', async (c) => {
     });
     return c.json({ ok: true, run: result.run, step: result.step }, 200);
   } catch (err) {
-    return c.json({ error: (err as Error).message }, 400);
+    return jsonError(c, (err as Error).message, 400);
   }
 });
 
 workflowRuns.post('/:id/re-evaluate-gate', async (c) => {
   const id = c.req.param('id');
-  if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
+  const missing = requireWorkflowRun(c, id);
+  if (missing) return missing;
   const body = (await c.req.json()) as { gateId?: string; actor?: string };
-  if (!body.gateId) return c.json({ error: 'gateId required' }, 400);
+  if (!body.gateId) return jsonError(c, 'gateId required', 400);
   try {
     const gate = reEvaluateGate({
       workflowRunId: id,
@@ -303,27 +272,30 @@ workflowRuns.post('/:id/re-evaluate-gate', async (c) => {
     });
     return c.json({ ok: true, gate }, 200);
   } catch (err) {
-    return c.json({ error: (err as Error).message }, 400);
+    return jsonError(c, (err as Error).message, 400);
   }
 });
 
 workflowRuns.post('/:id/knowledge-candidate', async (c) => {
   const id = c.req.param('id');
-  if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
+  const missing = requireWorkflowRun(c, id);
+  if (missing) return missing;
   const candidate = await generateKnowledgeCandidate(id);
   return c.json({ ok: true, ...candidate }, 201);
 });
 
 workflowRuns.post('/:id/retro', async (c) => {
   const id = c.req.param('id');
-  if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
+  const missing = requireWorkflowRun(c, id);
+  if (missing) return missing;
   const retro = await generateRetroReport(id);
   return c.json({ ok: true, ...retro }, 201);
 });
 
 workflowRuns.post('/:id/retro-actions', async (c) => {
   const id = c.req.param('id');
-  if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
+  const missing = requireWorkflowRun(c, id);
+  if (missing) return missing;
   const body = (await c.req.json()) as {
     candidateId?: string;
     targetId?: string;
@@ -334,7 +306,7 @@ workflowRuns.post('/:id/retro-actions', async (c) => {
   const targetId = body.targetId?.trim() || body.candidateId?.trim();
   const actionName = body.action?.trim();
   if (!targetId || !actionName) {
-    return c.json({ error: 'candidateId/targetId and action required' }, 400);
+    return jsonError(c, 'candidateId/targetId and action required', 400);
   }
   const payload = isRecord(body.payload) ? body.payload : {};
   const actor = body.actor?.trim() || 'web';
@@ -366,7 +338,7 @@ workflowRuns.post('/:id/retro-actions', async (c) => {
 
   const knowledgeAction = retroKnowledgeAction(actionName, payload);
   if (!knowledgeAction) {
-    return c.json({ error: `unsupported retro action: ${actionName}` }, 400);
+    return jsonError(c, `unsupported retro action: ${actionName}`, 400);
   }
   const action = recordKnowledgeAction({
     workflowRunId: id,
@@ -415,7 +387,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /** History dump (no streaming). Use `?sinceSeq=N` to paginate. */
 workflowRuns.get('/:id/agent-events', (c) => {
   const id = c.req.param('id');
-  if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
+  const missing = requireWorkflowRun(c, id);
+  if (missing) return missing;
   const sinceSeq = Number(c.req.query('sinceSeq') ?? -1);
   const items = store.agentEvents.byWorkflow(id, Number.isFinite(sinceSeq) ? sinceSeq : -1);
   return c.json({ items });
@@ -429,7 +402,8 @@ workflowRuns.get('/:id/agent-events', (c) => {
  */
 workflowRuns.get('/:id/agent-stream', (c) => {
   const id = c.req.param('id');
-  if (!store.workflowRuns.has(id)) return c.json({ error: 'not found' }, 404);
+  const missing = requireWorkflowRun(c, id);
+  if (missing) return missing;
   const sinceSeq = Number(c.req.query('sinceSeq') ?? -1);
 
   return streamSSE(c, async (stream) => {

@@ -9,6 +9,13 @@ import type {
   WorkflowRunType,
   WorkflowStage,
 } from '@ainp/shared';
+import {
+  KNOWN_FLOW_IDS,
+  WORKFLOW_STAGES,
+  errorMessage,
+  isFlowId,
+  isWorkflowStage,
+} from '@ainp/shared';
 import { store } from '../store/store';
 import {
   claimWorkflowRequest,
@@ -17,12 +24,6 @@ import {
   markWorkflowRequestRunStarted,
 } from '../workflow-engine';
 import { subscribe } from '../agent-stream-bus';
-import {
-  KNOWN_FLOW_IDS,
-  KNOWN_WORKFLOW_STAGES,
-  isFlowId,
-  isWorkflowStage,
-} from './workflow-runs';
 
 export const workflowRequests = new Hono();
 
@@ -109,7 +110,7 @@ workflowRequests.post('/', async (c) => {
   if (body.startStage !== undefined && body.startStage !== null && body.startStage !== '') {
     if (!isWorkflowStage(body.startStage)) {
       return c.json(
-        { error: `unknown startStage: ${body.startStage} (known: ${KNOWN_WORKFLOW_STAGES.join(', ')})` },
+        { error: `unknown startStage: ${body.startStage} (known: ${WORKFLOW_STAGES.join(', ')})` },
         400,
       );
     }
@@ -175,7 +176,7 @@ workflowRequests.post('/:id/run-started', async (c) => {
       }),
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     return c.json({ error: message }, message.includes('not found') ? 404 : 409);
   }
 });
@@ -198,7 +199,7 @@ workflowRequests.post('/:id/complete', async (c) => {
     });
     return c.json(completed);
   } catch (err) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 404);
+    return c.json({ error: errorMessage(err) }, 404);
   }
 });
 

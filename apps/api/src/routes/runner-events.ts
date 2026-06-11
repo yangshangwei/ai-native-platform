@@ -9,7 +9,7 @@ import type {
   AgentTaskKind,
   ContextRequest,
 } from '@ainp/shared';
-import { isContextRequestStatus, isPerRunArtifactKind } from '@ainp/shared';
+import { errorMessage, isContextRequestStatus, isPerRunArtifactKind, isWorkflowStage } from '@ainp/shared';
 import {
   finishStep,
   recordCommandRun,
@@ -262,7 +262,7 @@ function validateContextRequestPayload(
   if (typeof request.reason !== 'string' || request.reason.trim().length === 0) {
     return 'request.reason required';
   }
-  if (!isWorkflowStageValue(request.stage)) {
+  if (!isWorkflowStage(request.stage)) {
     return 'request.stage invalid';
   }
   if (!Array.isArray(request.requestedRefs) || !request.requestedRefs.every(isNonEmptyString)) {
@@ -288,27 +288,6 @@ function validateContextRequestPayload(
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
-}
-
-const WORKFLOW_STAGE_VALUES = [
-  'init',
-  'context_pack',
-  'requirement',
-  'design',
-  'implementation',
-  'build_test',
-  'review',
-  'completion',
-  'knowledge',
-  'report',
-  'analyze',
-  'scan',
-  'plan',
-] as const satisfies readonly WorkflowStage[];
-
-function isWorkflowStageValue(value: unknown): value is WorkflowStage {
-  return typeof value === 'string'
-    && (WORKFLOW_STAGE_VALUES as readonly string[]).includes(value);
 }
 
 runnerEvents.post('/maven-build', async (c) => {
@@ -351,7 +330,7 @@ runnerEvents.post('/artifact', async (c) => {
     });
     return c.json({ ok: true, artifact: a });
   } catch (err) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    return c.json({ error: errorMessage(err) }, 400);
   }
 });
 

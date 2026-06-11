@@ -29,12 +29,14 @@ apps/runner/src/
 ├── config.ts                      # Constants (timeouts, dirs)
 ├── config-client.ts               # API config fetch
 ├── agents/                        # AgentBackend implementations
-│   ├── native.ts                  # Deterministic fixture
+│   ├── types.ts                   # AgentBackend / AgentTaskContext / AgentRunResult contracts
+│   ├── cli-common.ts              # Shared CLI-backend helpers (consumeLines, exitsZero, emit factories, diff capture)
+│   ├── native.ts                  # Deterministic fixture (re-exports types.ts contracts)
 │   ├── claude-code.ts             # Real Claude Code CLI
 │   ├── claude-code-parser.ts
 │   ├── codex.ts                   # Real Codex CLI
 │   ├── codex-parser.ts
-│   └── coordinator/               # Triage agent + LLM fallback
+│   └── coordinator/               # Triage agent + LLM fallback (+ decision.ts: pure JSON decision parsing)
 ├── flows/
 │   └── registry.ts                # Re-export of @ainp/shared FLOW_REGISTRY (W2-4)
 └── skills/
@@ -88,7 +90,9 @@ a small enough surface that nesting doesn't help.
 
 ### `agents/` — AgentBackend implementations
 
-`agents/native.ts:37-40` defines the `AgentBackend` interface:
+`agents/types.ts` defines the `AgentBackend` interface (moved out of
+`native.ts` on 06-11 — the production contract no longer lives in the fixture
+file; `native.ts` re-exports the types so old import paths keep working):
 
 ```ts
 export interface AgentBackend {

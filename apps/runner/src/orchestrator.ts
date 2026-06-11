@@ -22,7 +22,7 @@ import type {
   VerifierMediaRole,
   VerifierStatus,
 } from '@ainp/shared';
-import { VERIFIER_AC_MATRIX_SCHEMA_VERSION, VERIFIER_MEDIA_SCHEMA_VERSION } from '@ainp/shared';
+import { VERIFIER_AC_MATRIX_SCHEMA_VERSION, VERIFIER_MEDIA_SCHEMA_VERSION, errorMessage, nowIso } from '@ainp/shared';
 import { api } from './api-client';
 import { runWhitelistedCommand } from './command-runner';
 import { TrustedLocalWorktreeEnvironment } from './worktree';
@@ -30,7 +30,7 @@ import { DEFAULT_MAX_LOG_BYTES, DEFAULT_TIMEOUT_MS, WORKTREES_DIR } from './conf
 import { getConfig } from './config-client';
 import { sendHeartbeat } from './heartbeat';
 import { findSkillForStage } from './skills';
-import type { AgentBackend } from './agents/native';
+import type { AgentBackend } from './agents/types';
 import { selectAgentBackend } from './backend-selection';
 import { generateProjectProfile, type ProjectProfileResult } from './profile';
 import { FLOW_REGISTRY } from './flows/registry';
@@ -335,7 +335,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
         // agent runs first, then `acceptance_gate` + `awaitHuman` +
         // approval poll + draft promotion run inline. WorkflowStage has no
         // `'acceptance'` value; that's why review owns both halves here.
-        await runStage('review', 'other', null, { skipKindOverride: 'other' });
+        await runStage('review', 'other', null);
         await executeVerifier(_ctx);
         await executeAcceptance(_ctx);
         return;
@@ -346,16 +346,10 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
         await executeKnowledgePromotion(_ctx);
         return;
       case 'report':
-        await executeReport(_ctx);
-        return;
       case 'analyze':
-        await executeAnalyze(_ctx);
-        return;
       case 'scan':
-        await executeScan(_ctx);
-        return;
       case 'plan':
-        await executePlan(_ctx);
+        await executeAgentMarkdownStage(step.stage, _ctx);
         return;
       case 'init':
         throw new Error(`'init' is not a dispatchable stage (status placeholder only)`);
@@ -551,7 +545,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
           ? 'UI verifier media evidence present.'
           : 'Missing before+after screenshots or video evidence under .ainp-verifier/.',
       })),
-      createdAt: new Date().toISOString(),
+      createdAt: nowIso(),
     };
     const matrixBody = `${JSON.stringify(matrix, null, 2)}\n`;
     const matrixPath = join(verifierDir, 'verifier-ac-matrix.json');
@@ -635,20 +629,23 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     }
   }
 
-  // V2 W2-2a: report & analyze stages for issue.standard flow.
-  // Both are "agent → markdown artifact" stages; outputs land as kind='other'
-  // (PRD ADR Q5: no KnowledgeArtifactKind extension for issue analysis).
+  // V2 W2-2a/W2-2b: report / analyze (issue.standard) and scan / plan
+  // (refactor.standard) are all "agent → markdown artifact" stages; outputs
+  // land as kind='other' (PRD ADR Q5: no KnowledgeArtifactKind extension).
   // Inner-function style mirrors W2-1 PR3 (executeXxx sharing RunCtx).
 
-  async function executeReport(c: RunCtx): Promise<void> {
-    const skill = await mustSkill('report');
+  async function executeAgentMarkdownStage(
+    stage: 'report' | 'analyze' | 'scan' | 'plan',
+    c: RunCtx,
+  ): Promise<void> {
+    const skill = await mustSkill(stage);
     const { step } = await api.stepStarted({
       workflowRunId: c.run.id,
-      stage: 'report',
+      stage,
       name: skill.id,
     });
     const stepId = step.id;
-    const stepArtifactsDir = join(c.runArtifactsDir, 'report');
+    const stepArtifactsDir = join(c.runArtifactsDir, stage);
     const agent = await invokeSkill(skill, {
       workflowRunId: c.run.id,
       stepRunId: stepId,
@@ -667,149 +664,17 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
         uri: `file://${out.path}`,
         size: out.size,
         contentType: out.contentType,
-        metadata: { skill: skill.id, output: out.name, stage: 'report' },
+        metadata: { skill: skill.id, output: out.name, stage },
       });
       c.inputs[out.name] = await Bun.file(out.path).text();
       c.inputArtifactIds[out.name] = a.id;
       artifactIds.push(a.id);
-      console.log(`[runner] report artifact ${a.id} (${out.name})`);
+      console.log(`[runner] ${stage} artifact ${a.id} (${out.name})`);
     }
     await finishAgentSuccess(
       agent,
       artifactIds,
-      `report produced ${artifactIds.length} artifact(s)`,
-    );
-    await api.stepFinished({ stepRunId: stepId, status: 'passed' });
-  }
-
-  async function executeAnalyze(c: RunCtx): Promise<void> {
-    const skill = await mustSkill('analyze');
-    const { step } = await api.stepStarted({
-      workflowRunId: c.run.id,
-      stage: 'analyze',
-      name: skill.id,
-    });
-    const stepId = step.id;
-    const stepArtifactsDir = join(c.runArtifactsDir, 'analyze');
-    const agent = await invokeSkill(skill, {
-      workflowRunId: c.run.id,
-      stepRunId: stepId,
-      workspacePath: c.workspace.path,
-      branch: c.workspace.branch,
-      title: c.opts.title,
-      artifactsDir: stepArtifactsDir,
-      inputs: c.inputs,
-    });
-    const artifactIds: string[] = [];
-    for (const out of agent.outputs) {
-      const a = await api.postArtifact({
-        workflowRunId: c.run.id,
-        stepRunId: stepId,
-        kind: 'other',
-        uri: `file://${out.path}`,
-        size: out.size,
-        contentType: out.contentType,
-        metadata: { skill: skill.id, output: out.name, stage: 'analyze' },
-      });
-      c.inputs[out.name] = await Bun.file(out.path).text();
-      c.inputArtifactIds[out.name] = a.id;
-      artifactIds.push(a.id);
-      console.log(`[runner] analyze artifact ${a.id} (${out.name})`);
-    }
-    await finishAgentSuccess(
-      agent,
-      artifactIds,
-      `analyze produced ${artifactIds.length} artifact(s)`,
-    );
-    await api.stepFinished({ stepRunId: stepId, status: 'passed' });
-  }
-
-  // V2 W2-2b: scan & plan stages for refactor.standard flow. Mirror
-  // executeReport / executeAnalyze (W2-2a) — agent → markdown artifact
-  // landing as kind='other' (PRD ADR Q5: no KnowledgeArtifactKind extension).
-  // Inner-function style mirrors W2-1 PR3 / W2-2a PR1 (executeXxx sharing
-  // RunCtx).
-
-  async function executeScan(c: RunCtx): Promise<void> {
-    const skill = await mustSkill('scan');
-    const { step } = await api.stepStarted({
-      workflowRunId: c.run.id,
-      stage: 'scan',
-      name: skill.id,
-    });
-    const stepId = step.id;
-    const stepArtifactsDir = join(c.runArtifactsDir, 'scan');
-    const agent = await invokeSkill(skill, {
-      workflowRunId: c.run.id,
-      stepRunId: stepId,
-      workspacePath: c.workspace.path,
-      branch: c.workspace.branch,
-      title: c.opts.title,
-      artifactsDir: stepArtifactsDir,
-      inputs: c.inputs,
-    });
-    const artifactIds: string[] = [];
-    for (const out of agent.outputs) {
-      const a = await api.postArtifact({
-        workflowRunId: c.run.id,
-        stepRunId: stepId,
-        kind: 'other',
-        uri: `file://${out.path}`,
-        size: out.size,
-        contentType: out.contentType,
-        metadata: { skill: skill.id, output: out.name, stage: 'scan' },
-      });
-      c.inputs[out.name] = await Bun.file(out.path).text();
-      c.inputArtifactIds[out.name] = a.id;
-      artifactIds.push(a.id);
-      console.log(`[runner] scan artifact ${a.id} (${out.name})`);
-    }
-    await finishAgentSuccess(
-      agent,
-      artifactIds,
-      `scan produced ${artifactIds.length} artifact(s)`,
-    );
-    await api.stepFinished({ stepRunId: stepId, status: 'passed' });
-  }
-
-  async function executePlan(c: RunCtx): Promise<void> {
-    const skill = await mustSkill('plan');
-    const { step } = await api.stepStarted({
-      workflowRunId: c.run.id,
-      stage: 'plan',
-      name: skill.id,
-    });
-    const stepId = step.id;
-    const stepArtifactsDir = join(c.runArtifactsDir, 'plan');
-    const agent = await invokeSkill(skill, {
-      workflowRunId: c.run.id,
-      stepRunId: stepId,
-      workspacePath: c.workspace.path,
-      branch: c.workspace.branch,
-      title: c.opts.title,
-      artifactsDir: stepArtifactsDir,
-      inputs: c.inputs,
-    });
-    const artifactIds: string[] = [];
-    for (const out of agent.outputs) {
-      const a = await api.postArtifact({
-        workflowRunId: c.run.id,
-        stepRunId: stepId,
-        kind: 'other',
-        uri: `file://${out.path}`,
-        size: out.size,
-        contentType: out.contentType,
-        metadata: { skill: skill.id, output: out.name, stage: 'plan' },
-      });
-      c.inputs[out.name] = await Bun.file(out.path).text();
-      c.inputArtifactIds[out.name] = a.id;
-      artifactIds.push(a.id);
-      console.log(`[runner] plan artifact ${a.id} (${out.name})`);
-    }
-    await finishAgentSuccess(
-      agent,
-      artifactIds,
-      `plan produced ${artifactIds.length} artifact(s)`,
+      `${stage} produced ${artifactIds.length} artifact(s)`,
     );
     await api.stepFinished({ stepRunId: stepId, status: 'passed' });
   }
@@ -826,23 +691,13 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       c.ok.value = false;
       throw new Error('evidence_gate failed');
     }
-    const reportRes = await fetch(
-      `${process.env.AINP_API_BASE ?? 'http://127.0.0.1:8787'}/workflow-runs/${c.run.id}/completion-report`,
-      { method: 'POST' },
-    );
-    if (!reportRes.ok) throw new Error(`completion-report POST -> ${reportRes.status}`);
-    const reportJson = (await reportRes.json()) as { artifact: { id: string; uri: string } };
+    const reportJson = await api.generateCompletionReport(c.run.id);
     console.log(`[runner] completion_report -> ${reportJson.artifact.uri}`);
   }
 
   async function executeKnowledgePromotion(c: RunCtx): Promise<void> {
     await api.stageTransition({ workflowRunId: c.run.id, stage: 'knowledge' });
-    const knowRes = await fetch(
-      `${process.env.AINP_API_BASE ?? 'http://127.0.0.1:8787'}/workflow-runs/${c.run.id}/knowledge-candidate`,
-      { method: 'POST' },
-    );
-    if (!knowRes.ok) throw new Error(`knowledge-candidate POST -> ${knowRes.status}`);
-    const knowJson = (await knowRes.json()) as { artifact: { id: string; uri: string } };
+    const knowJson = await api.generateKnowledgeCandidate(c.run.id);
     console.log(`[runner] knowledge_candidate -> ${knowJson.artifact.uri}`);
 
     await api.awaitHuman({ workflowRunId: c.run.id, stage: 'knowledge' });
@@ -965,9 +820,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     stage: 'requirement' | 'design' | 'review',
     artifactKind: 'requirement_draft' | 'design_doc' | 'other',
     rulebasedGateId: GateRun['gateId'] | null,
-    extra: { skipKindOverride?: 'other' } = {},
   ): Promise<void> {
-    void extra;
     const skill = await mustSkill(stage);
     const { step } = await api.stepStarted({
       workflowRunId: run.id,
@@ -1032,15 +885,12 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
         ok.value = false;
         throw new Error(`${rulebasedGateId} failed`);
       }
-      // Pause for human approval after the rule-based gate passes.
+      // Pause for human approval after the rule-based gate passes. Only
+      // requirement / design reach this block — review passes a null
+      // rulebasedGateId (acceptance approval lives in executeAcceptance).
       await api.awaitHuman({ workflowRunId: run.id, stage });
       console.log(`[runner] awaiting ${stage} approval…`);
-      const approverGateId =
-        stage === 'requirement'
-          ? 'requirement_gate'
-          : stage === 'design'
-            ? 'design_gate'
-            : 'acceptance_gate';
+      const approverGateId = stage === 'requirement' ? 'requirement_gate' : 'design_gate';
       const { approved, comment: approvalComment } = await awaitApproval(run.id, approverGateId);
       const approverRejectSummary = !approved && approvalComment
         ? `: ${approvalComment.slice(0, 200)}${approvalComment.length > 200 ? '…' : ''}`
@@ -1126,7 +976,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       await api.agentTaskFinished({
         taskId: task.task.id,
         status: 'failed',
-        summary: err instanceof Error ? err.message : String(err),
+        summary: errorMessage(err),
         outputArtifactIds: [],
       });
       throw err;
@@ -1159,7 +1009,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
         });
       } catch (err) {
         console.warn(
-          `[runner] knowledge review signal ${signal.id} was not recorded: ${err instanceof Error ? err.message : String(err)}`,
+          `[runner] knowledge review signal ${signal.id} was not recorded: ${errorMessage(err)}`,
         );
       }
     }
@@ -1320,7 +1170,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       });
     } catch (err) {
       console.warn(
-        `[runner] selected knowledge usage was not recorded: ${err instanceof Error ? err.message : String(err)}`,
+        `[runner] selected knowledge usage was not recorded: ${errorMessage(err)}`,
       );
     }
   }
@@ -1375,7 +1225,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
         });
       } catch (err) {
         console.warn(
-          `[runner] knowledge_artifacts unavailable for context pack: ${err instanceof Error ? err.message : String(err)}`,
+          `[runner] knowledge_artifacts unavailable for context pack: ${errorMessage(err)}`,
         );
         c.contextFoundation.knowledgeArtifacts = [];
       }
@@ -1386,7 +1236,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
         c.contextFoundation.runHistory = await api.listWorkflowRuns({ projectId: c.project.id });
       } catch (err) {
         console.warn(
-          `[runner] workflow run history unavailable for maturity profile: ${err instanceof Error ? err.message : String(err)}`,
+          `[runner] workflow run history unavailable for maturity profile: ${errorMessage(err)}`,
         );
         c.contextFoundation.runHistory = [];
       }
@@ -1491,9 +1341,8 @@ function acceptanceCriterionIdsFromInputs(inputs: Record<string, string>): strin
       seen.add(match[0].toUpperCase());
     }
   }
-  return [...seen].sort().slice(0, 50).length > 0
-    ? [...seen].sort().slice(0, 50)
-    : ['AC-UI-001'];
+  const ids = [...seen].sort().slice(0, 50);
+  return ids.length > 0 ? ids : ['AC-UI-001'];
 }
 
 function verifierMediaSatisfiesCoverage(mediaArtifacts: PersistedVerifierMediaArtifact[]): boolean {
@@ -1688,13 +1537,13 @@ async function postRejectionFeedback(input: {
       metadata: {
         gateId: input.gateId,
         comment: input.comment,
-        rejectedAt: new Date().toISOString(),
+        rejectedAt: nowIso(),
       },
     });
   } catch (err) {
     console.warn(
       `[runner] rejection_feedback artifact persist failed for ${input.gateId} on ${input.workflowRunId}:`,
-      err instanceof Error ? err.message : String(err),
+      errorMessage(err),
     );
   }
 }
@@ -1961,7 +1810,7 @@ export async function promoteAcceptedDraftToKnowledge(
     // R12 / R28: failure MUST be downgraded — never break acceptance gate.
     errorLog(
       `[runner] promoteAcceptedDraftToKnowledge failed for ${draft.kind} ${draft.artifactId}: ${
-        err instanceof Error ? err.message : String(err)
+        errorMessage(err)
       }`,
     );
   }

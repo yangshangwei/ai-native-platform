@@ -11,6 +11,7 @@
 
 import { Hono } from 'hono';
 import {
+  errorMessage,
   isContextFreshness,
   isContextTrustLevel,
   isKnowledgeClass,
@@ -102,7 +103,7 @@ knowledgeArtifacts.post('/projects/:projectId/seed', async (c) => {
     if (err instanceof KnowledgeArtifactValidationError) {
       return c.json({ error: err.message, field: err.field }, 400);
     }
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    return c.json({ error: errorMessage(err) }, 500);
   }
 });
 
@@ -153,7 +154,7 @@ knowledgeArtifacts.post('/projects/:projectId', async (c) => {
     if (err instanceof KnowledgeArtifactValidationError) {
       return c.json({ error: err.message, field: err.field }, 400);
     }
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 500);
+    return c.json({ error: errorMessage(err) }, 500);
   }
 });
 
@@ -208,7 +209,7 @@ knowledgeArtifacts.post('/promote', async (c) => {
     if (err instanceof KnowledgeArtifactValidationError) {
       return c.json({ error: err.message, field: err.field }, 400);
     }
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     // SQLite FK / unique violations land here (the transaction rolled back).
     if (/FOREIGN KEY|UNIQUE|constraint/i.test(msg)) {
       return c.json({ error: msg, code: 'CONSTRAINT_VIOLATION' }, 409);
@@ -357,7 +358,7 @@ knowledgeArtifacts.patch('/:id/status', async (c) => {
     const artifact = setKnowledgeArtifactStatus(id, body.status);
     return c.json({ ok: true, artifact });
   } catch (err) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 404);
+    return c.json({ error: errorMessage(err) }, 404);
   }
 });
 

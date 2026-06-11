@@ -1,55 +1,16 @@
 import { mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { sh } from '../sh';
-import type { ContextPack, SkillSpec } from '@ainp/shared';
+import type { SkillSpec } from '@ainp/shared';
+import { nowIso } from '@ainp/shared';
+import { captureWorktreeDiffOutputs } from './cli-common';
+import type { AgentArtifactOutput, AgentBackend, AgentRunResult, AgentTaskContext } from './types';
 
-/**
- * AgentBackend interface — runtime contract.
- *
- * Production orchestration uses Claude Code or Codex. `NativeBackend` remains
- * only as a deterministic fixture for legacy parser/sidecar tests.
- */
-export interface AgentTaskContext {
-  workflowRunId: string;
-  /** Step run that owns this agent invocation. Used for streaming events.
-   *  May be null when the orchestrator runs an agent outside of a step. */
-  stepRunId?: string | null;
-  workspacePath: string;
-  branch: string;
-  /** The user's original task title — what they typed in `runner orchestrate`. */
-  title: string;
-  /** Filesystem dir where the agent should drop produced artifacts. */
-  artifactsDir: string;
-  /** Previously-produced artifact text by skill input name. */
-  inputs: Record<string, string>;
-  /** Provider-neutral context selected by the platform for this invocation. */
-  contextPack?: ContextPack;
-  /** Context policy sensitive path patterns used for prompt-visible legacy inputs. */
-  sensitivePathPatterns?: readonly string[];
-}
-
-export interface AgentArtifactOutput {
-  /** Logical name (matches a SkillSpec output name). */
-  name: string;
-  /** Final filesystem path of the artifact (file:// URI computed downstream). */
-  path: string;
-  contentType: string;
-  size: number;
-}
-
-export interface AgentBackend {
-  kind: 'native' | 'codex' | 'claude_code';
-  run(skill: SkillSpec, ctx: AgentTaskContext): Promise<AgentRunResult>;
-}
-
-export interface AgentRunResult {
-  outputs: AgentArtifactOutput[];
-  /** Final assistant message when the backend exposes it (for context_request parsing). */
-  lastMessage?: string | null;
-}
+// Runtime contract now lives in ./types; re-export to avoid import churn.
+export type { AgentArtifactOutput, AgentBackend, AgentRunResult, AgentTaskContext } from './types';
 
 // ---- NativeBackend ---------------------------------------------------------
+// Deterministic fixture backend for legacy parser/sidecar tests.
 
 export class NativeBackend implements AgentBackend {
   kind = 'native' as const;
@@ -129,7 +90,7 @@ export class NativeBackend implements AgentBackend {
       throw new Error(`NativeBackend implementation: expected target file missing: ${target}`);
     }
     const original = await readFile(target, 'utf8');
-    const note = `  // ainp-run: ${ctx.workflowRunId} - ${new Date().toISOString()}\n`;
+    const note = `  // ainp-run: ${ctx.workflowRunId} - ${nowIso()}\n`;
     if (!original.includes('ainp-run:')) {
       const lines = original.split('\n');
       // Insert note after the package declaration to keep imports tidy.
@@ -138,29 +99,8 @@ export class NativeBackend implements AgentBackend {
       await writeFile(target, lines.join('\n'), 'utf8');
     }
 
-    const diff = await sh('git', ['diff'], { cwd: ctx.workspacePath });
-    const diffPath = join(ctx.artifactsDir, 'changes.diff');
-    await writeFile(diffPath, diff.stdout, 'utf8');
-
-    const namesOnly = await sh('git', ['diff', '--name-only'], { cwd: ctx.workspacePath });
-    const namesPath = join(ctx.artifactsDir, 'changed-files.txt');
-    await writeFile(namesPath, namesOnly.stdout, 'utf8');
-
     return {
-      outputs: [
-        {
-          name: 'diff',
-          path: diffPath,
-          contentType: 'text/x-diff',
-          size: Buffer.byteLength(diff.stdout, 'utf8'),
-        },
-        {
-          name: 'changed-files',
-          path: namesPath,
-          contentType: 'text/plain',
-          size: Buffer.byteLength(namesOnly.stdout, 'utf8'),
-        },
-      ],
+      outputs: await captureWorktreeDiffOutputs(ctx.workspacePath, ctx.artifactsDir),
     };
   }
 }
@@ -481,7 +421,7 @@ async function renderContextPack(ctx: AgentTaskContext): Promise<string> {
   parts.push('');
   parts.push(`Run: \`${ctx.workflowRunId}\``);
   parts.push(`Title: ${ctx.title}`);
-  parts.push(`Generated at: ${new Date().toISOString()}`);
+  parts.push(`Generated at: ${nowIso()}`);
   parts.push('');
   parts.push('## User Request');
   parts.push(userRequest);

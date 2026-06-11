@@ -7,6 +7,7 @@ import type {
   WorkflowRunType,
   WorkflowStage,
 } from '../src';
+import { FLOW_REGISTRY, KNOWN_FLOW_IDS, isFlowId } from '../src';
 
 // ---------------------------------------------------------------------------
 // V2 W2-1 / PR1: FlowId / FlowDef / StageStep type smoke
@@ -90,4 +91,22 @@ test('FlowDef.kind links to WorkflowRunType — typed compile-time mapping', () 
     stages: [],
   };
   expect(featureFlow.kind satisfies WorkflowRunType).toBe('feature');
+});
+
+test('KNOWN_FLOW_IDS is derived from FLOW_REGISTRY keys in registration order', () => {
+  expect(KNOWN_FLOW_IDS).toEqual([
+    'feature.standard',
+    'feature.fastforward',
+    'issue.standard',
+    'refactor.standard',
+  ]);
+  expect(KNOWN_FLOW_IDS).toEqual(Object.keys(FLOW_REGISTRY));
+});
+
+test('isFlowId accepts registered ids and rejects everything else', () => {
+  for (const id of KNOWN_FLOW_IDS) expect(isFlowId(id)).toBe(true);
+  expect(isFlowId('feature.unknown')).toBe(false);
+  expect(isFlowId('')).toBe(false);
+  expect(isFlowId(undefined)).toBe(false);
+  expect(isFlowId(42)).toBe(false);
 });

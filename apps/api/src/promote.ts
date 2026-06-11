@@ -1,5 +1,7 @@
 import {
+  errorMessage,
   isKnowledgeArtifactKind,
+  nowIso,
   type ArtifactId,
   type KnowledgeArtifact,
   type KnowledgeArtifactKind,
@@ -192,7 +194,7 @@ export async function promoteDraftInTransaction(
     });
 
     // Step 6b: UPSERT entity head row.
-    const now = new Date().toISOString();
+    const now = nowIso();
     if (entityKind === 'requirement') {
       store.requirementEntities.upsertHead({
         id: entityId,
@@ -270,7 +272,7 @@ export async function promoteDraftInTransaction(
       // success).
       console.error(
         `[promote] file write failed for ${resolvedEntityId} (kart=${createdRow.id}): ${
-          err instanceof Error ? err.message : String(err)
+          errorMessage(err)
         } — DB row is committed; filesystem may diverge`,
       );
     }

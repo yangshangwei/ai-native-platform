@@ -17,6 +17,38 @@ export type WorkflowStage =
   | 'scan'
   | 'plan';
 
+/**
+ * Trust-boundary list of every {@link WorkflowStage} value. The
+ * `satisfies` clause plus the indexed-access check below keep this array
+ * in lockstep with the union: adding a stage to the union without
+ * appending it here trips `tsc --noEmit` (and vice versa).
+ */
+export const WORKFLOW_STAGES = [
+  'init',
+  'context_pack',
+  'requirement',
+  'design',
+  'implementation',
+  'build_test',
+  'review',
+  'completion',
+  'knowledge',
+  'report',
+  'analyze',
+  'scan',
+  'plan',
+] as const satisfies readonly WorkflowStage[];
+
+// Exhaustiveness check: if the WorkflowStage union gains a member missing
+// from WORKFLOW_STAGES, this assignment fails to type-check.
+type _AssertAllStagesListed = WorkflowStage extends (typeof WORKFLOW_STAGES)[number] ? true : never;
+const _allStagesListed: _AssertAllStagesListed = true;
+void _allStagesListed;
+
+export function isWorkflowStage(value: unknown): value is WorkflowStage {
+  return typeof value === 'string' && (WORKFLOW_STAGES as readonly string[]).includes(value);
+}
+
 export type WorkflowRunStatus =
   | 'pending'
   | 'running'

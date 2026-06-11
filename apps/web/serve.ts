@@ -5,6 +5,7 @@
 import { dirname, join } from 'node:path';
 import { existsSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { errorMessage } from '@ainp/shared';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.AINP_WEB_PORT ?? 5173);
@@ -62,7 +63,7 @@ export function createWebServer(options: { port?: number; apiBase?: string } = {
         try {
           return await fetch(target, init);
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = errorMessage(err);
           return Response.json(
             {
               error: 'api proxy unavailable',

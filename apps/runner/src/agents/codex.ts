@@ -23,22 +23,23 @@ import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createInterface } from 'node:readline';
 import {
-  agentBackendCliArgs,
-  buildAgentBackendCliSpawn,
   buildResolvedAgentBackendCliSpawn,
   maskSecrets,
-  resolveAgentBackendCliCandidates,
-  type AgentStreamEventInput,
   type SkillSpec,
 } from '@ainp/shared';
-import { api } from '../api-client';
-import { sh } from '../sh';
-import type { AgentArtifactOutput, AgentBackend, AgentRunResult, AgentTaskContext } from './native';
+import type { AgentBackend, AgentRunResult, AgentTaskContext } from './types';
 import { parseCodexJsonLine } from './codex-parser';
+import {
+  captureWorktreeDiffOutputs,
+  cliAvailable,
+  consumeLines,
+  createAgentEventEmitter,
+  isStructuredContextRequest,
+  pickFileOutput,
+  type BuildPromptArgs,
+} from './cli-common';
 import { renderAgentPrompt, renderCombinedAgentPrompt } from '../context/renderer';
-import { parseContextRequestFromAgentOutput } from '../context/request';
 
 export interface CodexBackendOpts {
   bin?: string;
@@ -114,29 +115,8 @@ export class CodexBackend implements AgentBackend {
     const { exitCode, lastMessage } = await this.invokeCli(prompt, ctx, skill);
     if (exitCode !== 0) throw new Error(`codex exited ${exitCode} during implementation`);
 
-    const diff = await sh('git', ['diff'], { cwd: ctx.workspacePath });
-    const diffPath = join(ctx.artifactsDir, 'changes.diff');
-    await writeFile(diffPath, diff.stdout, 'utf8');
-
-    const namesOnly = await sh('git', ['diff', '--name-only'], { cwd: ctx.workspacePath });
-    const namesPath = join(ctx.artifactsDir, 'changed-files.txt');
-    await writeFile(namesPath, namesOnly.stdout, 'utf8');
-
     return {
-      outputs: [
-        {
-          name: 'diff',
-          path: diffPath,
-          contentType: 'text/x-diff',
-          size: Buffer.byteLength(diff.stdout, 'utf8'),
-        },
-        {
-          name: 'changed-files',
-          path: namesPath,
-          contentType: 'text/plain',
-          size: Buffer.byteLength(namesOnly.stdout, 'utf8'),
-        },
-      ],
+      outputs: await captureWorktreeDiffOutputs(ctx.workspacePath, ctx.artifactsDir),
       lastMessage,
     };
   }
@@ -237,48 +217,7 @@ export class CodexBackend implements AgentBackend {
 }
 
 export async function codexCliAvailable(bin?: string): Promise<boolean> {
-  const candidates = resolveAgentBackendCliCandidates('codex', {
-    bin,
-    env: process.env,
-    platform: process.platform,
-  });
-
-  for (const candidate of candidates) {
-    if (await exitsZero(candidate, agentBackendCliArgs('codex', 'version'))) return true;
-  }
-  return false;
-}
-
-function exitsZero(bin: string, args: string[]): Promise<boolean> {
-  return new Promise((resolve) => {
-    const invocation = buildAgentBackendCliSpawn(bin, args, {
-      env: process.env,
-      platform: process.platform,
-    });
-    const child = spawn(invocation.command, invocation.args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      shell: invocation.shell,
-      windowsHide: invocation.windowsHide,
-    });
-    const timer = setTimeout(() => {
-      child.kill('SIGKILL');
-      resolve(false);
-    }, 3000);
-    child.once('error', () => {
-      clearTimeout(timer);
-      resolve(false);
-    });
-    child.once('exit', (code) => {
-      clearTimeout(timer);
-      resolve(code === 0);
-    });
-  });
-}
-
-interface BuildPromptArgs {
-  mode: 'produce_file' | 'implementation';
-  targetPath?: string;
-  outputName?: string;
+  return cliAvailable('codex', bin);
 }
 
 function buildPrompt(skill: SkillSpec, ctx: AgentTaskContext, args: BuildPromptArgs): string {
@@ -298,42 +237,7 @@ function buildPrompt(skill: SkillSpec, ctx: AgentTaskContext, args: BuildPromptA
   }));
 }
 
-function pickFileOutput(skill: SkillSpec): { name: string; contentType: string } {
-  const out = skill.outputs[0];
-  if (!out) throw new Error(`skill ${skill.id} has no outputs`);
-  return { name: out.name, contentType: 'text/markdown' };
-}
-
-async function consumeLines(
-  stream: NodeJS.ReadableStream | null,
-  onLine: (line: string) => Promise<void>,
-): Promise<void> {
-  if (!stream) return;
-  const rl = createInterface({ input: stream, crlfDelay: Infinity });
-  for await (const line of rl) {
-    if (!line) continue;
-    await onLine(line);
-  }
-}
-
-async function emit(
-  ctx: AgentTaskContext,
-  parsed: { type: AgentStreamEventInput['type']; payload: Record<string, unknown>; text: string | null },
-): Promise<void> {
-  try {
-    await api.postAgentEvent({
-      workflowRunId: ctx.workflowRunId,
-      stepRunId: ctx.stepRunId ?? null,
-      agentKind: 'codex',
-      type: parsed.type,
-      payload: parsed.payload,
-      text: parsed.text,
-    });
-  } catch (err) {
-    // API push failure must not stop the local Codex process. The local console still gets it.
-    process.stderr.write(`[codex] postAgentEvent failed: ${maskSecrets((err as Error).message)}\n`);
-  }
-}
+const emit = createAgentEventEmitter('codex', 'codex');
 
 async function emitMeta(
   ctx: AgentTaskContext,
@@ -351,21 +255,6 @@ async function readOptionalText(path: string): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-function isStructuredContextRequest(
-  message: string | null,
-  ctx: AgentTaskContext,
-  skill: SkillSpec,
-): boolean {
-  if (!message) return false;
-  return parseContextRequestFromAgentOutput({
-    workflowRunId: ctx.workflowRunId,
-    stepRunId: ctx.stepRunId ?? null,
-    stage: skill.stage,
-    sources: [{ name: 'last_message', text: message }],
-    idFactory: () => 'ctxreq_probe',
-  }) !== null;
 }
 
 /**

@@ -50,6 +50,7 @@ import {
   type StreamEventCache,
 } from './stream-rendering';
 import type { KnowledgeArtifact } from '@ainp/shared';
+import { errorMessage } from '@ainp/shared';
 
 const API_BASE = '/api';
 
@@ -810,7 +811,7 @@ async function loadData(opts: { render?: boolean; keepDetail?: boolean } = {}): 
         .then((r) => ({ items: r.items, error: null as string | null }))
         .catch((err) => ({
           items: [] as ProjectDto[],
-          error: err instanceof Error ? err.message : String(err),
+          error: errorMessage(err),
         })),
       api<{ items: RunnerDto[] }>('/runners').then((r) => r.items).catch(() => []),
       api<{ items: WorkflowRequestDto[] }>('/workflow-requests').then((r) => r.items).catch(() => []),
@@ -835,7 +836,7 @@ async function loadData(opts: { render?: boolean; keepDetail?: boolean } = {}): 
     }
     lastError = null;
   } catch (err) {
-    lastError = err instanceof Error ? err.message : String(err);
+    lastError = errorMessage(err);
   }
   syncActiveStreamSubscription();
   if (opts.render !== false) render();
@@ -851,7 +852,7 @@ async function loadRunDetail(runId: string, shouldRender = true): Promise<void> 
     void ensureContextGovernance(runId);
     attachRunStream(runId);
   } catch (err) {
-    lastError = err instanceof Error ? err.message : String(err);
+    lastError = errorMessage(err);
   } finally {
     loadingDetailFor = null;
   }
@@ -952,7 +953,7 @@ async function loadKnowledgeArtifacts(projectId: string, shouldRender = true): P
     knowledgeArtifactsState.artifacts = [...(body.artifacts ?? [])].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     knowledgeArtifactsState.loadedOnce = true;
   } catch (err) {
-    knowledgeArtifactsState.error = err instanceof Error ? err.message : String(err);
+    knowledgeArtifactsState.error = errorMessage(err);
     knowledgeArtifactsState.artifacts = [];
   } finally {
     knowledgeArtifactsState.loading = false;
@@ -2659,7 +2660,7 @@ function renderStageRetryActions(workflowRunId: string, stage: string, gateId: s
       await loadRunDetail(workflowRunId, false);
       await loadData({ render: false, keepDetail: true });
     } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
+      lastError = errorMessage(err);
     } finally {
       retryInFlight.delete(retryKey);
       render();
@@ -2680,7 +2681,7 @@ function renderStageRetryActions(workflowRunId: string, stage: string, gateId: s
       await loadRunDetail(workflowRunId, false);
       await loadData({ render: false, keepDetail: true });
     } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
+      lastError = errorMessage(err);
     } finally {
       retryInFlight.delete(reEvalKey);
       render();
@@ -3644,7 +3645,7 @@ async function loadLocalDirectories(path: string): Promise<void> {
     const query = path ? `?path=${encodeURIComponent(path)}` : '';
     localDirectoryPicker.listing = await api<LocalDirectoryList>(`/projects/local-directories${query}`);
   } catch (err) {
-    localDirectoryPicker.error = err instanceof Error ? err.message : String(err);
+    localDirectoryPicker.error = errorMessage(err);
   } finally {
     localDirectoryPicker.loading = false;
     render();
@@ -3892,7 +3893,7 @@ async function checkAgentBackend(
     lastError = result.runnable ? null : `${result.label}: ${result.remediationHint}${result.error ? ` (${result.error})` : ''}`;
     return result;
   } catch (err) {
-    lastError = err instanceof Error ? err.message : String(err);
+    lastError = errorMessage(err);
     return null;
   } finally {
     agentBackendPreflightInFlight.delete(key);
@@ -4028,7 +4029,7 @@ async function deleteOrArchiveProject(project: ProjectDto): Promise<void> {
     }
     lastError = `项目 ${project.name} 当前不能删除：${preview.recommendation}`;
   } catch (err) {
-    lastError = err instanceof Error ? err.message : String(err);
+    lastError = errorMessage(err);
   } finally {
     projectActionInFlight.delete(project.id);
     render();
@@ -4052,7 +4053,7 @@ async function refreshProjectBranches(projectId: string, onUpdated?: () => void)
     }
     lastError = null;
   } catch (err) {
-    lastError = err instanceof Error ? err.message : String(err);
+    lastError = errorMessage(err);
   } finally {
     projectBranchRefreshInFlight.delete(projectId);
     onUpdated?.();
@@ -4179,7 +4180,7 @@ async function detectProjectSource(): Promise<void> {
       lastError = null;
     }
   } catch (err) {
-    projectSourceForm.detectResult = { ok: false, error: err instanceof Error ? err.message : String(err) };
+    projectSourceForm.detectResult = { ok: false, error: errorMessage(err) };
   } finally {
     projectSourceForm.detecting = false;
     render();
@@ -4211,7 +4212,7 @@ async function submitProject(event: SubmitEvent): Promise<void> {
     resetProjectSourceForm();
     await loadData({ render: true });
   } catch (err) {
-    lastError = err instanceof Error ? err.message : String(err);
+    lastError = errorMessage(err);
     render();
   }
 }
@@ -4580,7 +4581,7 @@ function renderNewTaskPage(): HTMLElement {
         panelHeader('执行建议', '暂时不可用'),
         el('p', {
           class: 'muted compact',
-          text: err instanceof Error ? err.message : String(err),
+          text: errorMessage(err),
         }),
       );
     } finally {
@@ -4857,7 +4858,7 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
     render();
     console.log('[web] workflow request created', request.id);
   } catch (err) {
-    lastError = err instanceof Error ? err.message : String(err);
+    lastError = errorMessage(err);
     render();
   }
 }
@@ -5128,7 +5129,7 @@ async function sendCoordinatorReply(requestId: string, textArea: HTMLTextAreaEle
     textArea.value = '';
     await loadCoordinatorChat(requestId);
   } catch (err) {
-    lastError = err instanceof Error ? err.message : String(err);
+    lastError = errorMessage(err);
     render();
     // Only restore disabled state if the textarea is still in the DOM
     if (document.body.contains(textArea)) {
@@ -6339,7 +6340,7 @@ async function loadSettingsConfig(): Promise<void> {
     settingsConfig.overrides = ov.overrides ?? {};
     settingsConfig.loadedOnce = true;
   } catch (err) {
-    settingsConfig.error = err instanceof Error ? err.message : String(err);
+    settingsConfig.error = errorMessage(err);
   } finally {
     settingsConfig.loading = false;
     render();
@@ -6422,7 +6423,7 @@ async function saveConfigOverride(key: string): Promise<void> {
     settingsConfig.audits.delete(key);
     await loadSettingsConfig();
   } catch (err) {
-    settingsConfig.error = err instanceof Error ? err.message : String(err);
+    settingsConfig.error = errorMessage(err);
   } finally {
     settingsConfig.saving.delete(key);
     render();
@@ -6442,7 +6443,7 @@ async function resetConfigOverride(key: string): Promise<void> {
     settingsConfig.audits.delete(key);
     await loadSettingsConfig();
   } catch (err) {
-    settingsConfig.error = err instanceof Error ? err.message : String(err);
+    settingsConfig.error = errorMessage(err);
   } finally {
     settingsConfig.saving.delete(key);
     render();
@@ -6945,7 +6946,7 @@ async function submitApproval(
     await loadData({ render: false, keepDetail: true });
     lastError = null;
   } catch (err) {
-    lastError = err instanceof Error ? err.message : String(err);
+    lastError = errorMessage(err);
   } finally {
     approvalInFlight.delete(key);
     render();
@@ -6981,7 +6982,7 @@ async function submitAcceptanceDecision(
     await loadRunDetail(workflowRunId, false);
     await loadData({ render: false, keepDetail: true });
   } catch (err) {
-    lastError = err instanceof Error ? err.message : String(err);
+    lastError = errorMessage(err);
   } finally {
     approvalInFlight.delete(key);
     render();
@@ -7007,7 +7008,7 @@ async function submitRequirementAction(
     await loadRunDetail(workflowRunId, false);
     await loadData({ render: false, keepDetail: true });
   } catch (err) {
-    lastError = err instanceof Error ? err.message : String(err);
+    lastError = errorMessage(err);
   } finally {
     render();
   }
@@ -7040,7 +7041,7 @@ async function submitKnowledgeAction(
     await loadRunDetail(workflowRunId, false);
     await loadData({ render: false, keepDetail: true });
   } catch (err) {
-    lastError = err instanceof Error ? err.message : String(err);
+    lastError = errorMessage(err);
   } finally {
     render();
   }

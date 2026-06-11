@@ -43,7 +43,6 @@ import {
 import {
   store,
   type Approval,
-  type AuditEntry,
   type RunnerRecord,
   type WorkflowAction,
 } from './store/store';
@@ -58,6 +57,9 @@ import {
 } from './gate-engine';
 import { publish as publishAgentEvent } from './agent-stream-bus';
 import { recommend } from './router';
+import { audit } from './audit';
+
+export { audit };
 
 /**
  * Workflow Engine — sole state writer.
@@ -1052,22 +1054,8 @@ export function recordAgentResult(input: {
 }
 
 // ---- Audit -----------------------------------------------------------------
-
-export function audit(
-  workflowRunId: string | null,
-  kind: string,
-  payload: Record<string, unknown>,
-): AuditEntry {
-  const e: AuditEntry = {
-    id: newId('audit'),
-    workflowRunId,
-    kind,
-    payload,
-    at: nowIso(),
-  };
-  store.auditLog.insert(e);
-  return e;
-}
+// Implementation lives in ./audit; re-exported here so existing consumers keep
+// importing it from workflow-engine.
 
 // ---- Agent stream events ---------------------------------------------------
 

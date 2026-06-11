@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { errorMessage, nowIso } from '@ainp/shared';
 import { store } from '../store/store';
 
 export const runnerControl = new Hono();
@@ -76,7 +77,7 @@ function start(): RunnerControlStatus {
 
   stoppedAt = null;
   lastExit = null;
-  startedAt = new Date().toISOString();
+  startedAt = nowIso();
   recentLogs.push(`[control] starting ${command.join(' ')}`);
   const next = spawn(bin, args, {
     cwd: repoRoot(),
@@ -95,7 +96,7 @@ function start(): RunnerControlStatus {
     recentLogs.push(`[control:error] ${err.message}`);
   });
   next.on('exit', (code, signal) => {
-    stoppedAt = new Date().toISOString();
+    stoppedAt = nowIso();
     lastExit = { code, signal, at: stoppedAt };
     recentLogs.push(`[control] runner exited code=${code ?? 'null'} signal=${signal ?? 'null'}`);
     child = null;
@@ -121,7 +122,7 @@ runnerControl.post('/start', (c) => {
   try {
     return c.json(start());
   } catch (err) {
-    return c.json({ error: err instanceof Error ? err.message : String(err), status: status() }, 500);
+    return c.json({ error: errorMessage(err), status: status() }, 500);
   }
 });
 

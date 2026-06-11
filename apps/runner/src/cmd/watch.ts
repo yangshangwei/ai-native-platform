@@ -5,7 +5,7 @@ import type {
   WorkflowRequest,
   WorkflowRunType,
 } from '@ainp/shared';
-import { FLOW_REGISTRY } from '@ainp/shared';
+import { FLOW_REGISTRY, errorMessage } from '@ainp/shared';
 import { api } from '../api-client';
 import { sendHeartbeat } from '../heartbeat';
 import { cmdOrchestrate } from '../orchestrator';
@@ -100,7 +100,7 @@ export async function processNextWorkflowRequest(
     await deps.complete(claimed.id, {
       workflowRunId: null,
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: errorMessage(err),
     });
     return 'failed';
   }

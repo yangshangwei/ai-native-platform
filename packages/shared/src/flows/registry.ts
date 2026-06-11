@@ -22,11 +22,10 @@ import type { FlowDef, FlowId } from '../types/workflow';
 //      if the new flow introduces a `WorkflowStage` value not handled
 //      yet. The default branch uses `_exhaustive: never` to enforce
 //      coverage.
-//   4. Update the trust-boundary `KNOWN_FLOW_IDS` lists in BOTH
-//      `apps/api/src/routes/workflow-runs.ts` AND
-//      `apps/runner/src/index.ts`. Without this step the API returns
-//      400 and the CLI exits 2 even though the registry "knows" about
-//      the flow.
+//   4. `KNOWN_FLOW_IDS` / `isFlowId` (exported below) are derived from
+//      this registry's keys, so the trust-boundary guards in
+//      `apps/api/src/routes/workflow-runs.ts` and `apps/runner/src/index.ts`
+//      pick up the new flow automatically — no manual list sync needed.
 //   5. Pin the new flow's stage order against an out-of-band reference
 //      array in `apps/runner/test/flow-registry.test.ts`.
 //   6. Update the spec doc `.trellis/spec/runner/backend/flow-registry.md`.
@@ -196,3 +195,15 @@ export const FLOW_REGISTRY: Readonly<Record<FlowId, FlowDef>> = {
   'issue.standard': ISSUE_STANDARD,
   'refactor.standard': REFACTOR_STANDARD,
 };
+
+/**
+ * Trust-boundary list of every registered {@link FlowId}, derived from
+ * `FLOW_REGISTRY` (registration order). HTTP bodies / CLI flags carry
+ * arbitrary strings; consumers use {@link isFlowId} so downstream
+ * `FLOW_REGISTRY[flowId]` lookups never see garbage.
+ */
+export const KNOWN_FLOW_IDS: readonly FlowId[] = Object.keys(FLOW_REGISTRY) as FlowId[];
+
+export function isFlowId(value: unknown): value is FlowId {
+  return typeof value === 'string' && (KNOWN_FLOW_IDS as readonly string[]).includes(value);
+}

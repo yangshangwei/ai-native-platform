@@ -21,6 +21,7 @@ export * from './flows/registry';
 export * from './coordinator';
 
 export * from './utils/id';
+export * from './utils/error';
 export * from './utils/whitelist';
 export * from './utils/surefire';
 export * from './utils/redaction';

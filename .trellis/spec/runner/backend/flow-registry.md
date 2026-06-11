@@ -5,16 +5,18 @@
 ### 1. Scope / Trigger
 
 - Trigger: changes to `apps/runner/src/flows/registry.ts`, `apps/runner/src/orchestrator.ts` (the `cmdOrchestrate` body, `dispatchStep`, or any `executeXxx` step implementation), or the `FlowId` / `FlowDef` / `StageStep` types in `packages/shared/src/types/workflow.ts`.
-- Adding a new flow variant — the new entry must land in `FLOW_REGISTRY` and the new id must be added to the `FlowId` literal union AND to the `KNOWN_FLOW_IDS` validation lists at the trust boundaries.
+- Adding a new flow variant — the new entry must land in `FLOW_REGISTRY` and the new id must be added to the `FlowId` literal union. The trust-boundary guards (`KNOWN_FLOW_IDS` / `isFlowId`, exported from `@ainp/shared`) are **derived from the registry keys** and pick up new flows automatically — no manual list sync.
 - Schema/type changes touching `workflow_runs.flow_id` or `WorkflowRun.flowId`.
-- Changes to the trust-boundary FlowId validation lists in `apps/api/src/routes/workflow-runs.ts` and `apps/runner/src/index.ts`.
+- Changes to the shared trust-boundary guards (`KNOWN_FLOW_IDS` / `isFlowId` / `WORKFLOW_STAGES` / `isWorkflowStage` in `@ainp/shared`) or their consumption in `apps/api/src/routes/workflow-runs.ts`, `apps/api/src/routes/runner-events.ts`, and `apps/runner/src/index.ts`.
 
 ### 2. Signatures
 
 - `FlowId` (`@ainp/shared`) — string-literal union, **not** a free `string`. Today: `'feature.standard' | 'feature.fastforward' | 'issue.standard' | 'refactor.standard'`.
 - `StageStep` (`@ainp/shared`) — `{ stage: WorkflowStage; kind: StageStepKind; skillId?: string }`. `kind` is `'agent' | 'gate' | 'human' | 'engine'`.
 - `FlowDef` (`@ainp/shared`) — `{ id: FlowId; kind: WorkflowRunType; description: string; stages: readonly StageStep[] }`.
-- `FLOW_REGISTRY` (`apps/runner/src/flows/registry.ts`) — `Readonly<Record<FlowId, FlowDef>>`. Single source of truth for V2 flow definitions.
+- `FLOW_REGISTRY` (`packages/shared/src/flows/registry.ts`; moved from runner in W2-4, `apps/runner/src/flows/registry.ts` remains a re-export shim) — `Readonly<Record<FlowId, FlowDef>>`. Single source of truth for V2 flow definitions.
+- `KNOWN_FLOW_IDS` / `isFlowId(value): value is FlowId` (`packages/shared/src/flows/registry.ts`) — derived from `Object.keys(FLOW_REGISTRY)`; the single trust-boundary guard consumed by both the API route and the runner CLI.
+- `WORKFLOW_STAGES` / `isWorkflowStage(value): value is WorkflowStage` (`packages/shared/src/types/workflow.ts`) — shared stage guard; replaced the three hand-written copies in api routes.
 - `dispatchStep(step: StageStep, ctx: RunCtx): Promise<void>` — inner function of `cmdOrchestrate`, single-point router.
 - `executeImplementation(c: RunCtx)` / `executeBuildTest(c)` / `executeAcceptance(c)` / `executeCompletion(c)` / `executeKnowledgePromotion(c)` — inner functions of `cmdOrchestrate`, 1:1 lifts of the V1 inline blocks.
 - `RunCtx` — file-private interface in `orchestrator.ts`; carries `project`, `run`, `workspace`, `backend`, `tools`, `opts`, `runArtifactsDir`, `inputs`, `inputArtifactIds`, `draftsToPromote`, `ok` across step implementations. **Not exported**.
@@ -127,10 +129,10 @@ UI override (W2-4 PR4):
 - `WorkflowRun.flowId: FlowId` is **required** in TypeScript and **NOT NULL** in the `workflow_runs.flow_id` column with `DEFAULT 'feature.standard'` (PRD ADR Q2 — explicit backfill, no NULL state).
 - `createWorkflowRun(params)` accepts optional `flowId?: FlowId`; when omitted, the API applies conservative run-type defaults (`feature.standard` for feature/smoke, `issue.standard` for bugfix, `refactor.standard` for refactor). Existing call sites (API routes, runner triggers) need no changes for V1-equivalent feature runs (PRD AC-14).
 - `runWorkflow` reads `run.flowId` and looks up `FLOW_REGISTRY[run.flowId]`. If the entry is missing the run aborts with a clear error rather than falling back — defensive `?? 'feature.standard'` shortcuts in the orchestrator are forbidden (PRD ADR Q2 consequence).
-- **Trust-boundary validation (W2-3 PR2)**: each external entry into the system that accepts a flowId carries its own `KNOWN_FLOW_IDS` allow-list. There are two:
+- **Trust-boundary validation (W2-3 PR2; centralised 06-11)**: each external entry into the system that accepts a flowId validates against the shared guard. There are two:
   - `apps/api/src/routes/workflow-runs.ts` — `isFlowId(value)` rejects unknown bodies with HTTP 400.
   - `apps/runner/src/index.ts` — `parseFlowIdFlag` rejects unknown CLI args with `process.exit(2)`.
-  Both lists MUST stay in sync with the `FlowId` union in `@ainp/shared`. Adding a new flow means updating: (1) the union; (2) FLOW_REGISTRY; (3) both KNOWN_FLOW_IDS lists; (4) the `KNOWN_FLOW_IDS` mention here in the spec doc.
+  Both import `KNOWN_FLOW_IDS` / `isFlowId` from `@ainp/shared`, where they are derived from `Object.keys(FLOW_REGISTRY)` — the lists can no longer drift from the registry. Adding a new flow means updating: (1) the union; (2) FLOW_REGISTRY. The guards follow automatically.
 - **Trigger paths**:
   - HTTP: `POST /workflow-runs` body `{ ..., flowId: 'feature.fastforward' }` → route forwards → engine writes `workflow_runs.flow_id` → runner reads `run.flowId`.
   - Runner CLI: `runner orchestrate --project foo --title bar --flow-id feature.fastforward` → `parseFlowIdFlag` validates → `cmdOrchestrate({ flowId })` → `api.createWorkflowRun({ flowId })` → same body path.
@@ -160,7 +162,7 @@ Recipe — first executed by W2-3 to add `feature.fastforward`:
 3. Update / add `dispatchStep` cases if the new flow introduces a `WorkflowStage` value not handled yet. The default branch uses `_exhaustive: never` to enforce coverage.
 4. The route layer (or coordinator decision) supplies `flowId` to `createWorkflowRun({ ..., flowId })`.
 5. Pin the new flow's stage order against an out-of-band reference array in `apps/runner/test/flow-registry.test.ts` (mirroring the `feature.standard` test).
-6. **Update the trust-boundary validation lists**: add the new id to `KNOWN_FLOW_IDS` in BOTH `apps/api/src/routes/workflow-runs.ts` AND `apps/runner/src/index.ts`. Without this step the API returns 400 and the CLI exits 2 even though the registry "knows" about the flow.
+6. ~~Update the trust-boundary validation lists~~ (obsolete since 06-11): `KNOWN_FLOW_IDS` / `isFlowId` are now derived from `FLOW_REGISTRY` keys in `@ainp/shared` — the API route and runner CLI guards pick up the new flow automatically. Nothing to sync.
 7. Update this spec doc's `feature.standard` / `feature.fastforward` stage layout sections to add a parallel block describing the new flow's stages, skipped stages, known degradations.
 
 Verify: `bun test` should grow by the new flow's tests; `bun run --filter '*' typecheck` should stay green.
@@ -185,7 +187,7 @@ Verify: `bun test` should grow by the new flow's tests; `bun run --filter '*' ty
 - **Base** — V1 feature run: route omits `flowId` -> `createWorkflowRun` defaults to `'feature.standard'` -> runner fetches the same 8-stage pipeline as V1 -> behavior byte-for-byte identical to pre-W2-1. This is the AC-2 zero-regression target.
 - **Base** — fastforward triggered via API: `POST /workflow-runs { ..., flowId: 'feature.fastforward' }` -> 201 with `run.flowId === 'feature.fastforward'` -> runner picks up the 4-stage subset -> 4 dispatched stages.
 - **Bad** — adding `??` fallback in orchestrator: `const flowId = run.flowId ?? 'feature.standard';` is a contract violation. The DB column is NOT NULL with DEFAULT and the TS field is required; runtime fallback hides bugs. Q2 ADR explicitly forbids this.
-- **Bad** — extending `FLOW_REGISTRY` but forgetting to update `KNOWN_FLOW_IDS` in routes/index.ts: registry "has" the flow internally but external entries reject it (HTTP 400 / CLI exit 2). Drift between the source-of-truth (FLOW_REGISTRY) and the trust-boundary lists is a real maintenance risk; the "Adding a new flow" recipe step 6 is mandatory.
+- **Bad** — re-introducing a hand-maintained `KNOWN_FLOW_IDS` literal at a trust boundary: the constant is derived from `FLOW_REGISTRY` keys in `@ainp/shared` precisely because the previous two hand-written copies (api route + runner CLI) could drift from the source-of-truth and reject flows the registry knew about (HTTP 400 / CLI exit 2). Always import the shared guard.
 - **Bad** — reading `step.kind` to dispatch in W2-1 / W2-3: e.g. `if (step.kind === 'engine') { await runEngine(step) }`. The kind field is unread placeholder data through W2-3; consuming it now creates contract drift between the structure and what W2-4 will actually deliver. Wait for W2-4.
 - **Bad** — splitting `dispatchStep` into per-stage helpers that the main loop calls: forks the dispatch surface and breaks the single-point-router invariant. Every stage MUST flow through `dispatchStep`.
 - **Bad** — making `flowId` optional on `WorkflowRun` (TS) to ease fixture construction: violates the NOT NULL DB invariant and the Q3 ADR. Update fixtures instead.

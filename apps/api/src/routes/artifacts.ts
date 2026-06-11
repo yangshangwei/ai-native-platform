@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { ArtifactKind } from '@ainp/shared';
+import { errorMessage } from '@ainp/shared';
 import { store } from '../store/store';
 import { readArtifactContent } from '../artifact-content';
 
@@ -14,7 +15,7 @@ artifacts.get('/workflow-runs/:workflowRunId/:kind/latest/content', (c) => {
     const content = readArtifactContent(artifact);
     return c.json({ artifact, ...content });
   } catch (err) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    return c.json({ error: errorMessage(err) }, 400);
   }
 });
 
@@ -26,6 +27,6 @@ artifacts.get('/:id/content', (c) => {
     const content = readArtifactContent(artifact);
     return c.json({ artifact, ...content });
   } catch (err) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    return c.json({ error: errorMessage(err) }, 400);
   }
 });

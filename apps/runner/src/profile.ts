@@ -11,7 +11,7 @@
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
-import { isSensitiveContextPath } from '@ainp/shared';
+import { isSensitiveContextPath, nowIso } from '@ainp/shared';
 import { PROJECTS_DIR } from './config';
 
 export interface PomSummary {
@@ -131,7 +131,7 @@ async function scanProject(opts: GenerateProfileOpts): Promise<ProjectProfile> {
     projectId: opts.projectId,
     name: opts.name,
     localPath: opts.localPath,
-    generatedAt: new Date().toISOString(),
+    generatedAt: nowIso(),
     buildTool,
     language,
     pom,

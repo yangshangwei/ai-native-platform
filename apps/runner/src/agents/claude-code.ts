@@ -16,26 +16,27 @@
 
 import { spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createInterface } from 'node:readline';
 import {
-  agentBackendCliArgs,
-  buildAgentBackendCliSpawn,
   buildResolvedAgentBackendCliSpawn,
   maskSecrets,
-  resolveAgentBackendCliCandidates,
   type SkillSpec,
-  type AgentStreamEventInput,
   type AgentBackendKind,
 } from '@ainp/shared';
-import { sh } from '../sh';
-import { api } from '../api-client';
 import { parseStreamLine } from './claude-code-parser';
-import type { AgentArtifactOutput, AgentBackend, AgentRunResult, AgentTaskContext } from './native';
+import type { AgentBackend, AgentRunResult, AgentTaskContext } from './types';
+import {
+  captureWorktreeDiffOutputs,
+  cliAvailable,
+  consumeLines,
+  createAgentEventEmitter,
+  isStructuredContextRequest,
+  pickFileOutput,
+  type BuildPromptArgs,
+} from './cli-common';
 import { renderAgentPrompt } from '../context/renderer';
-import { parseContextRequestFromAgentOutput } from '../context/request';
 
 export interface ClaudeCodeBackendOpts {
   /** Override binary path; defaults to `AINP_CLAUDE_BIN` env or `claude`. */
@@ -138,29 +139,8 @@ export class ClaudeCodeBackend implements AgentBackend {
       throw new Error(`claude exited ${exitCode} during implementation`);
     }
 
-    const diff = await sh('git', ['diff'], { cwd: ctx.workspacePath });
-    const diffPath = join(ctx.artifactsDir, 'changes.diff');
-    await writeFile(diffPath, diff.stdout, 'utf8');
-
-    const namesOnly = await sh('git', ['diff', '--name-only'], { cwd: ctx.workspacePath });
-    const namesPath = join(ctx.artifactsDir, 'changed-files.txt');
-    await writeFile(namesPath, namesOnly.stdout, 'utf8');
-
     return {
-      outputs: [
-        {
-          name: 'diff',
-          path: diffPath,
-          contentType: 'text/x-diff',
-          size: Buffer.byteLength(diff.stdout, 'utf8'),
-        },
-        {
-          name: 'changed-files',
-          path: namesPath,
-          contentType: 'text/plain',
-          size: Buffer.byteLength(namesOnly.stdout, 'utf8'),
-        },
-      ],
+      outputs: await captureWorktreeDiffOutputs(ctx.workspacePath, ctx.artifactsDir),
       lastMessage,
     };
   }
@@ -293,7 +273,7 @@ export class ClaudeCodeBackend implements AgentBackend {
     const stdoutDone = consumeLines(child.stdout, async (line) => {
       const parsed = parseStreamLine(line);
       if (parsed.text) process.stdout.write(`${parsed.text}\n`);
-      await emitParsed(ctx, parsed);
+      await emit(ctx, parsed);
       if (parsed.type === 'result' && !resultSeen) {
         resultSeen = true;
         const sub = (parsed.payload as { subtype?: unknown }).subtype;
@@ -358,12 +338,6 @@ export function emptyClaudeHooksSettings(): Record<(typeof CLAUDE_HOOK_EVENTS)[n
 
 // ---- prompt assembly ------------------------------------------------------
 
-interface BuildPromptArgs {
-  mode: 'produce_file' | 'implementation';
-  targetPath?: string;
-  outputName?: string;
-}
-
 function buildPrompts(
   skill: SkillSpec,
   ctx: AgentTaskContext,
@@ -401,12 +375,6 @@ function computeAllowedTools(skill: SkillSpec): string[] {
   }
 }
 
-function pickFileOutput(skill: SkillSpec): { name: string; contentType: string } {
-  const out = skill.outputs[0];
-  if (!out) throw new Error(`skill ${skill.id} has no outputs`);
-  return { name: out.name, contentType: 'text/markdown' };
-}
-
 // ---- streaming helpers ----------------------------------------------------
 
 /**
@@ -440,43 +408,7 @@ export function readUserSettingsEnv(
   }
 }
 
-async function consumeLines(
-  stream: NodeJS.ReadableStream | null,
-  onLine: (line: string) => Promise<void>,
-): Promise<void> {
-  if (!stream) return;
-  const rl = createInterface({ input: stream, crlfDelay: Infinity });
-  for await (const line of rl) {
-    if (!line) continue;
-    await onLine(line);
-  }
-}
-
-async function emitParsed(
-  ctx: AgentTaskContext,
-  parsed: { type: AgentStreamEventInput['type']; payload: Record<string, unknown>; text: string | null },
-): Promise<void> {
-  await emit(ctx, parsed);
-}
-
-async function emit(
-  ctx: AgentTaskContext,
-  parsed: { type: AgentStreamEventInput['type']; payload: Record<string, unknown>; text: string | null },
-): Promise<void> {
-  try {
-    await api.postAgentEvent({
-      workflowRunId: ctx.workflowRunId,
-      stepRunId: ctx.stepRunId ?? null,
-      agentKind: 'claude_code',
-      type: parsed.type,
-      payload: parsed.payload,
-      text: parsed.text,
-    });
-  } catch (err) {
-    // API push failure must not stop streaming. The local console still gets it.
-    process.stderr.write(`[claude-code] postAgentEvent failed: ${maskSecrets((err as Error).message)}\n`);
-  }
-}
+const emit = createAgentEventEmitter('claude_code', 'claude-code');
 
 async function emitMeta(
   ctx: AgentTaskContext,
@@ -492,55 +424,5 @@ async function emitMeta(
 
 /** Returns true when `claude --version` exits 0 within ~3s. */
 export async function claudeCliAvailable(bin?: string): Promise<boolean> {
-  const candidates = resolveAgentBackendCliCandidates('claude_code', {
-    bin,
-    env: process.env,
-    platform: process.platform,
-  });
-
-  for (const candidate of candidates) {
-    if (await exitsZero(candidate, agentBackendCliArgs('claude_code', 'version'))) return true;
-  }
-  return false;
-}
-
-function exitsZero(bin: string, args: string[]): Promise<boolean> {
-  return new Promise((resolve) => {
-    const invocation = buildAgentBackendCliSpawn(bin, args, {
-      env: process.env,
-      platform: process.platform,
-    });
-    const child = spawn(invocation.command, invocation.args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      shell: invocation.shell,
-      windowsHide: invocation.windowsHide,
-    });
-    const timer = setTimeout(() => {
-      child.kill('SIGKILL');
-      resolve(false);
-    }, 3000);
-    child.once('error', () => {
-      clearTimeout(timer);
-      resolve(false);
-    });
-    child.once('exit', (code) => {
-      clearTimeout(timer);
-      resolve(code === 0);
-    });
-  });
-}
-
-function isStructuredContextRequest(
-  message: string | null,
-  ctx: AgentTaskContext,
-  skill: SkillSpec,
-): boolean {
-  if (!message) return false;
-  return parseContextRequestFromAgentOutput({
-    workflowRunId: ctx.workflowRunId,
-    stepRunId: ctx.stepRunId ?? null,
-    stage: skill.stage,
-    sources: [{ name: 'last_message', text: message }],
-    idFactory: () => 'ctxreq_probe',
-  }) !== null;
+  return cliAvailable('claude_code', bin);
 }

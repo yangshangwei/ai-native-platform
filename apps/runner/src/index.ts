@@ -6,12 +6,12 @@ import { cmdWatch } from './cmd/watch';
 import { cmdOrchestrate } from './orchestrator';
 import { api } from './api-client';
 import type { FlowId, WorkflowStage } from '@ainp/shared';
+import { KNOWN_FLOW_IDS, isFlowId } from '@ainp/shared';
 
-const KNOWN_FLOW_IDS: readonly FlowId[] = ['feature.standard', 'feature.fastforward', 'issue.standard', 'refactor.standard'];
 function parseFlowIdFlag(raw: unknown): FlowId | undefined {
   if (raw === undefined || raw === true) return undefined;
   const s = String(raw);
-  if ((KNOWN_FLOW_IDS as readonly string[]).includes(s)) return s as FlowId;
+  if (isFlowId(s)) return s;
   console.error(
     `[runner] --flow-id must be one of: ${KNOWN_FLOW_IDS.join(', ')} (got: ${s})`,
   );

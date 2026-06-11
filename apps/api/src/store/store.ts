@@ -20,7 +20,7 @@ import type {
   CoordinatorDecision,
   RequestMessage,
 } from '@ainp/shared';
-import { isProjectAgentBackendKind } from '@ainp/shared';
+import { errorMessage, isProjectAgentBackendKind, nowIso } from '@ainp/shared';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 import { db } from './db';
@@ -32,6 +32,9 @@ import { db } from './db';
  * change. Newer entities expose explicit repo methods.
  */
 
+// TODO: drop the ignored first `set(_id, ...)` parameter (legacy Map-store
+// signature) once the ~57 call sites across src + tests migrate to a
+// single-argument `set(value)`.
 interface MapLike<T extends { id: string }> {
   set(id: string, value: T): void;
   get(id: string): T | undefined;
@@ -80,6 +83,37 @@ function countRows(table: string): number {
   return (db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number }).c;
 }
 
+/**
+ * Table binding: couples a table name with its Row→Domain mapper and the
+ * Domain→Row column mapping, and exposes the handful of query shapes every
+ * repo below is assembled from. This removes the per-entity
+ * prepare→get/all→map read-path boilerplate; the field mappings themselves
+ * stay explicit per entity (they carry real schema information).
+ */
+function defineTable<Row, T>(def: {
+  table: string;
+  fromRow: (row: Row) => T;
+  toRow: (value: T) => Record<string, unknown>;
+}) {
+  const { table, fromRow, toRow } = def;
+  const one = (sql: string, ...params: unknown[]): T | undefined => {
+    const r = db.prepare(sql).get(...(params as never[])) as Row | null;
+    return r ? fromRow(r) : undefined;
+  };
+  const all = (sql: string, ...params: unknown[]): T[] =>
+    (db.prepare(sql).all(...(params as never[])) as Row[]).map(fromRow);
+  return {
+    insert: (value: T): void => insertRow(table, toRow(value)),
+    upsert: (value: T): void => upsertRow(table, toRow(value)),
+    byId: (id: string): T | undefined => one(`SELECT * FROM ${table} WHERE id = ?`, id),
+    hasId: (id: string): boolean =>
+      Boolean(db.prepare(`SELECT 1 FROM ${table} WHERE id = ?`).get(id)),
+    count: (): number => countRows(table),
+    one,
+    all,
+  };
+}
+
 // ---- projects --------------------------------------------------------------
 
 interface ProjectRow {
@@ -122,47 +156,41 @@ function rowToProject(r: ProjectRow): Project {
   };
 }
 
+const projectsTable = defineTable<ProjectRow, Project>({
+  table: 'projects',
+  fromRow: rowToProject,
+  toRow: (p) => ({
+    id: p.id,
+    name: p.name,
+    local_path: p.localPath,
+    source_kind: p.sourceKind ?? 'local',
+    source_url: p.sourceUrl ?? null,
+    source_auth_kind: p.sourceAuthKind ?? 'none',
+    source_username: p.sourceUsername ?? null,
+    source_credential: p.sourceCredential ?? null,
+    status: p.status ?? 'active',
+    archived_at: p.archivedAt ?? null,
+    agent_backend: p.agentBackend ?? null,
+    language: p.language,
+    build_tool: p.buildTool,
+    default_branch: p.defaultBranch,
+    source_branches_json: p.sourceBranches ? JSON.stringify(p.sourceBranches) : null,
+    registered_at: p.registeredAt,
+  }),
+});
+
 const projects: MapLike<Project> & {
   findByName(name: string): Project | undefined;
   delete(id: string): void;
 } = {
-  set(_id, p) {
-    upsertRow('projects', {
-      id: p.id,
-      name: p.name,
-      local_path: p.localPath,
-      source_kind: p.sourceKind ?? 'local',
-      source_url: p.sourceUrl ?? null,
-      source_auth_kind: p.sourceAuthKind ?? 'none',
-      source_username: p.sourceUsername ?? null,
-      source_credential: p.sourceCredential ?? null,
-      status: p.status ?? 'active',
-      archived_at: p.archivedAt ?? null,
-      agent_backend: p.agentBackend ?? null,
-      language: p.language,
-      build_tool: p.buildTool,
-      default_branch: p.defaultBranch,
-      source_branches_json: p.sourceBranches ? JSON.stringify(p.sourceBranches) : null,
-      registered_at: p.registeredAt,
-    });
-  },
-  get(id) {
-    const r = db.prepare('SELECT * FROM projects WHERE id = ?').get(id) as ProjectRow | null;
-    return r ? rowToProject(r) : undefined;
-  },
-  has(id) {
-    return Boolean(db.prepare('SELECT 1 FROM projects WHERE id = ?').get(id));
-  },
-  values() {
-    return (db.prepare('SELECT * FROM projects').all() as ProjectRow[]).map(rowToProject);
-  },
+  set: (_id, p) => projectsTable.upsert(p),
+  get: (id) => projectsTable.byId(id),
+  has: (id) => projectsTable.hasId(id),
+  values: () => projectsTable.all('SELECT * FROM projects'),
   get size() {
-    return countRows('projects');
+    return projectsTable.count();
   },
-  findByName(name) {
-    const r = db.prepare('SELECT * FROM projects WHERE name = ?').get(name) as ProjectRow | null;
-    return r ? rowToProject(r) : undefined;
-  },
+  findByName: (name) => projectsTable.one('SELECT * FROM projects WHERE name = ?', name),
   delete(id) {
     db.prepare('DELETE FROM projects WHERE id = ?').run(id);
   },
@@ -208,51 +236,42 @@ function rowToWorkflowRun(r: WorkflowRunRow): WorkflowRun {
   };
 }
 
+const workflowRunsTable = defineTable<WorkflowRunRow, WorkflowRun>({
+  table: 'workflow_runs',
+  fromRow: rowToWorkflowRun,
+  toRow: (run) => ({
+    id: run.id,
+    project_id: run.projectId,
+    type: run.type,
+    status: run.status,
+    current_stage: run.currentStage,
+    config_snapshot_id: run.configSnapshotId,
+    source_branch: run.sourceBranch || null,
+    branch: run.branch,
+    workspace_path: run.workspacePath,
+    title: run.title,
+    flow_id: run.flowId,
+    start_stage: run.startStage,
+    created_at: run.createdAt,
+    updated_at: run.updatedAt,
+  }),
+});
+
 const workflowRuns: MapLike<WorkflowRun> & {
   byProject(projectId: string): WorkflowRun[];
 } = {
-  set(_id, run) {
-    upsertRow('workflow_runs', {
-      id: run.id,
-      project_id: run.projectId,
-      type: run.type,
-      status: run.status,
-      current_stage: run.currentStage,
-      config_snapshot_id: run.configSnapshotId,
-      source_branch: run.sourceBranch || null,
-      branch: run.branch,
-      workspace_path: run.workspacePath,
-      title: run.title,
-      flow_id: run.flowId,
-      start_stage: run.startStage,
-      created_at: run.createdAt,
-      updated_at: run.updatedAt,
-    });
-  },
-  get(id) {
-    const r = db.prepare('SELECT * FROM workflow_runs WHERE id = ?').get(id) as
-      | WorkflowRunRow
-      | null;
-    return r ? rowToWorkflowRun(r) : undefined;
-  },
-  has(id) {
-    return Boolean(db.prepare('SELECT 1 FROM workflow_runs WHERE id = ?').get(id));
-  },
-  values() {
-    return (
-      db.prepare('SELECT * FROM workflow_runs ORDER BY created_at ASC').all() as WorkflowRunRow[]
-    ).map(rowToWorkflowRun);
-  },
+  set: (_id, run) => workflowRunsTable.upsert(run),
+  get: (id) => workflowRunsTable.byId(id),
+  has: (id) => workflowRunsTable.hasId(id),
+  values: () => workflowRunsTable.all('SELECT * FROM workflow_runs ORDER BY created_at ASC'),
   get size() {
-    return countRows('workflow_runs');
+    return workflowRunsTable.count();
   },
-  byProject(projectId) {
-    return (
-      db
-        .prepare('SELECT * FROM workflow_runs WHERE project_id = ? ORDER BY created_at ASC')
-        .all(projectId) as WorkflowRunRow[]
-    ).map(rowToWorkflowRun);
-  },
+  byProject: (projectId) =>
+    workflowRunsTable.all(
+      'SELECT * FROM workflow_runs WHERE project_id = ? ORDER BY created_at ASC',
+      projectId,
+    ),
 };
 
 // ---- workflow_requests -------------------------------------------------------
@@ -291,54 +310,50 @@ function rowToWorkflowRequest(r: WorkflowRequestRow): WorkflowRequest {
   };
 }
 
+const workflowRequestsTable = defineTable<WorkflowRequestRow, WorkflowRequest>({
+  table: 'workflow_requests',
+  fromRow: rowToWorkflowRequest,
+  toRow: (req) => ({
+    id: req.id,
+    project_id: req.projectId,
+    type: req.type,
+    title: req.title,
+    branch: req.branch,
+    status: req.status,
+    claimed_by: req.claimedBy,
+    workflow_run_id: req.workflowRunId,
+    error: req.error,
+    created_at: req.createdAt,
+    updated_at: req.updatedAt,
+    flow_id: req.flowId,
+    start_stage: req.startStage,
+  }),
+});
+
 const workflowRequests = {
   set(_id: string, req: WorkflowRequest): void {
-    upsertRow('workflow_requests', {
-      id: req.id,
-      project_id: req.projectId,
-      type: req.type,
-      title: req.title,
-      branch: req.branch,
-      status: req.status,
-      claimed_by: req.claimedBy,
-      workflow_run_id: req.workflowRunId,
-      error: req.error,
-      created_at: req.createdAt,
-      updated_at: req.updatedAt,
-      flow_id: req.flowId,
-      start_stage: req.startStage,
-    });
+    workflowRequestsTable.upsert(req);
   },
-  get(id: string): WorkflowRequest | undefined {
-    const r = db.prepare('SELECT * FROM workflow_requests WHERE id = ?').get(id) as
-      | WorkflowRequestRow
-      | null;
-    return r ? rowToWorkflowRequest(r) : undefined;
-  },
-  values(): WorkflowRequest[] {
-    return (
-      db.prepare('SELECT * FROM workflow_requests ORDER BY created_at ASC').all() as WorkflowRequestRow[]
-    ).map(rowToWorkflowRequest);
-  },
-  byStatus(status: WorkflowRequest['status']): WorkflowRequest[] {
-    return (
-      db
-        .prepare('SELECT * FROM workflow_requests WHERE status = ? ORDER BY created_at ASC')
-        .all(status) as WorkflowRequestRow[]
-    ).map(rowToWorkflowRequest);
-  },
+  get: (id: string): WorkflowRequest | undefined => workflowRequestsTable.byId(id),
+  values: (): WorkflowRequest[] =>
+    workflowRequestsTable.all('SELECT * FROM workflow_requests ORDER BY created_at ASC'),
+  byStatus: (status: WorkflowRequest['status']): WorkflowRequest[] =>
+    workflowRequestsTable.all(
+      'SELECT * FROM workflow_requests WHERE status = ? ORDER BY created_at ASC',
+      status,
+    ),
   pending(): WorkflowRequest[] {
     return this.byStatus('pending');
   },
   updateStatus(id: string, status: WorkflowRequest['status']): WorkflowRequest | undefined {
     const current = this.get(id);
     if (!current) return undefined;
-    const next: WorkflowRequest = { ...current, status, updatedAt: new Date().toISOString() };
+    const next: WorkflowRequest = { ...current, status, updatedAt: nowIso() };
     this.set(id, next);
     return next;
   },
   get size(): number {
-    return countRows('workflow_requests');
+    return workflowRequestsTable.count();
   },
 };
 
@@ -366,42 +381,35 @@ function rowToStepRun(r: StepRunRow): StepRun {
   };
 }
 
+const stepRunsTable = defineTable<StepRunRow, StepRun>({
+  table: 'step_runs',
+  fromRow: rowToStepRun,
+  toRow: (s) => ({
+    id: s.id,
+    workflow_run_id: s.workflowRunId,
+    stage: s.stage,
+    name: s.name,
+    status: s.status,
+    started_at: s.startedAt,
+    completed_at: s.completedAt,
+  }),
+});
+
 const stepRuns: MapLike<StepRun> & {
   byWorkflow(workflowRunId: string): StepRun[];
 } = {
-  set(_id, s) {
-    upsertRow('step_runs', {
-      id: s.id,
-      workflow_run_id: s.workflowRunId,
-      stage: s.stage,
-      name: s.name,
-      status: s.status,
-      started_at: s.startedAt,
-      completed_at: s.completedAt,
-    });
-  },
-  get(id) {
-    const r = db.prepare('SELECT * FROM step_runs WHERE id = ?').get(id) as StepRunRow | null;
-    return r ? rowToStepRun(r) : undefined;
-  },
-  has(id) {
-    return Boolean(db.prepare('SELECT 1 FROM step_runs WHERE id = ?').get(id));
-  },
-  values() {
-    return (db.prepare('SELECT * FROM step_runs').all() as StepRunRow[]).map(rowToStepRun);
-  },
+  set: (_id, s) => stepRunsTable.upsert(s),
+  get: (id) => stepRunsTable.byId(id),
+  has: (id) => stepRunsTable.hasId(id),
+  values: () => stepRunsTable.all('SELECT * FROM step_runs'),
   get size() {
-    return countRows('step_runs');
+    return stepRunsTable.count();
   },
-  byWorkflow(workflowRunId) {
-    return (
-      db
-        .prepare(
-          'SELECT * FROM step_runs WHERE workflow_run_id = ? ORDER BY COALESCE(started_at, "") ASC',
-        )
-        .all(workflowRunId) as StepRunRow[]
-    ).map(rowToStepRun);
-  },
+  byWorkflow: (workflowRunId) =>
+    stepRunsTable.all(
+      'SELECT * FROM step_runs WHERE workflow_run_id = ? ORDER BY COALESCE(started_at, "") ASC',
+      workflowRunId,
+    ),
 };
 
 // ---- command_runs ----------------------------------------------------------
@@ -454,65 +462,54 @@ function rowToCommandRun(r: CommandRunRow): CommandRun {
   };
 }
 
+const commandRunsTable = defineTable<CommandRunRow, CommandRun>({
+  table: 'command_runs',
+  fromRow: rowToCommandRun,
+  toRow: (c) => ({
+    id: c.id,
+    workflow_run_id: c.workflowRunId,
+    step_run_id: c.stepRunId,
+    cwd: c.cwd,
+    command: c.command,
+    stage: c.stage,
+    status: c.status,
+    exit_code: c.exitCode,
+    started_at: c.startedAt,
+    finished_at: c.finishedAt,
+    duration_ms: c.durationMs,
+    stdout_ref: c.stdoutRef,
+    stderr_ref: c.stderrRef,
+    stdout_bytes: c.stdoutBytes,
+    stderr_bytes: c.stderrBytes,
+    stdout_sha256: c.stdoutSha256 ?? null,
+    stderr_sha256: c.stderrSha256 ?? null,
+    combined_sha256: c.combinedSha256 ?? null,
+    timed_out: bool(c.timedOut),
+    truncated: bool(c.truncated),
+  }),
+});
+
 const commandRuns: MapLike<CommandRun> & {
   byWorkflow(workflowRunId: string): CommandRun[];
   byStep(stepRunId: string): CommandRun[];
 } = {
-  set(_id, c) {
-    upsertRow('command_runs', {
-      id: c.id,
-      workflow_run_id: c.workflowRunId,
-      step_run_id: c.stepRunId,
-      cwd: c.cwd,
-      command: c.command,
-      stage: c.stage,
-      status: c.status,
-      exit_code: c.exitCode,
-      started_at: c.startedAt,
-      finished_at: c.finishedAt,
-      duration_ms: c.durationMs,
-      stdout_ref: c.stdoutRef,
-      stderr_ref: c.stderrRef,
-      stdout_bytes: c.stdoutBytes,
-      stderr_bytes: c.stderrBytes,
-      stdout_sha256: c.stdoutSha256 ?? null,
-      stderr_sha256: c.stderrSha256 ?? null,
-      combined_sha256: c.combinedSha256 ?? null,
-      timed_out: bool(c.timedOut),
-      truncated: bool(c.truncated),
-    });
-  },
-  get(id) {
-    const r = db.prepare('SELECT * FROM command_runs WHERE id = ?').get(id) as
-      | CommandRunRow
-      | null;
-    return r ? rowToCommandRun(r) : undefined;
-  },
-  has(id) {
-    return Boolean(db.prepare('SELECT 1 FROM command_runs WHERE id = ?').get(id));
-  },
-  values() {
-    return (db.prepare('SELECT * FROM command_runs').all() as CommandRunRow[]).map(
-      rowToCommandRun,
-    );
-  },
+  set: (_id, c) => commandRunsTable.upsert(c),
+  get: (id) => commandRunsTable.byId(id),
+  has: (id) => commandRunsTable.hasId(id),
+  values: () => commandRunsTable.all('SELECT * FROM command_runs'),
   get size() {
-    return countRows('command_runs');
+    return commandRunsTable.count();
   },
-  byWorkflow(workflowRunId) {
-    return (
-      db
-        .prepare('SELECT * FROM command_runs WHERE workflow_run_id = ? ORDER BY started_at ASC')
-        .all(workflowRunId) as CommandRunRow[]
-    ).map(rowToCommandRun);
-  },
-  byStep(stepRunId) {
-    return (
-      db
-        .prepare('SELECT * FROM command_runs WHERE step_run_id = ? ORDER BY started_at ASC')
-        .all(stepRunId) as CommandRunRow[]
-    ).map(rowToCommandRun);
-  },
+  byWorkflow: (workflowRunId) =>
+    commandRunsTable.all(
+      'SELECT * FROM command_runs WHERE workflow_run_id = ? ORDER BY started_at ASC',
+      workflowRunId,
+    ),
+  byStep: (stepRunId) =>
+    commandRunsTable.all(
+      'SELECT * FROM command_runs WHERE step_run_id = ? ORDER BY started_at ASC',
+      stepRunId,
+    ),
 };
 
 // ---- gate_runs -------------------------------------------------------------
@@ -545,42 +542,39 @@ function rowToGateRun(r: GateRunRow): GateRun {
   };
 }
 
+const gateRunsTable = defineTable<GateRunRow, GateRun>({
+  table: 'gate_runs',
+  fromRow: rowToGateRun,
+  toRow: (g) => ({
+    id: g.id,
+    gate_id: g.gateId,
+    workflow_run_id: g.workflowRunId,
+    step_run_id: g.stepRunId,
+    status: g.status,
+    rule_results_json: JSON.stringify(g.ruleResults),
+    evidence_refs_json: JSON.stringify(g.evidenceRefs),
+    command_run_ids_json: JSON.stringify(g.commandRunIds),
+    decided_at: g.decidedAt,
+    agent_note: g.agentNote,
+  }),
+});
+
 const gateRuns = {
-  insert(g: GateRun): void {
-    insertRow('gate_runs', {
-      id: g.id,
-      gate_id: g.gateId,
-      workflow_run_id: g.workflowRunId,
-      step_run_id: g.stepRunId,
-      status: g.status,
-      rule_results_json: JSON.stringify(g.ruleResults),
-      evidence_refs_json: JSON.stringify(g.evidenceRefs),
-      command_run_ids_json: JSON.stringify(g.commandRunIds),
-      decided_at: g.decidedAt,
-      agent_note: g.agentNote,
-    });
-  },
-  get(id: string): GateRun | undefined {
-    const r = db.prepare('SELECT * FROM gate_runs WHERE id = ?').get(id) as GateRunRow | null;
-    return r ? rowToGateRun(r) : undefined;
-  },
-  byWorkflow(workflowRunId: string): GateRun[] {
-    return (
-      db
-        .prepare('SELECT * FROM gate_runs WHERE workflow_run_id = ? ORDER BY decided_at ASC')
-        .all(workflowRunId) as GateRunRow[]
-    ).map(rowToGateRun);
-  },
-  latestForGate(workflowRunId: string, gateId: GateRun['gateId']): GateRun | undefined {
-    const r = db
-      .prepare(
-        'SELECT * FROM gate_runs WHERE workflow_run_id = ? AND gate_id = ? ORDER BY decided_at DESC LIMIT 1',
-      )
-      .get(workflowRunId, gateId) as GateRunRow | null;
-    return r ? rowToGateRun(r) : undefined;
-  },
+  insert: (g: GateRun): void => gateRunsTable.insert(g),
+  get: (id: string): GateRun | undefined => gateRunsTable.byId(id),
+  byWorkflow: (workflowRunId: string): GateRun[] =>
+    gateRunsTable.all(
+      'SELECT * FROM gate_runs WHERE workflow_run_id = ? ORDER BY decided_at ASC',
+      workflowRunId,
+    ),
+  latestForGate: (workflowRunId: string, gateId: GateRun['gateId']): GateRun | undefined =>
+    gateRunsTable.one(
+      'SELECT * FROM gate_runs WHERE workflow_run_id = ? AND gate_id = ? ORDER BY decided_at DESC LIMIT 1',
+      workflowRunId,
+      gateId,
+    ),
   get size(): number {
-    return countRows('gate_runs');
+    return gateRunsTable.count();
   },
 };
 
@@ -614,41 +608,37 @@ function rowToArtifact(r: ArtifactRow): Artifact {
   };
 }
 
+const artifactsTable = defineTable<ArtifactRow, Artifact>({
+  table: 'artifacts',
+  fromRow: rowToArtifact,
+  toRow: (a) => ({
+    id: a.id,
+    kind: a.kind,
+    uri: a.uri,
+    workflow_run_id: a.workflowRunId,
+    step_run_id: a.stepRunId,
+    size: a.size,
+    content_type: a.contentType,
+    sha256: a.sha256 ?? null,
+    created_at: a.createdAt,
+    metadata_json: JSON.stringify(a.metadata),
+  }),
+});
+
 const artifacts = {
-  insert(a: Artifact): void {
-    insertRow('artifacts', {
-      id: a.id,
-      kind: a.kind,
-      uri: a.uri,
-      workflow_run_id: a.workflowRunId,
-      step_run_id: a.stepRunId,
-      size: a.size,
-      content_type: a.contentType,
-      sha256: a.sha256 ?? null,
-      created_at: a.createdAt,
-      metadata_json: JSON.stringify(a.metadata),
-    });
-  },
-  get(id: string): Artifact | undefined {
-    const r = db.prepare('SELECT * FROM artifacts WHERE id = ?').get(id) as ArtifactRow | null;
-    return r ? rowToArtifact(r) : undefined;
-  },
-  byWorkflow(workflowRunId: string): Artifact[] {
-    return (
-      db
-        .prepare('SELECT * FROM artifacts WHERE workflow_run_id = ? ORDER BY created_at ASC')
-        .all(workflowRunId) as ArtifactRow[]
-    ).map(rowToArtifact);
-  },
-  byKind(workflowRunId: string, kind: Artifact['kind']): Artifact[] {
-    return (
-      db
-        .prepare(
-          'SELECT * FROM artifacts WHERE workflow_run_id = ? AND kind = ? ORDER BY created_at ASC',
-        )
-        .all(workflowRunId, kind) as ArtifactRow[]
-    ).map(rowToArtifact);
-  },
+  insert: (a: Artifact): void => artifactsTable.insert(a),
+  get: (id: string): Artifact | undefined => artifactsTable.byId(id),
+  byWorkflow: (workflowRunId: string): Artifact[] =>
+    artifactsTable.all(
+      'SELECT * FROM artifacts WHERE workflow_run_id = ? ORDER BY created_at ASC',
+      workflowRunId,
+    ),
+  byKind: (workflowRunId: string, kind: Artifact['kind']): Artifact[] =>
+    artifactsTable.all(
+      'SELECT * FROM artifacts WHERE workflow_run_id = ? AND kind = ? ORDER BY created_at ASC',
+      workflowRunId,
+      kind,
+    ),
 };
 
 // ---- knowledge_artifacts ---------------------------------------------------
@@ -691,67 +681,54 @@ function rowToKnowledgeArtifact(r: KnowledgeArtifactRow): KnowledgeArtifact {
   };
 }
 
+const knowledgeArtifactsTable = defineTable<KnowledgeArtifactRow, KnowledgeArtifact>({
+  table: 'knowledge_artifacts',
+  fromRow: rowToKnowledgeArtifact,
+  toRow: (a) => ({
+    id: a.id,
+    kind: a.kind,
+    uri: a.uri,
+    project_id: a.projectId,
+    size: a.size,
+    content_type: a.contentType,
+    status: a.status,
+    version: a.version,
+    entity_id: a.entityId,
+    derived_from_artifact_id: a.derivedFromArtifactId,
+    subtype: a.subtype,
+    metadata_json: JSON.stringify(a.metadata),
+    created_at: a.createdAt,
+    updated_at: a.updatedAt,
+  }),
+});
+
 const knowledgeArtifacts = {
-  insert(a: KnowledgeArtifact): void {
-    insertRow('knowledge_artifacts', {
-      id: a.id,
-      kind: a.kind,
-      uri: a.uri,
-      project_id: a.projectId,
-      size: a.size,
-      content_type: a.contentType,
-      status: a.status,
-      version: a.version,
-      entity_id: a.entityId,
-      derived_from_artifact_id: a.derivedFromArtifactId,
-      subtype: a.subtype,
-      metadata_json: JSON.stringify(a.metadata),
-      created_at: a.createdAt,
-      updated_at: a.updatedAt,
-    });
-  },
-  get(id: string): KnowledgeArtifact | undefined {
-    const r = db
-      .prepare('SELECT * FROM knowledge_artifacts WHERE id = ?')
-      .get(id) as KnowledgeArtifactRow | null;
-    return r ? rowToKnowledgeArtifact(r) : undefined;
-  },
-  byProject(projectId: string): KnowledgeArtifact[] {
-    return (
-      db
-        .prepare(
-          'SELECT * FROM knowledge_artifacts WHERE project_id = ? ORDER BY created_at ASC',
-        )
-        .all(projectId) as KnowledgeArtifactRow[]
-    ).map(rowToKnowledgeArtifact);
-  },
-  byKind(projectId: string, kind: KnowledgeArtifactKind): KnowledgeArtifact[] {
-    return (
-      db
-        .prepare(
-          'SELECT * FROM knowledge_artifacts WHERE project_id = ? AND kind = ? ORDER BY created_at ASC',
-        )
-        .all(projectId, kind) as KnowledgeArtifactRow[]
-    ).map(rowToKnowledgeArtifact);
-  },
-  byEntityId(projectId: string, entityId: string): KnowledgeArtifact[] {
-    return (
-      db
-        .prepare(
-          'SELECT * FROM knowledge_artifacts WHERE project_id = ? AND entity_id = ? ORDER BY version ASC',
-        )
-        .all(projectId, entityId) as KnowledgeArtifactRow[]
-    ).map(rowToKnowledgeArtifact);
-  },
+  insert: (a: KnowledgeArtifact): void => knowledgeArtifactsTable.insert(a),
+  get: (id: string): KnowledgeArtifact | undefined => knowledgeArtifactsTable.byId(id),
+  byProject: (projectId: string): KnowledgeArtifact[] =>
+    knowledgeArtifactsTable.all(
+      'SELECT * FROM knowledge_artifacts WHERE project_id = ? ORDER BY created_at ASC',
+      projectId,
+    ),
+  byKind: (projectId: string, kind: KnowledgeArtifactKind): KnowledgeArtifact[] =>
+    knowledgeArtifactsTable.all(
+      'SELECT * FROM knowledge_artifacts WHERE project_id = ? AND kind = ? ORDER BY created_at ASC',
+      projectId,
+      kind,
+    ),
+  byEntityId: (projectId: string, entityId: string): KnowledgeArtifact[] =>
+    knowledgeArtifactsTable.all(
+      'SELECT * FROM knowledge_artifacts WHERE project_id = ? AND entity_id = ? ORDER BY version ASC',
+      projectId,
+      entityId,
+    ),
   /** Highest-version row for an entity_id (the "current" record). */
-  latestByEntityId(projectId: string, entityId: string): KnowledgeArtifact | undefined {
-    const r = db
-      .prepare(
-        'SELECT * FROM knowledge_artifacts WHERE project_id = ? AND entity_id = ? ORDER BY version DESC LIMIT 1',
-      )
-      .get(projectId, entityId) as KnowledgeArtifactRow | null;
-    return r ? rowToKnowledgeArtifact(r) : undefined;
-  },
+  latestByEntityId: (projectId: string, entityId: string): KnowledgeArtifact | undefined =>
+    knowledgeArtifactsTable.one(
+      'SELECT * FROM knowledge_artifacts WHERE project_id = ? AND entity_id = ? ORDER BY version DESC LIMIT 1',
+      projectId,
+      entityId,
+    ),
   updateStatus(
     id: string,
     status: KnowledgeArtifactStatus,
@@ -824,31 +801,33 @@ interface RequirementEntityHeadInput {
   now: string;
 }
 
+const requirementEntitiesTable = defineTable<RequirementEntityRow, RequirementEntity>({
+  table: 'requirements',
+  fromRow: rowToRequirementEntity,
+  toRow: (e) => ({
+    id: e.id,
+    project_id: e.projectId,
+    status: e.status,
+    current_version: e.currentVersion,
+    current_artifact_id: e.currentArtifactId,
+    created_at: e.createdAt,
+    updated_at: e.updatedAt,
+  }),
+});
+
 const requirementEntities = {
-  insert(e: RequirementEntity): void {
-    insertRow('requirements', {
-      id: e.id,
-      project_id: e.projectId,
-      status: e.status,
-      current_version: e.currentVersion,
-      current_artifact_id: e.currentArtifactId,
-      created_at: e.createdAt,
-      updated_at: e.updatedAt,
-    });
-  },
-  get(projectId: string, id: string): RequirementEntity | undefined {
-    const r = db
-      .prepare('SELECT * FROM requirements WHERE project_id = ? AND id = ?')
-      .get(projectId, id) as RequirementEntityRow | null;
-    return r ? rowToRequirementEntity(r) : undefined;
-  },
-  byProject(projectId: string): RequirementEntity[] {
-    return (
-      db
-        .prepare('SELECT * FROM requirements WHERE project_id = ? ORDER BY id ASC')
-        .all(projectId) as RequirementEntityRow[]
-    ).map(rowToRequirementEntity);
-  },
+  insert: (e: RequirementEntity): void => requirementEntitiesTable.insert(e),
+  get: (projectId: string, id: string): RequirementEntity | undefined =>
+    requirementEntitiesTable.one(
+      'SELECT * FROM requirements WHERE project_id = ? AND id = ?',
+      projectId,
+      id,
+    ),
+  byProject: (projectId: string): RequirementEntity[] =>
+    requirementEntitiesTable.all(
+      'SELECT * FROM requirements WHERE project_id = ? ORDER BY id ASC',
+      projectId,
+    ),
   /**
    * INSERT new entity head OR UPDATE existing one. Conflict target is the
    * primary key `id`. On UPDATE: `created_at` is preserved; `updated_at`,
@@ -911,41 +890,40 @@ interface DesignEntityHeadInput extends RequirementEntityHeadInput {
   refReq: string;
 }
 
+const designEntitiesTable = defineTable<DesignEntityRow, DesignEntity>({
+  table: 'designs',
+  fromRow: rowToDesignEntity,
+  toRow: (e) => ({
+    id: e.id,
+    project_id: e.projectId,
+    status: e.status,
+    current_version: e.currentVersion,
+    current_artifact_id: e.currentArtifactId,
+    ref_req: e.refReq,
+    created_at: e.createdAt,
+    updated_at: e.updatedAt,
+  }),
+});
+
 const designEntities = {
-  insert(e: DesignEntity): void {
-    insertRow('designs', {
-      id: e.id,
-      project_id: e.projectId,
-      status: e.status,
-      current_version: e.currentVersion,
-      current_artifact_id: e.currentArtifactId,
-      ref_req: e.refReq,
-      created_at: e.createdAt,
-      updated_at: e.updatedAt,
-    });
-  },
-  get(projectId: string, id: string): DesignEntity | undefined {
-    const r = db
-      .prepare('SELECT * FROM designs WHERE project_id = ? AND id = ?')
-      .get(projectId, id) as DesignEntityRow | null;
-    return r ? rowToDesignEntity(r) : undefined;
-  },
-  byProject(projectId: string): DesignEntity[] {
-    return (
-      db
-        .prepare('SELECT * FROM designs WHERE project_id = ? ORDER BY id ASC')
-        .all(projectId) as DesignEntityRow[]
-    ).map(rowToDesignEntity);
-  },
-  byRefReq(projectId: string, refReq: string): DesignEntity[] {
-    return (
-      db
-        .prepare(
-          'SELECT * FROM designs WHERE project_id = ? AND ref_req = ? ORDER BY id ASC',
-        )
-        .all(projectId, refReq) as DesignEntityRow[]
-    ).map(rowToDesignEntity);
-  },
+  insert: (e: DesignEntity): void => designEntitiesTable.insert(e),
+  get: (projectId: string, id: string): DesignEntity | undefined =>
+    designEntitiesTable.one(
+      'SELECT * FROM designs WHERE project_id = ? AND id = ?',
+      projectId,
+      id,
+    ),
+  byProject: (projectId: string): DesignEntity[] =>
+    designEntitiesTable.all(
+      'SELECT * FROM designs WHERE project_id = ? ORDER BY id ASC',
+      projectId,
+    ),
+  byRefReq: (projectId: string, refReq: string): DesignEntity[] =>
+    designEntitiesTable.all(
+      'SELECT * FROM designs WHERE project_id = ? AND ref_req = ? ORDER BY id ASC',
+      projectId,
+      refReq,
+    ),
   /**
    * INSERT or UPDATE the design entity head. `ref_req` is preserved across
    * UPDATEs (it should not change for a given DSN-### — if a design moves
@@ -1018,30 +996,32 @@ function rowToBuildRun(r: BuildRunRow): BuildRun {
   };
 }
 
+const buildRunsTable = defineTable<BuildRunRow, BuildRun>({
+  table: 'build_runs',
+  fromRow: rowToBuildRun,
+  toRow: (b) => ({
+    id: b.id,
+    workflow_run_id: b.workflowRunId,
+    step_run_id: b.stepRunId,
+    language: b.language,
+    build_tool: b.buildTool,
+    jdk_version: b.jdkVersion,
+    maven_command: b.mavenCommand,
+    status: b.status,
+    started_at: b.startedAt,
+    completed_at: b.completedAt,
+    command_run_ids_json: JSON.stringify(b.commandRunIds),
+    artifact_ids_json: JSON.stringify(b.artifactIds),
+  }),
+});
+
 const buildRuns = {
-  insert(b: BuildRun): void {
-    insertRow('build_runs', {
-      id: b.id,
-      workflow_run_id: b.workflowRunId,
-      step_run_id: b.stepRunId,
-      language: b.language,
-      build_tool: b.buildTool,
-      jdk_version: b.jdkVersion,
-      maven_command: b.mavenCommand,
-      status: b.status,
-      started_at: b.startedAt,
-      completed_at: b.completedAt,
-      command_run_ids_json: JSON.stringify(b.commandRunIds),
-      artifact_ids_json: JSON.stringify(b.artifactIds),
-    });
-  },
-  byWorkflow(workflowRunId: string): BuildRun[] {
-    return (
-      db
-        .prepare('SELECT * FROM build_runs WHERE workflow_run_id = ? ORDER BY started_at ASC')
-        .all(workflowRunId) as BuildRunRow[]
-    ).map(rowToBuildRun);
-  },
+  insert: (b: BuildRun): void => buildRunsTable.insert(b),
+  byWorkflow: (workflowRunId: string): BuildRun[] =>
+    buildRunsTable.all(
+      'SELECT * FROM build_runs WHERE workflow_run_id = ? ORDER BY started_at ASC',
+      workflowRunId,
+    ),
 };
 
 // ---- test_runs -------------------------------------------------------------
@@ -1072,27 +1052,26 @@ function rowToTestRun(r: TestRunRow): TestRun {
   };
 }
 
+const testRunsTable = defineTable<TestRunRow, TestRun>({
+  table: 'test_runs',
+  fromRow: rowToTestRun,
+  toRow: (t) => ({
+    id: t.id,
+    build_run_id: t.buildRunId,
+    framework: t.framework,
+    total: t.total,
+    passed: t.passed,
+    failed: t.failed,
+    skipped: t.skipped,
+    errors: t.errors,
+    report_artifact_ids_json: JSON.stringify(t.reportArtifactIds),
+  }),
+});
+
 const testRuns = {
-  insert(t: TestRun): void {
-    insertRow('test_runs', {
-      id: t.id,
-      build_run_id: t.buildRunId,
-      framework: t.framework,
-      total: t.total,
-      passed: t.passed,
-      failed: t.failed,
-      skipped: t.skipped,
-      errors: t.errors,
-      report_artifact_ids_json: JSON.stringify(t.reportArtifactIds),
-    });
-  },
-  byBuild(buildRunId: string): TestRun[] {
-    return (
-      db
-        .prepare('SELECT * FROM test_runs WHERE build_run_id = ?')
-        .all(buildRunId) as TestRunRow[]
-    ).map(rowToTestRun);
-  },
+  insert: (t: TestRun): void => testRunsTable.insert(t),
+  byBuild: (buildRunId: string): TestRun[] =>
+    testRunsTable.all('SELECT * FROM test_runs WHERE build_run_id = ?', buildRunId),
 };
 
 // ---- agent tasks/results ---------------------------------------------------
@@ -1121,32 +1100,29 @@ function rowToAgentTask(r: AgentTaskRow): AgentTask {
   };
 }
 
+const agentTasksTable = defineTable<AgentTaskRow, AgentTask>({
+  table: 'agent_tasks',
+  fromRow: rowToAgentTask,
+  toRow: (t) => ({
+    id: t.id,
+    workflow_run_id: t.workflowRunId,
+    step_run_id: t.stepRunId,
+    kind: t.kind,
+    backend: t.backend,
+    prompt: t.prompt,
+    input_artifact_ids_json: JSON.stringify(t.inputArtifactIds),
+    created_at: t.createdAt,
+  }),
+});
+
 const agentTasks = {
-  insert(t: AgentTask): void {
-    insertRow('agent_tasks', {
-      id: t.id,
-      workflow_run_id: t.workflowRunId,
-      step_run_id: t.stepRunId,
-      kind: t.kind,
-      backend: t.backend,
-      prompt: t.prompt,
-      input_artifact_ids_json: JSON.stringify(t.inputArtifactIds),
-      created_at: t.createdAt,
-    });
-  },
-  get(id: string): AgentTask | undefined {
-    const r = db.prepare('SELECT * FROM agent_tasks WHERE id = ?').get(id) as
-      | AgentTaskRow
-      | null;
-    return r ? rowToAgentTask(r) : undefined;
-  },
-  byWorkflow(workflowRunId: string): AgentTask[] {
-    return (
-      db
-        .prepare('SELECT * FROM agent_tasks WHERE workflow_run_id = ? ORDER BY created_at ASC')
-        .all(workflowRunId) as AgentTaskRow[]
-    ).map(rowToAgentTask);
-  },
+  insert: (t: AgentTask): void => agentTasksTable.insert(t),
+  get: (id: string): AgentTask | undefined => agentTasksTable.byId(id),
+  byWorkflow: (workflowRunId: string): AgentTask[] =>
+    agentTasksTable.all(
+      'SELECT * FROM agent_tasks WHERE workflow_run_id = ? ORDER BY created_at ASC',
+      workflowRunId,
+    ),
 };
 
 interface AgentResultRow {
@@ -1171,37 +1147,33 @@ function rowToAgentResult(r: AgentResultRow): AgentResult {
   };
 }
 
+const agentResultsTable = defineTable<AgentResultRow, AgentResult>({
+  table: 'agent_results',
+  fromRow: rowToAgentResult,
+  toRow: (r) => ({
+    id: r.id,
+    task_id: r.taskId,
+    status: r.status,
+    summary: r.summary,
+    output_artifact_ids_json: JSON.stringify(r.outputArtifactIds),
+    started_at: r.startedAt,
+    completed_at: r.completedAt,
+  }),
+});
+
 const agentResults = {
-  insert(r: AgentResult): void {
-    insertRow('agent_results', {
-      id: r.id,
-      task_id: r.taskId,
-      status: r.status,
-      summary: r.summary,
-      output_artifact_ids_json: JSON.stringify(r.outputArtifactIds),
-      started_at: r.startedAt,
-      completed_at: r.completedAt,
-    });
-  },
-  byTask(taskId: string): AgentResult | undefined {
-    const r = db.prepare('SELECT * FROM agent_results WHERE task_id = ?').get(taskId) as
-      | AgentResultRow
-      | null;
-    return r ? rowToAgentResult(r) : undefined;
-  },
-  byWorkflow(workflowRunId: string): AgentResult[] {
-    return (
-      db
-        .prepare(
-          `SELECT ar.*
-             FROM agent_results ar
-             JOIN agent_tasks at ON at.id = ar.task_id
-            WHERE at.workflow_run_id = ?
-            ORDER BY ar.started_at ASC`,
-        )
-        .all(workflowRunId) as AgentResultRow[]
-    ).map(rowToAgentResult);
-  },
+  insert: (r: AgentResult): void => agentResultsTable.insert(r),
+  byTask: (taskId: string): AgentResult | undefined =>
+    agentResultsTable.one('SELECT * FROM agent_results WHERE task_id = ?', taskId),
+  byWorkflow: (workflowRunId: string): AgentResult[] =>
+    agentResultsTable.all(
+      `SELECT ar.*
+         FROM agent_results ar
+         JOIN agent_tasks at ON at.id = ar.task_id
+        WHERE at.workflow_run_id = ?
+        ORDER BY ar.started_at ASC`,
+      workflowRunId,
+    ),
 };
 
 // ---- agent stream events ---------------------------------------------------
@@ -1234,39 +1206,37 @@ function rowToAgentEvent(r: AgentEventRow): AgentStreamEvent {
   };
 }
 
+const agentEventsTable = defineTable<AgentEventRow, AgentStreamEvent>({
+  table: 'agent_events',
+  fromRow: rowToAgentEvent,
+  toRow: (e) => ({
+    id: e.id,
+    workflow_run_id: e.workflowRunId,
+    workflow_request_id: e.workflowRequestId ?? null,
+    step_run_id: e.stepRunId,
+    agent_kind: e.agentKind,
+    sequence: e.sequence,
+    type: e.type,
+    payload_json: JSON.stringify(e.payload),
+    text: e.text,
+    ts: e.ts,
+  }),
+});
+
 const agentEvents = {
-  insert(e: AgentStreamEvent): void {
-    insertRow('agent_events', {
-      id: e.id,
-      workflow_run_id: e.workflowRunId,
-      workflow_request_id: e.workflowRequestId ?? null,
-      step_run_id: e.stepRunId,
-      agent_kind: e.agentKind,
-      sequence: e.sequence,
-      type: e.type,
-      payload_json: JSON.stringify(e.payload),
-      text: e.text,
-      ts: e.ts,
-    });
-  },
-  byWorkflow(workflowRunId: string, sinceSeq = -1): AgentStreamEvent[] {
-    return (
-      db
-        .prepare(
-          'SELECT * FROM agent_events WHERE workflow_run_id = ? AND sequence > ? ORDER BY sequence ASC',
-        )
-        .all(workflowRunId, sinceSeq) as AgentEventRow[]
-    ).map(rowToAgentEvent);
-  },
-  byRequest(workflowRequestId: string, sinceSeq = -1): AgentStreamEvent[] {
-    return (
-      db
-        .prepare(
-          'SELECT * FROM agent_events WHERE workflow_request_id = ? AND sequence > ? ORDER BY sequence ASC',
-        )
-        .all(workflowRequestId, sinceSeq) as AgentEventRow[]
-    ).map(rowToAgentEvent);
-  },
+  insert: (e: AgentStreamEvent): void => agentEventsTable.insert(e),
+  byWorkflow: (workflowRunId: string, sinceSeq = -1): AgentStreamEvent[] =>
+    agentEventsTable.all(
+      'SELECT * FROM agent_events WHERE workflow_run_id = ? AND sequence > ? ORDER BY sequence ASC',
+      workflowRunId,
+      sinceSeq,
+    ),
+  byRequest: (workflowRequestId: string, sinceSeq = -1): AgentStreamEvent[] =>
+    agentEventsTable.all(
+      'SELECT * FROM agent_events WHERE workflow_request_id = ? AND sequence > ? ORDER BY sequence ASC',
+      workflowRequestId,
+      sinceSeq,
+    ),
   /**
    * Next monotonic sequence for a stream channel. The `run` and `request`
    * channels have independent sequences (a request's events do NOT advance
@@ -1320,26 +1290,28 @@ function rowToWorkflowAction(r: WorkflowActionRow): WorkflowAction {
   };
 }
 
+const workflowActionsTable = defineTable<WorkflowActionRow, WorkflowAction>({
+  table: 'workflow_actions',
+  fromRow: rowToWorkflowAction,
+  toRow: (action) => ({
+    id: action.id,
+    workflow_run_id: action.workflowRunId,
+    kind: action.kind,
+    target_id: action.targetId,
+    action: action.action,
+    actor: action.actor,
+    payload_json: JSON.stringify(action.payload),
+    created_at: action.createdAt,
+  }),
+});
+
 const workflowActions = {
-  insert(action: WorkflowAction): void {
-    insertRow('workflow_actions', {
-      id: action.id,
-      workflow_run_id: action.workflowRunId,
-      kind: action.kind,
-      target_id: action.targetId,
-      action: action.action,
-      actor: action.actor,
-      payload_json: JSON.stringify(action.payload),
-      created_at: action.createdAt,
-    });
-  },
-  byWorkflow(workflowRunId: string): WorkflowAction[] {
-    return (
-      db
-        .prepare('SELECT * FROM workflow_actions WHERE workflow_run_id = ? ORDER BY created_at ASC')
-        .all(workflowRunId) as WorkflowActionRow[]
-    ).map(rowToWorkflowAction);
-  },
+  insert: (action: WorkflowAction): void => workflowActionsTable.insert(action),
+  byWorkflow: (workflowRunId: string): WorkflowAction[] =>
+    workflowActionsTable.all(
+      'SELECT * FROM workflow_actions WHERE workflow_run_id = ? ORDER BY created_at ASC',
+      workflowRunId,
+    ),
 };
 
 export interface Approval {
@@ -1377,34 +1349,34 @@ function rowToApproval(r: ApprovalRow): Approval {
   };
 }
 
+const approvalsTable = defineTable<ApprovalRow, Approval>({
+  table: 'approvals',
+  fromRow: rowToApproval,
+  toRow: (a) => ({
+    id: a.id,
+    workflow_run_id: a.workflowRunId,
+    gate_run_id: a.gateRunId,
+    gate_id: a.gateId,
+    decision: a.decision,
+    actor: a.actor,
+    comment: a.comment,
+    decided_at: a.decidedAt,
+  }),
+});
+
 const approvals = {
-  insert(a: Approval): void {
-    insertRow('approvals', {
-      id: a.id,
-      workflow_run_id: a.workflowRunId,
-      gate_run_id: a.gateRunId,
-      gate_id: a.gateId,
-      decision: a.decision,
-      actor: a.actor,
-      comment: a.comment,
-      decided_at: a.decidedAt,
-    });
-  },
-  byWorkflow(workflowRunId: string): Approval[] {
-    return (
-      db
-        .prepare('SELECT * FROM approvals WHERE workflow_run_id = ? ORDER BY decided_at ASC')
-        .all(workflowRunId) as ApprovalRow[]
-    ).map(rowToApproval);
-  },
-  latestForGate(workflowRunId: string, gateId: string): Approval | undefined {
-    const r = db
-      .prepare(
-        'SELECT * FROM approvals WHERE workflow_run_id = ? AND gate_id = ? ORDER BY decided_at DESC LIMIT 1',
-      )
-      .get(workflowRunId, gateId) as ApprovalRow | null;
-    return r ? rowToApproval(r) : undefined;
-  },
+  insert: (a: Approval): void => approvalsTable.insert(a),
+  byWorkflow: (workflowRunId: string): Approval[] =>
+    approvalsTable.all(
+      'SELECT * FROM approvals WHERE workflow_run_id = ? ORDER BY decided_at ASC',
+      workflowRunId,
+    ),
+  latestForGate: (workflowRunId: string, gateId: string): Approval | undefined =>
+    approvalsTable.one(
+      'SELECT * FROM approvals WHERE workflow_run_id = ? AND gate_id = ? ORDER BY decided_at DESC LIMIT 1',
+      workflowRunId,
+      gateId,
+    ),
 };
 
 export interface AuditEntry {
@@ -1433,23 +1405,25 @@ function rowToAudit(r: AuditRow): AuditEntry {
   };
 }
 
+const auditLogTable = defineTable<AuditRow, AuditEntry>({
+  table: 'audit_log',
+  fromRow: rowToAudit,
+  toRow: (e) => ({
+    id: e.id,
+    workflow_run_id: e.workflowRunId,
+    kind: e.kind,
+    payload_json: JSON.stringify(e.payload),
+    at: e.at,
+  }),
+});
+
 const auditLog = {
-  insert(e: AuditEntry): void {
-    insertRow('audit_log', {
-      id: e.id,
-      workflow_run_id: e.workflowRunId,
-      kind: e.kind,
-      payload_json: JSON.stringify(e.payload),
-      at: e.at,
-    });
-  },
-  byWorkflow(workflowRunId: string): AuditEntry[] {
-    return (
-      db
-        .prepare('SELECT * FROM audit_log WHERE workflow_run_id = ? ORDER BY at ASC')
-        .all(workflowRunId) as AuditRow[]
-    ).map(rowToAudit);
-  },
+  insert: (e: AuditEntry): void => auditLogTable.insert(e),
+  byWorkflow: (workflowRunId: string): AuditEntry[] =>
+    auditLogTable.all(
+      'SELECT * FROM audit_log WHERE workflow_run_id = ? ORDER BY at ASC',
+      workflowRunId,
+    ),
 };
 
 export interface RunnerRecord {
@@ -1487,109 +1461,121 @@ function rowToRunner(r: RunnerRow): RunnerRecord {
   };
 }
 
+const runnersTable = defineTable<RunnerRow, RunnerRecord>({
+  table: 'runners',
+  fromRow: rowToRunner,
+  toRow: (r) => ({
+    id: r.id,
+    host: r.host,
+    version: r.version,
+    jdk_version: r.jdkVersion,
+    maven_version: r.mavenVersion,
+    git_version: r.gitVersion,
+    last_seen_at: r.lastSeenAt,
+    status: r.status,
+  }),
+});
+
 const runners = {
-  upsert(r: RunnerRecord): void {
-    upsertRow('runners', {
-      id: r.id,
-      host: r.host,
-      version: r.version,
-      jdk_version: r.jdkVersion,
-      maven_version: r.mavenVersion,
-      git_version: r.gitVersion,
-      last_seen_at: r.lastSeenAt,
-      status: r.status,
-    });
-  },
-  list(): RunnerRecord[] {
-    return (
-      db.prepare('SELECT * FROM runners ORDER BY last_seen_at DESC').all() as RunnerRow[]
-    ).map(rowToRunner);
-  },
+  upsert: (r: RunnerRecord): void => runnersTable.upsert(r),
+  list: (): RunnerRecord[] =>
+    runnersTable.all('SELECT * FROM runners ORDER BY last_seen_at DESC'),
 };
 
 // ---- coordinator_decisions + workflow_request_messages (Phase B) ----------
 
+interface CoordinatorDecisionRow {
+  id: string;
+  workflow_request_id: string;
+  workflow_run_id: string | null;
+  source: string;
+  decision_json: string;
+  confidence: number;
+  rules_fired_json: string;
+  decided_at: string;
+}
+
+function rowToCoordinatorDecision(r: CoordinatorDecisionRow): CoordinatorDecision {
+  return {
+    id: r.id,
+    workflowRequestId: r.workflow_request_id,
+    workflowRunId: r.workflow_run_id,
+    source: r.source as CoordinatorDecision['source'],
+    decision: JSON.parse(r.decision_json) as CoordinatorDecision['decision'],
+    confidence: r.confidence,
+    rulesFired: JSON.parse(r.rules_fired_json) as string[],
+    decidedAt: r.decided_at,
+  };
+}
+
+const coordinatorDecisionsTable = defineTable<CoordinatorDecisionRow, CoordinatorDecision>({
+  table: 'coordinator_decisions',
+  fromRow: rowToCoordinatorDecision,
+  toRow: (d) => ({
+    id: d.id,
+    workflow_request_id: d.workflowRequestId,
+    workflow_run_id: d.workflowRunId,
+    source: d.source,
+    decision_json: JSON.stringify(d.decision),
+    confidence: d.confidence,
+    rules_fired_json: JSON.stringify(d.rulesFired),
+    decided_at: d.decidedAt,
+  }),
+});
+
 const coordinatorDecisions = {
-  insert(d: CoordinatorDecision): void {
-    insertRow('coordinator_decisions', {
-      id: d.id,
-      workflow_request_id: d.workflowRequestId,
-      workflow_run_id: d.workflowRunId,
-      source: d.source,
-      decision_json: JSON.stringify(d.decision),
-      confidence: d.confidence,
-      rules_fired_json: JSON.stringify(d.rulesFired),
-      decided_at: d.decidedAt,
-    });
-  },
-  latestForRequest(workflowRequestId: string): CoordinatorDecision | null {
-    const row = db
-      .prepare(
-        `SELECT * FROM coordinator_decisions
-         WHERE workflow_request_id = ?
-         ORDER BY decided_at DESC LIMIT 1`,
-      )
-      .get(workflowRequestId) as
-      | {
-          id: string;
-          workflow_request_id: string;
-          workflow_run_id: string | null;
-          source: string;
-          decision_json: string;
-          confidence: number;
-          rules_fired_json: string;
-          decided_at: string;
-        }
-      | undefined;
-    if (!row) return null;
-    return {
-      id: row.id,
-      workflowRequestId: row.workflow_request_id,
-      workflowRunId: row.workflow_run_id,
-      source: row.source as CoordinatorDecision['source'],
-      decision: JSON.parse(row.decision_json) as CoordinatorDecision['decision'],
-      confidence: row.confidence,
-      rulesFired: JSON.parse(row.rules_fired_json) as string[],
-      decidedAt: row.decided_at,
-    };
-  },
+  insert: (d: CoordinatorDecision): void => coordinatorDecisionsTable.insert(d),
+  latestForRequest: (workflowRequestId: string): CoordinatorDecision | null =>
+    coordinatorDecisionsTable.one(
+      `SELECT * FROM coordinator_decisions
+       WHERE workflow_request_id = ?
+       ORDER BY decided_at DESC LIMIT 1`,
+      workflowRequestId,
+    ) ?? null,
 };
 
+interface RequestMessageRow {
+  id: string;
+  workflow_request_id: string;
+  role: string;
+  content: string;
+  coordinator_decision_id: string | null;
+  created_at: string;
+}
+
+function rowToRequestMessage(r: RequestMessageRow): RequestMessage {
+  return {
+    id: r.id,
+    workflowRequestId: r.workflow_request_id,
+    role: r.role as RequestMessage['role'],
+    content: r.content,
+    coordinatorDecisionId: r.coordinator_decision_id,
+    createdAt: r.created_at,
+  };
+}
+
+const requestMessagesTable = defineTable<RequestMessageRow, RequestMessage>({
+  table: 'workflow_request_messages',
+  fromRow: rowToRequestMessage,
+  toRow: (m) => ({
+    id: m.id,
+    workflow_request_id: m.workflowRequestId,
+    role: m.role,
+    content: m.content,
+    coordinator_decision_id: m.coordinatorDecisionId,
+    created_at: m.createdAt,
+  }),
+});
+
 const requestMessages = {
-  insert(m: RequestMessage): void {
-    insertRow('workflow_request_messages', {
-      id: m.id,
-      workflow_request_id: m.workflowRequestId,
-      role: m.role,
-      content: m.content,
-      coordinator_decision_id: m.coordinatorDecisionId,
-      created_at: m.createdAt,
-    });
-  },
-  listForRequest(workflowRequestId: string): RequestMessage[] {
-    const rows = db
-      .prepare(
-        `SELECT * FROM workflow_request_messages
-         WHERE workflow_request_id = ?
-         ORDER BY created_at ASC`,
-      )
-      .all(workflowRequestId) as Array<{
-      id: string;
-      workflow_request_id: string;
-      role: string;
-      content: string;
-      coordinator_decision_id: string | null;
-      created_at: string;
-    }>;
-    return rows.map((r) => ({
-      id: r.id,
-      workflowRequestId: r.workflow_request_id,
-      role: r.role as RequestMessage['role'],
-      content: r.content,
-      coordinatorDecisionId: r.coordinator_decision_id,
-      createdAt: r.created_at,
-    }));
-  },
+  insert: (m: RequestMessage): void => requestMessagesTable.insert(m),
+  listForRequest: (workflowRequestId: string): RequestMessage[] =>
+    requestMessagesTable.all(
+      `SELECT * FROM workflow_request_messages
+       WHERE workflow_request_id = ?
+       ORDER BY created_at ASC`,
+      workflowRequestId,
+    ),
 };
 
 // ---- config_overrides + config_audit (PR1: runtime config layer) ----------
@@ -1620,28 +1606,29 @@ function rowToConfigOverride(r: ConfigOverrideRow): ConfigOverride {
   };
 }
 
+const configOverridesTable = defineTable<ConfigOverrideRow, ConfigOverride>({
+  table: 'config_overrides',
+  fromRow: rowToConfigOverride,
+  toRow: (o) => ({
+    key: o.key,
+    scope: o.scope,
+    value_json: o.valueJson,
+    updated_at: o.updatedAt,
+    updated_by: o.updatedBy,
+  }),
+});
+
 const configOverrides = {
-  get(key: string): ConfigOverride | undefined {
-    const r = db.prepare('SELECT * FROM config_overrides WHERE key = ?').get(key) as
-      | ConfigOverrideRow
-      | null;
-    return r ? rowToConfigOverride(r) : undefined;
-  },
+  get: (key: string): ConfigOverride | undefined =>
+    configOverridesTable.one('SELECT * FROM config_overrides WHERE key = ?', key),
   getAll(): Record<string, ConfigOverride> {
-    const rows = db.prepare('SELECT * FROM config_overrides ORDER BY key ASC').all() as ConfigOverrideRow[];
     const out: Record<string, ConfigOverride> = {};
-    for (const r of rows) out[r.key] = rowToConfigOverride(r);
+    for (const o of configOverridesTable.all('SELECT * FROM config_overrides ORDER BY key ASC')) {
+      out[o.key] = o;
+    }
     return out;
   },
-  set(o: ConfigOverride): void {
-    upsertRow('config_overrides', {
-      key: o.key,
-      scope: o.scope,
-      value_json: o.valueJson,
-      updated_at: o.updatedAt,
-      updated_by: o.updatedBy,
-    });
-  },
+  set: (o: ConfigOverride): void => configOverridesTable.upsert(o),
   delete(key: string): void {
     db.prepare('DELETE FROM config_overrides WHERE key = ?').run(key);
   },
@@ -1690,47 +1677,48 @@ function mirrorConfigAuditEntry(entry: ConfigAuditEntry): void {
     mkdirSync(dir, { recursive: true });
     appendFileSync(file, `${JSON.stringify(entry)}\n`);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     console.warn('[config-audit] mirror failed:', msg);
   }
 }
 
+const configAuditTable = defineTable<ConfigAuditRow, ConfigAuditEntry>({
+  table: 'config_audit',
+  fromRow: rowToConfigAudit,
+  toRow: (e) => ({
+    id: e.id,
+    key: e.key,
+    old_value_json: e.oldValueJson,
+    new_value_json: e.newValueJson,
+    changed_at: e.changedAt,
+    changed_by: e.changedBy,
+  }),
+});
+
 const configAudit = {
   insert(e: ConfigAuditEntry): void {
-    insertRow('config_audit', {
-      id: e.id,
-      key: e.key,
-      old_value_json: e.oldValueJson,
-      new_value_json: e.newValueJson,
-      changed_at: e.changedAt,
-      changed_by: e.changedBy,
-    });
+    configAuditTable.insert(e);
     mirrorConfigAuditEntry(e);
   },
-  listByKey(key: string, limit = 20): ConfigAuditEntry[] {
-    return (
-      db
-        .prepare(
-          'SELECT * FROM config_audit WHERE key = ? ORDER BY changed_at DESC LIMIT ?',
-        )
-        .all(key, limit) as ConfigAuditRow[]
-    ).map(rowToConfigAudit);
-  },
-  listAll(limit = 20): ConfigAuditEntry[] {
-    return (
-      db
-        .prepare('SELECT * FROM config_audit ORDER BY changed_at DESC LIMIT ?')
-        .all(limit) as ConfigAuditRow[]
-    ).map(rowToConfigAudit);
-  },
+  listByKey: (key: string, limit = 20): ConfigAuditEntry[] =>
+    configAuditTable.all(
+      'SELECT * FROM config_audit WHERE key = ? ORDER BY changed_at DESC LIMIT ?',
+      key,
+      limit,
+    ),
+  listAll: (limit = 20): ConfigAuditEntry[] =>
+    configAuditTable.all(
+      'SELECT * FROM config_audit ORDER BY changed_at DESC LIMIT ?',
+      limit,
+    ),
 };
 
 // ---- public surface --------------------------------------------------------
 
 export const store = {
-	  projects,
-	  workflowRequests,
-	  workflowRuns,
+  projects,
+  workflowRequests,
+  workflowRuns,
   stepRuns,
   commandRuns,
   gateRuns,

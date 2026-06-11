@@ -200,6 +200,20 @@ export const api = {
   workflowCompleted: (params: { workflowRunId: string; ok: boolean }) =>
     request('POST', '/runner/events/workflow-completed', params),
 
+  /** Ask the API to assemble + persist the completion report artifact. */
+  generateCompletionReport: (workflowRunId: string) =>
+    request<{ artifact: { id: string; uri: string } }>(
+      'POST',
+      `/workflow-runs/${encodeURIComponent(workflowRunId)}/completion-report`,
+    ),
+
+  /** Ask the API to assemble + persist the knowledge candidate artifact. */
+  generateKnowledgeCandidate: (workflowRunId: string) =>
+    request<{ artifact: { id: string; uri: string } }>(
+      'POST',
+      `/workflow-runs/${encodeURIComponent(workflowRunId)}/knowledge-candidate`,
+    ),
+
   heartbeat: (params: {
     id: string;
     host: string;

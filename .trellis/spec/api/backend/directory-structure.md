@@ -10,9 +10,10 @@
 apps/api/src/
 ├── server.ts                 # Bun.serve entry; reads AINP_API_PORT/HOST
 ├── app.ts                    # Hono app + route mounts; the only place routes are registered
-├── routes/                   # HTTP boundary — one file per resource
+├── routes/                   # HTTP boundary — one file per resource (+ helpers.ts: shared 404/jsonError guards)
 ├── store/                    # SQLite persistence — db.ts (singleton) + store.ts (typed CRUD)
 ├── workflow-engine.ts        # Sole writer of WorkflowRun / StepRun / Build / Test / Gate state
+├── audit.ts                  # workflow_audit writer — single audit entry point (used by workflow-engine + gate-engine)
 ├── gate-engine.ts            # Compile / Test / Diff-scope / Sensitive / Acceptance / Traceability gates
 ├── router.ts                 # Smart Router pure function (W2-4)
 ├── promote.ts                # Knowledge promote-in-transaction
@@ -41,9 +42,10 @@ Route handlers do **only**:
 
 Examples:
 
-- `routes/workflow-runs.ts:23` — `KNOWN_FLOW_IDS` literal + `isFlowId()` guard.
-  The trust-boundary check that keeps `FLOW_REGISTRY[run.flowId]` from ever
-  seeing garbage.
+- `routes/workflow-runs.ts` — imports `isFlowId()` / `isWorkflowStage()` from
+  `@ainp/shared` (guards derived from `FLOW_REGISTRY` keys; the former local
+  `KNOWN_FLOW_IDS` literal copies were removed 06-11). The trust-boundary
+  check that keeps `FLOW_REGISTRY[run.flowId]` from ever seeing garbage.
 - `routes/workflow-requests.ts:60` — fail-fast `if (!body.title?.trim()) return c.json({ error: 'title required' }, 400)` BEFORE any DB write so the
   atomicity contract holds.
 

@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { errorMessage } from '@ainp/shared';
 import { store } from '../store/store';
 import { readFileUriContent } from '../artifact-content';
 
@@ -15,6 +16,6 @@ commandRuns.get('/:id/logs', (c) => {
       stderr: readFileUriContent(commandRun.stderrRef, 'text/plain', commandRun.stderrSha256 ?? null),
     });
   } catch (err) {
-    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+    return c.json({ error: errorMessage(err) }, 400);
   }
 });

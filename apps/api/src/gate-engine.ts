@@ -20,6 +20,7 @@ import {
 } from '@ainp/shared';
 import { store } from './store/store';
 import { readFileUriText } from './artifact-content';
+import { audit } from './audit';
 
 /**
  * Gate Engine — the only thing that decides Gate pass/warn/fail.
@@ -58,13 +59,7 @@ function record(
     agentNote,
   };
   store.gateRuns.insert(gate);
-  store.auditLog.insert({
-    id: newId('audit'),
-    workflowRunId,
-    kind: 'gate.recorded',
-    payload: { gateId, status: gate.status },
-    at: nowIso(),
-  });
+  audit(workflowRunId, 'gate.recorded', { gateId, status: gate.status });
   return gate;
 }
 
@@ -281,7 +276,7 @@ export function runRequirementGate(params: {
     hasRequirementSection(text, '边界');
   const userStoryBullets = (text.match(/^-\s+作为/gm) ?? []).length;
   const hasUserStoriesMin2 = userStoryBullets >= 2;
-  const boundaryBody = matchRequirementSection(text, '边界')?.[0].replace(/^##[^\n]*\n?/i, '').trim() ?? '';
+  const boundaryBody = matchGateSection(text, '边界')?.[0].replace(/^##[^\n]*\n?/i, '').trim() ?? '';
   const hasBoundary = boundaryBody.length >= 20;
 
   const results: RuleResult[] = [
@@ -360,10 +355,11 @@ function hasAcceptanceCriteria(text: string): boolean {
 }
 
 function hasRequirementSection(text: string, title: string): boolean {
-  return Boolean(matchRequirementSection(text, title));
+  return Boolean(matchGateSection(text, title));
 }
 
-function matchRequirementSection(text: string, title: string): RegExpMatchArray | null {
+/** Match a `## <title>` markdown section (shared by requirement & design gates). */
+function matchGateSection(text: string, title: string): RegExpMatchArray | null {
   const escaped = escapeRegExp(title);
   return text.match(new RegExp(
     String.raw`^##\s*(?:\d+\.\s*)?(?:\*\*)?\s*${escaped}(?:\s|\*\*|$)[\s\S]*?(?=^##\s|(?![\s\S]))`,
@@ -392,7 +388,7 @@ export function runDesignGate(params: {
   const hasCurrentStateSection = hasDesignSection(text, '现状');
   const hasChangesSection = hasDesignSection(text, '变化');
   const hasRolloutSection = hasDesignSection(text, '推进策略');
-  const mountSectionMatch = matchDesignSection(text, '挂载点');
+  const mountSectionMatch = matchGateSection(text, '挂载点');
   const mountBulletCount = mountSectionMatch
     ? (mountSectionMatch[0].match(/^\s*\d+\.\s+\S|\n\s*-\s+\S/gm) ?? []).length
     : 0;
@@ -476,15 +472,7 @@ export function runDesignGate(params: {
 }
 
 function hasDesignSection(text: string, title: string): boolean {
-  return Boolean(matchDesignSection(text, title));
-}
-
-function matchDesignSection(text: string, title: string): RegExpMatchArray | null {
-  const escaped = escapeRegExp(title);
-  return text.match(new RegExp(
-    String.raw`^##\s*(?:\d+\.\s*)?(?:\*\*)?\s*${escaped}(?:\s|\*\*|$)[\s\S]*?(?=^##\s|(?![\s\S]))`,
-    'im',
-  ));
+  return Boolean(matchGateSection(text, title));
 }
 
 function escapeRegExp(value: string): string {
@@ -679,7 +667,7 @@ export function runEvidenceGate(params: {
   const compileTestGatesMissingCommandEvidence = commandEvidenceByGate.filter(
     ({ commands }) => commands.length === 0,
   );
-  const commandEvidence = uniqueCommands(commandEvidenceByGate.flatMap(({ commands }) => commands));
+  const commandEvidence = uniqueById(commandEvidenceByGate.flatMap(({ commands }) => commands));
   const commandsMissingDigest = commandEvidence.filter((cmd) => (
     !cmd.stdoutSha256 || !cmd.stderrSha256 || !cmd.combinedSha256
   ));
@@ -850,13 +838,13 @@ function commandEvidenceForGate(gate: GateRun): CommandRun[] {
     .filter((cmd): cmd is NonNullable<typeof cmd> => Boolean(cmd));
 }
 
-function uniqueCommands(commands: CommandRun[]): CommandRun[] {
+function uniqueById<T extends { id: string }>(items: T[]): T[] {
   const seen = new Set<string>();
-  const unique: CommandRun[] = [];
-  for (const command of commands) {
-    if (seen.has(command.id)) continue;
-    seen.add(command.id);
-    unique.push(command);
+  const unique: T[] = [];
+  for (const item of items) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    unique.push(item);
   }
   return unique;
 }
@@ -891,13 +879,13 @@ function evaluateUiVerifierEvidence(workflowRunId: WorkflowRunId): UiVerifierEvi
   const matrix = matrixArtifact ? parseVerifierAcMatrix(matrixArtifact) : null;
   const requirement = uiVerifierRequirement(workflowRunId, artifacts, matrix);
   const criteria = matrix?.acceptanceCriteria ?? [];
-  const mediaArtifacts = uniqueArtifacts(criteria.flatMap((criterion) =>
+  const mediaArtifacts = uniqueById(criteria.flatMap((criterion) =>
     criterion.evidenceRefs
       .map((ref) => store.artifacts.get(ref.artifactId))
       .filter((artifact): artifact is Artifact => Boolean(artifact))
       .filter(isVerifierMediaArtifact),
   ));
-  const verifierArtifacts = uniqueArtifacts([
+  const verifierArtifacts = uniqueById([
     ...(matrixArtifact ? [matrixArtifact] : []),
     ...mediaArtifacts,
   ]);
@@ -1071,15 +1059,4 @@ function captureToVerifierRole(value: unknown): VerifierMediaRole | null {
 function contentTypeToVerifierRole(contentType: string): VerifierMediaRole | null {
   if (contentType.startsWith('video/')) return 'video';
   return null;
-}
-
-function uniqueArtifacts(artifacts: Artifact[]): Artifact[] {
-  const seen = new Set<string>();
-  const unique: Artifact[] = [];
-  for (const artifact of artifacts) {
-    if (seen.has(artifact.id)) continue;
-    seen.add(artifact.id);
-    unique.push(artifact);
-  }
-  return unique;
 }
