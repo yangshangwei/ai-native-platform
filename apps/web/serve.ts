@@ -59,6 +59,9 @@ export function createWebServer(options: { port?: number; apiBase?: string } = {
           method: req.method,
           headers: req.headers,
           body: req.method === 'GET' || req.method === 'HEAD' ? undefined : await req.arrayBuffer(),
+          // Propagate client disconnects so long-lived upstream connections
+          // (e.g. SSE) are released instead of leaking until FD exhaustion.
+          signal: req.signal,
         };
         try {
           return await fetch(target, init);
