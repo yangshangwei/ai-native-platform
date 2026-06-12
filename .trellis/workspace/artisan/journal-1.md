@@ -1273,3 +1273,36 @@ Promoted cmdOrchestrate's ~14 nested closures to top-level deps-injected functio
 ### Next Steps
 
 - None - task complete
+
+
+## Session 35: Preflight/digest dedup via @ainp/shared/node (roadmap T4.1+T4.2)
+
+**Date**: 2026-06-12
+**Task**: Preflight/digest dedup via @ainp/shared/node (roadmap T4.1+T4.2)
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Decided node-only placement as @ainp/shared/node subpath (no new package). Sunk the byte-identical preflight execution shell and merged digest helpers; deleted both apps' local copies; api null-tolerance preserved. Red-line guard test enforces main-barrel isolation; web imports nothing from the subpath. 694 tests green. Remaining roadmap: T4.3 db migrations (next), T3.2 build-command abstraction and T2.4 web DTO unification (both need user decisions).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fed7e9c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
