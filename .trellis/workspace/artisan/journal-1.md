@@ -1174,3 +1174,36 @@ Moved page-settings/page-reports/page-knowledge/stream out of main.ts (6603 -> 4
 ### Next Steps
 
 - None - task complete
+
+
+## Session 32: Web heavy-page split: main.ts decomposition complete (roadmap T2.3)
+
+**Date**: 2026-06-12
+**Task**: Web heavy-page split: main.ts decomposition complete (roadmap T2.3)
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Final web split: page-projects/page-new-task/coordinator-chat/page-task-detail/page-workbench/shell extracted; main.ts 4695 -> 101 lines (bootstrap only). 7396-line monolith now 16 focused modules. Pure moves proven by line-multiset comparison. Smoke verified draft retention, details persistence, zero errors; reports textLen difference ruled out as data drift via HEAD-version same-data comparison. serve.ts proxy wedged again during smoke (262 connections, same as before restart) - fix pulled forward as next task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a3f1ced` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
