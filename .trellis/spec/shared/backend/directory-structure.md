@@ -34,7 +34,12 @@ packages/shared/src/
 │   ├── surefire.ts                # Surefire XML parser
 │   ├── redaction.ts               # Secret-scrubbing helpers
 │   ├── agent-backend-cli.ts       # Cross-platform CLI argv contract
-│   └── agent-backend-preflight.ts # Pure preflight logic
+│   ├── agent-backend-preflight.ts # Pure preflight logic
+│   └── …
+├── node/                          # Node-only helpers — `@ainp/shared/node` subpath
+│   ├── index.ts                   # node/ barrel — NEVER re-exported from src/index.ts
+│   ├── agent-backend-preflight.ts # Preflight execution shell (spawn-based)
+│   └── digest.ts                  # sha256 file/buffer/combined-stream digests
 └── config/
     ├── registry.ts
     ├── defaults.ts
@@ -45,9 +50,11 @@ packages/shared/src/
 
 ## The shared rule
 
-**No I/O. No side effects. No environment access.** `packages/shared/` must
-be importable from any layer (api server, runner CLI, web SPA) without
-pulling in node-specific imports the consumer can't satisfy.
+**No I/O. No side effects. No environment access.** The main entry of
+`packages/shared/` must be importable from any layer (api server, runner CLI,
+web SPA) without pulling in node-specific imports the consumer can't satisfy.
+The one controlled exception is the `node/` subpath (see below), which is
+physically isolated from the main barrel.
 
 In practice:
 
@@ -114,6 +121,46 @@ Pure helpers. Each file owns one concept:
   `buildResolvedAgentBackendCliSpawn`. The cross-platform argv contract
   shared by api preflight and runner spawning.
 
+### `node/` — the node-only subpath (`@ainp/shared/node`)
+
+Controlled exception to the zero-I/O rule, exported via package.json
+`"./node": "./src/node/index.ts"` (precedent: the FLOW_REGISTRY relocation
+to shared; decided in task 06-12-dedupe-preflight-and-digest-via-shared-
+node-subpath). Code here may import `node:child_process`, `node:crypto`,
+`node:fs`, and read `process.env`.
+
+**Admission criteria — both must hold:**
+
+1. The code genuinely needs node built-ins (spawn, fs, crypto streams) and
+   cannot be expressed as a pure helper taking injected inputs.
+2. It is consumed by **both** `apps/api/` and `apps/runner/`. Single-consumer
+   I/O code stays in the app that owns it.
+
+**Red lines:**
+
+- `src/index.ts` (the main barrel) must NOT re-export anything from
+  `src/node/`. The main barrel is bundled into the web SPA; one `node:*`
+  import breaks the Vite build.
+- `apps/web/` must NOT import `@ainp/shared/node`. Typecheck does NOT catch
+  this: the workspace symlink under `apps/web/node_modules` lets TypeScript
+  resolve the subpath via package.json `exports` even without a tsconfig
+  paths mapping. The guard is
+  `packages/shared/test/node-subpath-redline.test.ts`, which also asserts
+  the main barrel stays free of `node/` re-exports.
+- Pure logic does not belong here. Keep classification/parsing in `utils/`
+  (e.g. `utils/agent-backend-preflight.ts`) and only the execution shell in
+  `node/` (e.g. `node/agent-backend-preflight.ts`).
+
+Current residents: `node/agent-backend-preflight.ts` (CLI preflight spawn
+shell shared by api routes and runner backend selection) and
+`node/digest.ts` (sha256 file/buffer digests plus the
+`sha256CombinedStreams` separator contract referenced by
+`types/command.ts:combinedSha256`).
+
+Resolution wiring when adding consumers: `@ainp/shared/node` path mapping in
+the consumer's tsconfig and the `@ainp/shared/node` alias in the root
+`vitest.config.ts` (it must stay listed before `@ainp/shared`).
+
 ### `config/`
 
 Defaults and template config used by both api and runner. `registry.ts`
@@ -123,7 +170,9 @@ the user-facing template.
 ### `index.ts` — the barrel
 
 Every public symbol must be re-exported here, in topic order matching the
-filesystem layout. Consumers always do
+filesystem layout — **except `node/`**, which has its own barrel
+(`node/index.ts`) exposed only via the `@ainp/shared/node` subpath.
+Consumers always do
 `import { Foo } from '@ainp/shared'`, never deep imports like
 `import { Foo } from '@ainp/shared/src/types/foo'`. Reason: keeps the public
 surface explicit and ensures circular-import detection runs against the
@@ -135,10 +184,10 @@ barrel rather than ad-hoc paths.
 
 `packages/shared/` is consumed by:
 
-- `apps/api/` — server-side types, FLOW_REGISTRY, utils.
+- `apps/api/` — server-side types, FLOW_REGISTRY, utils, `@ainp/shared/node`.
 - `apps/runner/` — same plus subprocess argv helpers.
-- `apps/web/` — types only (any util that touches node would break the Vite
-  build).
+- `apps/web/` — types only via the main entry (never `@ainp/shared/node`;
+  any node-touching util would break the Vite build).
 
 `packages/shared/` MUST NOT depend on:
 
@@ -147,8 +196,9 @@ barrel rather than ad-hoc paths.
 - `apps/web/`
 - Any node-only package, react/vue, vite, hono, bun:sqlite.
 
-If a future shared util genuinely needs to do I/O, it doesn't belong in
-shared — push it to the layer that owns the I/O surface.
+If a future shared util genuinely needs to do I/O, it goes in `src/node/`
+(when it meets the admission criteria above) or stays in the layer that owns
+the I/O surface — never in the main entry.
 
 ---
 
@@ -165,7 +215,9 @@ FLOW_REGISTRY).
 ## Forbidden patterns
 
 - **`process.env` reads.** Take env as a parameter; let callers decide.
+  (Exception: `src/node/`.)
 - **`fs` / `child_process` / `bun:sqlite` / `fetch` imports.** No I/O.
+  (Exception: `fs`/`child_process`/`crypto` inside `src/node/` only.)
 - **`console.log` / `console.error`.** Pure code is silent; callers decide
   what to log.
 - **Importing from `apps/*`.** Inverts the dependency direction and creates
