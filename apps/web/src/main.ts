@@ -49,460 +49,103 @@ import {
   type StreamChannel,
   type StreamEventCache,
 } from './stream-rendering';
-import type { KnowledgeArtifact } from '@ainp/shared';
 import { errorMessage } from '@ainp/shared';
-
-const API_BASE = '/api';
-
-type Page = 'workbench' | 'task' | 'projects' | 'new-task' | 'reports' | 'knowledge' | 'settings';
-type StatusKind = 'good' | 'warn' | 'bad' | 'info' | 'muted';
-type ProjectAgentBackendKind = 'claude_code' | 'codex';
-type AgentBackendKind = ProjectAgentBackendKind | 'native';
-type KnowledgeArtifactDto = KnowledgeArtifact;
-type KnowledgeActionDecision = 'accepted' | 'ignored' | 'edited';
-type KnowledgeViewId = 'pending' | 'accepted' | 'usage' | 'maintenance';
-type ReportViewId = 'all' | 'attention' | 'acceptable' | 'running';
-
-interface ProjectDto {
-  id: string;
-  name: string;
-  localPath: string;
-  sourceKind?: ProjectSourceKind;
-  sourceUrl?: string | null;
-  sourceAuthKind?: ProjectSourceAuthKind;
-  sourceUsername?: string | null;
-  hasSourceCredential?: boolean;
-  agentBackend?: ProjectAgentBackendKind | null;
-  status?: 'active' | 'archived';
-  archivedAt?: string | null;
-  language: string;
-  buildTool: string;
-  defaultBranch: string;
-  sourceBranches?: string[];
-  registeredAt: string;
-}
-
-
-type ProjectSourceKind = 'local' | 'github' | 'gitee' | 'git' | 'gitlab';
-type ProjectSourceAuthKind = 'none' | 'ssh' | 'token' | 'basic';
-
-interface SourceDetectSuccess {
-  ok: true;
-  sourceKind: ProjectSourceKind;
-  sourceUrl: string | null;
-  localPath: string | null;
-  projectName: string;
-  defaultBranch: string;
-  branches: string[];
-  metadata: Record<string, string>;
-}
-
-interface SourceDetectFailure {
-  ok: false;
-  error: string;
-}
-
-type SourceDetectResult = SourceDetectSuccess | SourceDetectFailure;
-
-type ProjectBranchListResult =
-  | {
-      ok: true;
-      defaultBranch: string;
-      detectedDefaultBranch: string;
-      branches: string[];
-      metadata: Record<string, string>;
-    }
-  | { ok: false; error: string };
-
-interface LocalDirectoryItem {
-  name: string;
-  path: string;
-}
-
-interface LocalDirectoryList {
-  path: string;
-  parent: string;
-  directories: LocalDirectoryItem[];
-}
-
-interface LocalDirectoryPickerState {
-  open: boolean;
-  loading: boolean;
-  error: string | null;
-  listing: LocalDirectoryList | null;
-}
-
-interface ProjectSourceFormState {
-  editingProjectId: string | null;
-  sourceKind: ProjectSourceKind;
-  agentBackend: ProjectAgentBackendKind | '';
-  name: string;
-  sourceValue: string;
-  sourceAuthKind: ProjectSourceAuthKind;
-  sourceUsername: string;
-  sourceCredential: string;
-  defaultBranch: string;
-  detectResult: SourceDetectResult | null;
-  detecting: boolean;
-}
-
-interface AgentBackendPreflightDto {
-  backend: ProjectAgentBackendKind | null;
-  label: string;
-  bin: string | null;
-  installed: boolean;
-  runnable: boolean;
-  authenticated: boolean | null;
-  version: string | null;
-  status: 'not_configured' | 'connected' | 'missing_cli' | 'needs_login' | 'not_runnable';
-  error: string | null;
-  remediationHint: string;
-  checkedAt: string;
-}
-
-
-interface ProjectDeletePreviewDto {
-  canHardDelete: boolean;
-  canArchive: boolean;
-  activeRequests: number;
-  activeRuns: number;
-  totalRequests: number;
-  totalRuns: number;
-  recommendation: 'hard_delete' | 'archive' | 'blocked_active_work' | 'already_archived';
-}
-
-interface RunnerDto {
-  id: string;
-  host: string;
-  version: string;
-  jdkVersion: string | null;
-  mavenVersion: string | null;
-  gitVersion: string | null;
-  lastSeenAt: string;
-  status: 'online' | 'stale' | 'offline';
-}
-
-interface WorkflowRequestDto {
-  id: string;
-  projectId: string;
-  type: 'feature' | 'bugfix' | 'smoke' | 'refactor';
-  title: string;
-  branch: string;
-  status: 'pending' | 'awaiting_clarification' | 'claimed' | 'completed' | 'failed' | 'cancelled';
-  claimedBy: string | null;
-  workflowRunId: string | null;
-  error: string | null;
-  createdAt: string;
-  updatedAt: string;
-  // V2 W2: optional UI overrides serialized by the API. Drive the queued
-  // lifecycle preview before a Workflow Run exists; null/absent → router
-  // picks the flow (preview as feature.standard).
-  flowId?: FlowId | null;
-  startStage?: Stage | null;
-}
-
-interface HealthDto {
-  ok: boolean;
-  counts: Record<string, number>;
-}
-
-interface ArtifactContentDto {
-  artifact: ArtifactDto;
-  text: string;
-  contentType: string;
-  filename: string;
-  digest: DigestVerificationDto;
-}
-
-interface CommandLogsDto {
-  commandRun: RunDetail['commands'][number];
-  stdout: { text: string; contentType: string; filename: string; digest: DigestVerificationDto };
-  stderr: { text: string; contentType: string; filename: string; digest: DigestVerificationDto };
-}
-
-type DigestVerificationDto =
-  | { algorithm: 'sha256'; expected: string; actual: string; verified: boolean }
-  | { algorithm: 'sha256'; expected: null; actual: string; verified: null };
-
-interface ContextGovernanceDto {
-  schemaVersion: 'ainp.context_governance.v1';
-  workflowRunId: string;
-  projectId: string;
-  contextPacks: Array<{
-    contextPackId: string;
-    source: string;
-    artifactId: string | null;
-    taskId: string | null;
-    stage: string | null;
-    mode: string | null;
-    manifest: ContextManifestDto[];
-  }>;
-  manifest: ContextManifestDto[];
-  sourceRefs: Array<{
-    sourceRef: string;
-    contextPackIds: string[];
-    manifestRefs: string[];
-    trustLevels: string[];
-    knowledgeClasses: string[];
-  }>;
-  trustLevels: Record<string, number>;
-  budgetDecisions: Array<{
-    contextPackId: string;
-    ref: string;
-    mode: string | null;
-    degradedFrom: string | null;
-    degradationReason: string | null;
-    score: number | null;
-  }>;
-  contextRequests: Array<{
-    id: string;
-    actionId: string;
-    status: string;
-    priority: number | null;
-    reason: string;
-    requestedRefs: string[];
-    questions: string[];
-    sourceName: string | null;
-    taskId: string | null;
-    baseContextPackId: string | null;
-    supplementContextPackId: string | null;
-    requestArtifactId: string | null;
-    supplementArtifactId: string | null;
-    createdAt: string;
-  }>;
-  metrics: {
-    impactCoverage: RatioMetricDto;
-    evidenceTraceability: RatioMetricDto;
-    irrelevantContextRatio: RatioMetricDto;
-    contextRequestCount: { value: number; explanation: string };
-    downstreamReworkSignal: {
-      value: number;
-      rejectedApprovals: number;
-      failedGates: number;
-      failedAgentResults: number;
-      explanation: string;
-    };
-  };
-}
-
-interface ContextManifestDto {
-  contextPackId: string;
-  ref: string;
-  reason: string;
-  priority: number | null;
-  mode: string | null;
-  knowledgeClass: string | null;
-  trustLevel: string | null;
-  freshness: string | null;
-  sourceType: string | null;
-  sourceRefs: string[];
-  score: number | null;
-  selectionReasons: string[];
-  degradedFrom: string | null;
-  degradationReason: string | null;
-}
-
-interface RatioMetricDto {
-  value: number;
-  numerator: number;
-  denominator: number;
-  explanation: string;
-}
-
-interface RunnerControlStatusDto {
-  mode: 'api-managed-local-runner';
-  running: boolean;
-  pid: number | null;
-  startedAt: string | null;
-  stoppedAt: string | null;
-  command: string[];
-  lastExit: { code: number | null; signal: string | null; at: string } | null;
-  recentLogs: string[];
-  latestHeartbeat: RunnerDto | null;
-}
-
-interface KnowledgeArtifactsState {
-  projectId: string | null;
-  loading: boolean;
-  loadedOnce: boolean;
-  error: string | null;
-  artifacts: KnowledgeArtifactDto[];
-}
-
-interface KnowledgeSuggestionItem {
-  suggestion: KnowledgeSuggestion;
-  index: number;
-  key: string;
-  targetId: string;
-  decision: KnowledgeActionDecision | undefined;
-  text: string;
-}
-
-interface AppData {
-  health: HealthDto | null;
-  projects: ProjectDto[];
-  runners: RunnerDto[];
-  requests: WorkflowRequestDto[];
-  runs: WorkflowRunDto[];
-  activeDetail: RunDetail | null;
-  runnerControl: RunnerControlStatusDto | null;
-}
-
-const data: AppData = {
-  health: null,
-  projects: [],
-  runners: [],
-  requests: [],
-  runs: [],
-  activeDetail: null,
-  runnerControl: null,
-};
-
-let activePage: Page = 'workbench';
-let activeRunId: string | null = null;
-let activeTaskRequestId: string | null = null;
-let loadingDetailFor: string | null = null;
-let runnerStartInFlight = false;
-let lastError: string | null = null;
-let projectsLoadError: string | null = null;
-const artifactContent = new Map<string, ArtifactContentDto | null>();
-const openArtifactViewers = new Set<string>();
-const scrollPositionState = new Map<string, { top: number; left: number }>();
-const SCROLLABLE_STATE_SELECTOR = '[data-scroll-key], .doc-preview';
-let viewportScrollPosition = { top: 0, left: 0 };
-const commandLogs = new Map<string, CommandLogsDto | null>();
-const contextGovernanceByRun = new Map<string, ContextGovernanceDto | null>();
-const contextGovernanceInFlight = new Set<string>();
-const detailsOpenState = new Map<string, boolean>();
-const knowledgeArtifactsState: KnowledgeArtifactsState = {
-  projectId: null,
-  loading: false,
-  loadedOnce: false,
-  error: null,
-  artifacts: [],
-};
-const knowledgeDecisions = new Map<string, KnowledgeActionDecision>();
-const knowledgeEdits = new Map<string, string>();
-const knowledgeEditing = new Set<string>();
-const knowledgeEditDrafts = new Map<string, string>();
-let knowledgeActiveView: KnowledgeViewId | null = null;
-let knowledgeEditComposing: { key: string } | null = null;
-let knowledgeEditRenderDeferred = false;
-let reportsActiveView: ReportViewId = 'all';
-const approvalInFlight = new Set<string>();
-const approvalLastSubmittedAt = new Map<string, number>();
-const projectActionInFlight = new Set<string>();
-const projectBranchRefreshInFlight = new Set<string>();
-const agentBackendPreflight = new Map<string, AgentBackendPreflightDto>();
-const agentBackendPreflightInFlight = new Set<string>();
-const runnerAutoStartAttemptedForRequest = new Set<string>();
-
-
-const localDirectoryPicker: LocalDirectoryPickerState = {
-  open: false,
-  loading: false,
-  error: null,
-  listing: null,
-};
-
-const projectSourceForm: ProjectSourceFormState = {
-  editingProjectId: null,
-  sourceKind: 'github',
-  agentBackend: '',
-  name: '',
-  sourceValue: '',
-  sourceAuthKind: 'none',
-  sourceUsername: '',
-  sourceCredential: '',
-  defaultBranch: 'main',
-  detectResult: null,
-  detecting: false,
-};
-
-
-async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, init);
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`api ${path}: ${res.status} ${text}`);
-  }
-  return (await res.json()) as T;
-}
-
-function el<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  opts: {
-    class?: string;
-    id?: string;
-    text?: string;
-    children?: Array<Node | null | undefined | false>;
-    attrs?: Record<string, string>;
-  } = {},
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (opts.class) node.className = opts.class;
-  if (opts.id) node.id = opts.id;
-  if (opts.text !== undefined) node.textContent = opts.text;
-  if (opts.attrs) for (const [k, v] of Object.entries(opts.attrs)) node.setAttribute(k, v);
-  if (opts.children) {
-    for (const child of opts.children) if (child) node.appendChild(child);
-  }
-  return node;
-}
-
-function icon(path: string): SVGElement {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 24 24');
-  svg.setAttribute('aria-hidden', 'true');
-  svg.classList.add('icon');
-  const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  p.setAttribute('d', path);
-  p.setAttribute('fill', 'none');
-  p.setAttribute('stroke', 'currentColor');
-  p.setAttribute('stroke-width', '2');
-  p.setAttribute('stroke-linecap', 'round');
-  p.setAttribute('stroke-linejoin', 'round');
-  svg.appendChild(p);
-  return svg;
-}
-
-function clear(node: HTMLElement): void {
-  node.replaceChildren();
-}
-
-function fmtTime(value: string | null | undefined): string {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-}
-
-function shortId(id: string): string {
-  return id.length > 14 ? `${id.slice(0, 14)}…` : id;
-}
-
-function statusKind(status: string): StatusKind {
-  if (['passed', 'pass', 'success', 'approved', 'online', 'completed'].includes(status)) return 'good';
-  if (['failed', 'fail', 'rejected', 'offline', 'cancelled'].includes(status)) return 'bad';
-  if (['warn', 'stale', 'awaiting_human', 'awaiting_clarification'].includes(status)) return 'warn';
-  if (['running', 'pending', 'claimed'].includes(status)) return 'info';
-  return 'muted';
-}
-
-function pill(label: string, kind: StatusKind = statusKind(label)): HTMLElement {
-  return el('span', { class: `pill ${kind}`, text: label });
-}
-
-function metric(label: string, value: string, hint?: string, kind: StatusKind = 'muted'): HTMLElement {
-  return el('div', {
-    class: 'metric-card',
-    children: [
-      el('span', { class: 'metric-label', text: label }),
-      el('strong', { class: `metric-value ${kind}`, text: value }),
-      hint ? el('span', { class: 'metric-hint', text: hint }) : null,
-    ],
-  });
-}
+import type {
+  AgentBackendKind,
+  AgentBackendPreflightDto,
+  ContextGovernanceDto,
+  ContextManifestDto,
+  DigestVerificationDto,
+  KnowledgeActionDecision,
+  KnowledgeArtifactDto,
+  KnowledgeSuggestionItem,
+  KnowledgeViewId,
+  LocalDirectoryItem,
+  LocalDirectoryList,
+  LocalDirectoryPickerState,
+  Page,
+  ProjectAgentBackendKind,
+  ProjectBranchListResult,
+  ProjectDeletePreviewDto,
+  ProjectDto,
+  ProjectSourceAuthKind,
+  ProjectSourceFormState,
+  ProjectSourceKind,
+  RatioMetricDto,
+  ReportViewId,
+  RunnerControlStatusDto,
+  RunnerDto,
+  SourceDetectFailure,
+  SourceDetectResult,
+  SourceDetectSuccess,
+  StatusKind,
+  WorkflowRequestDto,
+} from './types';
+import { API_BASE, api } from './api';
+import {
+  button,
+  clear,
+  controlledInput,
+  el,
+  field,
+  fmtTime,
+  icon,
+  labeledInput,
+  metric,
+  pill,
+  shortId,
+  statusKind,
+} from './dom';
+import {
+  activeProjects,
+  activeRunAgentBackend,
+  activeTaskRequest,
+  agentBackendContextLabel,
+  agentBackendDisplayName,
+  agentBackendLabelForProject,
+  agentBackendPreflight,
+  agentBackendPreflightInFlight,
+  agentBackendStatusForProject,
+  approvalInFlight,
+  approvalLastSubmittedAt,
+  artifactContent,
+  buildEnvLabel,
+  commandLogs,
+  contextGovernanceByRun,
+  contextGovernanceInFlight,
+  data,
+  knowledgeArtifactsState,
+  knowledgeDecisions,
+  knowledgeEditDrafts,
+  knowledgeEditing,
+  knowledgeEdits,
+  latestRunner,
+  localDirectoryPicker,
+  normalizeBranchList,
+  openArtifactViewers,
+  preflightForProjectBackend,
+  projectActionInFlight,
+  projectAvailability,
+  projectBranchRefreshInFlight,
+  projectName,
+  projectSourceForm,
+  runnerAutoStartAttemptedForRequest,
+  selectedProject,
+  selectedProjectBackend,
+  sourceBranchesForProject,
+  ui,
+} from './state';
+import { setHash, parseHash } from './router';
+import { render, setRenderHooks } from './render-core';
+import {
+  ensureArtifactContent,
+  ensureCommandLogs,
+  ensureContextGovernance,
+  loadData,
+  loadKnowledgeArtifacts,
+  loadRunDetail,
+  setStreamHooks,
+} from './data-loading';
 
 function requestTypeLabel(type: WorkflowRequestDto['type'] | string): string {
   if (type === 'feature') return '功能需求';
@@ -657,272 +300,6 @@ function taskProgressMetric(projection: ReturnType<typeof buildRunProjection> | 
   };
 }
 
-function field(label: string, value: Node | string): HTMLElement {
-  const valueNode = typeof value === 'string' ? el('span', { text: value }) : value;
-  return el('div', {
-    class: 'field-row',
-    children: [el('span', { class: 'field-label', text: label }), valueNode],
-  });
-}
-
-function button(label: string, className = 'button secondary'): HTMLButtonElement {
-  const btn = el('button', { class: className, text: label, attrs: { type: 'button' } });
-  return btn;
-}
-
-function projectName(projectId: string): string {
-  return data.projects.find((p) => p.id === projectId)?.name ?? projectId;
-}
-
-function selectedProject(): ProjectDto | null {
-  const active = data.activeDetail?.run.projectId ?? data.runs[0]?.projectId ?? data.projects[0]?.id;
-  return data.projects.find((p) => p.id === active) ?? data.projects[0] ?? null;
-}
-
-function activeProjects(): ProjectDto[] {
-  return data.projects.filter((p) => (p.status ?? 'active') === 'active');
-}
-
-function sourceBranchesForProject(project: ProjectDto | null | undefined): string[] {
-  if (!project) return ['main'];
-  return normalizeBranchList(project.defaultBranch, project.sourceBranches);
-}
-
-function normalizeBranchList(defaultBranch: string | null | undefined, branches: string[] | null | undefined): string[] {
-  const normalized = [defaultBranch ?? 'main', ...(branches ?? [])]
-    .map((branch) => branch.trim())
-    .filter(Boolean);
-  const unique = [...new Set(normalized)];
-  return unique.length ? unique : ['main'];
-}
-
-function latestRunner(): RunnerDto | null {
-  return [...data.runners].sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt))[0] ?? null;
-}
-
-function activeTaskRequest(): WorkflowRequestDto | null {
-  if (!activeTaskRequestId) return null;
-  return data.requests.find((request) => request.id === activeTaskRequestId) ?? null;
-}
-
-function agentBackendDisplayName(kind: AgentBackendKind | null | undefined): string {
-  if (kind === 'claude_code') return 'Claude Code';
-  if (kind === 'codex') return 'Codex';
-  return 'Legacy test backend';
-}
-
-function selectedProjectBackend(): ProjectAgentBackendKind | null {
-  return selectedProject()?.agentBackend ?? null;
-}
-
-function activeRunAgentBackend(): AgentBackendKind | null {
-  const tasks = data.activeDetail?.agentTasks ?? [];
-  const backend = tasks.at(-1)?.backend;
-  if (backend === 'claude_code' || backend === 'codex' || backend === 'native') return backend;
-  return null;
-}
-
-function agentBackendLabel(): string {
-  const runBackend = activeRunAgentBackend();
-  if (runBackend) return agentBackendDisplayName(runBackend);
-  const projectBackend = selectedProjectBackend();
-  return projectBackend ? agentBackendDisplayName(projectBackend) : '未配置';
-}
-
-function agentBackendStatusForProject(project: ProjectDto | null): { label: string; kind: StatusKind } {
-  if (!project?.agentBackend) return { label: '待配置', kind: 'warn' };
-  const check = preflightForProjectBackend(project);
-  if (!check) return { label: '未检测', kind: 'muted' };
-  if (check.runnable) return { label: '已连接', kind: 'good' };
-  if (check.status === 'needs_login') return { label: '需要登录', kind: 'warn' };
-  if (check.status === 'missing_cli') return { label: '缺少 CLI', kind: 'bad' };
-  return { label: '检测失败', kind: 'bad' };
-}
-
-function projectAvailability(project: ProjectDto): { label: string; kind: StatusKind } {
-  if ((project.status ?? 'active') === 'archived') return { label: '已归档', kind: 'warn' };
-  if (!project.agentBackend) return { label: '待配置', kind: 'warn' };
-  const backend = agentBackendStatusForProject(project);
-  if (backend.kind === 'bad') return { label: '检测失败', kind: 'bad' };
-  if (backend.label === '需要登录') return { label: '待配置', kind: 'warn' };
-  return { label: '可用', kind: 'good' };
-}
-
-function agentBackendContextLabel(project: ProjectDto | null): { value: string; kind: StatusKind } {
-  const backend = agentBackendLabel();
-  const status = agentBackendStatusForProject(project);
-  return {
-    value: backend === '未配置' ? '待配置' : `${backend} · ${status.label}`,
-    kind: status.kind,
-  };
-}
-
-function agentBackendLabelForProject(project: ProjectDto | null): string {
-  if (!project) return '未选择项目';
-  return project.agentBackend ? agentBackendDisplayName(project.agentBackend) : '未配置';
-}
-
-function preflightForProjectBackend(project: ProjectDto | null): AgentBackendPreflightDto | null {
-  if (!project?.agentBackend) return null;
-  const check = agentBackendPreflight.get(project.id);
-  return check?.backend === project.agentBackend ? check : null;
-}
-
-function buildEnvLabel(): string {
-  const runner = latestRunner();
-  if (!runner) return '等待 runner heartbeat';
-  const jdk = runner.jdkVersion ? `JDK ${runner.jdkVersion}` : 'JDK ?';
-  const mvn = runner.mavenVersion ? `Maven ${runner.mavenVersion.split('\n')[0]}` : 'Maven ?';
-  return `${jdk} · ${mvn}`;
-}
-
-function setHash(page: Page, id?: string): void {
-  if (page === 'task' && id) window.location.hash = `task/${encodeURIComponent(id)}`;
-  else if (id) window.location.hash = `run/${encodeURIComponent(id)}`;
-  else window.location.hash = page;
-}
-
-function parseHash(): void {
-  const raw = window.location.hash.replace(/^#/, '');
-  if (raw.startsWith('run/')) {
-    activePage = 'workbench';
-    activeRunId = decodeURIComponent(raw.slice('run/'.length));
-    activeTaskRequestId = null;
-    return;
-  }
-  if (raw.startsWith('task/')) {
-    activePage = 'task';
-    activeTaskRequestId = decodeURIComponent(raw.slice('task/'.length));
-    activeRunId = null;
-    data.activeDetail = null;
-    return;
-  }
-  activeTaskRequestId = null;
-  if (['workbench', 'projects', 'new-task', 'reports', 'knowledge', 'settings'].includes(raw)) {
-    activePage = raw as Page;
-  }
-}
-
-async function loadData(opts: { render?: boolean; keepDetail?: boolean } = {}): Promise<void> {
-  try {
-    const [health, projects, runners, requests, runs, runnerControl] = await Promise.all([
-      api<HealthDto>('/health').catch(() => null),
-      api<{ items: ProjectDto[] }>('/projects')
-        .then((r) => ({ items: r.items, error: null as string | null }))
-        .catch((err) => ({
-          items: [] as ProjectDto[],
-          error: errorMessage(err),
-        })),
-      api<{ items: RunnerDto[] }>('/runners').then((r) => r.items).catch(() => []),
-      api<{ items: WorkflowRequestDto[] }>('/workflow-requests').then((r) => r.items).catch(() => []),
-      api<{ items: WorkflowRunDto[] }>('/workflow-runs').then((r) => r.items).catch(() => []),
-      api<RunnerControlStatusDto>('/runner/control/status').catch(() => null),
-    ]);
-    data.health = health;
-    data.projects = projects.items;
-    projectsLoadError = projects.error;
-    data.runners = runners;
-    data.requests = requests;
-    data.runs = [...runs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    data.runnerControl = runnerControl;
-
-    const taskRequest = activeTaskRequest();
-    if (taskRequest?.workflowRunId) activeRunId = taskRequest.workflowRunId;
-    if (!activeRunId && activePage !== 'task' && data.runs.length > 0) activeRunId = data.runs[0]!.id;
-    if (activeRunId && (!opts.keepDetail || data.activeDetail?.run.id !== activeRunId)) {
-      await loadRunDetail(activeRunId, false);
-    } else if (!activeRunId && activePage === 'task') {
-      data.activeDetail = null;
-    }
-    lastError = null;
-  } catch (err) {
-    lastError = errorMessage(err);
-  }
-  syncActiveStreamSubscription();
-  if (opts.render !== false) render();
-}
-
-async function loadRunDetail(runId: string, shouldRender = true): Promise<void> {
-  if (loadingDetailFor === runId) return;
-  loadingDetailFor = runId;
-  try {
-    data.activeDetail = await api<RunDetail>(`/workflow-runs/${encodeURIComponent(runId)}`);
-    activeRunId = runId;
-    primeArtifactPreviews(data.activeDetail.artifacts);
-    void ensureContextGovernance(runId);
-    attachRunStream(runId);
-  } catch (err) {
-    lastError = errorMessage(err);
-  } finally {
-    loadingDetailFor = null;
-  }
-  if (shouldRender) render();
-}
-
-async function ensureContextGovernance(runId: string): Promise<void> {
-  if (contextGovernanceByRun.has(runId) || contextGovernanceInFlight.has(runId)) return;
-  contextGovernanceInFlight.add(runId);
-  contextGovernanceByRun.set(runId, null);
-  try {
-    contextGovernanceByRun.set(
-      runId,
-      await api<ContextGovernanceDto>(`/workflow-runs/${encodeURIComponent(runId)}/context`),
-    );
-  } catch {
-    contextGovernanceByRun.set(runId, null);
-  } finally {
-    contextGovernanceInFlight.delete(runId);
-  }
-  if (data.activeDetail?.run.id === runId) render();
-}
-
-function primeArtifactPreviews(artifacts: ArtifactDto[]): void {
-  const previewKinds = new Set([
-    'requirement_draft',
-    'design_doc',
-    'traceability',
-    'diff',
-    'context_pack',
-    'project_profile',
-    'other',
-    'completion_report',
-    'knowledge_candidate',
-    'surefire_report',
-    'failsafe_report',
-  ]);
-  for (const artifact of artifacts) {
-    if (previewKinds.has(artifact.kind)) void ensureArtifactContent(artifact.id);
-  }
-}
-
-async function ensureCommandLogs(commandRunId: string): Promise<void> {
-  if (commandLogs.has(commandRunId)) return;
-  commandLogs.set(commandRunId, null);
-  try {
-    commandLogs.set(
-      commandRunId,
-      await api<CommandLogsDto>(`/command-runs/${encodeURIComponent(commandRunId)}/logs`),
-    );
-  } catch {
-    commandLogs.set(commandRunId, null);
-  }
-  render();
-}
-
-async function ensureArtifactContent(artifactId: string): Promise<void> {
-  if (artifactContent.has(artifactId)) return;
-  artifactContent.set(artifactId, null);
-  try {
-    artifactContent.set(
-      artifactId,
-      await api<ArtifactContentDto>(`/artifacts/${encodeURIComponent(artifactId)}/content`),
-    );
-  } catch {
-    artifactContent.set(artifactId, null);
-  }
-  if (data.activeDetail?.artifacts.some((a) => a.id === artifactId)) render();
-}
-
 function currentKnowledgeArtifacts(): KnowledgeArtifactDto[] {
   const project = selectedProject();
   if (!project || knowledgeArtifactsState.projectId !== project.id) return [];
@@ -934,167 +311,6 @@ function ensureKnowledgeArtifacts(project: ProjectDto | null): void {
   const staleProject = knowledgeArtifactsState.projectId !== project.id;
   const shouldLoad = staleProject || (!knowledgeArtifactsState.loadedOnce && !knowledgeArtifactsState.loading);
   if (shouldLoad) void loadKnowledgeArtifacts(project.id);
-}
-
-async function loadKnowledgeArtifacts(projectId: string, shouldRender = true): Promise<void> {
-  if (knowledgeArtifactsState.loading && knowledgeArtifactsState.projectId === projectId) return;
-  const staleProject = knowledgeArtifactsState.projectId !== projectId;
-  knowledgeArtifactsState.projectId = projectId;
-  knowledgeArtifactsState.loading = true;
-  knowledgeArtifactsState.error = null;
-  if (staleProject) {
-    knowledgeArtifactsState.loadedOnce = false;
-    knowledgeArtifactsState.artifacts = [];
-  }
-  try {
-    const body = await api<{ ok: boolean; artifacts: KnowledgeArtifactDto[] }>(
-      `/knowledge-artifacts/projects/${encodeURIComponent(projectId)}`,
-    );
-    knowledgeArtifactsState.artifacts = [...(body.artifacts ?? [])].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    knowledgeArtifactsState.loadedOnce = true;
-  } catch (err) {
-    knowledgeArtifactsState.error = errorMessage(err);
-    knowledgeArtifactsState.artifacts = [];
-  } finally {
-    knowledgeArtifactsState.loading = false;
-  }
-  if (shouldRender && activePage === 'knowledge') render();
-}
-
-function render(): void {
-  const root = document.getElementById('app');
-  if (!root) return;
-  // IME composition on the Coordinator reply textarea must not be interrupted
-  // by a root rebuild. Defer the render; `compositionend` flushes the
-  // pending render on the next microtask.
-  if (coordinatorReplyComposing) {
-    coordinatorReplyRenderDeferred = true;
-    return;
-  }
-  if (knowledgeEditComposing) {
-    knowledgeEditRenderDeferred = true;
-    return;
-  }
-  captureDetailsOpenState(root);
-  captureViewportScrollPosition();
-  captureScrollPositionState(root);
-  captureCoordinatorReplyComposerState(root);
-  captureNewTaskFormState(root);
-  isReplacingAppRootForRender = true;
-  try {
-    clear(root);
-    root.appendChild(renderShell());
-    restoreDetailsOpenState(root);
-    restoreScrollPositionState(root);
-    restoreViewportScrollPosition();
-    restoreCoordinatorReplyComposerFocus(root);
-    restoreNewTaskFormFocus(root);
-  } finally {
-    isReplacingAppRootForRender = false;
-  }
-}
-
-function captureDetailsOpenState(root: HTMLElement): void {
-  root.querySelectorAll('details').forEach((details) => {
-    detailsOpenState.set(detailsStateKey(details), details.open);
-  });
-}
-
-function captureViewportScrollPosition(): void {
-  viewportScrollPosition = { top: window.scrollY, left: window.scrollX };
-}
-
-function restoreViewportScrollPosition(): void {
-  window.scrollTo(viewportScrollPosition.left, viewportScrollPosition.top);
-  const restored = { top: window.scrollY, left: window.scrollX };
-  requestAnimationFrame(() => {
-    if (window.scrollY === restored.top && window.scrollX === restored.left) {
-      window.scrollTo(viewportScrollPosition.left, viewportScrollPosition.top);
-    }
-  });
-}
-
-function captureScrollPositionState(root: HTMLElement): void {
-  root.querySelectorAll<HTMLElement>(SCROLLABLE_STATE_SELECTOR).forEach((node) => {
-    scrollPositionState.set(scrollStateKey(node), { top: node.scrollTop, left: node.scrollLeft });
-  });
-}
-
-function restoreScrollPositionState(root: HTMLElement): void {
-  root.querySelectorAll<HTMLElement>(SCROLLABLE_STATE_SELECTOR).forEach((node) => {
-    const key = scrollStateKey(node);
-    const saved = scrollPositionState.get(key);
-    if (saved) restoreScrollableNode(node, saved);
-    node.onscroll = () => {
-      scrollPositionState.set(key, { top: node.scrollTop, left: node.scrollLeft });
-    };
-  });
-}
-
-function restoreScrollableNode(node: HTMLElement, saved: { top: number; left: number }): void {
-  node.scrollTop = saved.top;
-  node.scrollLeft = saved.left;
-  const restored = { top: node.scrollTop, left: node.scrollLeft };
-  requestAnimationFrame(() => {
-    if (node.scrollTop === restored.top && node.scrollLeft === restored.left) {
-      node.scrollTop = saved.top;
-      node.scrollLeft = saved.left;
-    }
-  });
-}
-
-function scrollStateKey(node: HTMLElement): string {
-  return [window.location.hash || activePage, node.dataset.scrollKey ?? fallbackScrollStateKey(node)]
-    .filter(Boolean)
-    .join(' > ');
-}
-
-function fallbackScrollStateKey(node: HTMLElement): string {
-  const context: string[] = [];
-  let current: HTMLElement | null = node.parentElement;
-  while (current) {
-    if (current instanceof HTMLDetailsElement) context.push(detailsSummaryKey(current));
-    current = current.parentElement;
-  }
-  const text = node.textContent ?? '';
-  return ['preview', ...context.reverse(), shortTextHash(text)].join(':');
-}
-
-function shortTextHash(text: string): string {
-  let hash = 0;
-  for (let i = 0; i < text.length; i += 1) {
-    hash = Math.imul(31, hash) + text.charCodeAt(i) | 0;
-  }
-  return Math.abs(hash).toString(36);
-}
-
-function restoreDetailsOpenState(root: HTMLElement): void {
-  root.querySelectorAll('details').forEach((details) => {
-    const key = detailsStateKey(details);
-    if (detailsOpenState.has(key)) details.open = detailsOpenState.get(key) ?? false;
-    details.ontoggle = () => {
-      detailsOpenState.set(key, details.open);
-    };
-  });
-}
-
-function detailsStateKey(details: HTMLDetailsElement): string {
-  const explicitKey = details.dataset.detailsKey;
-  if (explicitKey) return [window.location.hash || activePage, explicitKey].join(' > ');
-
-  const path: string[] = [];
-  let current: HTMLElement | null = details;
-  while (current) {
-    if (current instanceof HTMLDetailsElement) path.push(detailsSummaryKey(current));
-    current = current.parentElement;
-  }
-  return [window.location.hash || activePage, ...path.reverse()].join(' > ');
-}
-
-function detailsSummaryKey(details: HTMLDetailsElement): string {
-  const summary = details.querySelector(':scope > summary');
-  const primary = summary?.querySelector('strong')?.textContent ?? summary?.textContent ?? details.className;
-  return primary.replace(/\s*\(\d+\)/g, '').replace(/\s+/g, ' ').trim();
 }
 
 function renderShell(): HTMLElement {
@@ -1121,7 +337,7 @@ function renderSidebar(): HTMLElement {
   const nav = el('nav', { class: 'nav-list' });
   for (const item of navItems) {
     const a = el('button', {
-      class: `nav-item ${activePage === item.page ? 'active' : ''}`,
+      class: `nav-item ${ui.activePage === item.page ? 'active' : ''}`,
       attrs: { type: 'button' },
       children: [
         icon(item.path),
@@ -1180,7 +396,7 @@ function renderQueueSummary(): HTMLElement {
 }
 
 function renderTopbar(): HTMLElement {
-  const project = activePage === 'new-task'
+  const project = ui.activePage === 'new-task'
     ? activeProjects().find((p) => p.id === newTaskFormDraft.projectId) ?? activeProjects()[0] ?? null
     : selectedProject();
   const run = data.activeDetail?.run ?? data.runs[0] ?? null;
@@ -1192,17 +408,17 @@ function renderTopbar(): HTMLElement {
   const reportStatus = reportStatusSummary();
   const knowledgeStatus = knowledgeStatusSummary();
   const settingsRuntime = settingsRuntimeSummary(project, runner);
-  const contextItems = activePage === 'new-task'
+  const contextItems = ui.activePage === 'new-task'
     ? [contextItem('创建准备', newTaskReadiness.value, newTaskReadiness.kind)]
-    : activePage === 'workbench'
+    : ui.activePage === 'workbench'
       ? [contextItem('执行环境', workbenchEnvironment.value, workbenchEnvironment.kind)]
-    : activePage === 'projects'
+    : ui.activePage === 'projects'
       ? [contextItem('接入状态', projectOnboarding.value, projectOnboarding.kind)]
-    : activePage === 'reports'
+    : ui.activePage === 'reports'
       ? [contextItem('交付状态', reportStatus.value, reportStatus.kind)]
-    : activePage === 'knowledge'
+    : ui.activePage === 'knowledge'
       ? [contextItem('知识状态', knowledgeStatus.value, knowledgeStatus.kind)]
-    : activePage === 'settings'
+    : ui.activePage === 'settings'
       ? [contextItem('运行状态', settingsRuntime.value, settingsRuntime.kind)]
     : [
         contextItem('Project', project?.name ?? '未接入', 'info'),
@@ -1230,7 +446,7 @@ function renderTopbar(): HTMLElement {
 }
 
 function newTaskReadinessSummary(project: ProjectDto | null, runner: RunnerDto | null): { value: string; kind: StatusKind } {
-  if (projectsLoadError) return { value: '项目加载失败', kind: 'bad' };
+  if (ui.projectsLoadError) return { value: '项目加载失败', kind: 'bad' };
   if (!project) return { value: '需要连接项目', kind: 'warn' };
   if (!project.agentBackend) return { value: '需要配置执行方式', kind: 'warn' };
   const preflight = preflightForProjectBackend(project);
@@ -1250,7 +466,7 @@ function workbenchEnvironmentSummary(project: ProjectDto | null, runner: RunnerD
 }
 
 function projectOnboardingSummary(): { value: string; kind: StatusKind } {
-  if (projectsLoadError) return { value: '项目加载失败', kind: 'bad' };
+  if (ui.projectsLoadError) return { value: '项目加载失败', kind: 'bad' };
   if (!data.projects.length) return { value: '还没有项目', kind: 'warn' };
 
   const active = activeProjects();
@@ -1299,7 +515,7 @@ function settingsRuntimeSummary(project: ProjectDto | null, runner: RunnerDto | 
 }
 
 function titleForPage(): string {
-  switch (activePage) {
+  switch (ui.activePage) {
     case 'task':
       return activeTaskRequest()?.title ?? data.activeDetail?.run.title ?? '任务工作流';
     case 'projects':
@@ -1325,14 +541,14 @@ function contextItem(label: string, value: string, kind: StatusKind): HTMLElemen
 }
 
 function renderPage(): HTMLElement {
-  if (lastError && activePage !== 'new-task') {
-    return el('section', { class: 'page-stack', children: [renderError(lastError), renderCurrentPage()] });
+  if (ui.lastError && ui.activePage !== 'new-task') {
+    return el('section', { class: 'page-stack', children: [renderError(ui.lastError), renderCurrentPage()] });
   }
   return renderCurrentPage();
 }
 
 function renderCurrentPage(): HTMLElement {
-  switch (activePage) {
+  switch (ui.activePage) {
     case 'task':
       return renderTaskDetailPage();
     case 'projects':
@@ -1658,7 +874,7 @@ function renderTaskListItem(request: WorkflowRequestDto): HTMLElement {
 function renderRunListItem(run: WorkflowRunDto): HTMLElement {
   const request = data.requests.find((candidate) => candidate.workflowRunId === run.id);
   const item = el('button', {
-    class: `run-item ${run.id === activeRunId ? 'active' : ''}`,
+    class: `run-item ${run.id === ui.activeRunId ? 'active' : ''}`,
     attrs: { type: 'button' },
     children: [
       el('strong', { text: run.title }),
@@ -2107,8 +1323,8 @@ function renderTaskNextActionPanel(
   if (!detail || !projection) {
     const project = data.projects.find((p) => p.id === request.projectId) ?? null;
     if (!project?.agentBackend) return renderAgentBackendSetupPrompt(project, '选择 Claude Code 或 Codex 后，Runner 才会认领真实执行任务。');
-    const start = button(runnerStartInFlight ? '正在启动…' : '启动本地 Runner', 'button primary');
-    start.disabled = runnerStartInFlight || Boolean(data.runnerControl?.running);
+    const start = button(ui.runnerStartInFlight ? '正在启动…' : '启动本地 Runner', 'button primary');
+    start.disabled = ui.runnerStartInFlight || Boolean(data.runnerControl?.running);
     start.onclick = () => void ensureRunnerStarted();
     return el('section', {
       class: 'panel side-panel checkpoint',
@@ -2140,8 +1356,8 @@ function renderTaskNextActionPanel(
 function renderRunnerControlPanel(): HTMLElement {
   const control = data.runnerControl;
   const latest = control?.latestHeartbeat ?? latestRunner();
-  const start = button(runnerStartInFlight ? '正在启动…' : control?.running ? 'Runner 已自动运行' : '启动 Runner', control?.running ? 'button secondary small' : 'button primary small');
-  start.disabled = runnerStartInFlight || Boolean(control?.running);
+  const start = button(ui.runnerStartInFlight ? '正在启动…' : control?.running ? 'Runner 已自动运行' : '启动 Runner', control?.running ? 'button secondary small' : 'button primary small');
+  start.disabled = ui.runnerStartInFlight || Boolean(control?.running);
   start.onclick = () => void ensureRunnerStarted();
   return el('section', {
     class: 'panel side-panel runner-control-panel',
@@ -2660,7 +1876,7 @@ function renderStageRetryActions(workflowRunId: string, stage: string, gateId: s
       await loadRunDetail(workflowRunId, false);
       await loadData({ render: false, keepDetail: true });
     } catch (err) {
-      lastError = errorMessage(err);
+      ui.lastError = errorMessage(err);
     } finally {
       retryInFlight.delete(retryKey);
       render();
@@ -2681,7 +1897,7 @@ function renderStageRetryActions(workflowRunId: string, stage: string, gateId: s
       await loadRunDetail(workflowRunId, false);
       await loadData({ render: false, keepDetail: true });
     } catch (err) {
-      lastError = errorMessage(err);
+      ui.lastError = errorMessage(err);
     } finally {
       retryInFlight.delete(reEvalKey);
       render();
@@ -3890,10 +3106,10 @@ async function checkAgentBackend(
     });
     agentBackendPreflight.set(key, result);
     if (projectId) agentBackendPreflight.set(formAgentBackendKey(backend)!, result);
-    lastError = result.runnable ? null : `${result.label}: ${result.remediationHint}${result.error ? ` (${result.error})` : ''}`;
+    ui.lastError = result.runnable ? null : `${result.label}: ${result.remediationHint}${result.error ? ` (${result.error})` : ''}`;
     return result;
   } catch (err) {
-    lastError = errorMessage(err);
+    ui.lastError = errorMessage(err);
     return null;
   } finally {
     agentBackendPreflightInFlight.delete(key);
@@ -4008,14 +3224,14 @@ async function deleteOrArchiveProject(project: ProjectDto): Promise<void> {
   try {
     const preview = await api<ProjectDeletePreviewDto>(`/projects/${encodeURIComponent(project.id)}/delete-preview`);
     if (preview.recommendation === 'blocked_active_work') {
-      lastError = `项目 ${project.name} 还有运行中任务/请求（requests=${preview.activeRequests}, runs=${preview.activeRuns}），不能删除或归档。`;
+      ui.lastError = `项目 ${project.name} 还有运行中任务/请求（requests=${preview.activeRequests}, runs=${preview.activeRuns}），不能删除或归档。`;
       return;
     }
     if (preview.canHardDelete) {
       if (!window.confirm(`项目 ${project.name} 没有任何任务历史。确认永久删除项目配置和凭据？`)) return;
       await api<{ ok: boolean }>(`/projects/${encodeURIComponent(project.id)}`, { method: 'DELETE' });
       if (projectSourceForm.editingProjectId === project.id) resetProjectSourceForm();
-      lastError = null;
+      ui.lastError = null;
       await loadData({ render: false });
       return;
     }
@@ -4023,13 +3239,13 @@ async function deleteOrArchiveProject(project: ProjectDto): Promise<void> {
       if (!window.confirm(`项目 ${project.name} 已有历史任务，将归档而不是物理删除。归档后不能再创建新需求/bug，历史仍保留。确认归档？`)) return;
       await api<ProjectDto>(`/projects/${encodeURIComponent(project.id)}/archive`, { method: 'POST' });
       if (projectSourceForm.editingProjectId === project.id) resetProjectSourceForm();
-      lastError = null;
+      ui.lastError = null;
       await loadData({ render: false });
       return;
     }
-    lastError = `项目 ${project.name} 当前不能删除：${preview.recommendation}`;
+    ui.lastError = `项目 ${project.name} 当前不能删除：${preview.recommendation}`;
   } catch (err) {
-    lastError = errorMessage(err);
+    ui.lastError = errorMessage(err);
   } finally {
     projectActionInFlight.delete(project.id);
     render();
@@ -4043,7 +3259,7 @@ async function refreshProjectBranches(projectId: string, onUpdated?: () => void)
   try {
     const result = await api<ProjectBranchListResult>(`/projects/${encodeURIComponent(projectId)}/branches`);
     if (!result.ok) {
-      lastError = `刷新项目分支失败：${result.error}`;
+      ui.lastError = `刷新项目分支失败：${result.error}`;
       return;
     }
     const project = data.projects.find((p) => p.id === projectId);
@@ -4051,9 +3267,9 @@ async function refreshProjectBranches(projectId: string, onUpdated?: () => void)
       project.defaultBranch = result.defaultBranch || project.defaultBranch;
       project.sourceBranches = normalizeBranchList(project.defaultBranch, result.branches);
     }
-    lastError = null;
+    ui.lastError = null;
   } catch (err) {
-    lastError = errorMessage(err);
+    ui.lastError = errorMessage(err);
   } finally {
     projectBranchRefreshInFlight.delete(projectId);
     onUpdated?.();
@@ -4061,20 +3277,20 @@ async function refreshProjectBranches(projectId: string, onUpdated?: () => void)
 }
 
 async function ensureRunnerStarted(): Promise<void> {
-  if (runnerStartInFlight) return;
-  runnerStartInFlight = true;
+  if (ui.runnerStartInFlight) return;
+  ui.runnerStartInFlight = true;
   render();
   try {
     data.runnerControl = await api<RunnerControlStatusDto>('/runner/control/start', { method: 'POST' });
-    lastError = null;
+    ui.lastError = null;
     await loadData({ render: false, keepDetail: true });
   } catch (err) {
-    lastError =
+    ui.lastError =
       err instanceof Error
         ? `${err.message}。可以临时在命令行执行 bun run runner -- watch 作为兜底。`
         : String(err);
   } finally {
-    runnerStartInFlight = false;
+    ui.runnerStartInFlight = false;
     render();
   }
 }
@@ -4084,7 +3300,7 @@ function maybeAutoStartRunnerForActiveTask(): void {
   if (!request || !['pending', 'claimed'].includes(request.status)) return;
   const project = data.projects.find((p) => p.id === request.projectId);
   if (!project?.agentBackend) return;
-  if (data.runnerControl?.running || runnerStartInFlight) return;
+  if (data.runnerControl?.running || ui.runnerStartInFlight) return;
   if (runnerAutoStartAttemptedForRequest.has(request.id)) return;
   runnerAutoStartAttemptedForRequest.add(request.id);
   void ensureRunnerStarted();
@@ -4113,7 +3329,7 @@ function editProject(project: ProjectDto): void {
   };
   projectSourceForm.detecting = false;
   localDirectoryPicker.open = false;
-  lastError = null;
+  ui.lastError = null;
   render();
 }
 
@@ -4123,23 +3339,6 @@ function authSummary(project: ProjectDto): string {
   if (authKind === 'ssh') return 'SSH Key';
   if (authKind === 'token') return project.hasSourceCredential ? 'Token 已保存' : 'Token 未保存';
   return project.hasSourceCredential ? `用户名密码（${project.sourceUsername ?? 'user'}）` : '用户名密码未保存';
-}
-
-function labeledInput(label: string, name: string, placeholder: string): HTMLElement {
-  return controlledInput(label, name, placeholder, '', () => undefined);
-}
-
-function controlledInput(
-  label: string,
-  name: string,
-  placeholder: string,
-  value: string,
-  onInput: (value: string) => void,
-  type = 'text',
-): HTMLElement {
-  const input = el('input', { attrs: { name, placeholder, value, type } });
-  input.oninput = () => onInput(input.value);
-  return el('label', { class: 'input-block', children: [el('span', { text: label }), input] });
 }
 
 function projectSourcePayload(): Record<string, unknown> {
@@ -4177,7 +3376,7 @@ async function detectProjectSource(): Promise<void> {
     if (result.ok) {
       projectSourceForm.name = projectSourceForm.name.trim() || result.projectName;
       projectSourceForm.defaultBranch = result.defaultBranch || projectSourceForm.defaultBranch || 'main';
-      lastError = null;
+      ui.lastError = null;
     }
   } catch (err) {
     projectSourceForm.detectResult = { ok: false, error: errorMessage(err) };
@@ -4190,12 +3389,12 @@ async function detectProjectSource(): Promise<void> {
 async function submitProject(event: SubmitEvent): Promise<void> {
   event.preventDefault();
   if (!projectSourceForm.detectResult?.ok) {
-    lastError = '请先检测项目连接，确认无误后再接入。';
+    ui.lastError = '请先检测项目连接，确认无误后再接入。';
     render();
     return;
   }
   if (!projectSourceForm.agentBackend) {
-    lastError = '请选择 Claude Code 或 Codex 作为项目的 AI 执行方式。';
+    ui.lastError = '请选择 Claude Code 或 Codex 作为项目的 AI 执行方式。';
     render();
     return;
   }
@@ -4212,7 +3411,7 @@ async function submitProject(event: SubmitEvent): Promise<void> {
     resetProjectSourceForm();
     await loadData({ render: true });
   } catch (err) {
-    lastError = errorMessage(err);
+    ui.lastError = errorMessage(err);
     render();
   }
 }
@@ -4333,7 +3532,7 @@ function buildNewTaskFirstMessage(title: string, details: string): string {
 
 function renderNewTaskPage(): HTMLElement {
   const projects = activeProjects();
-  if (!projects.length && !projectsLoadError) return renderNewTaskNoProjectPage();
+  if (!projects.length && !ui.projectsLoadError) return renderNewTaskNoProjectPage();
 
   const form = el('form', { class: 'form-card wide new-task-form' });
   const projectSelect = el('select', { attrs: { name: 'projectId' } });
@@ -4610,21 +3809,21 @@ function renderNewTaskPage(): HTMLElement {
   });
   title.addEventListener('blur', () => {
     newTaskFormDraft.title = title.value;
-    if (!isReplacingAppRootForRender) newTaskTitleFocus = null;
+    if (!ui.isReplacingAppRootForRender) newTaskTitleFocus = null;
   });
   details.addEventListener('input', () => {
     newTaskFormDraft.details = details.value;
   });
   details.addEventListener('blur', () => {
     newTaskFormDraft.details = details.value;
-    if (!isReplacingAppRootForRender) newTaskTitleFocus = null;
+    if (!ui.isReplacingAppRootForRender) newTaskTitleFocus = null;
   });
   const updateSubmitState = () => {
     const project = projects.find((p) => p.id === projectSelect.value) ?? projects[0] ?? null;
     const preflight = preflightForProjectBackend(project);
     const runner = latestRunner();
     let blocker: string | null = null;
-    if (projectsLoadError) blocker = '项目列表加载失败，重试成功后才能创建任务。';
+    if (ui.projectsLoadError) blocker = '项目列表加载失败，重试成功后才能创建任务。';
     else if (!project) blocker = '请先连接项目。';
     else if (!title.value.trim()) blocker = '请填写任务目标。';
     else if (!project.agentBackend) blocker = '请先为这个项目配置执行方式。';
@@ -4635,7 +3834,7 @@ function renderNewTaskPage(): HTMLElement {
       ?? (runner ? '准备就绪，创建后会进入任务工作流。' : '本地执行器当前未连接，创建后会尝试自动启动；需要时可到运行配置检查。');
     submitHint.className = `compact ${blocker ? 'warn' : runner ? 'good' : 'muted'}`;
     readiness.replaceChildren(
-      pill(project ? '项目已选择' : projectsLoadError ? '项目加载失败' : '等待项目', project ? 'good' : projectsLoadError ? 'bad' : 'warn'),
+      pill(project ? '项目已选择' : ui.projectsLoadError ? '项目加载失败' : '等待项目', project ? 'good' : ui.projectsLoadError ? 'bad' : 'warn'),
       pill(project?.agentBackend ? '执行方式已配置' : '执行方式待配置', project?.agentBackend ? 'good' : 'warn'),
       pill(runner ? '执行器在线' : '执行器待启动', runner ? statusKind(runner.status) : 'warn'),
     );
@@ -4764,21 +3963,21 @@ function renderNewTaskPage(): HTMLElement {
 
   const retryProjects = button('重试', 'button secondary small');
   retryProjects.onclick = () => void loadData({ keepDetail: true });
-  const projectIssue = projectsLoadError
+  const projectIssue = ui.projectsLoadError
     ? renderNewTaskInlineNotice(
         'bad',
         '项目列表加载失败',
-        summarizeProjectLoadError(projectsLoadError),
+        summarizeProjectLoadError(ui.projectsLoadError),
         [retryProjects, actionLink('检查项目接入', 'projects')],
         {
           summary: '查看技术细节',
-          body: projectsLoadError,
+          body: ui.projectsLoadError,
           detailsKey: 'new-task-project-load-error-details',
         },
       )
     : null;
-  const submitIssue = lastError && !projectsLoadError
-    ? renderNewTaskInlineNotice('warn', '暂时无法创建任务', lastError)
+  const submitIssue = ui.lastError && !ui.projectsLoadError
+    ? renderNewTaskInlineNotice('warn', '暂时无法创建任务', ui.lastError)
     : null;
   form.append(
     panelHeader('创建任务', '只需要说明目标；工程设置默认自动处理。'),
@@ -4847,10 +4046,10 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
     form.reset();
     clearNewTaskFormDraft();
     await loadData({ render: false });
-    activeTaskRequestId = request.id;
-    activeRunId = request.workflowRunId;
-    lastError = null;
-    activePage = 'task';
+    ui.activeTaskRequestId = request.id;
+    ui.activeRunId = request.workflowRunId;
+    ui.lastError = null;
+    ui.activePage = 'task';
     window.location.hash = `task/${encodeURIComponent(request.id)}`;
     runnerAutoStartAttemptedForRequest.add(request.id);
     void ensureRunnerStarted();
@@ -4858,14 +4057,14 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
     render();
     console.log('[web] workflow request created', request.id);
   } catch (err) {
-    lastError = errorMessage(err);
+    ui.lastError = errorMessage(err);
     render();
   }
 }
 
 async function ensureProjectAgentBackendReady(project: ProjectDto): Promise<boolean> {
   if (!project.agentBackend) {
-    lastError = '这个项目还没有配置执行方式。请先到“项目接入”编辑项目，选择 Claude Code 或 Codex。';
+    ui.lastError = '这个项目还没有配置执行方式。请先到“项目接入”编辑项目，选择 Claude Code 或 Codex。';
     render();
     return false;
   }
@@ -4874,7 +4073,7 @@ async function ensureProjectAgentBackendReady(project: ProjectDto): Promise<bool
   const checked = await checkAgentBackend(project.agentBackend, project.id);
   if (checked?.runnable) return true;
   if (!checked) {
-    lastError = '执行方式连接检测未完成，任务不会入队。';
+    ui.lastError = '执行方式连接检测未完成，任务不会入队。';
   }
   render();
   return false;
@@ -4950,19 +4149,10 @@ let newTaskTitleFocus: {
   selectionEnd: number;
   selectionDirection: 'forward' | 'backward' | 'none';
 } | null = null;
-let isReplacingAppRootForRender = false;
 
-// 2026-05-10 fix(web): defer render() while the Coordinator reply textarea is
-// mid-IME composition. The page rebuilds its root on every 1.5s Coordinator
-// poll + 3s page poll; if a rebuild happens while the browser is composing
-// (pinyin/kana/etc.), the textarea node is destroyed and the uncommitted
-// composition is lost along with the caret. `coordinatorReplyComposing`
-// tracks the active composition by requestId; `coordinatorReplyRenderDeferred`
-// records that at least one render was skipped so we can catch up on
-// `compositionend`. Spec: .trellis/spec/web/frontend/state-management.md
-// "Preserve user-owned drafts across polling renders".
-let coordinatorReplyComposing: { requestId: string } | null = null;
-let coordinatorReplyRenderDeferred = false;
+// `ui.coordinatorReplyComposing` / `ui.coordinatorReplyRenderDeferred` /
+// `ui.isReplacingAppRootForRender` moved to state.ts (see the IME-deferral
+// comment there); the composer capture/restore logic below still owns them.
 
 function captureCoordinatorReplyComposerState(root: HTMLElement): void {
   const replyArea = root.querySelector<HTMLTextAreaElement>(COORDINATOR_REPLY_SELECTOR);
@@ -5014,11 +4204,11 @@ function clearCoordinatorReplyComposerState(requestId: string): void {
   coordinatorOptionSelections.delete(requestId);
   coordinatorAutoReplyBlocks.delete(requestId);
   if (coordinatorReplyFocus?.requestId === requestId) coordinatorReplyFocus = null;
-  if (coordinatorReplyComposing?.requestId === requestId) {
-    coordinatorReplyComposing = null;
+  if (ui.coordinatorReplyComposing?.requestId === requestId) {
+    ui.coordinatorReplyComposing = null;
     // No other composing textareas exist in this SPA; reset the pending flag
     // so a stale defer does not survive request-state transitions.
-    coordinatorReplyRenderDeferred = false;
+    ui.coordinatorReplyRenderDeferred = false;
   }
 }
 
@@ -5090,7 +4280,7 @@ async function loadCoordinatorChat(requestId: string): Promise<void> {
     );
     coordinatorChats.set(requestId, state);
     if (state.status !== 'awaiting_clarification') clearCoordinatorReplyComposerState(requestId);
-    if (activeTaskRequestId === requestId) render();
+    if (ui.activeTaskRequestId === requestId) render();
     // While the request is still pending or awaiting clarification, keep polling
     // so the UI surfaces the Coordinator's questions as soon as they land.
     if (
@@ -5129,7 +4319,7 @@ async function sendCoordinatorReply(requestId: string, textArea: HTMLTextAreaEle
     textArea.value = '';
     await loadCoordinatorChat(requestId);
   } catch (err) {
-    lastError = errorMessage(err);
+    ui.lastError = errorMessage(err);
     render();
     // Only restore disabled state if the textarea is still in the DOM
     if (document.body.contains(textArea)) {
@@ -5145,7 +4335,7 @@ function coordinatorStreamChannelForRequest(request: WorkflowRequestDto): Stream
 }
 
 function ensureCoordinatorStreamSubscription(request: WorkflowRequestDto): void {
-  if (activePage !== 'task' || activeTaskRequestId !== request.id) return;
+  if (ui.activePage !== 'task' || ui.activeTaskRequestId !== request.id) return;
   if (request.workflowRunId) attachRunStream(request.workflowRunId);
   else if (shouldSubscribeRequestStream(request)) attachRequestStream(request.id);
 }
@@ -5412,29 +4602,29 @@ function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLElement | 
       updateCoordinatorReplySendState();
     };
     replyArea.addEventListener('compositionstart', () => {
-      coordinatorReplyComposing = { requestId };
+      ui.coordinatorReplyComposing = { requestId };
     });
     replyArea.addEventListener('compositionend', () => {
-      coordinatorReplyComposing = null;
+      ui.coordinatorReplyComposing = null;
       // Flush whatever the IME just committed into the draft so a follow-up
       // render (deferred or otherwise) rehydrates the final characters.
       setCoordinatorReplyDraft(requestId, replyArea.value);
       updateCoordinatorReplySendState();
-      if (coordinatorReplyRenderDeferred) {
-        coordinatorReplyRenderDeferred = false;
+      if (ui.coordinatorReplyRenderDeferred) {
+        ui.coordinatorReplyRenderDeferred = false;
         queueMicrotask(() => render());
       }
     });
     replyArea.onblur = () => {
       setCoordinatorReplyDraft(requestId, replyArea.value);
-      if (!isReplacingAppRootForRender) {
+      if (!ui.isReplacingAppRootForRender) {
         // A genuine blur (not render replacement) ends any composition this
         // textarea may have been carrying; `compositionend` would otherwise
         // never fire once the node is detached.
-        if (coordinatorReplyComposing?.requestId === requestId) {
-          coordinatorReplyComposing = null;
-          if (coordinatorReplyRenderDeferred) {
-            coordinatorReplyRenderDeferred = false;
+        if (ui.coordinatorReplyComposing?.requestId === requestId) {
+          ui.coordinatorReplyComposing = null;
+          if (ui.coordinatorReplyRenderDeferred) {
+            ui.coordinatorReplyRenderDeferred = false;
             queueMicrotask(() => render());
           }
         }
@@ -5552,14 +4742,14 @@ function reportEvidenceSummary(run: WorkflowRunDto): string {
 }
 
 function filteredReportRuns(): WorkflowRunDto[] {
-  if (reportsActiveView === 'attention') return data.runs.filter(reportNeedsAttention);
-  if (reportsActiveView === 'acceptable') return data.runs.filter(reportIsAcceptable);
-  if (reportsActiveView === 'running') return data.runs.filter(reportIsRunning);
+  if (ui.reportsActiveView === 'attention') return data.runs.filter(reportNeedsAttention);
+  if (ui.reportsActiveView === 'acceptable') return data.runs.filter(reportIsAcceptable);
+  if (ui.reportsActiveView === 'running') return data.runs.filter(reportIsRunning);
   return data.runs;
 }
 
 function setReportsView(view: ReportViewId): void {
-  reportsActiveView = view;
+  ui.reportsActiveView = view;
   render();
 }
 
@@ -5630,7 +4820,7 @@ function renderReportTabs(stats: ReturnType<typeof reportStats>): HTMLElement {
   return el('div', {
     class: 'reports-tabs',
     children: tabs.map((tab) => {
-      const btn = button(tab.label, reportsActiveView === tab.id ? 'tab-button active' : 'tab-button');
+      const btn = button(tab.label, ui.reportsActiveView === tab.id ? 'tab-button active' : 'tab-button');
       btn.title = tab.hint;
       btn.onclick = () => setReportsView(tab.id);
       return btn;
@@ -5655,7 +4845,7 @@ function renderReportRow(run: WorkflowRunDto): HTMLElement {
   open.onclick = () => (request ? setHash('task', request.id) : setHash('workbench', run.id));
   const viewReport = button('查看报告', 'button secondary small');
   viewReport.onclick = () => {
-    activeRunId = run.id;
+    ui.activeRunId = run.id;
     void loadRunDetail(run.id, true);
   };
   return el('article', {
@@ -5822,21 +5012,21 @@ function renderKnowledgeSuggestionEditor(item: KnowledgeSuggestionItem, detail: 
   editor.value = draft;
   editor.addEventListener('input', () => knowledgeEditDrafts.set(item.key, editor.value));
   editor.addEventListener('compositionstart', () => {
-    knowledgeEditComposing = { key: item.key };
+    ui.knowledgeEditComposing = { key: item.key };
   });
   editor.addEventListener('compositionend', () => {
     knowledgeEditDrafts.set(item.key, editor.value);
-    knowledgeEditComposing = null;
-    if (knowledgeEditRenderDeferred) {
-      knowledgeEditRenderDeferred = false;
+    ui.knowledgeEditComposing = null;
+    if (ui.knowledgeEditRenderDeferred) {
+      ui.knowledgeEditRenderDeferred = false;
       queueMicrotask(() => render());
     }
   });
   editor.addEventListener('blur', () => {
-    if (knowledgeEditComposing?.key === item.key) {
-      knowledgeEditComposing = null;
-      if (knowledgeEditRenderDeferred) {
-        knowledgeEditRenderDeferred = false;
+    if (ui.knowledgeEditComposing?.key === item.key) {
+      ui.knowledgeEditComposing = null;
+      if (ui.knowledgeEditRenderDeferred) {
+        ui.knowledgeEditRenderDeferred = false;
         queueMicrotask(() => render());
       }
     }
@@ -6058,12 +5248,12 @@ function renderKnowledgeArtifactCard(artifact: KnowledgeArtifactDto): HTMLElemen
 }
 
 function setKnowledgeView(view: KnowledgeViewId): void {
-  knowledgeActiveView = view;
+  ui.knowledgeActiveView = view;
   render();
 }
 
 function selectedKnowledgeView(pendingCount: number): KnowledgeViewId {
-  if (knowledgeActiveView) return knowledgeActiveView;
+  if (ui.knowledgeActiveView) return ui.knowledgeActiveView;
   return pendingCount > 0 ? 'pending' : 'accepted';
 }
 
@@ -6794,8 +5984,8 @@ function renderSettingsOverview(vm: SettingsViewModel | null): HTMLElement {
     if (project?.agentBackend) void checkAgentBackend(project.agentBackend, project.id);
   };
 
-  const startRunner = button(runnerStartInFlight ? '启动中…' : '启动执行器', 'button secondary');
-  startRunner.disabled = Boolean(runner) || runnerStartInFlight;
+  const startRunner = button(ui.runnerStartInFlight ? '启动中…' : '启动执行器', 'button secondary');
+  startRunner.disabled = Boolean(runner) || ui.runnerStartInFlight;
   startRunner.onclick = () => void ensureRunnerStarted();
 
   return el('section', {
@@ -6944,9 +6134,9 @@ async function submitApproval(
     });
     await loadRunDetail(workflowRunId, false);
     await loadData({ render: false, keepDetail: true });
-    lastError = null;
+    ui.lastError = null;
   } catch (err) {
-    lastError = errorMessage(err);
+    ui.lastError = errorMessage(err);
   } finally {
     approvalInFlight.delete(key);
     render();
@@ -6982,7 +6172,7 @@ async function submitAcceptanceDecision(
     await loadRunDetail(workflowRunId, false);
     await loadData({ render: false, keepDetail: true });
   } catch (err) {
-    lastError = errorMessage(err);
+    ui.lastError = errorMessage(err);
   } finally {
     approvalInFlight.delete(key);
     render();
@@ -7008,7 +6198,7 @@ async function submitRequirementAction(
     await loadRunDetail(workflowRunId, false);
     await loadData({ render: false, keepDetail: true });
   } catch (err) {
-    lastError = errorMessage(err);
+    ui.lastError = errorMessage(err);
   } finally {
     render();
   }
@@ -7041,7 +6231,7 @@ async function submitKnowledgeAction(
     await loadRunDetail(workflowRunId, false);
     await loadData({ render: false, keepDetail: true });
   } catch (err) {
-    lastError = errorMessage(err);
+    ui.lastError = errorMessage(err);
   } finally {
     render();
   }
@@ -7345,7 +6535,7 @@ function attachRequestStream(requestId: string): void {
 }
 
 function syncActiveStreamSubscription(): void {
-  if (activePage === 'task') {
+  if (ui.activePage === 'task') {
     const task = activeTaskRequest();
     if (!task) {
       detachStream();
@@ -7356,8 +6546,8 @@ function syncActiveStreamSubscription(): void {
     else detachStream();
     return;
   }
-  if (activePage === 'workbench' && activeRunId) {
-    attachRunStream(activeRunId);
+  if (ui.activePage === 'workbench' && ui.activeRunId) {
+    attachRunStream(ui.activeRunId);
     return;
   }
   detachStream();
@@ -7368,12 +6558,28 @@ function streamStatusForChannel(channel: StreamChannel | null): { label: string;
   return { label: 'disconnected', cls: 'idle' };
 }
 
+// Wire the extracted core modules back to the page code that still lives
+// here: render-core needs the shell renderer + composer capture/restore,
+// data-loading needs the SSE stream controller entry points. Both must be
+// registered before the first loadData()/render() below.
+setRenderHooks({
+  renderShell,
+  captureCoordinatorReplyComposerState,
+  captureNewTaskFormState,
+  restoreCoordinatorReplyComposerFocus,
+  restoreNewTaskFormFocus,
+});
+setStreamHooks({
+  syncActiveStreamSubscription,
+  attachRunStream,
+});
+
 window.addEventListener('hashchange', async () => {
   parseHash();
   await loadData({ render: false, keepDetail: false });
   const task = activeTaskRequest();
   if (task?.workflowRunId) await loadRunDetail(task.workflowRunId, false);
-  else if (activeRunId && activePage !== 'task') await loadRunDetail(activeRunId, false);
+  else if (ui.activeRunId && ui.activePage !== 'task') await loadRunDetail(ui.activeRunId, false);
   syncActiveStreamSubscription();
   render();
   maybeAutoStartRunnerForActiveTask();
@@ -7387,11 +6593,11 @@ parseHash();
 await loadData({ render: true });
 maybeAutoStartRunnerForActiveTask();
 setInterval(() => {
-  if (activePage === 'new-task' || activePage === 'projects') {
+  if (ui.activePage === 'new-task' || ui.activePage === 'projects') {
     void loadData({ render: false, keepDetail: true });
     return;
   }
   void loadData({ render: true, keepDetail: true });
-  if (activeRunId) void loadRunDetail(activeRunId, true);
+  if (ui.activeRunId) void loadRunDetail(ui.activeRunId, true);
   maybeAutoStartRunnerForActiveTask();
 }, 3000);
