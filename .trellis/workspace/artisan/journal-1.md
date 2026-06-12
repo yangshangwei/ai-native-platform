@@ -1339,3 +1339,36 @@ Replaced db.ts import-time DDL/probe-ALTERs with a 21-entry versioned MIGRATIONS
 ### Next Steps
 
 - None - task complete
+
+
+## Session 37: Per-project build/test commands (roadmap T3.2)
+
+**Date**: 2026-06-12
+**Task**: Per-project build/test commands (roadmap T3.2)
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Projects now carry optional buildCompileCommand/buildTestCommand: shared whitelist gained exact-match extraAllow with shell-metachar and control-char rejection (check-agent security fix); api migrations 22/23 + validation with absent-keeps/null-clears merge semantics; test_gate surefire_present conditionally degrades to warn only for custom test commands that exit 0 (Maven path unchanged); runner executeBuildTest falls back byte-identical to mvn detection, first direct unit tests; web form wired. 718 tests green, end-to-end smoke PASS. Roadmap remaining: T2.4 web DTO unification (needs strictness decision).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f60bcd2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
