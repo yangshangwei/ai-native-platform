@@ -1207,3 +1207,36 @@ Final web split: page-projects/page-new-task/coordinator-chat/page-task-detail/p
 ### Next Steps
 
 - None - task complete
+
+
+## Session 33: Fix dev-server API proxy connection leak
+
+**Date**: 2026-06-12
+**Task**: Fix dev-server API proxy connection leak
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Root cause of the twice-today proxy wedge: serve.ts forwarded upstream fetches without the client AbortSignal, leaking one upstream connection per SSE disconnect until the 262-connection pool cap. Fixed with signal propagation; regression tests for both SSE-abort and JSON pass-through; live test shows flat connection count over 20 SSE cycles. 632 tests green.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `921e92a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

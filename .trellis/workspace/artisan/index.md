@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 32
+- **Total Sessions**: 33
 - **Last Active**: 2026-06-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1209 | Active |
+| `journal-1.md` | ~1242 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 33 | 2026-06-12 | Fix dev-server API proxy connection leak | `921e92a` | `feat/context-injection-layer-mvp` |
 | 32 | 2026-06-12 | Web heavy-page split: main.ts decomposition complete (roadmap T2.3) | `a3f1ced` | `feat/context-injection-layer-mvp` |
 | 31 | 2026-06-12 | Web independent-page split + stream module (roadmap T2.2) | `1f2aec0` | `feat/context-injection-layer-mvp` |
 | 30 | 2026-06-12 | Web main.ts base-layer split (roadmap T2.1) | `a0d9947` | `feat/context-injection-layer-mvp` |
