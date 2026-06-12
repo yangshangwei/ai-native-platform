@@ -1240,3 +1240,36 @@ Root cause of the twice-today proxy wedge: serve.ts forwarded upstream fetches w
 ### Next Steps
 
 - None - task complete
+
+
+## Session 34: Runner orchestrator de-closure (roadmap T3.1)
+
+**Date**: 2026-06-12
+**Task**: Runner orchestrator de-closure (roadmap T3.1)
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Promoted cmdOrchestrate's ~14 nested closures to top-level deps-injected functions across orchestrator/{types,steps,invoke-skill,approval,verifier-media}.ts; orchestrator.ts 1817 -> 329 lines, cmdOrchestrate ~105-line skeleton, dispatchStep single-point routing preserved per spec red line. Testability 0 -> 46 new tests (632 -> 678 green), existing tests untouched, native smoke passed end-to-end. Spec updated: RunCtx export supersedes W2-1 R14, orchestrator/ module map added. Remaining roadmap: T3.2 build-command abstraction (needs schema brainstorm), T4.1/4.2 node-shared placement + preflight dedup, T4.3 db migrations, T2.4 web DTO unification.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `127bb79` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
