@@ -4,7 +4,9 @@
  * Every function here is stateless: no module-level mutable state, no
  * fetch, no app data. `el()` is the universal element factory the whole
  * SPA renders with; the rest are small formatting/widget helpers. Moved
- * verbatim out of `main.ts` (T2.1 base-layer split).
+ * verbatim out of `main.ts` (T2.1 base-layer split; `panelHeader` /
+ * `configSummaryItem` / `previewText` followed in the T2.2 page split
+ * because they are shared across page modules).
  */
 
 import type { StatusKind } from './types';
@@ -96,6 +98,27 @@ export function field(label: string, value: Node | string): HTMLElement {
 export function button(label: string, className = 'button secondary'): HTMLButtonElement {
   const btn = el('button', { class: className, text: label, attrs: { type: 'button' } });
   return btn;
+}
+
+export function panelHeader(title: string, subtitle?: string): HTMLElement {
+  return el('div', {
+    class: 'panel-header',
+    children: [el('h2', { text: title }), subtitle ? el('p', { text: subtitle }) : null],
+  });
+}
+
+export function configSummaryItem(label: string, value: Node | string): HTMLElement {
+  const valueNode = typeof value === 'string' ? el('strong', { text: value }) : value;
+  return el('div', {
+    class: 'settings-summary-item',
+    children: [el('span', { text: label }), valueNode],
+  });
+}
+
+export function previewText(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= 1400) return trimmed;
+  return `${trimmed.slice(0, 1400)}\n\n… truncated for overview; open artifact path for full content.`;
 }
 
 export function labeledInput(label: string, name: string, placeholder: string): HTMLElement {

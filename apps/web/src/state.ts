@@ -7,8 +7,9 @@
  * of `main.ts` (T2.1 base-layer split); the only rewrite was mechanical:
  * former module-level `let` bindings became properties of the `ui` object,
  * because ES-module `export let` is a read-only live binding for importers.
- * Page-private state (coordinator drafts, new-task drafts, stream handles,
- * settings drafts) still lives in `main.ts` until the page modules move.
+ * Page-private state now lives in its page module (T2.2: settings/reports/
+ * knowledge/stream); coordinator drafts and new-task drafts still live in
+ * `main.ts` until those modules move (T2.3).
  */
 
 import type {
@@ -18,19 +19,22 @@ import type {
   ArtifactContentDto,
   CommandLogsDto,
   ContextGovernanceDto,
-  KnowledgeActionDecision,
-  KnowledgeArtifactsState,
-  KnowledgeViewId,
   LocalDirectoryPickerState,
   Page,
   ProjectAgentBackendKind,
   ProjectDto,
   ProjectSourceFormState,
-  ReportViewId,
   RunnerDto,
   StatusKind,
   WorkflowRequestDto,
 } from './types';
+import {
+  latestArtifactOfKind,
+  parseKnowledgeArtifact,
+  type ArtifactDto,
+  type KnowledgeSuggestion,
+  type RunDetail,
+} from './projection';
 
 export const data: AppData = {
   health: null,
@@ -64,10 +68,8 @@ export const ui = {
   runnerStartInFlight: false,
   lastError: null as string | null,
   projectsLoadError: null as string | null,
-  knowledgeActiveView: null as KnowledgeViewId | null,
   knowledgeEditComposing: null as { key: string } | null,
   knowledgeEditRenderDeferred: false,
-  reportsActiveView: 'all' as ReportViewId,
   coordinatorReplyComposing: null as { requestId: string } | null,
   coordinatorReplyRenderDeferred: false,
   isReplacingAppRootForRender: false,
@@ -78,17 +80,6 @@ export const openArtifactViewers = new Set<string>();
 export const commandLogs = new Map<string, CommandLogsDto | null>();
 export const contextGovernanceByRun = new Map<string, ContextGovernanceDto | null>();
 export const contextGovernanceInFlight = new Set<string>();
-export const knowledgeArtifactsState: KnowledgeArtifactsState = {
-  projectId: null,
-  loading: false,
-  loadedOnce: false,
-  error: null,
-  artifacts: [],
-};
-export const knowledgeDecisions = new Map<string, KnowledgeActionDecision>();
-export const knowledgeEdits = new Map<string, string>();
-export const knowledgeEditing = new Set<string>();
-export const knowledgeEditDrafts = new Map<string, string>();
 export const approvalInFlight = new Set<string>();
 export const approvalLastSubmittedAt = new Map<string, number>();
 export const projectActionInFlight = new Set<string>();
@@ -222,4 +213,56 @@ export function buildEnvLabel(): string {
   const jdk = runner.jdkVersion ? `JDK ${runner.jdkVersion}` : 'JDK ?';
   const mvn = runner.mavenVersion ? `Maven ${runner.mavenVersion.split('\n')[0]}` : 'Maven ?';
   return `${jdk} · ${mvn}`;
+}
+
+// ---- Artifact text selectors (moved verbatim from main.ts, T2.2 page
+// split) — pure reads over `artifactContent` + a passed RunDetail, shared
+// by the task-detail/reports/knowledge renderers.
+
+export function artifactText(detail: RunDetail, kind: string): string {
+  const artifact = latestArtifactOfKind(detail.artifacts, kind);
+  return artifact ? (artifactContent.get(artifact.id)?.text ?? '') : '';
+}
+
+export function artifactTextBy(
+  detail: RunDetail,
+  kind: string,
+  predicate: (artifact: ArtifactDto) => boolean,
+): string {
+  const artifact =
+    detail.artifacts
+      .filter((candidate) => candidate.kind === kind && predicate(candidate))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .at(-1) ?? null;
+  return artifact ? (artifactContent.get(artifact.id)?.text ?? '') : '';
+}
+
+export function markdownArtifactText(detail: RunDetail, kind: string): string {
+  return (
+    artifactTextBy(
+      detail,
+      kind,
+      (artifact) =>
+        artifact.contentType.includes('markdown') ||
+        (typeof artifact.metadata?.output === 'string' && artifact.metadata.output.endsWith('.md')),
+    ) || artifactText(detail, kind)
+  );
+}
+
+export function structuredArtifactText(detail: RunDetail, kind: string): string {
+  return artifactTextBy(
+    detail,
+    kind,
+    (artifact) =>
+      artifact.contentType === 'application/json' ||
+      artifact.metadata?.structured === true ||
+      (typeof artifact.metadata?.output === 'string' && artifact.metadata.output.endsWith('.json')),
+  );
+}
+
+export function parsedKnowledge(detail: RunDetail): KnowledgeSuggestion[] {
+  return parseKnowledgeArtifact(
+    markdownArtifactText(detail, 'knowledge_candidate'),
+    structuredArtifactText(detail, 'knowledge_candidate'),
+  );
 }

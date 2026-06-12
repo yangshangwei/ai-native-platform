@@ -6,18 +6,20 @@
  * helpers lazily fill the per-run caches in `state.ts` and trigger
  * `render()` when fresh data lands. Moved verbatim out of `main.ts`
  * (T2.1 base-layer split) with one wiring change: the SSE stream
- * controller still lives in `main.ts`, so its two entry points are
- * injected via `setStreamHooks` instead of being imported (avoids a
- * main.ts <-> data-loading import cycle until the stream module moves).
+ * controller (now `stream.ts`, T2.2) is a feature module above this base
+ * layer, so its two entry points are injected by main.ts via
+ * `setStreamHooks` instead of being imported (keeps the base layer free
+ * of feature-module imports).
  */
 
 import type { ArtifactDto, RunDetail, WorkflowRunDto } from './projection';
 import type {
+  AgentBackendPreflightDto,
   ArtifactContentDto,
   CommandLogsDto,
   ContextGovernanceDto,
   HealthDto,
-  KnowledgeArtifactDto,
+  ProjectAgentBackendKind,
   ProjectDto,
   RunnerControlStatusDto,
   RunnerDto,
@@ -27,12 +29,15 @@ import { errorMessage } from '@ainp/shared';
 import { api } from './api';
 import {
   activeTaskRequest,
+  agentBackendPreflight,
+  agentBackendPreflightInFlight,
+  approvalInFlight,
+  approvalLastSubmittedAt,
   artifactContent,
   commandLogs,
   contextGovernanceByRun,
   contextGovernanceInFlight,
   data,
-  knowledgeArtifactsState,
   ui,
 } from './state';
 import { render } from './render-core';
@@ -173,27 +178,101 @@ export async function ensureArtifactContent(artifactId: string): Promise<void> {
   if (data.activeDetail?.artifacts.some((a) => a.id === artifactId)) render();
 }
 
-export async function loadKnowledgeArtifacts(projectId: string, shouldRender = true): Promise<void> {
-  if (knowledgeArtifactsState.loading && knowledgeArtifactsState.projectId === projectId) return;
-  const staleProject = knowledgeArtifactsState.projectId !== projectId;
-  knowledgeArtifactsState.projectId = projectId;
-  knowledgeArtifactsState.loading = true;
-  knowledgeArtifactsState.error = null;
-  if (staleProject) {
-    knowledgeArtifactsState.loadedOnce = false;
-    knowledgeArtifactsState.artifacts = [];
-  }
+// ---- Shared fetch actions (moved verbatim from main.ts, T2.2 page split) --
+// Used by more than one page module (settings/projects/new-task/task-detail/
+// knowledge), so they live in the base layer to keep page imports one-way.
+
+export function formAgentBackendKey(backend: ProjectAgentBackendKind | null): string | null {
+  return backend ? `backend:${backend}` : null;
+}
+
+export async function checkAgentBackend(
+  backend: ProjectAgentBackendKind | null,
+  projectId: string | null,
+): Promise<AgentBackendPreflightDto | null> {
+  const key = projectId ?? formAgentBackendKey(backend);
+  if (!backend || !key || agentBackendPreflightInFlight.has(key)) return null;
+  agentBackendPreflightInFlight.add(key);
+  render();
   try {
-    const body = await api<{ ok: boolean; artifacts: KnowledgeArtifactDto[] }>(
-      `/knowledge-artifacts/projects/${encodeURIComponent(projectId)}`,
-    );
-    knowledgeArtifactsState.artifacts = [...(body.artifacts ?? [])].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    knowledgeArtifactsState.loadedOnce = true;
+    const path = projectId
+      ? `/projects/${encodeURIComponent(projectId)}/agent-backend/preflight`
+      : '/projects/agent-backend/preflight';
+    const result = await api<AgentBackendPreflightDto>(path, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agentBackend: backend }),
+    });
+    agentBackendPreflight.set(key, result);
+    if (projectId) agentBackendPreflight.set(formAgentBackendKey(backend)!, result);
+    ui.lastError = result.runnable ? null : `${result.label}: ${result.remediationHint}${result.error ? ` (${result.error})` : ''}`;
+    return result;
   } catch (err) {
-    knowledgeArtifactsState.error = errorMessage(err);
-    knowledgeArtifactsState.artifacts = [];
+    ui.lastError = errorMessage(err);
+    return null;
   } finally {
-    knowledgeArtifactsState.loading = false;
+    agentBackendPreflightInFlight.delete(key);
+    render();
   }
-  if (shouldRender && ui.activePage === 'knowledge') render();
+}
+
+export async function ensureRunnerStarted(): Promise<void> {
+  if (ui.runnerStartInFlight) return;
+  ui.runnerStartInFlight = true;
+  render();
+  try {
+    data.runnerControl = await api<RunnerControlStatusDto>('/runner/control/start', { method: 'POST' });
+    ui.lastError = null;
+    await loadData({ render: false, keepDetail: true });
+  } catch (err) {
+    ui.lastError =
+      err instanceof Error
+        ? `${err.message}。可以临时在命令行执行 bun run runner -- watch 作为兜底。`
+        : String(err);
+  } finally {
+    ui.runnerStartInFlight = false;
+    render();
+  }
+}
+
+export async function submitApproval(
+  workflowRunId: string,
+  gateId: string,
+  approved: boolean,
+  comment?: string,
+): Promise<void> {
+  const key = `${workflowRunId}:${gateId}`;
+  const now = Date.now();
+  const last = approvalLastSubmittedAt.get(key) ?? 0;
+  if (approvalInFlight.has(key) || now - last < 2_000) return;
+  approvalInFlight.add(key);
+  approvalLastSubmittedAt.set(key, now);
+  render();
+  try {
+    const userComment = comment?.trim();
+    const finalComment = userComment && userComment.length > 0
+      ? userComment
+      : approved
+        ? 'approved via workbench UI'
+        : 'rejected via workbench UI';
+    await api('/approvals', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        workflowRunId,
+        gateId,
+        approved,
+        actor: 'web',
+        comment: finalComment,
+      }),
+    });
+    await loadRunDetail(workflowRunId, false);
+    await loadData({ render: false, keepDetail: true });
+    ui.lastError = null;
+  } catch (err) {
+    ui.lastError = errorMessage(err);
+  } finally {
+    approvalInFlight.delete(key);
+    render();
+  }
 }
