@@ -1372,3 +1372,36 @@ Projects now carry optional buildCompileCommand/buildTestCommand: shared whiteli
 ### Next Steps
 
 - None - task complete
+
+
+## Session 38: Web DTO derivation from shared types (roadmap T2.4, roadmap complete)
+
+**Date**: 2026-06-12
+**Task**: Web DTO derivation from shared types (roadmap T2.4, roadmap complete)
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Replaced hand-copied web shadow DTOs with type-level derivations from @ainp/shared (Pick/Omit + explicit Weaken/Optionalize with reason comments); tightened statuses/flowId/kinds (all fixtures legal); deleted WorkflowRequestSummary and the page-settings Config triplet; the run-vs-request status gap preserved verbatim behind ReportableStatus with unreachability evidence in notes. Fixtures gained only missing fields. 718 tests green, 7-page smoke clean. Api-private shadows registered as future wire-contract-layer candidates. This closes the last item of the architecture-optimization roadmap.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `79c8371` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
