@@ -22,6 +22,7 @@ import {
   reportStats,
   reportStatusLabel,
   STAGE_LABELS,
+  type ReportableStatus,
   type WorkflowRunDto,
 } from './projection';
 import type { ReportViewId } from './types';
@@ -50,7 +51,13 @@ import { loadRunDetail } from './data-loading';
 
 let reportsActiveView: ReportViewId = 'all';
 
-function reportNextAction(run: WorkflowRunDto): string {
+// R2 (T2.4): 'awaiting_clarification' is a WorkflowRequestStatus value the
+// API never writes onto a run (see task notes.md evidence chain). The
+// historical defensive branch is kept verbatim; only the parameter's status
+// type is widened — the same pattern as the report* predicates in
+// projection.ts, a checked widening with no `as` cast. Zero runtime
+// behavior change.
+function reportNextAction(run: Omit<WorkflowRunDto, 'status'> & { status: ReportableStatus }): string {
   if (run.status === 'failed') return '查看失败证据并决定是否重试。';
   if (run.status === 'awaiting_human') return '处理人工确认点，确认后继续流转。';
   if (run.status === 'awaiting_clarification') return '补充澄清信息后继续。';

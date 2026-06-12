@@ -37,6 +37,7 @@ import {
   type ArtifactDto,
   type DesignDoc,
   type GateRunDto,
+  type ReportableStatus,
   type RequirementDoc,
   type RunDetail,
   type Stage,
@@ -242,7 +243,14 @@ function taskFocusSummary(
     return { label: '等待你确认', hint: copy.subtitle, kind: 'warn' };
   }
   if (detail.run.status === 'running') return { label: '自动执行中', hint: `${STAGE_LABELS[projection.currentStage]}正在处理`, kind: 'info' };
-  if (detail.run.status === 'passed' || detail.run.status === 'completed') {
+  // R2 (T2.4): 'completed' is a WorkflowRequestStatus value the API never
+  // writes onto a run (see task notes.md evidence chain). The historical
+  // defensive comparison is kept verbatim; the run is read through an alias
+  // whose declared status type is the wider ReportableStatus — a checked
+  // assignment (WorkflowRunStatus ⊂ ReportableStatus), no `as` cast. Zero
+  // runtime behavior change.
+  const widenedRun: { status: ReportableStatus } = detail.run;
+  if (widenedRun.status === 'passed' || widenedRun.status === 'completed') {
     return { label: '已完成', hint: '可以查看交付报告和知识沉淀', kind: 'good' };
   }
   if (detail.run.status === 'failed') return { label: '需要处理', hint: `${STAGE_LABELS[projection.currentStage]}出现失败`, kind: 'bad' };

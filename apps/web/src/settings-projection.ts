@@ -11,19 +11,26 @@
  * §D-PR4.2 for the design intent.
  */
 
-export type SettingsTabId = 'coordinator' | 'skill_prompts' | 'runtime' | 'context_policy';
+import type { ConfigCategory, ConfigEntry } from '@ainp/shared';
 
-export interface ProjectionConfigEntry {
-  type: 'number' | 'string' | 'string_array';
-  default: number | string | readonly string[];
-  description: string;
-  category: SettingsTabId;
-  min?: number;
-  max?: number;
-  multiline?: boolean;
-  source: string;
-}
+/**
+ * Settings tabs mirror the shared config registry's categories 1:1 — derived
+ * (T2.4) instead of hand-copied so a new ConfigCategory becomes a compile
+ * error in TABS_CONFIG below rather than a silently missing tab.
+ */
+export type SettingsTabId = ConfigCategory;
 
+/**
+ * Registry entry as served by `GET /config/registry` — exactly the shared
+ * {@link ConfigEntry} (the API serializes CONFIG_REGISTRY verbatim).
+ */
+export type ProjectionConfigEntry = ConfigEntry;
+
+/**
+ * Shadow of the api-private `ConfigOverride` (apps/api/src/store/store.ts) —
+ * no shared source exists, so this stays hand-aligned. Registered in task
+ * notes.md (R4) as a "wire contract → shared" follow-up candidate.
+ */
 export interface ProjectionConfigOverride {
   key: string;
   scope: string;
@@ -32,6 +39,11 @@ export interface ProjectionConfigOverride {
   updatedBy: string | null;
 }
 
+/**
+ * Shadow of the api-private `ConfigAuditEntry` (apps/api/src/store/store.ts)
+ * — no shared source exists, so this stays hand-aligned. Registered in task
+ * notes.md (R4) as a "wire contract → shared" follow-up candidate.
+ */
 export interface ProjectionConfigAudit {
   id: string;
   key: string;

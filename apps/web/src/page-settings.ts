@@ -11,7 +11,15 @@
  * `settings-projection` view-model builder.
  */
 
-import { buildSettingsViewModel, type SettingsRowVM, type SettingsViewModel } from './settings-projection';
+import {
+  buildSettingsViewModel,
+  type ProjectionConfigAudit,
+  type ProjectionConfigEntry,
+  type ProjectionConfigOverride,
+  type SettingsRowVM,
+  type SettingsTabId,
+  type SettingsViewModel,
+} from './settings-projection';
 import { errorMessage } from '@ainp/shared';
 import type { ProjectDto, RunnerDto, StatusKind } from './types';
 import { api } from './api';
@@ -37,46 +45,22 @@ import {
 import { render } from './render-core';
 import { checkAgentBackend, ensureRunnerStarted } from './data-loading';
 
-interface ConfigEntryDto {
-  type: 'number' | 'string' | 'string_array';
-  default: number | string | readonly string[];
-  description: string;
-  category: 'coordinator' | 'skill_prompts' | 'runtime' | 'context_policy';
-  min?: number;
-  max?: number;
-  multiline?: boolean;
-  source: string;
-}
-
-interface ConfigOverrideDto {
-  key: string;
-  scope: string;
-  valueJson: string;
-  updatedAt: string;
-  updatedBy: string | null;
-}
-
-interface ConfigAuditDto {
-  id: string;
-  key: string;
-  oldValueJson: string | null;
-  newValueJson: string | null;
-  changedAt: string;
-  changedBy: string | null;
-}
-
-type ConfigCategory = 'coordinator' | 'skill_prompts' | 'runtime' | 'context_policy';
+// Config entry / override / audit shapes are imported from
+// `settings-projection.ts` (T2.4): the entry/category types derive from
+// `@ainp/shared` (ConfigEntry / ConfigCategory); override/audit shadow
+// api-private store shapes there. The third hand-copied triplet that used to
+// live here is gone.
 
 interface SettingsConfigState {
-  activeTab: ConfigCategory;
+  activeTab: SettingsTabId;
   loading: boolean;
   error: string | null;
-  registry: { keys: string[]; entries: Record<string, ConfigEntryDto> } | null;
-  overrides: Record<string, ConfigOverrideDto>;
+  registry: { keys: string[]; entries: Record<string, ProjectionConfigEntry> } | null;
+  overrides: Record<string, ProjectionConfigOverride>;
   drafts: Map<string, string>;
   saving: Set<string>;
   expandedHistory: Set<string>;
-  audits: Map<string, ConfigAuditDto[]>;
+  audits: Map<string, ProjectionConfigAudit[]>;
   loadedOnce: boolean;
 }
 
@@ -99,8 +83,8 @@ async function loadSettingsConfig(): Promise<void> {
   settingsConfig.error = null;
   try {
     const [reg, ov] = await Promise.all([
-      api<{ keys: string[]; entries: Record<string, ConfigEntryDto> }>('/config/registry'),
-      api<{ overrides: Record<string, ConfigOverrideDto> }>('/config/overrides'),
+      api<{ keys: string[]; entries: Record<string, ProjectionConfigEntry> }>('/config/registry'),
+      api<{ overrides: Record<string, ProjectionConfigOverride> }>('/config/overrides'),
     ]);
     settingsConfig.registry = reg;
     settingsConfig.overrides = ov.overrides ?? {};
@@ -113,12 +97,12 @@ async function loadSettingsConfig(): Promise<void> {
   }
 }
 
-function setSettingsConfigTab(tab: ConfigCategory): void {
+function setSettingsConfigTab(tab: SettingsTabId): void {
   settingsConfig.activeTab = tab;
   render();
 }
 
-function formatConfigValueForEditor(value: unknown, type: ConfigEntryDto['type']): string {
+function formatConfigValueForEditor(value: unknown, type: ProjectionConfigEntry['type']): string {
   if (type === 'string_array') {
     return Array.isArray(value) ? value.join('\n') : '';
   }
@@ -128,7 +112,7 @@ function formatConfigValueForEditor(value: unknown, type: ConfigEntryDto['type']
   return JSON.stringify(value);
 }
 
-function parseConfigEditorValue(raw: string, type: ConfigEntryDto['type']): unknown {
+function parseConfigEditorValue(raw: string, type: ProjectionConfigEntry['type']): unknown {
   if (type === 'string_array') {
     return raw
       .split('\n')
@@ -142,8 +126,8 @@ function parseConfigEditorValue(raw: string, type: ConfigEntryDto['type']): unkn
 }
 
 function effectiveValueAsEditorString(
-  entry: ConfigEntryDto,
-  override: ConfigOverrideDto | undefined,
+  entry: ProjectionConfigEntry,
+  override: ProjectionConfigOverride | undefined,
 ): string {
   if (override) {
     try {
@@ -225,7 +209,7 @@ async function toggleConfigHistory(key: string): Promise<void> {
   settingsConfig.expandedHistory.add(key);
   if (!settingsConfig.audits.has(key)) {
     try {
-      const r = await api<{ items: ConfigAuditDto[] }>(
+      const r = await api<{ items: ProjectionConfigAudit[] }>(
         `/config/audit?key=${encodeURIComponent(key)}&limit=20`,
       );
       settingsConfig.audits.set(key, r.items ?? []);
@@ -243,7 +227,7 @@ function configTruncate(s: string, max: number): string {
 
 function renderConfigEditor(
   key: string,
-  entry: ConfigEntryDto,
+  entry: ProjectionConfigEntry,
   value: string,
 ): HTMLElement {
   if (entry.type === 'number') {
@@ -342,7 +326,7 @@ function configRiskKind(risk: SettingsRowVM['risk']): StatusKind {
   return 'good';
 }
 
-function configTypeLabel(entry: ConfigEntryDto): string {
+function configTypeLabel(entry: ProjectionConfigEntry): string {
   const parts: string[] = [];
   if (entry.type === 'number') parts.push('数字');
   else if (entry.type === 'string_array') parts.push('列表');

@@ -1,58 +1,53 @@
 /**
  * Shared DTO / view-state type definitions for the web SPA.
  *
- * Pure types only — no values, no DOM, no fetch. These mirror the API
- * response shapes (`/projects`, `/workflow-requests`, `/workflow-runs`, …)
- * plus a few UI-side state shapes (`AppData`, picker/form state). Moved
- * verbatim out of `main.ts` (T2.1 base-layer split); DTO/shared-type
- * unification is deliberately out of scope here.
+ * Pure types only — no values, no DOM, no fetch. DTOs that mirror a
+ * `@ainp/shared` entity are *derived* from it (T2.4) so shared-type changes
+ * become compile errors here instead of silent drift; api-private shapes
+ * (no shared source) stay hand-aligned with a comment pointing at the
+ * source. UI-side state shapes (`AppData`, picker/form state) are web-owned.
  */
 
 import type {
   ArtifactDto,
-  FlowId,
   KnowledgeSuggestion,
   RunDetail,
-  Stage,
   WorkflowRunDto,
 } from './projection';
-import type { KnowledgeArtifact } from '@ainp/shared';
+import type {
+  AgentBackendPreflight,
+  KnowledgeArtifact,
+  Project,
+  ProjectAgentBackendKind,
+  ProjectSourceAuthKind,
+  ProjectSourceKind,
+  WorkflowRequest,
+} from '@ainp/shared';
+
+// Re-exported verbatim from @ainp/shared (previously hand-copied here).
+export type {
+  AgentBackendKind,
+  ProjectAgentBackendKind,
+  ProjectSourceAuthKind,
+  ProjectSourceKind,
+} from '@ainp/shared';
 
 export type Page = 'workbench' | 'task' | 'projects' | 'new-task' | 'reports' | 'knowledge' | 'settings';
 export type StatusKind = 'good' | 'warn' | 'bad' | 'info' | 'muted';
-export type ProjectAgentBackendKind = 'claude_code' | 'codex';
-export type AgentBackendKind = ProjectAgentBackendKind | 'native';
 export type KnowledgeArtifactDto = KnowledgeArtifact;
 export type KnowledgeActionDecision = 'accepted' | 'ignored' | 'edited';
 export type KnowledgeViewId = 'pending' | 'accepted' | 'usage' | 'maintenance';
 export type ReportViewId = 'all' | 'attention' | 'acceptable' | 'running';
 
-export interface ProjectDto {
-  id: string;
-  name: string;
-  localPath: string;
-  sourceKind?: ProjectSourceKind;
-  sourceUrl?: string | null;
-  sourceAuthKind?: ProjectSourceAuthKind;
-  sourceUsername?: string | null;
+/**
+ * Project as serialized by the API (apps/api/src/routes/projects.ts:529-536):
+ * the shared {@link Project} minus the runner-only `sourceCredential` secret
+ * (the API redacts it), plus the API-derived `hasSourceCredential` flag.
+ */
+export type ProjectDto = Omit<Project, 'sourceCredential'> & {
+  /** API-added replacement for the redacted credential (routes/projects.ts:535). */
   hasSourceCredential?: boolean;
-  agentBackend?: ProjectAgentBackendKind | null;
-  status?: 'active' | 'archived';
-  archivedAt?: string | null;
-  language: string;
-  buildTool: string;
-  /** Optional project-specific compile command; null/missing = Maven default. */
-  buildCompileCommand?: string | null;
-  /** Optional project-specific test command; null/missing = Maven default. */
-  buildTestCommand?: string | null;
-  defaultBranch: string;
-  sourceBranches?: string[];
-  registeredAt: string;
-}
-
-
-export type ProjectSourceKind = 'local' | 'github' | 'gitee' | 'git' | 'gitlab';
-export type ProjectSourceAuthKind = 'none' | 'ssh' | 'token' | 'basic';
+};
 
 export interface SourceDetectSuccess {
   ok: true;
@@ -116,20 +111,8 @@ export interface ProjectSourceFormState {
   detecting: boolean;
 }
 
-export interface AgentBackendPreflightDto {
-  backend: ProjectAgentBackendKind | null;
-  label: string;
-  bin: string | null;
-  installed: boolean;
-  runnable: boolean;
-  authenticated: boolean | null;
-  version: string | null;
-  status: 'not_configured' | 'connected' | 'missing_cli' | 'needs_login' | 'not_runnable';
-  error: string | null;
-  remediationHint: string;
-  checkedAt: string;
-}
-
+/** Exactly the shared {@link AgentBackendPreflight} — the API serializes it verbatim. */
+export type AgentBackendPreflightDto = AgentBackendPreflight;
 
 export interface ProjectDeletePreviewDto {
   canHardDelete: boolean;
@@ -152,24 +135,12 @@ export interface RunnerDto {
   status: 'online' | 'stale' | 'offline';
 }
 
-export interface WorkflowRequestDto {
-  id: string;
-  projectId: string;
-  type: 'feature' | 'bugfix' | 'smoke' | 'refactor';
-  title: string;
-  branch: string;
-  status: 'pending' | 'awaiting_clarification' | 'claimed' | 'completed' | 'failed' | 'cancelled';
-  claimedBy: string | null;
-  workflowRunId: string | null;
-  error: string | null;
-  createdAt: string;
-  updatedAt: string;
-  // V2 W2: optional UI overrides serialized by the API. Drive the queued
-  // lifecycle preview before a Workflow Run exists; null/absent → router
-  // picks the flow (preview as feature.standard).
-  flowId?: FlowId | null;
-  startStage?: Stage | null;
-}
+/**
+ * Exactly the shared {@link WorkflowRequest} — the API list/detail responses
+ * serialize the entity verbatim (including the always-present, nullable
+ * `flowId` / `startStage` UI overrides).
+ */
+export type WorkflowRequestDto = WorkflowRequest;
 
 export interface HealthDto {
   ok: boolean;

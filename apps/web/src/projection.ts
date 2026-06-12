@@ -1,6 +1,46 @@
-import { FLOW_REGISTRY, type FlowId, type WorkflowStage } from '@ainp/shared';
+import {
+  FLOW_REGISTRY,
+  type AgentResult,
+  type AgentTask,
+  type Artifact,
+  type BuildRun,
+  type CommandRun,
+  type FlowId,
+  type GateRun,
+  type RuleResult,
+  type StepRun,
+  type TestRun,
+  type WorkflowRequestStatus,
+  type WorkflowRun,
+  type WorkflowRunStatus,
+  type WorkflowStage,
+} from '@ainp/shared';
+import type { WorkflowRequestDto } from './types';
 
 export type { FlowId };
+
+// ---- DTO derivation helpers (T2.4) ----------------------------------------
+//
+// Every web DTO that mirrors a `@ainp/shared` entity is *derived* from it
+// below (Pick/Omit), so a shared field rename/retype becomes a web compile
+// error instead of silent drift. Deliberate deviations from the shared shape
+// must go through {@link Weaken} / {@link Optionalize} with a per-use-site
+// comment explaining why. Hand-copied parallel interfaces are forbidden
+// (see .trellis/spec/web/frontend/type-safety.md).
+
+/**
+ * Explicitly weaken the K fields of T to plain `string`. Use only with a
+ * comment explaining why the union cannot be kept (currently unused — kept
+ * as the sanctioned escape hatch so future weakenings stay declared).
+ */
+export type Weaken<T, K extends keyof T> = Omit<T, K> & { [P in K]: string };
+
+/**
+ * Demote the K fields of T from required to optional. Each use site must
+ * comment why (typically: legacy fixtures/historical rows omit the field
+ * and src already reads it defensively).
+ */
+export type Optionalize<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
 
 /**
  * A lifecycle stage. Aliased to the shared {@link WorkflowStage} so the web
@@ -147,64 +187,88 @@ export function visibleStagesForRun(
   return stagesForRun(flowId, startStage).filter((stage) => stage !== 'context_pack');
 }
 
-export interface WorkflowRunDto {
-  id: string;
-  projectId: string;
-  title: string;
-  status: string;
-  currentStage: Stage;
-  /**
-   * V2 W2-1: which flow definition this run executes. Serialized by the API
-   * on the full `run` object. Optional here so legacy fixtures that predate
-   * flow-awareness still typecheck; absent/unknown falls back to
-   * `feature.standard` in {@link stagesForRun}.
-   */
-  flowId?: FlowId;
-  /** V2 W2-4: stage the run starts at; null = the flow's first stage. */
-  startStage?: Stage | null;
-  sourceBranch?: string;
-  branch: string;
-  workspacePath: string | null;
-  createdAt: string;
-}
+/**
+ * Run row as serialized (verbatim shared entity) by `GET /workflow-runs` and
+ * `GET /workflow-runs/:id`. Derived from the shared {@link WorkflowRun};
+ * the web picks only the fields it renders. `status` / `flowId` /
+ * `startStage` / `sourceBranch` are the full shared types — the wire always
+ * carries them (`flow_id` is NOT NULL in the DB; unknown flowIds still fall
+ * back gracefully at runtime in {@link stagesForRun}).
+ */
+export type WorkflowRunDto = Pick<
+  WorkflowRun,
+  | 'id'
+  | 'projectId'
+  | 'title'
+  | 'status'
+  | 'currentStage'
+  | 'flowId'
+  | 'startStage'
+  | 'sourceBranch'
+  | 'branch'
+  | 'workspacePath'
+  | 'createdAt'
+>;
 
-export interface CommandRunDto {
-  id: string;
-  stepRunId?: string | null;
-  command: string;
-  cwd?: string;
-  stage?: string;
-  status: string;
-  exitCode: number | null;
-  durationMs: number | null;
-  stdoutRef: string;
-  stderrRef: string;
-  stdoutSha256?: string | null;
-  stderrSha256?: string | null;
-  combinedSha256?: string | null;
-  startedAt: string;
-}
+/**
+ * Derived from the shared {@link CommandRun} (the API returns the full
+ * entity). Includes `timedOut` / `truncated`, which the old hand-copied
+ * shadow silently dropped.
+ *
+ * `stage` is Weakened to string: page-task-detail historically matches
+ * commands to lifecycle stages via `command.stage === stage.id`
+ * (a WorkflowStage), which has no overlap with the shared CommandStage
+ * union. Keeping the historical string comparison preserves runtime
+ * behavior until the stage-tagging wire contract is settled (R2 red line:
+ * zero behavior change in this task).
+ */
+export type CommandRunDto = Weaken<
+  Pick<
+    CommandRun,
+    | 'id'
+    | 'stepRunId'
+    | 'cwd'
+    | 'command'
+    | 'stage'
+    | 'status'
+    | 'exitCode'
+    | 'durationMs'
+    | 'stdoutRef'
+    | 'stderrRef'
+    | 'stdoutSha256'
+    | 'stderrSha256'
+    | 'combinedSha256'
+    | 'startedAt'
+    | 'timedOut'
+    | 'truncated'
+  >,
+  'stage'
+>;
 
-export interface GateRunDto {
-  id: string;
-  gateId: string;
-  stepRunId?: string | null;
-  status: 'pass' | 'warn' | 'fail';
-  decidedAt: string;
-  ruleResults: Array<{ ruleId: string; status: string; message: string }>;
-}
+/**
+ * Derived from the shared {@link GateRun}. `ruleResults` rows are trimmed to
+ * the render fields ({@link RuleResult} minus `evidenceRefs`, which the SPA
+ * does not consume).
+ */
+export type GateRunDto = Pick<GateRun, 'id' | 'gateId' | 'stepRunId' | 'status' | 'decidedAt'> & {
+  ruleResults: Array<Pick<RuleResult, 'ruleId' | 'status' | 'message'>>;
+};
 
-export interface ArtifactDto {
-  id: string;
-  kind: string;
-  stepRunId?: string | null;
-  uri: string;
-  contentType: string;
-  sha256?: string | null;
-  createdAt: string;
-  metadata?: Record<string, unknown>;
-}
+/**
+ * Derived from the shared {@link Artifact}. `metadata` is Optionalized: the
+ * wire always carries it, but legacy fixtures omit it and src reads it
+ * defensively, so demoting keeps those callers honest without weakening.
+ */
+export type ArtifactDto = Optionalize<
+  Pick<Artifact, 'id' | 'kind' | 'stepRunId' | 'uri' | 'contentType' | 'sha256' | 'createdAt' | 'metadata'>,
+  'metadata'
+>;
 
+/**
+ * Shadow of the api-private `Approval` (apps/api/src/store/store.ts) — no
+ * shared source exists, so this stays hand-aligned. Registered in task
+ * notes.md (R4) as a "wire contract → shared" follow-up candidate.
+ */
 export interface ApprovalDto {
   id: string;
   gateId: string;
@@ -213,6 +277,11 @@ export interface ApprovalDto {
   decidedAt: string;
 }
 
+/**
+ * Shadow of the api-private `WorkflowAction` (apps/api/src/store/store.ts) —
+ * no shared source exists, so this stays hand-aligned. Registered in task
+ * notes.md (R4) as a "wire contract → shared" follow-up candidate.
+ */
 export interface WorkflowActionDto {
   id: string;
   workflowRunId: string;
@@ -224,28 +293,67 @@ export interface WorkflowActionDto {
   createdAt: string;
 }
 
-export interface BuildRunDto {
-  id: string;
-  status: string;
-  jdkVersion: string;
-  mavenCommand: string;
-}
+/** Derived from the shared {@link BuildRun}; the SPA renders only these four fields. */
+export type BuildRunDto = Pick<BuildRun, 'id' | 'status' | 'jdkVersion' | 'mavenCommand'>;
 
-export interface TestRunDto {
-  id?: string;
-  buildRunId?: string;
-  framework: string;
-  total: number;
-  passed: number;
-  failed: number;
-  errors: number;
-  skipped: number;
-  reportArtifactIds?: string[];
+/**
+ * Derived from the shared {@link TestRun}. `id` / `buildRunId` /
+ * `reportArtifactIds` are Optionalized: the wire always carries them, but
+ * the SPA only renders aggregate counts and legacy fixtures omit them.
+ */
+export type TestRunDto = Optionalize<
+  Pick<
+    TestRun,
+    'id' | 'buildRunId' | 'framework' | 'total' | 'passed' | 'failed' | 'errors' | 'skipped' | 'reportArtifactIds'
+  >,
+  'id' | 'buildRunId' | 'reportArtifactIds'
+>;
+
+/**
+ * Derived from the shared {@link StepRun} (web omits `workflowRunId`, which
+ * is implied by the detail scope). `startedAt` / `completedAt` are
+ * Optionalized: the wire always carries them (nullable), but legacy fixtures
+ * omit them and src already treats them as nullable.
+ */
+export type StepRunDto = Optionalize<
+  Pick<StepRun, 'id' | 'stage' | 'name' | 'status' | 'startedAt' | 'completedAt'>,
+  'startedAt' | 'completedAt'
+>;
+
+/**
+ * Derived from the shared {@link AgentTask}. `createdAt` is Optionalized for
+ * legacy fixtures; `prompt` / `inputArtifactIds` are not consumed by the SPA.
+ */
+export type AgentTaskDto = Optionalize<
+  Pick<AgentTask, 'id' | 'stepRunId' | 'kind' | 'backend' | 'createdAt'>,
+  'createdAt'
+>;
+
+/**
+ * Derived from the shared {@link AgentResult}. `summary` / `completedAt` are
+ * Optionalized: legacy fixtures omit them and src renders them defensively.
+ */
+export type AgentResultDto = Optionalize<
+  Pick<AgentResult, 'id' | 'taskId' | 'status' | 'summary' | 'completedAt'>,
+  'summary' | 'completedAt'
+>;
+
+/**
+ * Shadow of the api-private `AuditEntry` (apps/api/src/store/store.ts) — no
+ * shared source exists, so this stays hand-aligned. Registered in task
+ * notes.md (R4) as a "wire contract → shared" follow-up candidate.
+ */
+export interface AuditEntryDto {
+  id: string;
+  workflowRunId?: string | null;
+  kind: string;
+  payload?: Record<string, unknown>;
+  at: string;
 }
 
 export interface RunDetail {
   run: WorkflowRunDto;
-  steps: Array<{ id: string; stage: Stage; name: string; status: string; startedAt?: string | null; completedAt?: string | null }>;
+  steps: StepRunDto[];
   commands: CommandRunDto[];
   gates: GateRunDto[];
   artifacts: ArtifactDto[];
@@ -253,9 +361,9 @@ export interface RunDetail {
   tests: TestRunDto[];
   approvals: ApprovalDto[];
   actions: WorkflowActionDto[];
-  agentTasks: Array<{ id: string; stepRunId?: string | null; kind: string; backend: string; createdAt?: string }>;
-  agentResults: Array<{ id: string; taskId: string; status: string; summary?: string; completedAt?: string }>;
-  audit: Array<{ id: string; workflowRunId?: string | null; kind: string; payload?: Record<string, unknown>; at: string }>;
+  agentTasks: AgentTaskDto[];
+  agentResults: AgentResultDto[];
+  audit: AuditEntryDto[];
 }
 
 export interface StageProjection {
@@ -495,25 +603,11 @@ export interface CompletionReportDoc {
   sections: CompletionReportSection[];
 }
 
-export interface WorkflowRequestSummary {
-  id: string;
-  projectId: string;
-  type: string;
-  title: string;
-  branch: string;
-  status: string;
-  claimedBy: string | null;
-  workflowRunId: string | null;
-  error: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface WorkbenchOverview {
   toConfirm: WorkflowRunDto[];
   failedGates: Array<{ runId: string; gateId: string }>;
   running: WorkflowRunDto[];
-  pendingRequests: WorkflowRequestSummary[];
+  pendingRequests: WorkflowRequestDto[];
   recentReports: WorkflowRunDto[];
 }
 
@@ -538,15 +632,26 @@ export function reportStats(runs: WorkflowRunDto[]): ReportStats {
   };
 }
 
-export function reportNeedsAttention(run: WorkflowRunDto): boolean {
+/**
+ * R2 (T2.4): these report predicates historically also compared against
+ * `WorkflowRequestStatus` values ('awaiting_clarification' / 'completed' /
+ * 'claimed'). The API never produces those statuses on a WorkflowRun (see
+ * task notes.md R2 evidence chain: every `run.status` write in
+ * apps/api/src/workflow-engine.ts is a `WorkflowRunStatus`), but to keep the
+ * task's "zero runtime behavior change" red line the comparisons are kept
+ * verbatim and the *parameter* status union is widened explicitly instead.
+ */
+export type ReportableStatus = WorkflowRunStatus | WorkflowRequestStatus;
+
+export function reportNeedsAttention(run: { status: ReportableStatus }): boolean {
   return run.status === 'failed' || run.status === 'awaiting_human' || run.status === 'awaiting_clarification';
 }
 
-export function reportIsAcceptable(run: WorkflowRunDto): boolean {
+export function reportIsAcceptable(run: { status: ReportableStatus }): boolean {
   return run.status === 'passed' || run.status === 'completed';
 }
 
-export function reportIsRunning(run: WorkflowRunDto): boolean {
+export function reportIsRunning(run: { status: ReportableStatus }): boolean {
   return run.status === 'running' || run.status === 'pending' || run.status === 'claimed';
 }
 
@@ -762,7 +867,7 @@ export function buildAcceptanceChecklist(
 
 export function buildWorkbenchOverview(params: {
   runs: WorkflowRunDto[];
-  requests: WorkflowRequestSummary[];
+  requests: WorkflowRequestDto[];
   detailsByRunId?: Record<string, RunDetail | undefined>;
 }): WorkbenchOverview {
   const detailsByRunId = params.detailsByRunId ?? {};

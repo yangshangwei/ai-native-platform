@@ -8,8 +8,12 @@
 
 - TypeScript strict mode is enabled at the workspace level.
 - Cross-package types come from `@ainp/shared`.
-- Web-private DTOs live in `main.ts` for shapes the api doesn't already
-  expose (e.g., redacted credential variants).
+- Web DTOs that mirror a shared entity are **derived** from it
+  (Pick/Omit/Weaken/Optionalize) — never hand-copied as a parallel
+  interface. See "Deriving DTOs from `@ainp/shared`".
+- Web-private DTOs exist only for shapes with no shared source (api-private
+  store/route shapes, redacted variants) and must carry a comment pointing
+  at the api source they hand-align with.
 - Validate every value that crosses a runtime boundary (URL, localStorage,
   fetch response) with a guard.
 
@@ -37,27 +41,63 @@ constants like `STAGES` exported from `projection.ts`.
 
 ---
 
+## Deriving DTOs from `@ainp/shared`
+
+**Shadow DTOs must be derived from the shared entity, not hand-copied.**
+A hand-copied parallel interface diverges silently the moment the api adds
+or retypes a field; a derived type turns the same change into a web compile
+error. The templates live in `apps/web/src/projection.ts`:
+
+```ts
+/** Explicitly weaken the K fields of T to plain string. Comment each use. */
+export type Weaken<T, K extends keyof T> = Omit<T, K> & { [P in K]: string };
+/** Demote the K fields of T from required to optional. Comment each use. */
+export type Optionalize<T, K extends keyof T> = Omit<T, K> & Partial<Pick<T, K>>;
+```
+
+The patterns, in order of preference:
+
+```ts
+// 1. Exact alias — the api serializes the shared entity verbatim.
+export type WorkflowRequestDto = WorkflowRequest;
+
+// 2. Pick — declare only what the SPA actually consumes.
+export type BuildRunDto = Pick<BuildRun, 'id' | 'status' | 'jdkVersion' | 'mavenCommand'>;
+
+// 3. Omit + additions — for genuinely different wire shapes (e.g. redaction).
+export type ProjectDto = Omit<Project, 'sourceCredential'> & {
+  /** API-added replacement for the redacted credential (routes/projects.ts:535). */
+  hasSourceCredential?: boolean;
+};
+
+// 4. Weaken / Optionalize — every deliberate deviation is declared and commented.
+export type ArtifactDto = Optionalize<Pick<Artifact, /* … */ 'metadata'>, 'metadata'>;
+```
+
+Rules:
+
+- **Forbidden:** re-declaring a field list that parallels a shared entity.
+  If the shape exists in `packages/shared/src/types/` (or
+  `packages/shared/src/config/`), derive from it.
+- Every `Weaken` / `Optionalize` use site carries a comment explaining *why*
+  the deviation exists (legacy fixtures, historical comparison contract, …).
+- Shapes with **no shared source** (api-private store/route shapes such as
+  `ApprovalDto`, `RunnerDto`, `ProjectionConfigOverride`) stay hand-written,
+  but must carry a comment naming the api source they hand-align with.
+- `@ainp/shared/node` types are off-limits to the web (e.g.
+  `DigestVerificationDto` stays a hand-aligned shadow).
+
+---
+
 ## Web-private DTOs
 
 When the web's view of a resource differs from the api's storage shape, the
-SPA declares its own DTO. The pattern from `main.ts:36-53`:
-
-```ts
-interface ProjectDto {
-  id: string;
-  name: string;
-  localPath: string;
-  // ... mostly mirrors @ainp/shared Project, BUT:
-  hasSourceCredential: boolean;   // ← redacts the actual credential
-  // Project (shared) has sourceCredential: string | null; the web side replaces
-  // the secret with a boolean derived from the api's PublicProject route.
-}
-```
-
-Web DTOs live next to where they're used. Don't copy the whole shape "just
-in case" — declare only what the SPA actually consumes. Reason: a copy
-diverges silently when the api adds a field; an explicit, narrow DTO makes
-the divergence obvious.
+SPA declares its own DTO — derived per the section above. Web DTOs live in
+`apps/web/src/types.ts` (app-wide) or `apps/web/src/projection.ts`
+(run-detail shapes). Don't copy the whole shape "just in case" — `Pick`
+only what the SPA actually consumes; an explicit, narrow DTO makes
+divergence obvious, and a shared-type change breaks the `Pick` key list at
+compile time.
 
 ---
 
