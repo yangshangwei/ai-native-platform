@@ -3,13 +3,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, expect, test } from 'vitest';
 import type { KnowledgeArtifact } from '@ainp/shared';
-
-process.env.AINP_DB_PATH = join(mkdtempSync(join(tmpdir(), 'ainp-api-test-')), 'ainp.sqlite');
+import { initDb } from '../src/store/db';
 
 let workflow: typeof import('../src/workflow-engine');
 let storeMod: typeof import('../src/store/store');
 
 beforeAll(async () => {
+  // Recommended bootstrap (task 06-12): initialize the DB explicitly with an
+  // isolated path instead of mutating AINP_DB_PATH before a dynamic import.
+  initDb({ path: join(mkdtempSync(join(tmpdir(), 'ainp-api-test-')), 'ainp.sqlite') });
   workflow = await import('../src/workflow-engine');
   storeMod = await import('../src/store/store');
 });
