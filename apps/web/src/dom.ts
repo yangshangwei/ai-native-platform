@@ -137,3 +137,10 @@ export function controlledInput(
   input.oninput = () => onInput(input.value);
   return el('label', { class: 'input-block', children: [el('span', { text: label }), input] });
 }
+
+// Clamps a DOM selectionDirection string to the three valid values for
+// setSelectionRange. Moved verbatim from main.ts (T2.3 page split): shared
+// by the coordinator reply composer and the new-task form focus restore.
+export function normalizeSelectionDirection(direction: string | null): 'forward' | 'backward' | 'none' {
+  return direction === 'forward' || direction === 'backward' ? direction : 'none';
+}

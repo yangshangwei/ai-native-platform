@@ -9,10 +9,10 @@
  *   2. capture/restore user-owned disclosure (`<details>`) state;
  *   3. capture/restore scroll positions (viewport + scrollable panes).
  * Moved verbatim out of `main.ts` (T2.1 base-layer split) with one wiring
- * change: the page shell renderer and the coordinator/new-task composer
- * capture/restore helpers still live in `main.ts`, so they are injected
- * via `setRenderHooks` instead of imported (avoids a main.ts <->
- * render-core import cycle until the page modules move).
+ * change: the page shell renderer (shell.ts) and the coordinator/new-task
+ * composer capture/restore helpers (coordinator-chat.ts / page-new-task.ts)
+ * are feature modules above this base layer, so main.ts injects them via
+ * `setRenderHooks` (avoids a base-layer -> feature-module import).
  */
 
 import { clear } from './dom';

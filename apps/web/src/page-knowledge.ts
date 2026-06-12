@@ -18,8 +18,8 @@
  * read path is unchanged and no import cycle is introduced.
  * `renderKnowledgeSuggestion` / `knowledgeSuggestionItems` /
  * `currentKnowledgeArtifacts` / `knowledgeArtifactsState` are also consumed
- * by main.ts (task-detail panel + sidebar summary); that import stays
- * one-way (main.ts → this module). Moved verbatim out of `main.ts` /
+ * by page-task-detail.ts (knowledge panel) and shell.ts (topbar summary);
+ * those imports stay one-way (consumer → this module). Moved verbatim out of `main.ts` /
  * `state.ts` / `data-loading.ts` (T2.2 page split); the only rewrite was
  * mechanical: `ui.knowledgeActiveView` became the module-scope
  * `knowledgeActiveView`.

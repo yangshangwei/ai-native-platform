@@ -7,9 +7,8 @@
  * of `main.ts` (T2.1 base-layer split); the only rewrite was mechanical:
  * former module-level `let` bindings became properties of the `ui` object,
  * because ES-module `export let` is a read-only live binding for importers.
- * Page-private state now lives in its page module (T2.2: settings/reports/
- * knowledge/stream); coordinator drafts and new-task drafts still live in
- * `main.ts` until those modules move (T2.3).
+ * Page-private state lives in its page module (T2.2: settings/reports/
+ * knowledge/stream; T2.3: projects/new-task/coordinator-chat/task-detail).
  */
 
 import type {
@@ -19,11 +18,9 @@ import type {
   ArtifactContentDto,
   CommandLogsDto,
   ContextGovernanceDto,
-  LocalDirectoryPickerState,
   Page,
   ProjectAgentBackendKind,
   ProjectDto,
-  ProjectSourceFormState,
   RunnerDto,
   StatusKind,
   WorkflowRequestDto,
@@ -82,32 +79,9 @@ export const contextGovernanceByRun = new Map<string, ContextGovernanceDto | nul
 export const contextGovernanceInFlight = new Set<string>();
 export const approvalInFlight = new Set<string>();
 export const approvalLastSubmittedAt = new Map<string, number>();
-export const projectActionInFlight = new Set<string>();
-export const projectBranchRefreshInFlight = new Set<string>();
 export const agentBackendPreflight = new Map<string, AgentBackendPreflightDto>();
 export const agentBackendPreflightInFlight = new Set<string>();
 export const runnerAutoStartAttemptedForRequest = new Set<string>();
-
-export const localDirectoryPicker: LocalDirectoryPickerState = {
-  open: false,
-  loading: false,
-  error: null,
-  listing: null,
-};
-
-export const projectSourceForm: ProjectSourceFormState = {
-  editingProjectId: null,
-  sourceKind: 'github',
-  agentBackend: '',
-  name: '',
-  sourceValue: '',
-  sourceAuthKind: 'none',
-  sourceUsername: '',
-  sourceCredential: '',
-  defaultBranch: 'main',
-  detectResult: null,
-  detecting: false,
-};
 
 export function projectName(projectId: string): string {
   return data.projects.find((p) => p.id === projectId)?.name ?? projectId;
@@ -199,6 +173,32 @@ export function agentBackendContextLabel(project: ProjectDto | null): { value: s
 export function agentBackendLabelForProject(project: ProjectDto | null): string {
   if (!project) return '未选择项目';
   return project.agentBackend ? agentBackendDisplayName(project.agentBackend) : '未配置';
+}
+
+// Shared label helper (moved verbatim from main.ts, T2.3 page split) — used
+// by both the projects page (project card) and the new-task page (backend
+// hint), so it lives in the base layer next to the other backend labels.
+export function backendStatusText(label: string): string {
+  if (label === 'Connected') return '已连接';
+  if (label === 'Not checked') return '待检测';
+  if (label === 'Needs setup') return '待配置';
+  if (label === 'Needs login') return '需要登录';
+  if (label === 'CLI missing') return '缺少 CLI';
+  if (label === 'Check failed') return '检测失败';
+  if (label === '未检测') return '未检测';
+  return label;
+}
+
+// Shared label helper (moved verbatim from main.ts, T2.3 page split) — used
+// by both the workbench task list and the task-detail focus summary.
+export function requestStatusLabel(status: WorkflowRequestDto['status']): string {
+  if (status === 'pending') return '等待开始';
+  if (status === 'awaiting_clarification') return '等待补充信息';
+  if (status === 'claimed') return '执行中';
+  if (status === 'completed') return '已完成';
+  if (status === 'failed') return '需要处理';
+  if (status === 'cancelled') return '已取消';
+  return status;
 }
 
 export function preflightForProjectBackend(project: ProjectDto | null): AgentBackendPreflightDto | null {

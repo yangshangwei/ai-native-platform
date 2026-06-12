@@ -47,8 +47,9 @@ interface StreamHooks {
   attachRunStream: (runId: string) => void;
 }
 
-// Registered by main.ts at bootstrap. The SSE controller has not been
-// extracted yet (T2.3); these hooks keep the import direction one-way.
+// Registered by main.ts at bootstrap. The SSE controller (stream.ts) is a
+// feature module above this base layer; these hooks keep the import
+// direction one-way.
 let streamHooks: StreamHooks = {
   syncActiveStreamSubscription: () => {},
   attachRunStream: () => {},

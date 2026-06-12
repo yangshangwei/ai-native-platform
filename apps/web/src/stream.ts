@@ -2,8 +2,8 @@
  * SSE agent stream controller — EventSource lifecycle + live view patching.
  *
  * Not a page: it is the live-tail engine consumed by the task-detail /
- * workbench / coordinator renderers in main.ts (import direction stays
- * one-way: main.ts → this module). Owns the stream* state family:
+ * workbench / coordinator-chat / shell renderers (import direction stays
+ * one-way: consumers → this module). Owns the stream* state family:
  *   - `streamES` / `streamChannel`: the single active EventSource and the
  *     run/request channel it is attached to;
  *   - `streamEventsByChannel`: per-channel event cache so reattaching
