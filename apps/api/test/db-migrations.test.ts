@@ -127,7 +127,11 @@ test('runMigrations is idempotent across two consecutive opens of the same file'
 test('schema equivalence: legacy import-side-effect DB === fresh versioned-migrations DB', () => {
   const legacyPath = tmpDbPath('ainp-mig-legacy-schema-');
   buildLegacyDb(legacyPath);
-  const legacy = new Database(legacyPath);
+  // The legacy fixture is frozen at the takeover era (v21). Migrations
+  // appended after the freeze (22/23: projects build-command columns) must
+  // be applied to the legacy DB too — convergence means "legacy + pending
+  // migrations === fresh full migration run".
+  const legacy = openMigrated(legacyPath);
   const legacyDump = schemaDump(legacy);
   legacy.close();
 
@@ -174,15 +178,17 @@ test('baseline takeover: legacy DB with data gains bookkeeping, keeps data, no d
        VALUES ('evt_takeover', 'req_takeover', 'coordinator', 1, 'text', '{}', '2026-06-12T00:00:00Z')`,
     )
     .run();
-  const schemaBefore = schemaDump(before);
   before.close();
 
-  // Takeover: every migration's isApplied probe must detect the existing
-  // schema, so this records bookkeeping without re-running any ALTER
-  // (a duplicate ALTER would throw "duplicate column name").
+  // Takeover: every freeze-era migration's isApplied probe must detect the
+  // existing schema (a duplicate ALTER would throw "duplicate column name");
+  // migrations appended after the legacy freeze (22/23) run their real up()
+  // and the result must converge with a fresh versioned-migrations DB.
   const database = openMigrated(path);
   expect(recordedVersions(database)).toEqual(ALL_VERSIONS);
-  expect(schemaDump(database)).toEqual(schemaBefore);
+  const fresh = openMigrated(tmpDbPath('ainp-mig-takeover-fresh-'));
+  expect(schemaDump(database)).toEqual(schemaDump(fresh));
+  fresh.close();
 
   const project = database
     .prepare(`SELECT id, name, status FROM projects WHERE id = 'proj_takeover'`)

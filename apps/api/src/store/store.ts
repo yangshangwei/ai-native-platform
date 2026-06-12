@@ -130,6 +130,8 @@ interface ProjectRow {
   agent_backend: string | null;
   language: string;
   build_tool: string;
+  build_compile_command: string | null;
+  build_test_command: string | null;
   default_branch: string;
   source_branches_json: string | null;
   registered_at: string;
@@ -150,6 +152,8 @@ function rowToProject(r: ProjectRow): Project {
     agentBackend: isProjectAgentBackendKind(r.agent_backend) ? r.agent_backend : null,
     language: r.language as Project['language'],
     buildTool: r.build_tool as Project['buildTool'],
+    buildCompileCommand: r.build_compile_command ?? null,
+    buildTestCommand: r.build_test_command ?? null,
     defaultBranch: r.default_branch,
     sourceBranches: parseStringArrayJson(r.source_branches_json),
     registeredAt: r.registered_at,
@@ -173,6 +177,8 @@ const projectsTable = defineTable<ProjectRow, Project>({
     agent_backend: p.agentBackend ?? null,
     language: p.language,
     build_tool: p.buildTool,
+    build_compile_command: p.buildCompileCommand ?? null,
+    build_test_command: p.buildTestCommand ?? null,
     default_branch: p.defaultBranch,
     source_branches_json: p.sourceBranches ? JSON.stringify(p.sourceBranches) : null,
     registered_at: p.registeredAt,

@@ -36,6 +36,15 @@ export interface Project {
   agentBackend?: ProjectAgentBackendKind | null;
   language: ProjectLanguage;
   buildTool: ProjectBuildTool;
+  /**
+   * Optional project-specific compile command (e.g. `gradle build`). Null or
+   * missing means "use the runner's Maven default". Validated at registration
+   * time (no shell metacharacters — the runner spawns without a shell) and
+   * allow-listed at execution time via the whitelist `extraAllow` mechanism.
+   */
+  buildCompileCommand?: string | null;
+  /** Optional project-specific test command. Same contract as buildCompileCommand. */
+  buildTestCommand?: string | null;
   defaultBranch: string;
   /** Cached source branches discovered during project detection/refresh. */
   sourceBranches?: string[];

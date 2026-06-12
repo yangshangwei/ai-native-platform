@@ -507,6 +507,12 @@ export const MIGRATIONS: Migration[] = [
       })();
     },
   },
+  // 06-12 build-command de-hardcoding (roadmap T3.2): optional project-level
+  // custom compile/test commands. NULL means "use the runner's Maven
+  // default". Validated at the API boundary (no shell metacharacters) and
+  // allow-listed at execution time via the whitelist extraAllow mechanism.
+  addColumn(22, 'projects', 'build_compile_command', `build_compile_command TEXT`),
+  addColumn(23, 'projects', 'build_test_command', `build_test_command TEXT`),
 ];
 
 // ---------------------------------------------------------------------------

@@ -41,6 +41,10 @@ export interface ProjectDto {
   archivedAt?: string | null;
   language: string;
   buildTool: string;
+  /** Optional project-specific compile command; null/missing = Maven default. */
+  buildCompileCommand?: string | null;
+  /** Optional project-specific test command; null/missing = Maven default. */
+  buildTestCommand?: string | null;
   defaultBranch: string;
   sourceBranches?: string[];
   registeredAt: string;
@@ -106,6 +110,8 @@ export interface ProjectSourceFormState {
   sourceUsername: string;
   sourceCredential: string;
   defaultBranch: string;
+  buildCompileCommand: string;
+  buildTestCommand: string;
   detectResult: SourceDetectResult | null;
   detecting: boolean;
 }

@@ -16,6 +16,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 |-------|-------------|--------|
 | [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
 | [Database Guidelines](./database.md) | SQLite connection lifecycle, versioned migrations (`schema_migrations`), migration discipline | Current |
+| [Project Build Commands](./build-commands.md) | Optional project-level build/test commands: validation, whitelist `extraAllow`, test_gate conditional degrade | Current |
 | [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |

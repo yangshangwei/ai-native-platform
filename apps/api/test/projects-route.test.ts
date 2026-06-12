@@ -487,6 +487,142 @@ test('updates an existing project while keeping saved credential when omitted', 
   expect(await secretRes.json()).toMatchObject({ sourceCredential: 'old-secret' });
 });
 
+// ---------------------------------------------------------------------------
+// T3.2: optional project-level build/test commands.
+// ---------------------------------------------------------------------------
+
+test('registers a project with custom build/test commands and trims them', async () => {
+  const res = await app.request('/projects', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: 'custom-build-commands',
+      localPath: '/repos/custom-build-commands',
+      defaultBranch: 'main',
+      buildCompileCommand: '  gradle assemble  ',
+      buildTestCommand: 'gradle test',
+    }),
+  });
+
+  expect(res.status).toBe(201);
+  expect(await res.json()).toMatchObject({
+    name: 'custom-build-commands',
+    buildCompileCommand: 'gradle assemble',
+    buildTestCommand: 'gradle test',
+  });
+});
+
+test('defaults build/test commands to null when omitted at registration', async () => {
+  const res = await app.request('/projects', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: 'default-build-commands',
+      localPath: '/repos/default-build-commands',
+      defaultBranch: 'main',
+    }),
+  });
+
+  expect(res.status).toBe(201);
+  expect(await res.json()).toMatchObject({
+    buildCompileCommand: null,
+    buildTestCommand: null,
+  });
+});
+
+test('rejects build commands containing shell metacharacters with 400', async () => {
+  for (const [field, command] of [
+    ['buildTestCommand', 'mvn -B test && rm -rf /'],
+    ['buildTestCommand', 'mvn test; echo pwned'],
+    ['buildCompileCommand', 'make | tee log'],
+    ['buildCompileCommand', 'echo $(whoami)'],
+    ['buildTestCommand', 'mvn -Dtest="Foo Bar" test'],
+    ['buildTestCommand', 'mvn -B test\nrm -rf /'],
+  ] as const) {
+    const res = await app.request('/projects', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: `bad-build-command-${Math.random().toString(16).slice(2)}`,
+        localPath: '/repos/bad-build-command',
+        defaultBranch: 'main',
+        [field]: command,
+      }),
+    });
+
+    expect(res.status, command).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: expect.stringContaining(field),
+    });
+  }
+});
+
+test('PUT merge semantics: omitted keeps, empty string and null clear, non-empty sets', async () => {
+  const createdRes = await app.request('/projects', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: 'build-command-merge',
+      localPath: '/repos/build-command-merge',
+      defaultBranch: 'main',
+      buildCompileCommand: 'gradle assemble',
+      buildTestCommand: 'gradle test',
+    }),
+  });
+  expect(createdRes.status).toBe(201);
+  const created = (await createdRes.json()) as { id: string };
+
+  // Omitted fields keep current values.
+  const keepRes = await app.request(`/projects/${created.id}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ defaultBranch: 'develop' }),
+  });
+  expect(keepRes.status).toBe(200);
+  expect(await keepRes.json()).toMatchObject({
+    buildCompileCommand: 'gradle assemble',
+    buildTestCommand: 'gradle test',
+    defaultBranch: 'develop',
+  });
+
+  // Non-empty string replaces; empty string clears.
+  const setRes = await app.request(`/projects/${created.id}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ buildCompileCommand: 'make build', buildTestCommand: '' }),
+  });
+  expect(setRes.status).toBe(200);
+  expect(await setRes.json()).toMatchObject({
+    buildCompileCommand: 'make build',
+    buildTestCommand: null,
+  });
+
+  // Explicit null clears too.
+  const clearRes = await app.request(`/projects/${created.id}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ buildCompileCommand: null }),
+  });
+  expect(clearRes.status).toBe(200);
+  expect(await clearRes.json()).toMatchObject({
+    buildCompileCommand: null,
+    buildTestCommand: null,
+  });
+
+  // Invalid update is rejected without mutating stored values.
+  const badRes = await app.request(`/projects/${created.id}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ buildTestCommand: 'mvn test && echo hacked' }),
+  });
+  expect(badRes.status).toBe(400);
+  const afterBad = await app.request(`/projects/${created.id}`);
+  expect(await afterBad.json()).toMatchObject({
+    buildCompileCommand: null,
+    buildTestCommand: null,
+  });
+});
+
 async function registerLocalProject(name: string): Promise<{ id: string; name: string }> {
   const res = await app.request('/projects', {
     method: 'POST',

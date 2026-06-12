@@ -207,9 +207,16 @@ export async function executeBuildTest(
   c: RunCtx,
   deps: StepDeps = DEFAULT_STEP_DEPS,
 ): Promise<void> {
+  // T3.2: project-level custom commands win; null/missing falls back to the
+  // historical mvnw/mvn detection (byte-for-byte identical command strings).
   const mvn = existsSync(join(c.workspace.path, 'mvnw')) ? './mvnw' : 'mvn';
-  const compileCommand = `${mvn} -B -DskipTests compile`;
-  const testCommand = `${mvn} -B test`;
+  const customCompile = c.project.buildCompileCommand?.trim() || null;
+  const customTest = c.project.buildTestCommand?.trim() || null;
+  const compileCommand = customCompile ?? `${mvn} -B -DskipTests compile`;
+  const testCommand = customTest ?? `${mvn} -B test`;
+  // Custom commands are allow-listed by exact string; the whitelist check in
+  // runWhitelistedCommand remains the hard gate.
+  const extraAllow = [customCompile, customTest].filter((cmd): cmd is string => Boolean(cmd));
   const { step } = await deps.api.stepStarted({
     workflowRunId: c.run.id,
     stage: 'build_test',
@@ -226,6 +233,7 @@ export async function executeBuildTest(
     timeoutMs: DEFAULT_TIMEOUT_MS,
     maxLogBytes: DEFAULT_MAX_LOG_BYTES,
     logDir,
+    extraAllow,
   });
   await deps.api.commandRun(compileCr);
   console.log(`[runner] compile command ${compileCr.status} (exit=${compileCr.exitCode})`);
@@ -244,6 +252,7 @@ export async function executeBuildTest(
     timeoutMs: DEFAULT_TIMEOUT_MS,
     maxLogBytes: DEFAULT_MAX_LOG_BYTES,
     logDir,
+    extraAllow,
   });
   await deps.api.commandRun(cr);
   console.log(`[runner] build_test command ${cr.status} (exit=${cr.exitCode})`);

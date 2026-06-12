@@ -152,11 +152,26 @@ export function runTestGate(params: {
   }
 
   if (!params.surefireAggregate) {
+    // T3.2 conditional degrade: a project that configured a custom test
+    // command usually produces no surefire XML. When (a) the run's project
+    // has a custom buildTestCommand AND (b) the test CommandRun exited 0,
+    // missing reports degrade to `warn` instead of `fail`. The default Maven
+    // path keeps the hard fail. Project lookup goes straight through the
+    // store (gate-engine must not depend on workflow-engine).
+    const run = store.workflowRuns.get(params.workflowRunId);
+    const project = run ? store.projects.get(run.projectId) : undefined;
+    const customTestCommand = project?.buildTestCommand?.trim();
+    const degrade = Boolean(customTestCommand) && testCmd?.exitCode === 0;
     results.push({
       ruleId: 'test.surefire_present',
-      status: 'fail',
-      message: 'no Surefire reports parsed',
-      evidenceRefs: [],
+      status: degrade ? 'warn' : 'fail',
+      message: degrade
+        ? 'no structured test report (custom test command)'
+        : 'no Surefire reports parsed',
+      evidenceRefs:
+        degrade && testCmd
+          ? [{ artifactId: testCmd.id, claim: `${testCmd.command} -> exit=${testCmd.exitCode}` }]
+          : [],
     });
   } else {
     const reportEvidence: EvidenceRef[] = params.testRuns.flatMap((tr) =>

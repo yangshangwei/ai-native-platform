@@ -83,8 +83,11 @@ a small enough surface that nesting doesn't help.
   has no DB access; this IS its persistence layer (see
   `database-guidelines.md`).
 - `command-runner.ts` — runs whitelisted commands and emits `CommandRun`. See
-  `packages/shared/src/utils/whitelist.ts` for the whitelist (8 patterns
-  including `git status`, `mvn -B test`, `./mvnw -B -DskipTests compile`).
+  `packages/shared/src/utils/whitelist.ts` for the whitelist (8 static
+  patterns including `git status`, `mvn -B test`,
+  `./mvnw -B -DskipTests compile`) plus the T3.2 project-level `extraAllow`
+  exact-match additions (a registered project's custom build/test commands —
+  see `.trellis/spec/api/backend/build-commands.md`).
 - `worktree.ts` — `TrustedLocalWorktreeEnvironment.prepare(run)` creates a
   detached worktree at `WORKTREES_DIR/<projectId>/<runId>/` on the run's
   branch. Idempotent.

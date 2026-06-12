@@ -908,3 +908,133 @@ test('evidence gate rejects verifier matrix refs to untagged image artifacts', (
   expect(ruleById['evidence.ui_verifier_matrix_present'].status).toBe('pass');
   expect(ruleById['evidence.ui_verifier_media_refs_present'].status).toBe('fail');
 });
+
+// ---------------------------------------------------------------------------
+// T3.2: test_gate `test.surefire_present` conditional degrade. Custom test
+// command projects (no surefire XML) get `warn` when the test command exited
+// 0; everything else keeps the hard fail.
+// ---------------------------------------------------------------------------
+
+function insertRunWithBuildCommands(
+  workflowRunId: string,
+  buildTestCommand: string | null,
+): void {
+  const project: Project = {
+    id: `proj_${workflowRunId}`,
+    name: `project-${workflowRunId}`,
+    localPath: tmpdir(),
+    language: 'java',
+    buildTool: 'maven',
+    buildCompileCommand: null,
+    buildTestCommand,
+    defaultBranch: 'main',
+    registeredAt: new Date().toISOString(),
+  };
+  storeMod.store.projects.set(project.id, project);
+  const run: WorkflowRun = {
+    id: workflowRunId,
+    projectId: project.id,
+    type: 'feature',
+    status: 'running',
+    currentStage: 'build_test',
+    flowId: 'feature.standard',
+    startStage: null,
+    configSnapshotId: null,
+    sourceBranch: 'main',
+    branch: `ai/${workflowRunId}`,
+    workspacePath: tmpdir(),
+    title: 'custom build command run',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+  storeMod.store.workflowRuns.set(run.id, run);
+}
+
+function runTestGateWithoutReports(
+  workflowRunId: string,
+  command: string,
+  exitCode: number,
+): import('@ainp/shared').GateRun {
+  const cmdId = `cmd_${workflowRunId}`;
+  storeMod.store.commandRuns.set(cmdId, {
+    id: cmdId,
+    workflowRunId,
+    stepRunId: null,
+    cwd: '/tmp',
+    command,
+    stage: 'test',
+    status: exitCode === 0 ? 'passed' : 'failed',
+    exitCode,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    durationMs: 1,
+    stdoutRef: 'file:///tmp/stdout.log',
+    stderrRef: 'file:///tmp/stderr.log',
+    stdoutBytes: 0,
+    stderrBytes: 0,
+    timedOut: false,
+    truncated: false,
+  });
+  return gates.runTestGate({
+    workflowRunId,
+    stepRunId: null,
+    buildRun: {
+      id: `build_${workflowRunId}`,
+      workflowRunId,
+      stepRunId: null,
+      language: 'java',
+      buildTool: 'maven',
+      jdkVersion: '1.8',
+      mavenCommand: command,
+      status: exitCode === 0 ? 'passed' : 'failed',
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      commandRunIds: [cmdId],
+      artifactIds: [],
+    },
+    testRuns: [],
+    surefireAggregate: null,
+  });
+}
+
+test('test_gate degrades surefire_present to warn for custom test command with exit 0 and no reports', () => {
+  const workflowRunId = 'run_custom_cmd_exit0';
+  insertRunWithBuildCommands(workflowRunId, 'gradle test');
+
+  const gate = runTestGateWithoutReports(workflowRunId, 'gradle test', 0);
+
+  expect(gate.status).toBe('warn');
+  const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
+  expect(ruleById['test.exit_zero'].status).toBe('pass');
+  expect(ruleById['test.surefire_present'].status).toBe('warn');
+  expect(ruleById['test.surefire_present'].message).toBe(
+    'no structured test report (custom test command)',
+  );
+  expect(ruleById['test.surefire_present'].evidenceRefs.length).toBeGreaterThan(0);
+});
+
+test('test_gate keeps surefire_present fail for custom test command with non-zero exit', () => {
+  const workflowRunId = 'run_custom_cmd_exit1';
+  insertRunWithBuildCommands(workflowRunId, 'gradle test');
+
+  const gate = runTestGateWithoutReports(workflowRunId, 'gradle test', 1);
+
+  expect(gate.status).toBe('fail');
+  const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
+  expect(ruleById['test.exit_zero'].status).toBe('fail');
+  expect(ruleById['test.surefire_present'].status).toBe('fail');
+  expect(ruleById['test.surefire_present'].message).toBe('no Surefire reports parsed');
+});
+
+test('test_gate keeps surefire_present fail on the default Maven path without reports', () => {
+  const workflowRunId = 'run_default_maven_no_reports';
+  insertRunWithBuildCommands(workflowRunId, null);
+
+  const gate = runTestGateWithoutReports(workflowRunId, 'mvn -B test', 0);
+
+  expect(gate.status).toBe('fail');
+  const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
+  expect(ruleById['test.exit_zero'].status).toBe('pass');
+  expect(ruleById['test.surefire_present'].status).toBe('fail');
+  expect(ruleById['test.surefire_present'].message).toBe('no Surefire reports parsed');
+});

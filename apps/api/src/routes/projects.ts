@@ -4,6 +4,7 @@ import { readdir, rm } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
 import {
+  customBuildCommandError,
   errorMessage,
   isProjectAgentBackendKind,
   newId,
@@ -31,6 +32,8 @@ interface RegisterProjectBody {
   agentBackend?: string | null;
   language?: Project['language'];
   buildTool?: Project['buildTool'];
+  buildCompileCommand?: string | null;
+  buildTestCommand?: string | null;
   defaultBranch?: string;
   sourceBranches?: unknown;
   branches?: unknown;
@@ -121,6 +124,11 @@ projects.post('/', async (c) => {
   const normalized = normalizeRegisterBody(body);
   if ('error' in normalized) return c.json({ error: normalized.error }, 400);
 
+  const buildCompile = resolveBuildCommand(body.buildCompileCommand, null, 'buildCompileCommand');
+  if ('error' in buildCompile) return c.json({ error: buildCompile.error }, 400);
+  const buildTest = resolveBuildCommand(body.buildTestCommand, null, 'buildTestCommand');
+  if ('error' in buildTest) return c.json({ error: buildTest.error }, 400);
+
   const existing = store.projectByName(normalized.name);
   if (existing) return c.json(publicProject(existing), 200);
 
@@ -137,6 +145,8 @@ projects.post('/', async (c) => {
     agentBackend: normalized.agentBackend,
     language: body.language ?? 'java',
     buildTool: body.buildTool ?? 'maven',
+    buildCompileCommand: buildCompile.value,
+    buildTestCommand: buildTest.value,
     defaultBranch: normalized.defaultBranch,
     sourceBranches: normalized.sourceBranches,
     status: 'active',
@@ -245,6 +255,21 @@ projects.put('/:id', async (c) => {
   });
   if ('error' in normalized) return c.json({ error: normalized.error }, 400);
 
+  // Merge semantics: field omitted = keep current value; explicit null or
+  // empty/whitespace string = clear; non-empty string = set (after validation).
+  const buildCompile = resolveBuildCommand(
+    body.buildCompileCommand,
+    existing.buildCompileCommand ?? null,
+    'buildCompileCommand',
+  );
+  if ('error' in buildCompile) return c.json({ error: buildCompile.error }, 400);
+  const buildTest = resolveBuildCommand(
+    body.buildTestCommand,
+    existing.buildTestCommand ?? null,
+    'buildTestCommand',
+  );
+  if ('error' in buildTest) return c.json({ error: buildTest.error }, 400);
+
   const existingCredential = existing.sourceCredential ?? null;
   const explicitCredential = body.sourceCredential?.trim();
   const shouldKeepCredential =
@@ -264,6 +289,8 @@ projects.put('/:id', async (c) => {
     agentBackend: normalized.agentBackend ?? existing.agentBackend ?? null,
     language: body.language ?? existing.language,
     buildTool: body.buildTool ?? existing.buildTool,
+    buildCompileCommand: buildCompile.value,
+    buildTestCommand: buildTest.value,
     defaultBranch: normalized.defaultBranch,
     sourceBranches: normalized.sourceBranches,
     status: existing.status ?? 'active',
@@ -416,6 +443,30 @@ function normalizeAgentBackend(value: string | null | undefined):
   const normalized = String(value).trim().toLowerCase();
   if (isProjectAgentBackendKind(normalized)) return { backend: normalized };
   return { error: 'agentBackend must be one of claude_code, codex' };
+}
+
+/**
+ * Project-level custom build/test command (T3.2). Merge semantics:
+ *   - `undefined` (field omitted) → keep `existing`;
+ *   - `null` or empty/whitespace string → clear (null);
+ *   - non-empty string → trim + validate (no shell metacharacters — the
+ *     runner spawns without a shell), reject with a reason otherwise.
+ * This is registration-time hygiene only; the hard gate stays in the
+ * runner's whitelist check at execution time.
+ */
+function resolveBuildCommand(
+  incoming: string | null | undefined,
+  existing: string | null,
+  fieldName: string,
+): { value: string | null } | { error: string } {
+  if (incoming === undefined) return { value: existing };
+  if (incoming === null) return { value: null };
+  if (typeof incoming !== 'string') return { error: `${fieldName} must be a string or null` };
+  const trimmed = incoming.trim();
+  if (!trimmed) return { value: null };
+  const violation = customBuildCommandError(trimmed);
+  if (violation) return { error: `${fieldName}: ${violation}` };
+  return { value: trimmed };
 }
 
 async function detectRegisteredProjectBranches(project: Project): Promise<

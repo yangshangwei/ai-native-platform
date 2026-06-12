@@ -16,6 +16,12 @@ export interface RunCommandInput extends CommandSpec {
   stepRunId: string | null;
   /** Directory to dump per-stream logs into. */
   logDir: string;
+  /**
+   * Project-level exact-match whitelist additions (T3.2): the registered
+   * project's custom build/test commands. The whitelist check here remains
+   * the hard gate — API-side validation is only registration hygiene.
+   */
+  extraAllow?: readonly string[];
 }
 
 /**
@@ -25,7 +31,7 @@ export interface RunCommandInput extends CommandSpec {
  * it (single-state-writer rule).
  */
 export async function runWhitelistedCommand(input: RunCommandInput): Promise<CommandRun> {
-  if (!isWhitelisted(input.command)) {
+  if (!isWhitelisted(input.command, input.extraAllow)) {
     throw new Error(`command not on whitelist: ${input.command}`);
   }
   await mkdir(input.logDir, { recursive: true });

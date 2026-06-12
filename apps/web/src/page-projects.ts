@@ -78,6 +78,8 @@ const projectSourceForm: ProjectSourceFormState = {
   sourceUsername: '',
   sourceCredential: '',
   defaultBranch: 'main',
+  buildCompileCommand: '',
+  buildTestCommand: '',
   detectResult: null,
   detecting: false,
 };
@@ -104,7 +106,10 @@ export function renderProjectsPage(): HTMLElement {
       ...renderProjectSourceDynamicFields(),
     ]),
     renderProjectOnboardingStep(2, '设置默认项', '确认项目名称和默认工作分支。', renderProjectDefaultsFields()),
-    renderProjectOnboardingStep(3, '配置 AI 执行方式', '后续任务会默认使用这里选择的工具。', [renderAgentBackendConfigFields()]),
+    renderProjectOnboardingStep(3, '配置 AI 执行方式', '后续任务会默认使用这里选择的工具。', [
+      renderAgentBackendConfigFields(),
+      ...renderBuildCommandFields(),
+    ]),
     renderProjectDetectPanel(),
   );
 
@@ -279,6 +284,18 @@ function agentBackendOptions(): Array<{ value: ProjectAgentBackendKind; label: s
   return [
     { value: 'claude_code', label: 'Claude Code' },
     { value: 'codex', label: 'Codex' },
+  ];
+}
+
+function renderBuildCommandFields(): HTMLElement[] {
+  return [
+    controlledInput('编译命令（可选）', 'buildCompileCommand', '留空使用 Maven 默认（mvn -B -DskipTests compile）', projectSourceForm.buildCompileCommand, (v) => {
+      projectSourceForm.buildCompileCommand = v;
+    }),
+    controlledInput('测试命令（可选）', 'buildTestCommand', '留空使用 Maven 默认（mvn -B test）', projectSourceForm.buildTestCommand, (v) => {
+      projectSourceForm.buildTestCommand = v;
+    }),
+    el('p', { class: 'muted compact', text: '命令按空格切分直接执行，不经过 shell；不支持 &&、|、; 和引号等写法。' }),
   ];
 }
 
@@ -725,6 +742,8 @@ function editProject(project: ProjectDto): void {
   projectSourceForm.sourceUsername = project.sourceUsername ?? '';
   projectSourceForm.sourceCredential = '';
   projectSourceForm.defaultBranch = project.defaultBranch || 'main';
+  projectSourceForm.buildCompileCommand = project.buildCompileCommand ?? '';
+  projectSourceForm.buildTestCommand = project.buildTestCommand ?? '';
   projectSourceForm.detectResult = {
     ok: true,
     sourceKind,
@@ -754,6 +773,9 @@ function projectSourcePayload(): Record<string, unknown> {
     sourceKind: projectSourceForm.sourceKind,
     agentBackend: projectSourceForm.agentBackend || null,
     defaultBranch: projectSourceForm.defaultBranch || 'main',
+    // 空串 → null：注册时即默认 Maven；编辑时显式清除已保存的自定义命令。
+    buildCompileCommand: projectSourceForm.buildCompileCommand.trim() || null,
+    buildTestCommand: projectSourceForm.buildTestCommand.trim() || null,
   };
   const detectedBranches = projectSourceForm.detectResult?.ok ? projectSourceForm.detectResult.branches : [];
   const sourceBranches = normalizeBranchList(projectSourceForm.defaultBranch || 'main', detectedBranches);
@@ -834,6 +856,8 @@ function resetProjectSourceForm(): void {
   projectSourceForm.sourceUsername = '';
   projectSourceForm.sourceCredential = '';
   projectSourceForm.defaultBranch = 'main';
+  projectSourceForm.buildCompileCommand = '';
+  projectSourceForm.buildTestCommand = '';
   projectSourceForm.detectResult = null;
   projectSourceForm.detecting = false;
 }
