@@ -6,7 +6,7 @@ import {
 import type { AgentBackend } from './agents/types';
 import { ClaudeCodeBackend } from './agents/claude-code';
 import { CodexBackend } from './agents/codex';
-import { preflightAgentBackend } from './agent-backend-preflight';
+import { preflightAgentBackend } from '@ainp/shared/node';
 
 export async function selectAgentBackend(
   project: Project,

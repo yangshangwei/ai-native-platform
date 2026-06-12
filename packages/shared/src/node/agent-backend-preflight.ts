@@ -1,17 +1,18 @@
 import { spawn } from 'node:child_process';
+import type { AgentBackendPreflight, ProjectAgentBackendKind } from '../types/agent';
 import {
   agentBackendAuthCliArgs,
   agentBackendCliArgs,
   buildAgentBackendCliSpawn,
+  resolveAgentBackendCliCandidates,
+} from '../utils/agent-backend-cli';
+import {
   classifyAgentBackendAuthPreflight,
   firstNonEmptyLine,
   missingCliAgentBackendPreflight,
   notConfiguredAgentBackendPreflight,
-  resolveAgentBackendCliCandidates,
   type AgentBackendCliResult,
-  type AgentBackendPreflight,
-  type ProjectAgentBackendKind,
-} from '@ainp/shared';
+} from '../utils/agent-backend-preflight';
 
 const DEFAULT_PREFLIGHT_TIMEOUT_MS = 12_000;
 const CLAUDE_AUTH_STATUS_TIMEOUT_MS = 4_000;
@@ -42,19 +43,19 @@ export async function preflightAgentBackend(
   );
 }
 
-interface SuccessfulCliRun {
+export interface SuccessfulCliRun {
   ok: true;
   bin: string;
   result: AgentBackendCliResult;
 }
 
-interface FailedCliRun {
+export interface FailedCliRun {
   ok: false;
   bin: string;
   result: AgentBackendCliResult;
 }
 
-async function runFirstSuccessfulCli(
+export async function runFirstSuccessfulCli(
   backend: ProjectAgentBackendKind,
   args: string[],
   opts: { timeoutMs: number },
@@ -78,7 +79,7 @@ async function runFirstSuccessfulCli(
   };
 }
 
-function runCli(
+export function runCli(
   bin: string,
   args: string[],
   opts: { cwd?: string; stdin?: string; timeoutMs?: number } = {},
@@ -128,7 +129,7 @@ function runCli(
   });
 }
 
-function preflightTimeoutMs(): number {
+export function preflightTimeoutMs(): number {
   const value = Number(process.env.AINP_AGENT_PREFLIGHT_TIMEOUT_MS ?? DEFAULT_PREFLIGHT_TIMEOUT_MS);
   return Number.isFinite(value) && value > 0 ? value : DEFAULT_PREFLIGHT_TIMEOUT_MS;
 }

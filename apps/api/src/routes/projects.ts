@@ -14,7 +14,7 @@ import {
   type ProjectSourceKind,
 } from '@ainp/shared';
 import { store } from '../store/store';
-import { preflightAgentBackend } from '../agent-backend-preflight';
+import { preflightAgentBackend } from '@ainp/shared/node';
 
 export const projects = new Hono();
 

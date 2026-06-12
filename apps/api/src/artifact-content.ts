@@ -2,7 +2,7 @@ import { basename, dirname, resolve } from 'node:path';
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import type { Artifact } from '@ainp/shared';
-import { verifyFileSha256, type DigestVerification } from './digest';
+import { verifyFileSha256, type DigestVerification } from '@ainp/shared/node';
 
 export interface ArtifactContent {
   text: string;

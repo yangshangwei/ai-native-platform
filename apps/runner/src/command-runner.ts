@@ -9,7 +9,7 @@ import {
   type CommandSpec,
   type CommandStatus,
 } from '@ainp/shared';
-import { sha256Buffer, sha256CombinedStreams } from './digest';
+import { sha256Buffer, sha256CombinedStreams } from '@ainp/shared/node';
 
 export interface RunCommandInput extends CommandSpec {
   workflowRunId: string;

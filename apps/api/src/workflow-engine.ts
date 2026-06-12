@@ -47,7 +47,7 @@ import {
   type WorkflowAction,
 } from './store/store';
 import { db } from './store/db';
-import { sha256File } from './digest';
+import { sha256File } from '@ainp/shared/node';
 import {
   runCompileGate,
   runTestGate,

@@ -18,3 +18,21 @@ export function verifyFileSha256(path: string, expected?: string | null): Digest
   if (!expected) return { algorithm: 'sha256', expected: null, actual, verified: null };
   return { algorithm: 'sha256', expected, actual, verified: actual === expected };
 }
+
+/**
+ * Combined-stream digest contract for `CommandRun.combinedSha256`
+ * (see `types/command.ts`): the digest covers stdout and stderr bytes with
+ * NUL-delimited stream labels, i.e.
+ * `sha256("stdout\0" + <stdout bytes> + "\0stderr\0" + <stderr bytes>)`.
+ * The separators keep the stream boundary unambiguous, so ("ab", "") never
+ * collides with ("a", "b"). Do not change this layout without a migration
+ * plan for previously recorded digests.
+ */
+export function sha256CombinedStreams(stdout: Buffer, stderr: Buffer): string {
+  return createHash('sha256')
+    .update('stdout\0')
+    .update(stdout)
+    .update('\0stderr\0')
+    .update(stderr)
+    .digest('hex');
+}

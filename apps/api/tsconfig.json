@@ -4,7 +4,8 @@
     "noEmit": true,
     "types": ["bun"],
     "paths": {
-      "@ainp/shared": ["../../packages/shared/src/index.ts"]
+      "@ainp/shared": ["../../packages/shared/src/index.ts"],
+      "@ainp/shared/node": ["../../packages/shared/src/node/index.ts"]
     }
   },
   "include": ["src/**/*", "../../packages/shared/src/**/*"]
