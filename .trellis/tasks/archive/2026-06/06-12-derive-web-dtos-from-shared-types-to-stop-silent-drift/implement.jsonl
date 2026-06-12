@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/06-12-derive-web-dtos-from-shared-types-to-stop-silent-drift/research/web-dto-drift.md", "reason": "施工图：影子 DTO 全量清单、逐 DTO 派生表达式草案、风险点（projection.ts 报表三函数的非法 status 比较）"}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "web 类型纪律"}
+{"file": ".trellis/spec/web/frontend/directory-structure.md", "reason": "web 模块组织约束（projection 保持纯、平铺）"}
+{"file": ".trellis/spec/shared/backend/directory-structure.md", "reason": "shared barrel 与 node/ 子路径红线（DigestVerificationDto 不得引 node 子路径）"}

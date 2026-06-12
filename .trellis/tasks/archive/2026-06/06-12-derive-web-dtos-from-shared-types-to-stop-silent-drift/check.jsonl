@@ -1,0 +1,2 @@
+{"file": ".trellis/tasks/06-12-derive-web-dtos-from-shared-types-to-stop-silent-drift/research/web-dto-drift.md", "reason": "审查对照：弱化点是否逐字段显式声明、编译错修复是否引入运行时行为变化"}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "类型纪律合规检查"}
