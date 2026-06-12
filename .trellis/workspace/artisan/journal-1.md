@@ -1306,3 +1306,36 @@ Decided node-only placement as @ainp/shared/node subpath (no new package). Sunk 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 36: Versioned db migrations (roadmap T4.3)
+
+**Date**: 2026-06-12
+**Task**: Versioned db migrations (roadmap T4.3)
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Replaced db.ts import-time DDL/probe-ALTERs with a 21-entry versioned MIGRATIONS list + schema_migrations ledger; baseline takeover for existing databases; lazy singleton keeps all 30 legacy test bootstraps green unchanged; initDb() called eagerly in server.ts (check-agent catch) for fail-fast startup. Schema equivalence locked by test against pre-change DDL. 701 tests green. New spec database.md forbids probe-ALTERs. Roadmap autonomous items now exhausted; T3.2 (build-command abstraction) and T2.4 (web DTO unification) await user decisions.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9489842` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 35
+- **Total Sessions**: 36
 - **Last Active**: 2026-06-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1308 | Active |
+| `journal-1.md` | ~1341 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 36 | 2026-06-12 | Versioned db migrations (roadmap T4.3) | `9489842` | `feat/context-injection-layer-mvp` |
 | 35 | 2026-06-12 | Preflight/digest dedup via @ainp/shared/node (roadmap T4.1+T4.2) | `fed7e9c` | `feat/context-injection-layer-mvp` |
 | 34 | 2026-06-12 | Runner orchestrator de-closure (roadmap T3.1) | `127bb79` | `feat/context-injection-layer-mvp` |
 | 33 | 2026-06-12 | Fix dev-server API proxy connection leak | `921e92a` | `feat/context-injection-layer-mvp` |
