@@ -1405,3 +1405,34 @@ Replaced hand-copied web shadow DTOs with type-level derivations from @ainp/shar
 ### Next Steps
 
 - None - task complete
+
+
+## Session 39: Architecture optimization round-2 audit (roadmap v2)
+
+**Date**: 2026-06-12
+**Task**: Architecture optimization round-2 audit (roadmap v2)
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Four research agents audited leftover debt, robustness, performance, and test/observability on the post-v1 baseline. Key findings: web dev server listens on 0.0.0.0 while proxying /api (LAN-reachable plaintext credential via includeSecret); agent CLI timeouts lack SIGKILL escalation; stream.ts SSE rendering is O(n^2) on history replay (4471-event runs); no CI exists and 2 tests depend on local claude login; test/ dirs are outside typecheck (real fixture drift found); wire-contract sinking remains highest-leverage structural item. Roadmap v2 (R1 security hardening -> R2 CI foundation -> R3 performance -> R4 contracts/structure -> R5 observability) recorded in task prd.md; explicit no-go list kept.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

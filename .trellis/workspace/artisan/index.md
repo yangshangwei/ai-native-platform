@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 38
+- **Total Sessions**: 39
 - **Last Active**: 2026-06-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1407 | Active |
+| `journal-1.md` | ~1438 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 39 | 2026-06-12 | Architecture optimization round-2 audit (roadmap v2) | - | `feat/context-injection-layer-mvp` |
 | 38 | 2026-06-12 | Web DTO derivation from shared types (roadmap T2.4, roadmap complete) | `79c8371` | `feat/context-injection-layer-mvp` |
 | 37 | 2026-06-12 | Per-project build/test commands (roadmap T3.2) | `f60bcd2` | `feat/context-injection-layer-mvp` |
 | 36 | 2026-06-12 | Versioned db migrations (roadmap T4.3) | `9489842` | `feat/context-injection-layer-mvp` |
