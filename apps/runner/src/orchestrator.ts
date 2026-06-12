@@ -1,165 +1,58 @@
 import { join } from 'node:path';
-import { copyFile, mkdir, readdir, stat, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import type {
-  AgentTaskKind,
-  Artifact,
-  ArtifactKind,
-  ContextPack,
-  ContextRequest,
-  FlowId,
-  GateRun,
-  KnowledgeArtifact,
-  Project,
-  SkillSpec,
-  StageStep,
-  WorkflowRun,
-  WorkflowRunType,
-  WorkflowStage,
-  WorkspaceRef,
-  VerifierAcMatrix,
-  VerifierMediaRole,
-  VerifierStatus,
-} from '@ainp/shared';
-import { VERIFIER_AC_MATRIX_SCHEMA_VERSION, VERIFIER_MEDIA_SCHEMA_VERSION, errorMessage, nowIso } from '@ainp/shared';
+import type { FlowId, StageStep, WorkflowRun } from '@ainp/shared';
 import { api } from './api-client';
-import { runWhitelistedCommand } from './command-runner';
 import { TrustedLocalWorktreeEnvironment } from './worktree';
-import { DEFAULT_MAX_LOG_BYTES, DEFAULT_TIMEOUT_MS, WORKTREES_DIR } from './config';
 import { getConfig } from './config-client';
 import { sendHeartbeat } from './heartbeat';
-import { findSkillForStage } from './skills';
-import type { AgentBackend } from './agents/types';
 import { selectAgentBackend } from './backend-selection';
-import { generateProjectProfile, type ProjectProfileResult } from './profile';
 import { FLOW_REGISTRY } from './flows/registry';
+import type {
+  ContextPolicy,
+  OkRef,
+  OrchestrateOpts,
+  OrchestrateResult,
+  PromoteDraftInput,
+  RunCtx,
+} from './orchestrator/types';
 import {
-  acceptedKnowledgeMarkdownForContext,
-  collectAcceptedKnowledge,
-  persistKnowledgeCandidate,
-  type KnowledgePromotionAction,
-} from './knowledge';
-import {
-  buildContextPack,
-  contextSelectionAudit,
-  sanitizeContextRequestForContextInjection,
-} from './context/builder';
-import { buildIncrementalContextPack } from './context/builder';
-import {
-  CONTEXT_REQUEST_SCHEMA_VERSION,
-  parseContextRequestFromAgentOutput,
-  type ParsedContextRequest,
-} from './context/request';
+  executeAcceptance,
+  executeAgentMarkdownStage,
+  executeBuildTest,
+  executeCompletion,
+  executeImplementation,
+  executeKnowledgePromotion,
+  executeVerifier,
+  runContextPack,
+  runStage,
+} from './orchestrator/steps';
 
-export interface OrchestrateOpts {
-  project: string;
-  title: string;
-  /** Agent-facing clarified request brief. The WorkflowRun title remains `title`. */
-  userRequest?: string;
-  sourceBranch?: string;
-  workflowRequestId?: string;
-  /** Coordinator-decided run type. Defaults to 'feature' if omitted. */
-  runType?: WorkflowRunType;
-  /**
-   * V2 W2-3: optional flow id (e.g. 'feature.fastforward'). Forwarded to
-   * `api.createWorkflowRun`; omitting it lets the API use the conservative
-   * default for the Coordinator-decided runType. PRD W2-3 ADR Q4.
-   */
-  flowId?: FlowId;
-  /**
-   * 05-08 new-task-form-flow-startstage-override: optional UI override of
-   * the run's first stage. Only meaningful when `flowId === 'feature.standard'`
-   * (other flows are short, head-to-tail). The orchestrator slices
-   * `FLOW_REGISTRY[flowId].stages` at this stage on the API side.
-   */
-  startStage?: WorkflowStage | null;
-  /**
-   * When set, resume an existing workflow run instead of creating a new one.
-   * Used by the retry-step flow to re-enter orchestration at a specific stage.
-   */
-  workflowRunId?: string;
-  /** Default true — auto-clean worktree at the end. */
-  cleanup?: boolean;
-  /** Default true for CLI mode; watch mode keeps the daemon alive on failed jobs. */
-  setExitCode?: boolean;
-}
+// ---------------------------------------------------------------------------
+// T3.1 de-closure (06-12): this file now holds only the run lifecycle
+// skeleton (`cmdOrchestrate`) and the single-point stage router
+// (`dispatchStep`). The step implementations live in `./orchestrator/steps`,
+// the agent invocation + context-injection layer in
+// `./orchestrator/invoke-skill`, approval polling in
+// `./orchestrator/approval`, and the verifier media pure functions in
+// `./orchestrator/verifier-media`. All previously public exports are
+// re-exported below so the import surface is unchanged.
+// ---------------------------------------------------------------------------
 
-export interface OrchestrateResult {
-  workflowRunId: string;
-  ok: boolean;
-}
+export type { OrchestrateOpts, OrchestrateResult, RunCtx } from './orchestrator/types';
+export { agentTaskBriefForContext } from './orchestrator/invoke-skill';
+export {
+  enforceSensitiveChangeCheckpoint,
+  waitForApprovalDecision,
+  type SensitiveChangeCheckpointDeps,
+} from './orchestrator/approval';
+export {
+  promoteAcceptedDraftToKnowledge,
+  type PromoteDeps,
+} from './orchestrator/steps';
+export type { PromoteDraftInput } from './orchestrator/types';
 
 const ARTIFACTS_BASE = process.env.AINP_ARTIFACTS_DIR ?? join(homedir(), '.ai-native', 'artifacts');
-
-const STAGE_TO_ARTIFACT_KIND = {
-  requirement: 'requirement_draft',
-  design: 'design_doc',
-  review: 'other',
-} as const;
-
-// ---------------------------------------------------------------------------
-// V2 W2-1 / PR3 — runWorkflow context shared across the extracted
-// `executeXxx(ctx)` step implementations. File-private (PRD R14: not
-// exported); ADR Q1=α (thin) means `kind` / `skillId` on each StageStep
-// are populated but not read at runtime in this PR.
-// ---------------------------------------------------------------------------
-
-interface OkRef {
-  /** Mutate to `false` to mark the run failed without throwing. Used by
-   * `executeKnowledgePromotion` to honor V1 knowledge-gate rejection
-   * behavior (reject sets ok but does NOT throw). */
-  value: boolean;
-}
-
-interface RunCtx {
-  project: Project;
-  run: WorkflowRun;
-  workspace: WorkspaceRef;
-  backend: AgentBackend;
-  /** Heartbeat tool versions; both fields are nullable when the runner
-   * couldn't detect the tool on the host. */
-  tools: { jdk: string | null; maven: string | null };
-  opts: OrchestrateOpts;
-  runArtifactsDir: string;
-  inputs: Record<string, string>;
-  inputArtifactIds: Record<string, string>;
-  contextFoundation: {
-    projectProfileResult: ProjectProfileResult | null;
-    acceptedKnowledge: string | null;
-    knowledgeArtifacts: KnowledgeArtifact[] | null;
-    runHistory: WorkflowRun[] | null;
-  };
-  contextPolicy: ContextPolicy;
-  contextRequestChain: ContextRequestCapture[];
-  draftsToPromote: PromoteDraftInput[];
-  ok: OkRef;
-}
-
-interface ContextPolicy {
-  budget: {
-    maxTokens: number;
-    reservedForReasoning: number;
-    reservedForOutput: number;
-  };
-  sensitivePathPatterns: readonly string[];
-}
-
-interface ContextRequestCapture {
-  request: ContextRequest;
-  sourceName: string;
-  requestArtifactId: string;
-  supplementArtifactId: string;
-  supplementContextPackId: string;
-  baseContextPackId: string;
-}
-
-interface InvokedAgent {
-  taskId: string;
-  outputs: Awaited<ReturnType<AgentBackend['run']>>['outputs'];
-  contextPack: ContextPack;
-  contextRequest: ContextRequestCapture | null;
-}
 
 async function loadContextPolicy(): Promise<ContextPolicy> {
   const [
@@ -189,12 +82,11 @@ async function loadContextPolicy(): Promise<ContextPolicy> {
  * runner emits events. Human gates pause the flow until /approvals records
  * a decision.
  *
- * V2 W2-1 / PR3: stage iteration is now driven by
- * `FLOW_REGISTRY[run.flowId].stages` (see `./flows/registry.ts`). The five
- * V1 inline blocks (implementation, build_test, acceptance, completion,
- * knowledge) were extracted into `executeXxx(ctx)` named functions; the
- * existing `runContextPack` and `runStage` helpers are preserved unchanged.
- * Logic is byte-for-byte equivalent to V1 (PRD ADR Q1=α — thin refactor).
+ * V2 W2-1 / PR3: stage iteration is driven by
+ * `FLOW_REGISTRY[run.flowId].stages` (see `./flows/registry.ts`). Logic is
+ * byte-for-byte equivalent to V1 (PRD ADR Q1=α — thin refactor); the T3.1
+ * de-closure moved the step implementations to top-level functions without
+ * changing behavior.
  */
 export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<OrchestrateResult> {
   const { tools, runnerId } = await sendHeartbeat();
@@ -234,27 +126,14 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
   const runArtifactsDir = join(ARTIFACTS_BASE, run.id);
   await mkdir(runArtifactsDir, { recursive: true });
 
-  const inputs: Record<string, string> = {
-    user_request: agentUserRequestForOrchestrate(opts),
-  };
-  const inputArtifactIds: Record<string, string> = {};
-  const contextFoundation: RunCtx['contextFoundation'] = {
-    projectProfileResult: null,
-    acceptedKnowledge: null,
-    knowledgeArtifacts: null,
-    runHistory: null,
-  };
-  const contextRequestChain: ContextRequestCapture[] = [];
   const contextPolicy = await loadContextPolicy();
   /**
-   * V2 P0-1 / PR3: drafts captured for promoteToKnowledge after acceptance.
-   * Each entry is the markdown draft of a `requirement_draft` / `design_doc`
-   * stage output. Promotion lifts the draft into a knowledge entity row
-   * (REQ-### / DSN-###) on acceptance approval. ADR Q2 (2-beta).
+   * V2 P0-1 / PR3: `draftsToPromote` captures requirement_draft / design_doc
+   * stage outputs for promoteToKnowledge after acceptance. Promotion lifts
+   * the draft into a knowledge entity row (REQ-### / DSN-###) on acceptance
+   * approval. ADR Q2 (2-beta).
    */
-  const draftsToPromote: PromoteDraftInput[] = [];
   const ok: OkRef = { value: true };
-
   const ctx: RunCtx = {
     project,
     run,
@@ -263,12 +142,19 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     tools,
     opts,
     runArtifactsDir,
-    inputs,
-    inputArtifactIds,
-    contextFoundation,
+    inputs: {
+      user_request: agentUserRequestForOrchestrate(opts),
+    },
+    inputArtifactIds: {},
+    contextFoundation: {
+      projectProfileResult: null,
+      acceptedKnowledge: null,
+      knowledgeArtifacts: null,
+      runHistory: null,
+    },
     contextPolicy,
-    contextRequestChain,
-    draftsToPromote,
+    contextRequestChain: [],
+    draftsToPromote: [] as PromoteDraftInput[],
     ok,
   };
 
@@ -306,1089 +192,101 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
 
   if (!ok.value && opts.setExitCode !== false) process.exitCode = 1;
   return { workflowRunId: run.id, ok: ok.value };
+}
 
-  // ---- dispatcher --------------------------------------------------------
-  // V2 W2-1 / PR3: single-point router from FLOW_REGISTRY stage to the
-  // matching helper. The switch is exhaustive over `WorkflowStage`; the
-  // `'init'` case is rejected explicitly because it is a status placeholder,
-  // not a dispatched step (FLOW_REGISTRY for feature.standard does not
-  // include it — see `./flows/registry.ts`). PRD R12.
-  async function dispatchStep(step: StageStep, _ctx: RunCtx): Promise<void> {
-    switch (step.stage) {
-      case 'context_pack':
-        await runContextPack();
-        return;
-      case 'requirement':
-        await runStage('requirement', 'requirement_draft', 'requirement_gate');
-        return;
-      case 'design':
-        await runStage('design', 'design_doc', 'design_gate');
-        return;
-      case 'implementation':
-        await executeImplementation(_ctx);
-        return;
-      case 'build_test':
-        await executeBuildTest(_ctx);
-        return;
-      case 'review':
-        // V1 collapses human acceptance into the review step: the review
-        // agent runs first, then `acceptance_gate` + `awaitHuman` +
-        // approval poll + draft promotion run inline. WorkflowStage has no
-        // `'acceptance'` value; that's why review owns both halves here.
-        await runStage('review', 'other', null);
-        await executeVerifier(_ctx);
-        await executeAcceptance(_ctx);
-        return;
-      case 'completion':
-        await executeCompletion(_ctx);
-        return;
-      case 'knowledge':
-        await executeKnowledgePromotion(_ctx);
-        return;
-      case 'report':
-      case 'analyze':
-      case 'scan':
-      case 'plan':
-        await executeAgentMarkdownStage(step.stage, _ctx);
-        return;
-      case 'init':
-        throw new Error(`'init' is not a dispatchable stage (status placeholder only)`);
-      default: {
-        const _exhaustive: never = step.stage;
-        throw new Error(`unknown stage: ${String(_exhaustive)}`);
-      }
-    }
-  }
+// ---- dispatcher ------------------------------------------------------------
+// V2 W2-1 / PR3: single-point router from FLOW_REGISTRY stage to the
+// matching step implementation. The switch is exhaustive over
+// `WorkflowStage`; the `'init'` case is rejected explicitly because it is a
+// status placeholder, not a dispatched step (FLOW_REGISTRY for
+// feature.standard does not include it — see `./flows/registry.ts`). PRD R12.
+//
+// T3.1: `deps` lets unit tests spy on the per-stage routing without forking
+// the dispatch surface — production always goes through the default deps,
+// and every stage still flows through this one function.
 
-  // ---- step implementations (PRD R12: extracted from V1 inline blocks) ---
-  // Each `executeXxx(c)` is a 1:1 lift of the matching V1 inline block.
-  // `kind` / `skillId` from StageStep are NOT read here in W2-1=α; W2-3
-  // begins consuming them through a generic dispatcher.
-
-  async function executeImplementation(c: RunCtx): Promise<void> {
-    const skill = await mustSkill('implementation');
-    const { step } = await api.stepStarted({
-      workflowRunId: c.run.id,
-      stage: 'implementation',
-      name: skill.id,
-    });
-    const stepId = step.id;
-    const stepArtifactsDir = join(c.runArtifactsDir, 'implementation');
-    const agent = await invokeSkill(skill, {
-      workflowRunId: c.run.id,
-      stepRunId: stepId,
-      workspacePath: c.workspace.path,
-      branch: c.workspace.branch,
-      title: c.opts.title,
-      artifactsDir: stepArtifactsDir,
-      inputs: c.inputs,
-    });
-    const out = { outputs: agent.outputs };
-    const diffOut = out.outputs.find((o) => o.name === 'diff');
-    const namesOut = out.outputs.find((o) => o.name === 'changed-files');
-    if (!diffOut || !namesOut) throw new Error('implementation: missing diff outputs');
-    const diffArtifact = await api.postArtifact({
-      workflowRunId: c.run.id,
-      stepRunId: stepId,
-      kind: 'diff',
-      uri: `file://${diffOut.path}`,
-      size: diffOut.size,
-      contentType: diffOut.contentType,
-      metadata: { changedFilesPath: namesOut.path },
-    });
-    c.inputArtifactIds[diffOut.name] = diffArtifact.id;
-    const changedFiles = (await Bun.file(namesOut.path).text())
-      .split('\n')
-      .map((s) => s.trim())
-      .filter(Boolean);
-    c.inputs['diff'] = await Bun.file(diffOut.path).text();
-    await finishAgentSuccess(
-      agent,
-      [diffArtifact.id],
-      `implementation produced ${changedFiles.length} changed file(s)`,
-    );
-    console.log(
-      `[runner] implementation diff artifact ${diffArtifact.id} (files=${changedFiles.length})`,
-    );
-
-    const diffGate = await api.runGate({
-      workflowRunId: c.run.id,
-      stepRunId: stepId,
-      gateId: 'diff_scope_gate',
-      params: { changedFiles, allowedPrefixes: ['src/'] },
-    });
-    console.log(`[runner]   diff_scope_gate -> ${diffGate.gate.status}`);
-    const sensGate = await api.runGate({
-      workflowRunId: c.run.id,
-      stepRunId: stepId,
-      gateId: 'sensitive_change_gate',
-      params: { changedFiles },
-    });
-    console.log(`[runner]   sensitive_change_gate -> ${sensGate.gate.status}`);
-    if (diffGate.gate.status === 'fail') {
-      c.ok.value = false;
-      await api.stepFinished({ stepRunId: stepId, status: 'failed' });
-      throw new Error('diff_scope_gate failed; aborting');
-    }
-    await enforceSensitiveChangeCheckpoint({
-      workflowRunId: c.run.id,
-      stepRunId: stepId,
-      gate: sensGate.gate,
-      deps: {
-        awaitHuman: api.awaitHuman,
-        stepFinished: api.stepFinished,
-        awaitApproval,
-        postRejectionFeedback,
-      },
-    });
-    await api.stepFinished({ stepRunId: stepId, status: 'passed' });
-  }
-
-  async function executeBuildTest(c: RunCtx): Promise<void> {
-    const mvn = existsSync(join(c.workspace.path, 'mvnw')) ? './mvnw' : 'mvn';
-    const compileCommand = `${mvn} -B -DskipTests compile`;
-    const testCommand = `${mvn} -B test`;
-    const { step } = await api.stepStarted({
-      workflowRunId: c.run.id,
-      stage: 'build_test',
-      name: testCommand,
-    });
-    const stepId = step.id;
-    const logDir = join(WORKTREES_DIR, c.project.id, c.run.id, 'logs');
-    const compileCr = await runWhitelistedCommand({
-      workflowRunId: c.run.id,
-      stepRunId: stepId,
-      cwd: c.workspace.path,
-      command: compileCommand,
-      stage: 'compile',
-      timeoutMs: DEFAULT_TIMEOUT_MS,
-      maxLogBytes: DEFAULT_MAX_LOG_BYTES,
-      logDir,
-    });
-    await api.commandRun(compileCr);
-    console.log(`[runner] compile command ${compileCr.status} (exit=${compileCr.exitCode})`);
-    if (compileCr.status !== 'passed') {
-      c.ok.value = false;
-      await api.stepFinished({ stepRunId: stepId, status: 'failed' });
-      throw new Error('compile command failed');
-    }
-
-    const cr = await runWhitelistedCommand({
-      workflowRunId: c.run.id,
-      stepRunId: stepId,
-      cwd: c.workspace.path,
-      command: testCommand,
-      stage: 'test',
-      timeoutMs: DEFAULT_TIMEOUT_MS,
-      maxLogBytes: DEFAULT_MAX_LOG_BYTES,
-      logDir,
-    });
-    await api.commandRun(cr);
-    console.log(`[runner] build_test command ${cr.status} (exit=${cr.exitCode})`);
-
-    const reports = await collectReports(
-      c.workspace.path,
-      join(c.runArtifactsDir, 'build_test', 'maven-reports'),
-    );
-    const result = await api.mavenBuild({
-      workflowRunId: c.run.id,
-      stepRunId: stepId,
-      jdkVersion: c.tools.jdk,
-      mavenCommand: `${compileCommand} && ${testCommand}`,
-      compileCommandRunId: compileCr.id,
-      testCommandRunId: cr.id,
-      reports,
-    });
-    console.log(
-      `[runner]   build=${result.buildRun.status} compile_gate=${result.compileGate?.status ?? 'n/a'} test_gate=${result.testGate?.status ?? 'n/a'}`,
-    );
-    const testOk = result.compileGate?.status === 'pass' && result.testGate?.status === 'pass';
-    await api.stepFinished({ stepRunId: stepId, status: testOk ? 'passed' : 'failed' });
-    if (!testOk) {
-      c.ok.value = false;
-      throw new Error('test_gate failed');
-    }
-  }
-
-  async function executeVerifier(c: RunCtx): Promise<void> {
-    if (!shouldRequireUiVerifier(c.run.title)) return;
-
-    const { step } = await api.stepStarted({
-      workflowRunId: c.run.id,
-      stage: 'review',
-      name: 'verifier',
-    });
-    const stepId = step.id;
-    const verifierDir = join(c.runArtifactsDir, 'verifier');
-    await mkdir(verifierDir, { recursive: true });
-
-    const mediaArtifacts = await persistVerifierMediaArtifacts(c, stepId, verifierDir);
-    const criterionIds = acceptanceCriterionIdsFromInputs(c.inputs);
-    const criterionStatus: VerifierStatus = verifierMediaSatisfiesCoverage(mediaArtifacts)
-      ? 'pass'
-      : 'blocked';
-    const matrix: VerifierAcMatrix = {
-      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
-      workflowRunId: c.run.id,
-      stepRunId: stepId,
-      verifierRequired: true,
-      verifierStatus: criterionStatus,
-      acceptanceCriteria: criterionIds.map((id) => ({
-        id,
-        status: criterionStatus,
-        evidenceRefs: mediaArtifacts.map(({ artifact, role }) => ({
-          artifactId: artifact.id,
-          role,
-          claim: `${role} verifier media for ${id}`,
-        })),
-        notes: criterionStatus === 'pass'
-          ? 'UI verifier media evidence present.'
-          : 'Missing before+after screenshots or video evidence under .ainp-verifier/.',
-      })),
-      createdAt: nowIso(),
-    };
-    const matrixBody = `${JSON.stringify(matrix, null, 2)}\n`;
-    const matrixPath = join(verifierDir, 'verifier-ac-matrix.json');
-    await writeFile(matrixPath, matrixBody, 'utf8');
-    const matrixArtifact = await api.postArtifact({
-      workflowRunId: c.run.id,
-      stepRunId: stepId,
-      kind: 'other',
-      uri: `file://${matrixPath}`,
-      size: Buffer.byteLength(matrixBody, 'utf8'),
-      contentType: 'application/json',
-      metadata: {
-        schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
-        reportKind: 'verifier_ac_matrix',
-        verifierArtifactType: 'ac_matrix',
-        verifierRequired: true,
-        verifierStatus: criterionStatus,
-        stage: 'review',
-        subStage: 'verifier',
-        output: 'verifier-ac-matrix.json',
-      },
-    });
-    c.inputs['verifier-ac-matrix.json'] = matrixBody;
-    c.inputArtifactIds['verifier-ac-matrix.json'] = matrixArtifact.id;
-    console.log(
-      `[runner] verifier matrix ${matrixArtifact.id} (${criterionStatus}; media=${mediaArtifacts.length})`,
-    );
-    await api.stepFinished({ stepRunId: stepId, status: 'passed' });
-  }
-
-  async function executeAcceptance(c: RunCtx): Promise<void> {
-    const acceptanceTraceGate = await api.runGate({
-      workflowRunId: c.run.id,
-      stepRunId: null,
-      gateId: 'acceptance_gate',
-    });
-    console.log(`[runner]   acceptance_traceability_gate -> ${acceptanceTraceGate.gate.status}`);
-    if (acceptanceTraceGate.gate.status === 'fail') {
-      c.ok.value = false;
-      throw new Error('acceptance traceability failed');
-    }
-    const preAcceptanceEvidenceGate = await api.runGate({
-      workflowRunId: c.run.id,
-      stepRunId: null,
-      gateId: 'evidence_gate',
-    });
-    console.log(`[runner]   evidence_gate before acceptance -> ${preAcceptanceEvidenceGate.gate.status}`);
-    if (preAcceptanceEvidenceGate.gate.status === 'fail') {
-      c.ok.value = false;
-      throw new Error('evidence_gate failed before acceptance');
-    }
-    await api.awaitHuman({ workflowRunId: c.run.id, stage: 'review' });
-    console.log(`[runner] awaiting acceptance_gate approval…`);
-    const { approved: accepted, comment: acceptanceComment } = await awaitApproval(
-      c.run.id,
-      'acceptance_gate',
-    );
-    const acceptanceRejectSummary = !accepted && acceptanceComment
-      ? `: ${acceptanceComment.slice(0, 200)}${acceptanceComment.length > 200 ? '…' : ''}`
-      : '';
-    console.log(
-      `[runner]   acceptance_gate -> ${accepted ? 'approved' : 'rejected'}${acceptanceRejectSummary}`,
-    );
-    if (!accepted) {
-      if (acceptanceComment) {
-        await postRejectionFeedback({
-          workflowRunId: c.run.id,
-          stepRunId: null,
-          gateId: 'acceptance_gate',
-          comment: acceptanceComment,
-        });
-      }
-      c.ok.value = false;
-      throw new Error('acceptance_gate rejected');
-    }
-
-    // V2 P0-1 / PR3: promote accepted requirement / design drafts to knowledge
-    // entities. Failure inside the helper is logged but never thrown — R18.
-    for (const draft of c.draftsToPromote) {
-      await promoteAcceptedDraftToKnowledge(c.project.id, draft);
-    }
-  }
-
-  // V2 W2-2a/W2-2b: report / analyze (issue.standard) and scan / plan
-  // (refactor.standard) are all "agent → markdown artifact" stages; outputs
-  // land as kind='other' (PRD ADR Q5: no KnowledgeArtifactKind extension).
-  // Inner-function style mirrors W2-1 PR3 (executeXxx sharing RunCtx).
-
-  async function executeAgentMarkdownStage(
-    stage: 'report' | 'analyze' | 'scan' | 'plan',
+export interface DispatchDeps {
+  runContextPack: (c: RunCtx) => Promise<void>;
+  runStage: (
     c: RunCtx,
-  ): Promise<void> {
-    const skill = await mustSkill(stage);
-    const { step } = await api.stepStarted({
-      workflowRunId: c.run.id,
-      stage,
-      name: skill.id,
-    });
-    const stepId = step.id;
-    const stepArtifactsDir = join(c.runArtifactsDir, stage);
-    const agent = await invokeSkill(skill, {
-      workflowRunId: c.run.id,
-      stepRunId: stepId,
-      workspacePath: c.workspace.path,
-      branch: c.workspace.branch,
-      title: c.opts.title,
-      artifactsDir: stepArtifactsDir,
-      inputs: c.inputs,
-    });
-    const artifactIds: string[] = [];
-    for (const out of agent.outputs) {
-      const a = await api.postArtifact({
-        workflowRunId: c.run.id,
-        stepRunId: stepId,
-        kind: 'other',
-        uri: `file://${out.path}`,
-        size: out.size,
-        contentType: out.contentType,
-        metadata: { skill: skill.id, output: out.name, stage },
-      });
-      c.inputs[out.name] = await Bun.file(out.path).text();
-      c.inputArtifactIds[out.name] = a.id;
-      artifactIds.push(a.id);
-      console.log(`[runner] ${stage} artifact ${a.id} (${out.name})`);
-    }
-    await finishAgentSuccess(
-      agent,
-      artifactIds,
-      `${stage} produced ${artifactIds.length} artifact(s)`,
-    );
-    await api.stepFinished({ stepRunId: stepId, status: 'passed' });
-  }
-
-  async function executeCompletion(c: RunCtx): Promise<void> {
-    await api.stageTransition({ workflowRunId: c.run.id, stage: 'completion' });
-    const evidenceGate = await api.runGate({
-      workflowRunId: c.run.id,
-      stepRunId: null,
-      gateId: 'evidence_gate',
-    });
-    console.log(`[runner]   evidence_gate -> ${evidenceGate.gate.status}`);
-    if (evidenceGate.gate.status === 'fail') {
-      c.ok.value = false;
-      throw new Error('evidence_gate failed');
-    }
-    const reportJson = await api.generateCompletionReport(c.run.id);
-    console.log(`[runner] completion_report -> ${reportJson.artifact.uri}`);
-  }
-
-  async function executeKnowledgePromotion(c: RunCtx): Promise<void> {
-    await api.stageTransition({ workflowRunId: c.run.id, stage: 'knowledge' });
-    const knowJson = await api.generateKnowledgeCandidate(c.run.id);
-    console.log(`[runner] knowledge_candidate -> ${knowJson.artifact.uri}`);
-
-    await api.awaitHuman({ workflowRunId: c.run.id, stage: 'knowledge' });
-    console.log(`[runner] awaiting knowledge_gate approval…`);
-    const { approved: promoted } = await awaitApproval(c.run.id, 'knowledge_gate');
-    console.log(`[runner]   knowledge_gate -> ${promoted ? 'approved' : 'rejected'}`);
-    if (!promoted) {
-      // V1 quirk: knowledge gate rejection sets ok but does NOT throw —
-      // the run cleanly proceeds through `finally` and reports failure.
-      c.ok.value = false;
-    } else {
-      const detail = await api.getWorkflowRun(c.run.id);
-      const actions: KnowledgePromotionAction[] = detail.actions
-        .filter((action) => action.kind === 'knowledge_suggestion_action')
-        .map((action) => ({
-          targetId: action.targetId,
-          action: action.action,
-          payload: action.payload,
-        }));
-      const stored = await persistKnowledgeCandidate({
-        projectId: c.project.id,
-        runId: c.run.id,
-        candidateUri: knowJson.artifact.uri,
-        actions,
-      });
-      if (stored) {
-        console.log(`[runner] knowledge persisted -> ${stored}`);
-      }
-    }
-  }
-
-  // ---- existing helpers (PRD ADR Q1=α: kept unchanged) -------------------
-
-  async function runContextPack(): Promise<void> {
-    // a. project profile (lazy: scan once and reuse on subsequent runs).
-    const profileResult = await generateProjectProfile({
-      projectId: project.id,
-      name: project.name,
-      localPath: project.localPath,
-      reuseIfPresent: true,
-    });
-    ctx.contextFoundation.projectProfileResult = profileResult;
-
-    const { step } = await api.stepStarted({
-      workflowRunId: run.id,
-      stage: 'context_pack',
-      name: 'context_pack',
-    });
-    const stepId = step.id;
-    const stageArtifactsDir = join(runArtifactsDir, 'context_pack');
-    await mkdir(stageArtifactsDir, { recursive: true });
-
-    const profileArtifact = await api.postArtifact({
-      workflowRunId: run.id,
-      stepRunId: stepId,
-      kind: 'project_profile',
-      uri: `file://${profileResult.profileMdPath}`,
-      size: Buffer.byteLength(profileResult.markdown, 'utf8'),
-      contentType: 'text/markdown',
-      metadata: {
-        projectId: project.id,
-        projectName: project.name,
-        generatedAt: profileResult.profile.generatedAt,
-      },
-    });
-    inputs['project_profile.md'] = profileResult.markdown;
-    inputArtifactIds['project_profile.md'] = profileArtifact.id;
-    console.log(`[runner] project_profile artifact ${profileArtifact.id}`);
-
-    // b. accepted knowledge from prior runs (knowledge → context loop).
-    const acceptedKnowledge = await collectAcceptedKnowledge(project.id);
-    ctx.contextFoundation.acceptedKnowledge = acceptedKnowledge;
-    inputs['accepted_knowledge.md'] = acceptedKnowledge;
-    if (acceptedKnowledge) {
-      console.log(`[runner] accepted_knowledge: ${acceptedKnowledge.length} bytes`);
-    }
-
-    // c. run the Context Pack skill.
-    const skill = await findSkillForStage('context_pack');
-    if (!skill) throw new Error('no skill for stage context_pack');
-    const agent = await invokeSkill(skill, {
-      workflowRunId: run.id,
-      stepRunId: stepId,
-      workspacePath: workspace.path,
-      branch: workspace.branch,
-      title: opts.title,
-      artifactsDir: stageArtifactsDir,
-      inputs,
-    });
-    const artifactIds: string[] = [];
-    for (const out of agent.outputs) {
-      const a = await api.postArtifact({
-        workflowRunId: run.id,
-        stepRunId: stepId,
-        kind: 'context_pack',
-        uri: `file://${out.path}`,
-        size: out.size,
-        contentType: out.contentType,
-        metadata: {
-          skill: skill.id,
-          output: out.name,
-          stage: 'context_pack',
-          contextSelection: contextSelectionAudit(agent.contextPack),
-        },
-      });
-      inputs[out.name] = await Bun.file(out.path).text();
-      inputArtifactIds[out.name] = a.id;
-      artifactIds.push(a.id);
-      console.log(`[runner] context_pack artifact ${a.id} (${out.name})`);
-    }
-    await finishAgentSuccess(
-      agent,
-      artifactIds,
-      `context_pack produced ${artifactIds.length} artifact(s)`,
-    );
-    await api.stepFinished({ stepRunId: stepId, status: 'passed' });
-  }
-
-  async function runStage(
     stage: 'requirement' | 'design' | 'review',
     artifactKind: 'requirement_draft' | 'design_doc' | 'other',
-    rulebasedGateId: GateRun['gateId'] | null,
-  ): Promise<void> {
-    const skill = await mustSkill(stage);
-    const { step } = await api.stepStarted({
-      workflowRunId: run.id,
-      stage,
-      name: skill.id,
-    });
-    const stepArtifactsDir = join(runArtifactsDir, stage);
-    const agent = await invokeSkill(skill, {
-      workflowRunId: run.id,
-      stepRunId: step.id,
-      workspacePath: workspace.path,
-      branch: workspace.branch,
-      title: opts.title,
-      artifactsDir: stepArtifactsDir,
-      inputs,
-    });
-    const artifactIds: string[] = [];
-    for (const out of agent.outputs) {
-      const text = await Bun.file(out.path).text();
-      const kind = artifactKindForStageOutput(stage, artifactKind, out.name);
-      const metadata = metadataForStageOutput(skill.id, stage, out.name, out.contentType, text);
-      const a = await api.postArtifact({
-        workflowRunId: run.id,
-        stepRunId: step.id,
-        kind,
-        uri: `file://${out.path}`,
-        size: out.size,
-        contentType: out.contentType,
-        metadata,
-      });
-      inputs[out.name] = text;
-      inputArtifactIds[out.name] = a.id;
-      // V2 P0-1 / PR3: track requirement / design drafts for post-acceptance promotion.
-      if (kind === 'requirement_draft' || kind === 'design_doc') {
-        draftsToPromote.push({
-          artifactId: a.id,
-          kind,
-          uri: `file://${out.path}`,
-          size: out.size,
-          contentType: out.contentType,
-          text,
-        });
-      }
-      artifactIds.push(a.id);
-      console.log(`[runner] ${stage} artifact ${a.kind} -> ${a.uri}`);
-    }
-    await finishAgentSuccess(
-      agent,
-      artifactIds,
-      `${stage} produced ${artifactIds.length} artifact(s)`,
-    );
-    await api.stepFinished({ stepRunId: step.id, status: 'passed' });
-
-    if (rulebasedGateId) {
-      const gateRes = await api.runGate({
-        workflowRunId: run.id,
-        stepRunId: step.id,
-        gateId: rulebasedGateId,
-      });
-      console.log(`[runner]   ${rulebasedGateId} -> ${gateRes.gate.status}`);
-      if (gateRes.gate.status === 'fail') {
-        ok.value = false;
-        throw new Error(`${rulebasedGateId} failed`);
-      }
-      // Pause for human approval after the rule-based gate passes. Only
-      // requirement / design reach this block — review passes a null
-      // rulebasedGateId (acceptance approval lives in executeAcceptance).
-      await api.awaitHuman({ workflowRunId: run.id, stage });
-      console.log(`[runner] awaiting ${stage} approval…`);
-      const approverGateId = stage === 'requirement' ? 'requirement_gate' : 'design_gate';
-      const { approved, comment: approvalComment } = await awaitApproval(run.id, approverGateId);
-      const approverRejectSummary = !approved && approvalComment
-        ? `: ${approvalComment.slice(0, 200)}${approvalComment.length > 200 ? '…' : ''}`
-        : '';
-      console.log(
-        `[runner]   ${approverGateId} -> ${approved ? 'approved' : 'rejected'}${approverRejectSummary}`,
-      );
-      if (!approved) {
-        if (approvalComment) {
-          await postRejectionFeedback({
-            workflowRunId: run.id,
-            stepRunId: null,
-            gateId: approverGateId,
-            comment: approvalComment,
-          });
-        }
-        ok.value = false;
-        throw new Error(`${approverGateId} rejected`);
-      }
-    }
-  }
-
-  async function invokeSkill(
-    skill: SkillSpec,
-    skillCtx: Parameters<AgentBackend['run']>[1],
-  ): Promise<InvokedAgent> {
-    const foundation = await ensureContextFoundation(ctx);
-    const taskBrief = agentTaskBriefForContext(skillCtx.title, skillCtx.inputs);
-    const contextPack = buildContextPack({
-      project,
-      run,
-      stage: skill.stage,
-      stepRunId: skillCtx.stepRunId ?? null,
-      workspacePath: skillCtx.workspacePath,
-      branch: skillCtx.branch,
-      taskBrief,
-      projectProfile: foundation.projectProfileResult?.profile ?? null,
-      projectProfileMarkdown: foundation.projectProfileResult?.markdown ?? skillCtx.inputs['project_profile.md'],
-      acceptedKnowledgeMarkdown: acceptedKnowledgeMarkdownForContext({
-        legacyMarkdown: foundation.acceptedKnowledge ?? skillCtx.inputs['accepted_knowledge.md'],
-        knowledgeArtifacts: foundation.knowledgeArtifacts,
-      }),
-      knowledgeArtifacts: foundation.knowledgeArtifacts ?? [],
-      runHistory: foundation.runHistory ?? [],
-      inputNames: Object.keys(skillCtx.inputs),
-      inputArtifacts: Object.entries(skillCtx.inputs).map(([name, content]) => ({
-        name,
-        content,
-        artifactId: inputArtifactIds[name] ?? null,
-      })),
-      budget: ctx.contextPolicy.budget,
-      sensitivePathPatterns: ctx.contextPolicy.sensitivePathPatterns,
-    });
-    const enrichedCtx = {
-      ...skillCtx,
-      contextPack,
-      sensitivePathPatterns: ctx.contextPolicy.sensitivePathPatterns,
-    };
-    const task = await api.agentTaskStarted({
-      workflowRunId: skillCtx.workflowRunId,
-      stepRunId: skillCtx.stepRunId ?? null,
-      kind: taskKindForSkill(skill),
-      backend: backend.kind,
-      prompt: renderAgentPromptAudit(skill, enrichedCtx.inputs, contextPack),
-      inputArtifactIds: skill.inputs
-        .map((i) => inputArtifactIds[i.name])
-        .filter((id): id is string => Boolean(id)),
-    });
-    await recordSelectedKnowledgeUsage(contextPack, task.task.id);
-    await recordKnowledgeReviewSignals(contextPack, task.task.id);
-    try {
-      const result = await backend.run(skill, enrichedCtx);
-      const contextRequest = await captureContextRequest({
-        skill,
-        skillCtx,
-        result,
-        foundation,
-        baseContextPack: contextPack,
-        taskId: task.task.id,
-      });
-      return { taskId: task.task.id, outputs: result.outputs, contextPack, contextRequest };
-    } catch (err) {
-      await api.agentTaskFinished({
-        taskId: task.task.id,
-        status: 'failed',
-        summary: errorMessage(err),
-        outputArtifactIds: [],
-      });
-      throw err;
-    }
-  }
-
-  async function recordKnowledgeReviewSignals(
-    contextPack: ContextPack,
-    taskId: string,
-  ): Promise<void> {
-    const signals = contextPack.calibrationSignals ?? [];
-    if (signals.length === 0) return;
-    for (const signal of signals) {
-      try {
-        await api.recordKnowledgeAction({
-          workflowRunId: contextPack.workflowRunId,
-          targetId: signal.id,
-          action: knowledgeReviewActionForSignal(signal.recommendedAction),
-          actor: 'runner',
-          payload: {
-            reason: signal.message,
-            signalKind: signal.kind,
-            severity: signal.severity,
-            subjectRefs: signal.subjectRefs,
-            evidenceRefs: signal.evidenceRefs,
-            recommendedAction: signal.recommendedAction,
-            contextPackId: contextPack.id,
-            taskId,
-          },
-        });
-      } catch (err) {
-        console.warn(
-          `[runner] knowledge review signal ${signal.id} was not recorded: ${errorMessage(err)}`,
-        );
-      }
-    }
-  }
-
-  async function captureContextRequest(input: {
-    skill: SkillSpec;
-    skillCtx: Parameters<AgentBackend['run']>[1];
-    result: Awaited<ReturnType<AgentBackend['run']>>;
-    foundation: RunCtx['contextFoundation'];
-    baseContextPack: ContextPack;
-    taskId: string;
-  }): Promise<ContextRequestCapture | null> {
-    const parsed = await parseContextRequestFromRunResult(input);
-    if (!parsed) return null;
-
-    const request = sanitizeContextRequestForContextInjection(
-      parsed.request,
-      ctx.contextPolicy.sensitivePathPatterns,
-    );
-    if (request.requestedRefs.length === 0 && request.questions.length === 0) {
-      console.warn(
-        `[runner] context_request ${parsed.request.id} was ignored after sensitive path filtering removed all requested context`,
-      );
-      return null;
-    }
-
-    const supplementPack = buildIncrementalContextPack({
-      project,
-      run,
-      stage: input.skill.stage,
-      stepRunId: input.skillCtx.stepRunId ?? null,
-      workspacePath: input.skillCtx.workspacePath,
-      branch: input.skillCtx.branch,
-      taskBrief: agentTaskBriefForContext(input.skillCtx.title, input.skillCtx.inputs),
-      projectProfile: input.foundation.projectProfileResult?.profile ?? null,
-      projectProfileMarkdown: input.foundation.projectProfileResult?.markdown
-        ?? input.skillCtx.inputs['project_profile.md'],
-      acceptedKnowledgeMarkdown: acceptedKnowledgeMarkdownForContext({
-        legacyMarkdown: input.foundation.acceptedKnowledge
-          ?? input.skillCtx.inputs['accepted_knowledge.md'],
-        knowledgeArtifacts: input.foundation.knowledgeArtifacts,
-      }),
-      knowledgeArtifacts: input.foundation.knowledgeArtifacts ?? [],
-      runHistory: input.foundation.runHistory ?? [],
-      inputNames: Object.keys(input.skillCtx.inputs),
-      inputArtifacts: Object.entries(input.skillCtx.inputs).map(([name, content]) => ({
-        name,
-        content,
-        artifactId: inputArtifactIds[name] ?? null,
-      })),
-      budget: ctx.contextPolicy.budget,
-      sensitivePathPatterns: ctx.contextPolicy.sensitivePathPatterns,
-      contextRequest: request,
-      baseContextPack: input.baseContextPack,
-    });
-
-    const requestInputName = `context_request.${request.id}.json`;
-    const supplementInputName = `context_supplement.${request.id}.json`;
-    const requestBody = `${JSON.stringify({
-      schemaVersion: CONTEXT_REQUEST_SCHEMA_VERSION,
-      sourceName: parsed.sourceName,
-      taskId: input.taskId,
-      baseContextPackId: input.baseContextPack.id,
-      request,
-    }, null, 2)}\n`;
-    const supplementBody = `${JSON.stringify({
-      schemaVersion: 'ainp.context_supplement.v1',
-      contextRequestId: request.id,
-      baseContextPackId: input.baseContextPack.id,
-      contextPack: supplementPack,
-    }, null, 2)}\n`;
-
-    const contextRequestDir = join(input.skillCtx.artifactsDir, 'context-requests');
-    await mkdir(contextRequestDir, { recursive: true });
-    const requestPath = join(contextRequestDir, requestInputName);
-    const supplementPath = join(contextRequestDir, supplementInputName);
-    await writeFile(requestPath, requestBody, 'utf8');
-    await writeFile(supplementPath, supplementBody, 'utf8');
-
-    const requestArtifact = await api.postArtifact({
-      workflowRunId: input.skillCtx.workflowRunId,
-      stepRunId: input.skillCtx.stepRunId ?? null,
-      kind: 'other',
-      uri: `file://${requestPath}`,
-      size: Buffer.byteLength(requestBody, 'utf8'),
-      contentType: 'application/json',
-      metadata: {
-        schemaVersion: CONTEXT_REQUEST_SCHEMA_VERSION,
-        output: requestInputName,
-        stage: input.skill.stage,
-        contextRequestId: request.id,
-        baseContextPackId: input.baseContextPack.id,
-        sourceName: parsed.sourceName,
-      },
-    });
-    const supplementArtifact = await api.postArtifact({
-      workflowRunId: input.skillCtx.workflowRunId,
-      stepRunId: input.skillCtx.stepRunId ?? null,
-      kind: 'context_pack',
-      uri: `file://${supplementPath}`,
-      size: Buffer.byteLength(supplementBody, 'utf8'),
-      contentType: 'application/json',
-      metadata: {
-        schemaVersion: 'ainp.context_supplement.v1',
-        output: supplementInputName,
-        stage: input.skill.stage,
-        contextRequestId: request.id,
-        baseContextPackId: input.baseContextPack.id,
-        contextSelection: contextSelectionAudit(supplementPack),
-      },
-    });
-    await recordSelectedKnowledgeUsage(supplementPack, input.taskId);
-
-    inputs[requestInputName] = requestBody;
-    inputs[supplementInputName] = supplementBody;
-    inputArtifactIds[requestInputName] = requestArtifact.id;
-    inputArtifactIds[supplementInputName] = supplementArtifact.id;
-
-    const capture: ContextRequestCapture = {
-      request,
-      sourceName: parsed.sourceName,
-      requestArtifactId: requestArtifact.id,
-      supplementArtifactId: supplementArtifact.id,
-      supplementContextPackId: supplementPack.id,
-      baseContextPackId: input.baseContextPack.id,
-    };
-    ctx.contextRequestChain.push(capture);
-    await api.recordContextRequest({
-      workflowRunId: input.skillCtx.workflowRunId,
-      request,
-      sourceName: parsed.sourceName,
-      taskId: input.taskId,
-      baseContextPackId: input.baseContextPack.id,
-      supplementContextPackId: supplementPack.id,
-      requestArtifactId: requestArtifact.id,
-      supplementArtifactId: supplementArtifact.id,
-    });
-    console.log(
-      `[runner] context_request ${request.id} -> supplement ${supplementPack.id}`,
-    );
-    return capture;
-  }
-
-  async function recordSelectedKnowledgeUsage(
-    contextPack: ContextPack,
-    taskId: string,
-  ): Promise<void> {
-    const items = selectedKnowledgeUsageItems(contextPack);
-    if (items.length === 0) return;
-    try {
-      await api.recordKnowledgeUsage({
-        workflowRunId: contextPack.workflowRunId,
-        contextPackId: contextPack.id,
-        taskId,
-        actor: 'runner',
-        items,
-      });
-    } catch (err) {
-      console.warn(
-        `[runner] selected knowledge usage was not recorded: ${errorMessage(err)}`,
-      );
-    }
-  }
-
-  async function parseContextRequestFromRunResult(input: {
-    skill: SkillSpec;
-    skillCtx: Parameters<AgentBackend['run']>[1];
-    result: Awaited<ReturnType<AgentBackend['run']>>;
-  }): Promise<ParsedContextRequest | null> {
-    const sources: Array<{ name: string; text: string }> = [];
-    if (input.result.lastMessage) {
-      sources.push({ name: 'last_message', text: input.result.lastMessage });
-    }
-    for (const out of input.result.outputs) {
-      if (!isContextRequestParseableOutput(out)) continue;
-      const text = await Bun.file(out.path).text();
-      sources.push({ name: out.name, text });
-    }
-    return parseContextRequestFromAgentOutput({
-      workflowRunId: input.skillCtx.workflowRunId,
-      stepRunId: input.skillCtx.stepRunId ?? null,
-      stage: input.skill.stage,
-      sources,
-    });
-  }
-
-  async function ensureContextFoundation(c: RunCtx): Promise<RunCtx['contextFoundation']> {
-    if (!c.contextFoundation.projectProfileResult) {
-      const profileResult = await generateProjectProfile({
-        projectId: c.project.id,
-        name: c.project.name,
-        localPath: c.project.localPath,
-        reuseIfPresent: true,
-      });
-      c.contextFoundation.projectProfileResult = profileResult;
-      c.inputs['project_profile.md'] = profileResult.markdown;
-    }
-
-    if (c.contextFoundation.acceptedKnowledge === null) {
-      const acceptedKnowledge = await collectAcceptedKnowledge(c.project.id);
-      c.contextFoundation.acceptedKnowledge = acceptedKnowledge;
-      c.inputs['accepted_knowledge.md'] = acceptedKnowledge;
-      if (acceptedKnowledge) {
-        console.log(`[runner] accepted_knowledge: ${acceptedKnowledge.length} bytes`);
-      }
-    }
-
-    if (c.contextFoundation.knowledgeArtifacts === null) {
-      try {
-        c.contextFoundation.knowledgeArtifacts = await api.listKnowledgeArtifacts({
-          projectId: c.project.id,
-        });
-      } catch (err) {
-        console.warn(
-          `[runner] knowledge_artifacts unavailable for context pack: ${errorMessage(err)}`,
-        );
-        c.contextFoundation.knowledgeArtifacts = [];
-      }
-    }
-
-    if (c.contextFoundation.runHistory === null) {
-      try {
-        c.contextFoundation.runHistory = await api.listWorkflowRuns({ projectId: c.project.id });
-      } catch (err) {
-        console.warn(
-          `[runner] workflow run history unavailable for maturity profile: ${errorMessage(err)}`,
-        );
-        c.contextFoundation.runHistory = [];
-      }
-    }
-
-    return c.contextFoundation;
-  }
-
-  async function finishAgentSuccess(
-    agent: InvokedAgent,
-    outputArtifactIds: string[],
-    summary: string,
-  ): Promise<void> {
-    const supplementIds = agent.contextRequest
-      ? [agent.contextRequest.requestArtifactId, agent.contextRequest.supplementArtifactId]
-      : [];
-    await api.agentTaskFinished({
-      taskId: agent.taskId,
-      status: 'success',
-      summary: agent.contextRequest
-        ? `${summary}; context_request ${agent.contextRequest.request.id} supplemented by ${agent.contextRequest.supplementContextPackId}`
-        : summary,
-      outputArtifactIds: [...outputArtifactIds, ...supplementIds],
-    });
-  }
+    rulebasedGateId: 'requirement_gate' | 'design_gate' | null,
+  ) => Promise<void>;
+  executeImplementation: (c: RunCtx) => Promise<void>;
+  executeBuildTest: (c: RunCtx) => Promise<void>;
+  executeVerifier: (c: RunCtx) => Promise<void>;
+  executeAcceptance: (c: RunCtx) => Promise<void>;
+  executeCompletion: (c: RunCtx) => Promise<void>;
+  executeKnowledgePromotion: (c: RunCtx) => Promise<void>;
+  executeAgentMarkdownStage: (
+    stage: 'report' | 'analyze' | 'scan' | 'plan',
+    c: RunCtx,
+  ) => Promise<void>;
 }
 
-function isContextRequestParseableOutput(output: {
-  name: string;
-  contentType: string;
-  size: number;
-}): boolean {
-  if (output.size > 256_000) return false;
-  return output.contentType === 'application/json'
-    || output.contentType.startsWith('text/')
-    || /\.(json|md|markdown|txt)$/i.test(output.name);
-}
+const DEFAULT_DISPATCH_DEPS: DispatchDeps = {
+  runContextPack: (c) => runContextPack(c),
+  runStage: (c, stage, artifactKind, rulebasedGateId) =>
+    runStage(c, stage, artifactKind, rulebasedGateId),
+  executeImplementation: (c) => executeImplementation(c),
+  executeBuildTest: (c) => executeBuildTest(c),
+  executeVerifier: (c) => executeVerifier(c),
+  executeAcceptance: (c) => executeAcceptance(c),
+  executeCompletion: (c) => executeCompletion(c),
+  executeKnowledgePromotion: (c) => executeKnowledgePromotion(c),
+  executeAgentMarkdownStage: (stage, c) => executeAgentMarkdownStage(stage, c),
+};
 
-interface PersistedVerifierMediaArtifact {
-  artifact: Artifact;
-  role: VerifierMediaRole;
-}
-
-async function persistVerifierMediaArtifacts(
-  c: RunCtx,
-  stepRunId: string,
-  verifierDir: string,
-): Promise<PersistedVerifierMediaArtifact[]> {
-  const sourceDir = join(c.workspace.path, '.ainp-verifier');
-  if (!existsSync(sourceDir)) return [];
-
-  const entries = await readdir(sourceDir, { withFileTypes: true });
-  const persisted: PersistedVerifierMediaArtifact[] = [];
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    const contentType = verifierContentType(entry.name);
-    const role = verifierRoleForFilename(entry.name, contentType);
-    if (!contentType || !role) continue;
-
-    const outputName = safeVerifierFilename(entry.name);
-    const sourcePath = join(sourceDir, entry.name);
-    const destPath = join(verifierDir, outputName);
-    await copyFile(sourcePath, destPath);
-    const info = await stat(destPath);
-    const artifact = await api.postArtifact({
-      workflowRunId: c.run.id,
-      stepRunId,
-      kind: 'other',
-      uri: `file://${destPath}`,
-      size: info.size,
-      contentType,
-      metadata: {
-        schemaVersion: VERIFIER_MEDIA_SCHEMA_VERSION,
-        reportKind: 'verifier_media',
-        verifierArtifactType: role,
-        verifierRole: role,
-        capture: role === 'screenshot_before'
-          ? 'before'
-          : role === 'screenshot_after'
-            ? 'after'
-            : undefined,
-        stage: 'review',
-        subStage: 'verifier',
-        output: outputName,
-        source: `.ainp-verifier/${entry.name}`,
-      },
-    });
-    persisted.push({ artifact, role });
-  }
-  return persisted;
-}
-
-function shouldRequireUiVerifier(title: string): boolean {
-  return /\b(ui|ux|frontend|front-end|web|browser|dom|css|html|page|screen|modal|button|form|visual|responsive)\b|前端|界面|页面|按钮|表单|截图|浏览器|样式/i
-    .test(title);
-}
-
-function acceptanceCriterionIdsFromInputs(inputs: Record<string, string>): string[] {
-  const seen = new Set<string>();
-  for (const text of Object.values(inputs)) {
-    for (const match of text.matchAll(/\bAC-\d{3}\b/g)) {
-      seen.add(match[0].toUpperCase());
+export async function dispatchStep(
+  step: StageStep,
+  ctx: RunCtx,
+  deps: DispatchDeps = DEFAULT_DISPATCH_DEPS,
+): Promise<void> {
+  switch (step.stage) {
+    case 'context_pack':
+      await deps.runContextPack(ctx);
+      return;
+    case 'requirement':
+      await deps.runStage(ctx, 'requirement', 'requirement_draft', 'requirement_gate');
+      return;
+    case 'design':
+      await deps.runStage(ctx, 'design', 'design_doc', 'design_gate');
+      return;
+    case 'implementation':
+      await deps.executeImplementation(ctx);
+      return;
+    case 'build_test':
+      await deps.executeBuildTest(ctx);
+      return;
+    case 'review':
+      // V1 collapses human acceptance into the review step: the review
+      // agent runs first, then `acceptance_gate` + `awaitHuman` +
+      // approval poll + draft promotion run inline. WorkflowStage has no
+      // `'acceptance'` value; that's why review owns both halves here.
+      await deps.runStage(ctx, 'review', 'other', null);
+      await deps.executeVerifier(ctx);
+      await deps.executeAcceptance(ctx);
+      return;
+    case 'completion':
+      await deps.executeCompletion(ctx);
+      return;
+    case 'knowledge':
+      await deps.executeKnowledgePromotion(ctx);
+      return;
+    case 'report':
+    case 'analyze':
+    case 'scan':
+    case 'plan':
+      await deps.executeAgentMarkdownStage(step.stage, ctx);
+      return;
+    case 'init':
+      throw new Error(`'init' is not a dispatchable stage (status placeholder only)`);
+    default: {
+      const _exhaustive: never = step.stage;
+      throw new Error(`unknown stage: ${String(_exhaustive)}`);
     }
   }
-  const ids = [...seen].sort().slice(0, 50);
-  return ids.length > 0 ? ids : ['AC-UI-001'];
-}
-
-function verifierMediaSatisfiesCoverage(mediaArtifacts: PersistedVerifierMediaArtifact[]): boolean {
-  const roles = new Set(mediaArtifacts.map((item) => item.role));
-  return roles.has('video')
-    || (roles.has('screenshot_before') && roles.has('screenshot_after'));
-}
-
-function verifierRoleForFilename(
-  filename: string,
-  contentType: string | null,
-): VerifierMediaRole | null {
-  if (!contentType) return null;
-  if (contentType.startsWith('video/')) return 'video';
-  if (!contentType.startsWith('image/')) return null;
-  const normalized = filename.toLowerCase();
-  if (/\b(before|baseline|old|previous)\b|(^|[-_.])before([-_.]|$)/i.test(normalized)) {
-    return 'screenshot_before';
-  }
-  if (/\b(after|actual|result|new|current)\b|(^|[-_.])after([-_.]|$)/i.test(normalized)) {
-    return 'screenshot_after';
-  }
-  return null;
-}
-
-function verifierContentType(filename: string): string | null {
-  const lower = filename.toLowerCase();
-  if (lower.endsWith('.png')) return 'image/png';
-  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
-  if (lower.endsWith('.webp')) return 'image/webp';
-  if (lower.endsWith('.webm')) return 'video/webm';
-  if (lower.endsWith('.mp4')) return 'video/mp4';
-  if (lower.endsWith('.mov')) return 'video/quicktime';
-  return null;
-}
-
-function safeVerifierFilename(filename: string): string {
-  return filename.replace(/[^a-zA-Z0-9._-]/g, '_');
-}
-
-async function mustSkill(
-  stage: 'requirement' | 'design' | 'implementation' | 'review' | 'report' | 'analyze' | 'scan' | 'plan',
-) {
-  const s = await findSkillForStage(stage);
-  if (!s) throw new Error(`no skill for stage ${stage}`);
-  return s;
 }
 
 export function agentUserRequestForOrchestrate(
@@ -1396,14 +294,6 @@ export function agentUserRequestForOrchestrate(
 ): string {
   const clarified = opts.userRequest?.trim();
   return clarified && clarified.length > 0 ? clarified : opts.title;
-}
-
-export function agentTaskBriefForContext(
-  title: string,
-  inputs: Readonly<Record<string, string>>,
-): string {
-  const userRequest = inputs.user_request?.trim();
-  return userRequest && userRequest.length > 0 ? userRequest : title;
 }
 
 // ---------------------------------------------------------------------------
@@ -1436,382 +326,4 @@ export function sliceStagesFromStartStage(params: {
     `[runner] starting from stage ${params.startStage} (skipping ${fromIdx} earlier stage(s))`,
   );
   return params.stages.slice(fromIdx);
-}
-
-function artifactKindForStageOutput(
-  stage: 'requirement' | 'design' | 'review',
-  fallback: ArtifactKind,
-  outputName: string,
-): ArtifactKind {
-  if (outputName === 'traceability.json') return 'traceability';
-  if (stage === 'requirement') return 'requirement_draft';
-  if (stage === 'design') return 'design_doc';
-  return fallback;
-}
-
-function metadataForStageOutput(
-  skillId: string,
-  stage: 'requirement' | 'design' | 'review',
-  outputName: string,
-  contentType: string,
-  text: string,
-): Record<string, unknown> {
-  const metadata: Record<string, unknown> = { skill: skillId, output: outputName, stage };
-  const isJson = contentType === 'application/json' || outputName.endsWith('.json');
-  if (!isJson) return metadata;
-
-  metadata.structured = true;
-  const schemaVersion = safeJsonSchemaVersion(text);
-  if (schemaVersion) metadata.schemaVersion = schemaVersion;
-  return metadata;
-}
-
-function safeJsonSchemaVersion(text: string): string | null {
-  try {
-    const parsed = JSON.parse(text) as { schemaVersion?: unknown };
-    return typeof parsed.schemaVersion === 'string' ? parsed.schemaVersion : null;
-  } catch {
-    return null;
-  }
-}
-
-async function collectReports(
-  workspacePath: string,
-  outputDir: string,
-): Promise<Parameters<typeof api.mavenBuild>[0]['reports']> {
-  const { collectMavenReports, persistMavenReports } = await import('./reports');
-  const reports = await persistMavenReports(await collectMavenReports(workspacePath), outputDir);
-  const out: Parameters<typeof api.mavenBuild>[0]['reports'] = [];
-  if (reports.surefire) {
-    out.push({
-      framework: 'maven-surefire',
-      reportFiles: reports.surefire.reportPaths.map((p) => `file://${p}`),
-      aggregate: {
-        total: reports.surefire.total,
-        passed: reports.surefire.passed,
-        failed: reports.surefire.failed,
-        skipped: reports.surefire.skipped,
-        errors: reports.surefire.errors,
-      },
-    });
-  }
-  if (reports.failsafe) {
-    out.push({
-      framework: 'maven-failsafe',
-      reportFiles: reports.failsafe.reportPaths.map((p) => `file://${p}`),
-      aggregate: {
-        total: reports.failsafe.total,
-        passed: reports.failsafe.passed,
-        failed: reports.failsafe.failed,
-        skipped: reports.failsafe.skipped,
-        errors: reports.failsafe.errors,
-      },
-    });
-  }
-  return out;
-}
-
-/**
- * Persist a `rejection_feedback` artifact carrying the human reviewer's
- * comment, just before a manual gate's reject-throw. Failures here MUST NOT
- * block the throw — the original gate-rejected error must still surface,
- * otherwise the reject signal is masked.
- *
- * Producer-only: a follow-up L3 task wires up the consumer (context_pack
- * stage reads the latest `rejection_feedback` to seed prompt revision).
- */
-async function postRejectionFeedback(input: {
-  workflowRunId: string;
-  stepRunId: string | null;
-  gateId: GateRun['gateId'];
-  comment: string;
-}): Promise<void> {
-  try {
-    await api.postArtifact({
-      workflowRunId: input.workflowRunId,
-      stepRunId: input.stepRunId,
-      kind: 'rejection_feedback',
-      uri: `mem://rejection_feedback/${input.workflowRunId}/${input.gateId}`,
-      size: Buffer.byteLength(input.comment, 'utf8'),
-      contentType: 'text/plain',
-      metadata: {
-        gateId: input.gateId,
-        comment: input.comment,
-        rejectedAt: nowIso(),
-      },
-    });
-  } catch (err) {
-    console.warn(
-      `[runner] rejection_feedback artifact persist failed for ${input.gateId} on ${input.workflowRunId}:`,
-      errorMessage(err),
-    );
-  }
-}
-
-async function awaitApproval(
-  workflowRunId: string,
-  gateId: GateRun['gateId'],
-): Promise<{ approved: boolean; comment: string | null }> {
-  return waitForApprovalDecision({
-    workflowRunId,
-    gateId,
-    findApproval: api.findApproval,
-    sleep: (ms) => new Promise((res) => setTimeout(res, ms)),
-    timeoutMs: approvalTimeoutMsFromEnv(),
-  });
-}
-
-export async function waitForApprovalDecision(params: {
-  workflowRunId: string;
-  gateId: GateRun['gateId'];
-  findApproval(
-    workflowRunId: string,
-    gateId: GateRun['gateId'],
-  ): Promise<{ decision: 'approved' | 'rejected'; comment: string | null } | null>;
-  sleep(ms: number): Promise<void>;
-  timeoutMs?: number | null;
-  pollMs?: number;
-}): Promise<{ approved: boolean; comment: string | null }> {
-  const startedAt = Date.now();
-  const pollMs = params.pollMs ?? 500;
-  while (params.timeoutMs == null || Date.now() - startedAt < params.timeoutMs) {
-    const decision = await params.findApproval(params.workflowRunId, params.gateId);
-    if (decision) return { approved: decision.decision === 'approved', comment: decision.comment };
-    await params.sleep(pollMs);
-  }
-  throw new Error(`approval timeout for ${params.gateId} on ${params.workflowRunId}`);
-}
-
-function approvalTimeoutMsFromEnv(): number | null {
-  const raw = process.env.AINP_APPROVAL_TIMEOUT_MS;
-  if (!raw) return null;
-  const value = Number(raw);
-  return Number.isFinite(value) && value > 0 ? value : null;
-}
-
-export interface SensitiveChangeCheckpointDeps {
-  awaitHuman(params: { workflowRunId: string; stage: 'implementation' }): Promise<unknown>;
-  stepFinished(params: {
-    stepRunId: string;
-    status: 'passed' | 'failed' | 'cancelled' | 'skipped';
-  }): Promise<unknown>;
-  awaitApproval(
-    workflowRunId: string,
-    gateId: 'sensitive_change_gate',
-  ): Promise<{ approved: boolean; comment: string | null }>;
-  /**
-   * Optional. Called just before the reject-throw when a non-empty comment
-   * was supplied, to persist a `rejection_feedback` artifact. Failures here
-   * MUST NOT prevent the throw — implementations should swallow + log.
-   */
-  postRejectionFeedback?: (input: {
-    workflowRunId: string;
-    stepRunId: string | null;
-    gateId: GateRun['gateId'];
-    comment: string;
-  }) => Promise<void>;
-}
-
-export async function enforceSensitiveChangeCheckpoint(params: {
-  workflowRunId: string;
-  stepRunId: string;
-  gate: Pick<GateRun, 'status'>;
-  deps: SensitiveChangeCheckpointDeps;
-}): Promise<void> {
-  if (params.gate.status !== 'warn') return;
-
-  await params.deps.awaitHuman({
-    workflowRunId: params.workflowRunId,
-    stage: 'implementation',
-  });
-  console.log('[runner] awaiting sensitive_change_gate approval…');
-  const { approved, comment } = await params.deps.awaitApproval(
-    params.workflowRunId,
-    'sensitive_change_gate',
-  );
-  const rejectSummary = !approved && comment
-    ? `: ${comment.slice(0, 200)}${comment.length > 200 ? '…' : ''}`
-    : '';
-  console.log(
-    `[runner]   sensitive_change_gate -> ${approved ? 'approved' : 'rejected'}${rejectSummary}`,
-  );
-  if (!approved) {
-    if (comment && params.deps.postRejectionFeedback) {
-      await params.deps.postRejectionFeedback({
-        workflowRunId: params.workflowRunId,
-        stepRunId: params.stepRunId,
-        gateId: 'sensitive_change_gate',
-        comment,
-      });
-    }
-    await params.deps.stepFinished({ stepRunId: params.stepRunId, status: 'failed' });
-    throw new Error('sensitive_change_gate rejected');
-  }
-}
-
-function taskKindForSkill(skill: SkillSpec): AgentTaskKind {
-  switch (skill.stage) {
-    case 'context_pack':
-      return 'context_pack';
-    case 'requirement':
-      return 'requirement_draft';
-    case 'design':
-      return 'design_draft';
-    case 'implementation':
-      return 'implementation';
-    case 'review':
-      return 'review';
-    case 'report':
-      return 'report';
-    case 'analyze':
-      return 'analyze';
-    case 'scan':
-      return 'scan';
-    case 'plan':
-      return 'plan';
-    default:
-      return 'noop';
-  }
-}
-
-function renderAgentPromptAudit(
-  skill: SkillSpec,
-  inputs: Record<string, string>,
-  contextPack?: ContextPack,
-): string {
-  const inputNames = Object.keys(inputs).sort();
-  const lines = [
-    `Skill: ${skill.id}@${skill.version}`,
-    `Stage: ${skill.stage}`,
-    '',
-    skill.instructions,
-    '',
-    `Inputs: ${inputNames.join(', ') || '(none)'}`,
-  ];
-  if (contextPack) {
-    lines.push(
-      '',
-      `ContextPack: ${contextPack.id}`,
-      `ContextMode: ${contextPack.mode}`,
-      'ContextManifest:',
-      ...contextPack.manifest.map((item) => (
-        `- ${item.ref}: ${item.reason} (priority=${item.priority}; mode=${item.mode}; sourceType=${item.sourceType ?? 'n/a'}; knowledgeClass=${item.knowledgeClass}; trustLevel=${item.trustLevel ?? 'n/a'}; freshness=${item.freshness ?? 'n/a'}; confidence=${item.confidence ?? 'n/a'}; score=${item.score ?? 'n/a'}; sourceRefs=${item.sourceRefs?.join(', ') || 'n/a'}${item.degradedFrom ? `; degraded=${item.degradedFrom}->${item.mode}; degradationReason=${item.degradationReason ?? 'n/a'}` : ''})`
-      )),
-    );
-    if (contextPack.calibrationSignals && contextPack.calibrationSignals.length > 0) {
-      lines.push(
-        'KnowledgeReviewSignals:',
-        ...contextPack.calibrationSignals.map((signal) => (
-          `- ${signal.id}: ${signal.kind}/${signal.severity}; action=${signal.recommendedAction}; subjectRefs=${signal.subjectRefs.join(', ') || 'n/a'}; evidenceRefs=${signal.evidenceRefs.join(', ') || 'n/a'}; message=${signal.message}`
-        )),
-      );
-    }
-  }
-  return lines.join('\n');
-}
-
-function knowledgeReviewActionForSignal(recommendedAction: string): string {
-  switch (recommendedAction) {
-    case 'mark_stale_or_supersede':
-    case 'mark_stale_or_downgrade':
-      return 'mark_stale';
-    case 'open_knowledge_review':
-    case 'review_before_use':
-    case 'review_status_transition':
-      return 'needs_review';
-    default:
-      return recommendedAction;
-  }
-}
-
-function selectedKnowledgeUsageItems(contextPack: ContextPack): Array<{
-  knowledgeArtifactId: string;
-  mode?: string;
-  score?: number;
-  sourceRefs?: string[];
-}> {
-  const seen = new Set<string>();
-  const items: Array<{
-    knowledgeArtifactId: string;
-    mode?: string;
-    score?: number;
-    sourceRefs?: string[];
-  }> = [];
-  for (const item of contextPack.manifest) {
-    if (item.sourceType !== 'knowledge_artifact') continue;
-    const knowledgeArtifactId = knowledgeArtifactIdFromManifestRef(item.ref);
-    if (!knowledgeArtifactId || seen.has(knowledgeArtifactId)) continue;
-    seen.add(knowledgeArtifactId);
-    items.push({
-      knowledgeArtifactId,
-      mode: item.mode,
-      score: item.score,
-      sourceRefs: item.sourceRefs,
-    });
-  }
-  return items;
-}
-
-function knowledgeArtifactIdFromManifestRef(ref: string): string | null {
-  return ref.startsWith('knowledge_') ? ref.slice('knowledge_'.length) : null;
-}
-
-// ---------------------------------------------------------------------------
-// V2 P0-2 / PR5: promoteAcceptedDraftToKnowledge (thin HTTP wrapper)
-//
-// After acceptance_gate passes, lift each requirement_draft / design_doc into
-// a knowledge entity (REQ-### / DSN-###). The entire algorithm (entity_id
-// resolution, version bump, supersede prior accepted, INSERT
-// knowledge_artifacts, UPSERT entity head) lives server-side in a single
-// `db.transaction(...)` per Q5=5-A — see `apps/api/src/promote.ts`.
-//
-// This wrapper just maps `PromoteDraftInput` → `PromoteRequest`, calls
-// `api.promoteDraft`, and downgrades failures to a log line so the
-// acceptance gate is never broken (R12 / R28).
-// ---------------------------------------------------------------------------
-
-export interface PromoteDraftInput {
-  artifactId: string;
-  kind: 'requirement_draft' | 'design_doc';
-  uri: string;
-  size: number;
-  contentType: string;
-  /** Full markdown body of the draft (forwarded as-is to the API). */
-  text: string;
-}
-
-export interface PromoteDeps {
-  promoteDraft: typeof api.promoteDraft;
-  log?: (msg: string) => void;
-  errorLog?: (msg: string) => void;
-}
-
-export async function promoteAcceptedDraftToKnowledge(
-  projectId: string,
-  draft: PromoteDraftInput,
-  deps: PromoteDeps = { promoteDraft: api.promoteDraft },
-): Promise<void> {
-  const log = deps.log ?? ((m) => console.log(m));
-  const errorLog = deps.errorLog ?? ((m) => console.error(m));
-  try {
-    const result = await deps.promoteDraft({
-      projectId,
-      kind: draft.kind,
-      draftArtifactId: draft.artifactId,
-      draftText: draft.text,
-      uri: draft.uri,
-      size: draft.size,
-      contentType: draft.contentType,
-    });
-    log(
-      `[runner] promoted ${draft.kind} ${draft.artifactId} -> ${result.entityKind} ${result.entityId} v${result.version} (id=${result.knowledgeArtifactId})`,
-    );
-  } catch (err) {
-    // R12 / R28: failure MUST be downgraded — never break acceptance gate.
-    errorLog(
-      `[runner] promoteAcceptedDraftToKnowledge failed for ${draft.kind} ${draft.artifactId}: ${
-        errorMessage(err)
-      }`,
-    );
-  }
 }

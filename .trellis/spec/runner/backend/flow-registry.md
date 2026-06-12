@@ -4,7 +4,7 @@
 
 ### 1. Scope / Trigger
 
-- Trigger: changes to `apps/runner/src/flows/registry.ts`, `apps/runner/src/orchestrator.ts` (the `cmdOrchestrate` body, `dispatchStep`, or any `executeXxx` step implementation), or the `FlowId` / `FlowDef` / `StageStep` types in `packages/shared/src/types/workflow.ts`.
+- Trigger: changes to `packages/shared/src/flows/registry.ts`, `apps/runner/src/orchestrator.ts`, the `apps/runner/src/orchestrator/` modules (`types.ts` / `steps.ts` / `invoke-skill.ts` / `approval.ts` / `verifier-media.ts`), or the `FlowId` / `FlowDef` / `StageStep` types in `packages/shared/src/types/workflow.ts`.
 - Adding a new flow variant — the new entry must land in `FLOW_REGISTRY` and the new id must be added to the `FlowId` literal union. The trust-boundary guards (`KNOWN_FLOW_IDS` / `isFlowId`, exported from `@ainp/shared`) are **derived from the registry keys** and pick up new flows automatically — no manual list sync.
 - Schema/type changes touching `workflow_runs.flow_id` or `WorkflowRun.flowId`.
 - Changes to the shared trust-boundary guards (`KNOWN_FLOW_IDS` / `isFlowId` / `WORKFLOW_STAGES` / `isWorkflowStage` in `@ainp/shared`) or their consumption in `apps/api/src/routes/workflow-runs.ts`, `apps/api/src/routes/runner-events.ts`, and `apps/runner/src/index.ts`.
@@ -17,9 +17,9 @@
 - `FLOW_REGISTRY` (`packages/shared/src/flows/registry.ts`; moved from runner in W2-4, `apps/runner/src/flows/registry.ts` remains a re-export shim) — `Readonly<Record<FlowId, FlowDef>>`. Single source of truth for V2 flow definitions.
 - `KNOWN_FLOW_IDS` / `isFlowId(value): value is FlowId` (`packages/shared/src/flows/registry.ts`) — derived from `Object.keys(FLOW_REGISTRY)`; the single trust-boundary guard consumed by both the API route and the runner CLI.
 - `WORKFLOW_STAGES` / `isWorkflowStage(value): value is WorkflowStage` (`packages/shared/src/types/workflow.ts`) — shared stage guard; replaced the three hand-written copies in api routes.
-- `dispatchStep(step: StageStep, ctx: RunCtx): Promise<void>` — inner function of `cmdOrchestrate`, single-point router.
-- `executeImplementation(c: RunCtx)` / `executeBuildTest(c)` / `executeAcceptance(c)` / `executeCompletion(c)` / `executeKnowledgePromotion(c)` — inner functions of `cmdOrchestrate`, 1:1 lifts of the V1 inline blocks.
-- `RunCtx` — file-private interface in `orchestrator.ts`; carries `project`, `run`, `workspace`, `backend`, `tools`, `opts`, `runArtifactsDir`, `inputs`, `inputArtifactIds`, `draftsToPromote`, `ok` across step implementations. **Not exported**.
+- `dispatchStep(step: StageStep, ctx: RunCtx, deps?: DispatchDeps): Promise<void>` — top-level function in `orchestrator.ts` (lifted out of `cmdOrchestrate` in the 06-12 de-closure), still the single-point router every stage flows through. The optional `deps` parameter defaults to the real step implementations and exists for test spies only.
+- `executeImplementation(c, deps?)` / `executeBuildTest` / `executeVerifier` / `executeAcceptance` / `executeCompletion` / `executeKnowledgePromotion` / `executeAgentMarkdownStage` / `runStage` / `runContextPack` — top-level functions in `apps/runner/src/orchestrator/steps.ts`, signature `(c: RunCtx, deps: StepDeps = DEFAULT_STEP_DEPS)`. Behavior byte-equivalent to the former inner closures; all run-scoped state flows through `RunCtx` explicitly. `invokeSkill` / `captureContextRequest` / `ensureContextFoundation` live in `orchestrator/invoke-skill.ts`; approval waiting in `orchestrator/approval.ts`; verifier media pure functions in `orchestrator/verifier-media.ts` (directly unit-tested since 06-12).
+- `RunCtx` — defined and **exported** from `apps/runner/src/orchestrator/types.ts` (de-closure made it the explicit parameter type; tests build fixtures via `apps/runner/test/helpers/orchestrator-fixtures.ts`). The W2-1 "file-private, not exported" rule is superseded: the invariant that matters — no `executeXxx` closes over run-scoped mutable state — is now structurally guaranteed by top-level function signatures.
 - `OrchestrateOpts.flowId?: FlowId` (`apps/runner/src/orchestrator.ts`) — W2-3 PR2: optional flow id on the runner CLI/orchestrator entry; forwarded to `api.createWorkflowRun`.
 - `OrchestrateOpts.userRequest?: string` (`apps/runner/src/orchestrator.ts`) — optional agent-facing clarified task brief. It seeds `inputs.user_request` and the ContextPack task brief; it must NOT replace the WorkflowRun/UI `title` passed to `api.createWorkflowRun`.
 - `api.createWorkflowRun({ projectName, title, type?, sourceBranch?, flowId? })` (`apps/runner/src/api-client.ts`) — runner-side HTTP wrapper; threads flowId through the body.
@@ -148,9 +148,9 @@ UI override (W2-4 PR4):
 
 #### `executeXxx(ctx: RunCtx)` invariants
 
-- All five `executeXxx` share a single `RunCtx` interface, declared above `cmdOrchestrate` and **not exported** (PRD R14).
+- All step implementations share the single `RunCtx` type from `orchestrator/types.ts` (exported since the 06-12 de-closure; W2-1's "not exported" rule R14 is superseded — see Signatures).
 - `ctx.ok` is a boxed `{ value: boolean }`. Mutate `ctx.ok.value = false` to mark the run failed. Most failure paths *also* throw (so the outer catch sets it again) — the only ok-without-throw path is `executeKnowledgePromotion` on `knowledge_gate` rejection, which preserves the V1 quirk of letting the run reach `finally` cleanly while still reporting failure.
-- `executeXxx` MUST NOT close over outer `cmdOrchestrate` state for run-scoped data — read everything through `ctx`. Closures over module-level helpers (`api`, `mustSkill`, `awaitApproval`, etc.) are fine and expected.
+- `executeXxx` MUST NOT close over run-scoped state — read everything through `ctx` (structurally guaranteed now that they are top-level functions taking `(c, deps)`). External collaborators (api client, skills, backend) arrive via the `deps` parameter with production defaults.
 - Adding a new captured field: extend `RunCtx`, populate at construction site, then read inside `executeXxx`. Do not introduce a parallel ctx-like struct.
 
 #### Adding a new flow (W2-3 onwards)

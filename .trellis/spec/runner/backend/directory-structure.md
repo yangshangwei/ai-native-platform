@@ -28,6 +28,12 @@ apps/runner/src/
 ├── versions.ts                    # `jdk` / `maven` detection
 ├── config.ts                      # Constants (timeouts, dirs)
 ├── config-client.ts               # API config fetch
+├── orchestrator/                  # De-closured orchestrator internals (06-12)
+│   ├── types.ts                   # RunCtx / OkRef / OrchestrateOpts — shared step contracts
+│   ├── steps.ts                   # executeXxx / runStage / runContextPack (deps-injected)
+│   ├── invoke-skill.ts            # invokeSkill + context-request capture + foundation
+│   ├── approval.ts                # awaitApproval / waitForApprovalDecision / sensitive checkpoint
+│   └── verifier-media.ts          # Verifier media pure functions (unit-tested)
 ├── agents/                        # AgentBackend implementations
 │   ├── types.ts                   # AgentBackend / AgentTaskContext / AgentRunResult contracts
 │   ├── cli-common.ts              # Shared CLI-backend helpers (consumeLines, exitsZero, emit factories, diff capture)
