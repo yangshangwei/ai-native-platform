@@ -1141,3 +1141,36 @@ Split main.ts base layer into 7 modules (types/api/dom/state/router/data-loading
 ### Next Steps
 
 - None - task complete
+
+
+## Session 31: Web independent-page split + stream module (roadmap T2.2)
+
+**Date**: 2026-06-12
+**Task**: Web independent-page split + stream module (roadmap T2.2)
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Moved page-settings/page-reports/page-knowledge/stream out of main.ts (6603 -> 4695 lines), byte-level review confirmed pure moves, IME contract intact. Smoke caught a dev-server outage: serve.ts /api proxy had 262 piled-up ESTABLISHED connections (suspected SSE proxy leak, noted in task notes.md, added to roadmap T4) - restarting recovered; not a code regression. Verified: typecheck, 630 tests, 7-page smoke with rendered text identical to baseline, tab cycling clean. Next: T2.3 heavy pages (projects/new-task/coordinator-chat/task-detail).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1f2aec0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
