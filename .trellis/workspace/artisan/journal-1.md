@@ -1108,3 +1108,36 @@ Fixed TOCTOU race in workflow request claim/run-started/complete: store layer ga
 ### Next Steps
 
 - None - task complete
+
+
+## Session 30: Web main.ts base-layer split (roadmap T2.1)
+
+**Date**: 2026-06-12
+**Task**: Web main.ts base-layer split (roadmap T2.1)
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Split main.ts base layer into 7 modules (types/api/dom/state/router/data-loading/render-core), main.ts 7396 -> 6603 lines. Pure moves except the planned bare-let -> state-object rename. IME/scroll/focus render contracts preserved per spec. Verified: typecheck, 630 tests, 7-page browser smoke with zero console errors, independent check-agent review clean. Next: T2.2 independent page modules (settings/reports/knowledge/stream).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a0d9947` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
