@@ -125,21 +125,32 @@ describe('killProcessTree', () => {
 	let childProcess: ReturnType<typeof spawn> | null = null;
 
 	afterEach(async () => {
-		if (childProcess && !childProcess.killed) {
-			childProcess.kill('SIGKILL');
-			childProcess = null;
+		if (childProcess && childProcess.exitCode === null && childProcess.signalCode === null) {
+			try {
+				childProcess.kill('SIGKILL');
+			} catch {
+				// Process might already be dead
+			}
 		}
+		childProcess = null;
 	});
 
 	it('should kill a process and its children', async () => {
-		// Spawn a long-running process
+		// Spawn a long-running process WITHOUT detached so we get exit events
 		childProcess = spawn(process.platform === 'win32' ? 'timeout' : 'sleep',
-			process.platform === 'win32' ? ['10'] : ['10'],
-			{ detached: process.platform !== 'win32' }
+			process.platform === 'win32' ? ['10'] : ['10']
 		);
 
 		const pid = childProcess.pid;
 		expect(pid).toBeDefined();
+
+		// Track if exit event fires
+		let exitFired = false;
+		let exitSignal: string | null = null;
+		childProcess.on('exit', (code, signal) => {
+			exitFired = true;
+			exitSignal = signal;
+		});
 
 		// Give it a moment to start
 		await new Promise(resolve => setTimeout(resolve, 100));
@@ -147,21 +158,16 @@ describe('killProcessTree', () => {
 		// Kill it
 		await killProcessTree(pid!);
 
-		// Wait for process to be killed and verify via exit event
-		const exitPromise = new Promise<void>((resolve) => {
-			if (childProcess!.exitCode !== null) {
-				resolve();
-			} else {
-				childProcess!.on('exit', () => resolve());
-			}
-		});
+		// Wait for exit event
+		await new Promise(resolve => setTimeout(resolve, 500));
 
-		await Promise.race([
-			exitPromise,
-			new Promise(resolve => setTimeout(resolve, 2000))
-		]);
+		// Verify the exit event fired (process was terminated)
+		expect(exitFired).toBe(true);
+		if (process.platform !== 'win32') {
+			// On Unix, we should see a signal
+			expect(exitSignal).toBeTruthy();
+		}
 
-		expect(childProcess.exitCode).not.toBeNull();
 		childProcess = null;
 	}, 10000);
 
@@ -184,30 +190,29 @@ describe('killProcessTree', () => {
 			return;
 		}
 
-		childProcess = spawn('sleep', ['10'], { detached: true });
+		childProcess = spawn('sleep', ['10']);
 		const pid = childProcess.pid;
 		expect(pid).toBeDefined();
+
+		let exitFired = false;
+		let exitSignal: string | null = null;
+		childProcess.on('exit', (code, signal) => {
+			exitFired = true;
+			exitSignal = signal;
+		});
 
 		await new Promise(resolve => setTimeout(resolve, 100));
 
 		// Use SIGKILL
 		await killProcessTree(pid!, 'SIGKILL');
 
-		// Wait for process to be killed
-		const exitPromise = new Promise<void>((resolve) => {
-			if (childProcess!.exitCode !== null) {
-				resolve();
-			} else {
-				childProcess!.on('exit', () => resolve());
-			}
-		});
+		// Wait for exit event
+		await new Promise(resolve => setTimeout(resolve, 500));
 
-		await Promise.race([
-			exitPromise,
-			new Promise(resolve => setTimeout(resolve, 2000))
-		]);
+		// Verify the exit event fired with SIGKILL
+		expect(exitFired).toBe(true);
+		expect(exitSignal).toBe('SIGKILL');
 
-		expect(childProcess.exitCode).not.toBeNull();
 		childProcess = null;
 	}, 10000);
 });

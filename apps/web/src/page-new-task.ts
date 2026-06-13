@@ -731,6 +731,7 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
     ui.activeTaskRequestId = request.id;
     ui.activeRunId = request.workflowRunId;
     ui.lastError = null;
+    ui.lastSuccess = `任务"${request.title}"创建成功！AI 正在执行中，你可以在任务详情页查看实时进度。`;
     ui.activePage = 'task';
     window.location.hash = `task/${encodeURIComponent(request.id)}`;
     runnerAutoStartAttemptedForRequest.add(request.id);
