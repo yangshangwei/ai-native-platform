@@ -22,7 +22,7 @@ import type {
   ProjectSourceAuthKind,
   ProjectSourceKind,
   WorkflowRequest,
-} from '@ainp/shared';
+} from '@ainp/shared/browser';
 
 // Re-exported verbatim from @ainp/shared (previously hand-copied here).
 export type {
@@ -30,7 +30,7 @@ export type {
   ProjectAgentBackendKind,
   ProjectSourceAuthKind,
   ProjectSourceKind,
-} from '@ainp/shared';
+} from '@ainp/shared/browser';
 
 export type Page = 'workbench' | 'task' | 'projects' | 'new-task' | 'reports' | 'knowledge' | 'settings';
 export type StatusKind = 'good' | 'warn' | 'bad' | 'info' | 'muted';

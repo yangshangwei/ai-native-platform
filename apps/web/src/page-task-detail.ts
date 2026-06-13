@@ -42,7 +42,7 @@ import {
   type RunDetail,
   type Stage,
 } from './projection';
-import { errorMessage } from '@ainp/shared';
+import { errorMessage } from '@ainp/shared/browser';
 import type {
   AgentBackendKind,
   ContextGovernanceDto,

@@ -14,7 +14,7 @@ import {
   type WorkflowRun,
   type WorkflowRunStatus,
   type WorkflowStage,
-} from '@ainp/shared';
+} from '@ainp/shared/browser';
 import type { WorkflowRequestDto } from './types';
 
 export type { FlowId };

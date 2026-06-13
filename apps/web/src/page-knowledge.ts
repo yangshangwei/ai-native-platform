@@ -25,7 +25,7 @@
  * `knowledgeActiveView`.
  */
 
-import { errorMessage } from '@ainp/shared';
+import { errorMessage } from '@ainp/shared/browser';
 import type { KnowledgeSuggestion, RunDetail } from './projection';
 import type {
   KnowledgeActionDecision,

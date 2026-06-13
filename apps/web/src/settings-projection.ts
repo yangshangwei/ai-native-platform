@@ -11,7 +11,7 @@
  * §D-PR4.2 for the design intent.
  */
 
-import type { ConfigCategory, ConfigEntry } from '@ainp/shared';
+import type { ConfigCategory, ConfigEntry } from '@ainp/shared/browser';
 
 /**
  * Settings tabs mirror the shared config registry's categories 1:1 — derived

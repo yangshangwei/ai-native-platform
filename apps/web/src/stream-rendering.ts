@@ -1,4 +1,4 @@
-import type { AgentBackendKind, AgentStreamEventType } from '@ainp/shared';
+import type { AgentBackendKind, AgentStreamEventType } from '@ainp/shared/browser';
 
 export type StreamDisplayEventType = AgentStreamEventType;
 

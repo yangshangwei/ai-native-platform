@@ -20,7 +20,7 @@
  * by main.ts. Moved verbatim out of `main.ts` (T2.3 page split).
  */
 
-import { errorMessage } from '@ainp/shared';
+import { errorMessage } from '@ainp/shared/browser';
 import {
   buildCoordinatorChoiceReply,
   coordinatorQuestionKey,

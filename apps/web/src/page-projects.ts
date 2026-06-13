@@ -16,7 +16,7 @@
  * plus pure `projection` helpers.
  */
 
-import { errorMessage } from '@ainp/shared';
+import { errorMessage } from '@ainp/shared/browser';
 import { latestArtifactOfKind } from './projection';
 import type {
   AgentBackendPreflightDto,

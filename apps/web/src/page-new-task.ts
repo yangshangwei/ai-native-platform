@@ -19,7 +19,7 @@
  * (kicks off `loadCoordinatorChat` right after creating a request).
  */
 
-import { errorMessage } from '@ainp/shared';
+import { errorMessage } from '@ainp/shared/browser';
 import type {
   ProjectBranchListResult,
   ProjectDto,

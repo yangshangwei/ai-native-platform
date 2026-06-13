@@ -1,3 +1,8 @@
+/**
+ * Browser-safe entry point for @ainp/shared.
+ * Excludes Node.js-specific modules like platform utilities.
+ */
+
 export * from './types/ids';
 export * from './types/project';
 export * from './types/workflow';
@@ -28,7 +33,7 @@ export * from './utils/redaction';
 export * from './utils/agent-backend-cli';
 export * from './utils/agent-backend-preflight';
 export * from './utils/context-policy';
-export * from './utils/platform'; // 恢复导出，API需要使用
+// platform 模块仅在服务器端可用
 
 export * from './config/registry';
 export * from './config/defaults';

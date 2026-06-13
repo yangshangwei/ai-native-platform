@@ -20,7 +20,7 @@ import {
   type SettingsTabId,
   type SettingsViewModel,
 } from './settings-projection';
-import { errorMessage } from '@ainp/shared';
+import { errorMessage } from '@ainp/shared/browser';
 import type { ProjectDto, RunnerDto, StatusKind } from './types';
 import { api } from './api';
 import {

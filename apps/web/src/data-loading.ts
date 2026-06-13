@@ -25,7 +25,7 @@ import type {
   RunnerDto,
   WorkflowRequestDto,
 } from './types';
-import { errorMessage } from '@ainp/shared';
+import { errorMessage } from '@ainp/shared/browser';
 import { api } from './api';
 import {
   activeTaskRequest,
