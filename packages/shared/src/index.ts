@@ -28,6 +28,7 @@ export * from './utils/redaction';
 export * from './utils/agent-backend-cli';
 export * from './utils/agent-backend-preflight';
 export * from './utils/context-policy';
+export * from './utils/platform';
 
 export * from './config/registry';
 export * from './config/defaults';
