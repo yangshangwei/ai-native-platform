@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { newId, nowIso, type Artifact, type ArtifactKind } from '@ainp/shared';
+import { newId, nowIso, pathToFileUri, type Artifact, type ArtifactKind } from '@ainp/shared';
 import { store } from './store/store';
 import { createArtifact, audit } from './workflow-engine';
 import { buildContextGovernanceReadModel } from './context-governance';
@@ -46,7 +46,7 @@ async function persistReportPair(params: {
     workflowRunId: params.workflowRunId,
     stepRunId: null,
     kind: params.artifactKind,
-    uri: `file://${path}`,
+    uri: pathToFileUri(path),
     size: Buffer.byteLength(params.md, 'utf8'),
     contentType: 'text/markdown',
     metadata: params.mdMetadata,
@@ -55,7 +55,7 @@ async function persistReportPair(params: {
     workflowRunId: params.workflowRunId,
     stepRunId: null,
     kind: params.artifactKind,
-    uri: `file://${jsonPath}`,
+    uri: pathToFileUri(jsonPath),
     size: Buffer.byteLength(jsonText, 'utf8'),
     contentType: 'application/json',
     metadata: params.jsonMetadata,
@@ -709,7 +709,7 @@ export async function generateRetroEvalScenarioDraft(
     workflowRunId,
     stepRunId: null,
     kind: 'other',
-    uri: `file://${path}`,
+    uri: pathToFileUri(path),
     size: Buffer.byteLength(jsonText, 'utf8'),
     contentType: 'application/json',
     metadata: {

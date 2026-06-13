@@ -3,7 +3,7 @@ import { api } from '../api-client';
 import { runWhitelistedCommand } from '../command-runner';
 import { TrustedLocalWorktreeEnvironment } from '../worktree';
 import { DEFAULT_MAX_LOG_BYTES, DEFAULT_TIMEOUT_MS, WORKTREES_DIR } from '../config';
-import { isWhitelisted, type CommandStage } from '@ainp/shared';
+import { isWhitelisted, pathToFileUri, type CommandStage } from '@ainp/shared';
 import { collectMavenReports, persistMavenReports } from '../reports';
 import { sendHeartbeat } from '../heartbeat';
 
@@ -87,7 +87,7 @@ export async function cmdRun(opts: RunOpts): Promise<void> {
       if (reports.surefire) {
         reportPayload.push({
           framework: 'maven-surefire',
-          reportFiles: reports.surefire.reportPaths.map((p) => `file://${p}`),
+          reportFiles: reports.surefire.reportPaths.map((p) => pathToFileUri(p)),
           aggregate: {
             total: reports.surefire.total,
             passed: reports.surefire.passed,
@@ -100,7 +100,7 @@ export async function cmdRun(opts: RunOpts): Promise<void> {
       if (reports.failsafe) {
         reportPayload.push({
           framework: 'maven-failsafe',
-          reportFiles: reports.failsafe.reportPaths.map((p) => `file://${p}`),
+          reportFiles: reports.failsafe.reportPaths.map((p) => pathToFileUri(p)),
           aggregate: {
             total: reports.failsafe.total,
             passed: reports.failsafe.passed,

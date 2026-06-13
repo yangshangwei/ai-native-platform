@@ -8,7 +8,7 @@ import type {
   VerifierAcMatrix,
   VerifierStatus,
 } from '@ainp/shared';
-import { VERIFIER_AC_MATRIX_SCHEMA_VERSION, errorMessage, nowIso } from '@ainp/shared';
+import { VERIFIER_AC_MATRIX_SCHEMA_VERSION, errorMessage, nowIso, pathToFileUri } from '@ainp/shared';
 import { api } from '../api-client';
 import type { AgentBackend } from '../agents/types';
 import { runWhitelistedCommand } from '../command-runner';
@@ -150,7 +150,7 @@ export async function executeImplementation(
     workflowRunId: c.run.id,
     stepRunId: stepId,
     kind: 'diff',
-    uri: `file://${diffOut.path}`,
+    uri: pathToFileUri(diffOut.path),
     size: diffOut.size,
     contentType: diffOut.contentType,
     metadata: { changedFilesPath: namesOut.path },
@@ -328,7 +328,7 @@ export async function executeVerifier(
     workflowRunId: c.run.id,
     stepRunId: stepId,
     kind: 'other',
-    uri: `file://${matrixPath}`,
+    uri: pathToFileUri(matrixPath),
     size: Buffer.byteLength(matrixBody, 'utf8'),
     contentType: 'application/json',
     metadata: {
@@ -438,7 +438,7 @@ export async function executeAgentMarkdownStage(
       workflowRunId: c.run.id,
       stepRunId: stepId,
       kind: 'other',
-      uri: `file://${out.path}`,
+      uri: pathToFileUri(out.path),
       size: out.size,
       contentType: out.contentType,
       metadata: { skill: skill.id, output: out.name, stage },
@@ -540,7 +540,7 @@ export async function runContextPack(
     workflowRunId: c.run.id,
     stepRunId: stepId,
     kind: 'project_profile',
-    uri: `file://${profileResult.profileMdPath}`,
+    uri: pathToFileUri(profileResult.profileMdPath),
     size: Buffer.byteLength(profileResult.markdown, 'utf8'),
     contentType: 'text/markdown',
     metadata: {
@@ -579,7 +579,7 @@ export async function runContextPack(
       workflowRunId: c.run.id,
       stepRunId: stepId,
       kind: 'context_pack',
-      uri: `file://${out.path}`,
+      uri: pathToFileUri(out.path),
       size: out.size,
       contentType: out.contentType,
       metadata: {
@@ -634,7 +634,7 @@ export async function runStage(
       workflowRunId: c.run.id,
       stepRunId: step.id,
       kind,
-      uri: `file://${out.path}`,
+      uri: pathToFileUri(out.path),
       size: out.size,
       contentType: out.contentType,
       metadata,
@@ -646,7 +646,7 @@ export async function runStage(
       c.draftsToPromote.push({
         artifactId: a.id,
         kind,
-        uri: `file://${out.path}`,
+        uri: pathToFileUri(out.path),
         size: out.size,
         contentType: out.contentType,
         text,
@@ -761,7 +761,7 @@ export async function collectReports(
   if (reports.surefire) {
     out.push({
       framework: 'maven-surefire',
-      reportFiles: reports.surefire.reportPaths.map((p) => `file://${p}`),
+      reportFiles: reports.surefire.reportPaths.map((p) => pathToFileUri(p)),
       aggregate: {
         total: reports.surefire.total,
         passed: reports.surefire.passed,
@@ -774,7 +774,7 @@ export async function collectReports(
   if (reports.failsafe) {
     out.push({
       framework: 'maven-failsafe',
-      reportFiles: reports.failsafe.reportPaths.map((p) => `file://${p}`),
+      reportFiles: reports.failsafe.reportPaths.map((p) => pathToFileUri(p)),
       aggregate: {
         total: reports.failsafe.total,
         passed: reports.failsafe.passed,
