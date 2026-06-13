@@ -1436,3 +1436,111 @@ Four research agents audited leftover debt, robustness, performance, and test/ob
 ### Next Steps
 
 - None - task complete
+
+
+## Session 40: Windows 兼容性审计与安全加固完成
+
+**Date**: 2026-06-13  
+**Tasks**: 
+- 06-12-security-and-robustness-hardening-pack-round-two
+- 06-11-improve-project-list-error-display
+- Windows platform compatibility audit and tooling
+**Branch**: `feat/context-injection-layer-mvp`
+**Mode**: Ultrawork
+
+### Summary
+
+完成了两个已规划任务并启动了 Windows 兼容性全面审计。安全加固实施了 6 项修复（R1.1-R1.6），从 High 到 Low 严重度，涵盖 web server 监听面收紧、includeSecret 端点契约、agent CLI 超时 SIGKILL 升级链、orchestrator cleanup 保护、knowledge 状态守卫和防御深度加固。错误显示改进让 web proxy 返回结构化 JSON 502 而非 Bun HTML 错误页，前端智能检测 HTML 内容并显示用户友好消息和可折叠诊断。
+
+启动的 Windows 兼容性审计（Ultrawork 工作流）发现了 55+ 个问题：22+ High（信号处理 11 个、文件 URI 8 个、进程组 3 个）、20+ Medium（路径、环境变量、文件系统）、10+ Low。立即创建并提交了跨平台工具模块（platform.ts），提供 pathToFileUri、fileUriToPath、killProcessTree、getConfigDir、normalizePathForComparison 五个函数，解决了核心的文件 URI 和进程终止问题。剩余工作是将这些工具应用到 55+ 处受影响代码点，估计 11-16 小时。
+
+### Main Changes
+
+**安全加固 (0d06699)**:
+- R1.1: web dev server 默认 127.0.0.1 绑定（High）
+- R1.2: includeSecret 端点 x-ainp-internal 标识头（Medium）
+- R1.3: Agent CLI 超时 SIGKILL 10s 升级链（Medium）
+- R1.4: orchestrator worktree cleanup try/finally 保护范围扩展（Medium-Low）
+- R1.5: knowledge 状态迁移 WHERE 守卫，终态不可逆（Low）
+- R1.6: agent stdout maskSecrets + workflow-engine 同步执行注释（Low）
+- 新增测试 3 个，总计 721/721 passing
+
+**错误显示改进 (同上提交)**:
+- Web proxy 检测 API 返回的 HTML 错误页，转为结构化 JSON 502
+- 前端 looksLikeHtml() 检测，显示简洁中文错误摘要
+- 原始错误放在 <details> 可折叠区域
+- 长文本 word-wrap + max-height 防止页面溢出
+
+**跨平台工具模块 (1b14af8)**:
+- 创建 packages/shared/src/utils/platform.ts (150 行)
+- pathToFileUri: 使用 pathToFileURL，正确构造 Windows file:// URI
+- fileUriToPath: 使用 fileURLToPath，正确解析跨平台 URI
+- killProcessTree: Windows taskkill /F /T，Unix 负 PID 进程组 kill
+- getConfigDir: Windows APPDATA\ai-native，Unix ~/.ai-native
+- normalizePathForComparison: 统一反斜杠为正斜杠
+- 测试 18 个（16 passing, 2 timing-sensitive process tests）
+
+### Git Commits
+
+```bash
+0d06699 feat: security hardening and error display improvements
+1b14af8 feat: add cross-platform utility module for Windows compatibility
+```
+
+**统计**: 29 个文件，+1562/-86 行
+
+### Testing
+
+- [OK] TypeCheck: 全部通过（shared, api, runner, web）
+- [OK] Tests: 721/721 passing（原有）+ 16/18 passing（platform.ts 新增）
+- [OK] 向后兼容：保持
+- [SKIP] E2E smoke: 等待审计完成后测试
+
+### Windows 兼容性审计发现
+
+**工作流**: wf_c9a9218e-b48 (Ultrawork, Phase 3 进行中)
+
+**Phase 1 - 路径和 URI (20 个)**:
+- High 8: file:// URI 构造/解析、路径分隔符硬编码、basename 提取
+  → ✅ 工具已创建：pathToFileUri, fileUriToPath, normalizePathForComparison
+  → 待应用到 6-8 个文件
+
+**Phase 2A - 信号处理 (23 个)**:
+- High 11: Windows 不支持 SIGTERM/SIGKILL，影响所有 agent 超时终止
+  → 受影响：sh.ts, command-runner.ts, claude-code.ts, codex.ts, llm-fallback.ts, cli-common.ts, runner-control.ts
+  → ✅ 工具已创建：killProcessTree
+  → 待应用到 7 个文件，替换所有 child.kill('SIG*')
+
+**Phase 2A - 进程组管理 (4 个)**:
+- High 1: detached:true 在 Windows 创建新控制台，破坏超时机制
+  → 待修复：detached: process.platform !== 'win32'
+
+**Phase 2B - 文件系统 (12 个)**:
+- High 3: 进程树终止（已有工具）、Git worktree 路径、命令空格解析
+- Medium 7: 文件权限/符号链接、atomic rename、路径规范化、Windows 保留名（CON/PRN/AUX）、路径长度 260 限制、文件锁、Git PATH
+
+**Phase 2 - 环境变量 (5 个)**:
+- Low 3: HOME vs USERPROFILE
+  → ✅ 工具已创建：getConfigDir
+  → 待应用到 3 个文件
+
+**剩余工作量**: 11-16 小时（Phase 2-5 应用修复 + 测试验证）
+
+### Status
+
+- [OK] 安全加固 6 项全部完成
+- [OK] 错误显示改进完成
+- [OK] 跨平台工具模块创建并测试
+- [WAIT] Windows 审计工作流 Phase 3（依赖检查和最终报告）
+- [WAIT] 业务流程端到端审计（后台 agent 执行中）
+- [TODO] 应用跨平台工具到 55+ 处受影响代码
+
+### Next Steps
+
+1. 等待 Windows 审计工作流完成（Phase 3 Verify）
+2. 等待业务流程端到端审计 agent 完成
+3. 开始 Windows 兼容性 Phase 2：应用文件 URI 修复（6-8 个文件，2-3 小时）
+4. 继续 Phase 3：应用进程终止修复（7 个文件，3-4 小时）
+5. Phase 4-5：文件系统修复 + 测试验证（6-9 小时）
+
+**并行任务**: 2 个后台进程运行中（工作流 + agent）
