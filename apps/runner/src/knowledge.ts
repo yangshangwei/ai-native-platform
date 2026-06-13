@@ -12,7 +12,7 @@
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { KnowledgeArtifact } from '@ainp/shared';
+import { fileUriToPath, type KnowledgeArtifact } from '@ainp/shared';
 import { profileDirFor } from './profile';
 
 export interface KnowledgePromotionAction {
@@ -65,7 +65,7 @@ export async function persistKnowledgeCandidate(opts: {
   actions?: KnowledgePromotionAction[];
 }): Promise<string | null> {
   if (!opts.candidateUri.startsWith('file://')) return null;
-  const src = opts.candidateUri.slice('file://'.length);
+  const src = fileUriToPath(opts.candidateUri);
   if (!existsSync(src)) return null;
   const destDir = join(profileDirFor(opts.projectId), 'knowledge');
   await mkdir(destDir, { recursive: true });

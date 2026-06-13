@@ -1,7 +1,7 @@
-import { basename, dirname, resolve } from 'node:path';
+import { basename, dirname, resolve, sep } from 'node:path';
 import { readFileSync, realpathSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import type { Artifact } from '@ainp/shared';
+import { fileUriToPath, normalizePathForComparison, type Artifact } from '@ainp/shared';
 import { verifyFileSha256, type DigestVerification } from '@ainp/shared/node';
 
 export interface ArtifactContent {
@@ -49,7 +49,7 @@ function resolveReadableFileUri(uri: string): string {
   if (!uri.startsWith('file://')) {
     throw new Error(`Only file artifacts can be read by the local API: ${uri}`);
   }
-  const path = uri.slice('file://'.length);
+  const path = fileUriToPath(uri);
   const realPath = realpathSync(path);
   const realDir = realpathSync(dirname(realPath));
   if (!allowedArtifactRoots.some((root) => isWithinResolvedRoot(realDir, root))) {
@@ -65,7 +65,9 @@ export function resolvedReadableFileUriForDigest(uri: string): string {
 function isWithinResolvedRoot(path: string, root: string): boolean {
   try {
     const realRoot = realpathSync(root);
-    return path === realRoot || path.startsWith(`${realRoot}/`);
+    const normalizedPath = normalizePathForComparison(path);
+    const normalizedRoot = normalizePathForComparison(realRoot);
+    return normalizedPath === normalizedRoot || normalizedPath.startsWith(normalizedRoot + '/');
   } catch {
     return false;
   }
