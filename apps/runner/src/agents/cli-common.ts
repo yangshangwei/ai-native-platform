@@ -162,14 +162,18 @@ export function createAgentEventEmitter(
   logLabel: string,
 ): (ctx: AgentTaskContext, parsed: ParsedAgentEvent) => Promise<void> {
   return async (ctx, parsed) => {
+    // R1.6: mask secrets in agent stdout events before persisting to database
+    const maskedText = parsed.text ? maskSecrets(parsed.text) : parsed.text;
+    const maskedPayload = maskSecretsInPayload(parsed.payload) as Record<string, unknown>;
+
     try {
       await api.postAgentEvent({
         workflowRunId: ctx.workflowRunId,
         stepRunId: ctx.stepRunId ?? null,
         agentKind,
         type: parsed.type,
-        payload: parsed.payload,
-        text: parsed.text,
+        payload: maskedPayload,
+        text: maskedText,
       });
     } catch (err) {
       // API push failure must not stop streaming. The local console still gets it.
@@ -178,4 +182,21 @@ export function createAgentEventEmitter(
       );
     }
   };
+}
+
+function maskSecretsInPayload(payload: unknown): unknown {
+  if (typeof payload === 'string') {
+    return maskSecrets(payload);
+  }
+  if (payload && typeof payload === 'object') {
+    if (Array.isArray(payload)) {
+      return payload.map(maskSecretsInPayload);
+    }
+    const masked: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(payload)) {
+      masked[key] = maskSecretsInPayload(value);
+    }
+    return masked;
+  }
+  return payload;
 }

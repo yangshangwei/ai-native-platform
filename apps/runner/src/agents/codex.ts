@@ -188,9 +188,16 @@ export class CodexBackend implements AgentBackend {
 
     const timeoutMs = this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     let timedOut = false;
+    let hardKillTimer: ReturnType<typeof setTimeout> | null = null;
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill('SIGTERM');
+      // R1.3: SIGKILL upgrade after 5-10s if SIGTERM doesn't terminate the process
+      hardKillTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill('SIGKILL');
+        }
+      }, 10_000);
     }, timeoutMs);
 
     const stdoutDone = consumeLines(child.stdout, async (line) => {
@@ -209,6 +216,7 @@ export class CodexBackend implements AgentBackend {
     });
     await Promise.allSettled([stdoutDone, stderrDone]);
     clearTimeout(timer);
+    if (hardKillTimer) clearTimeout(hardKillTimer);
 
     const lastMessage = await readOptionalText(lastMessagePath);
     await emitMeta(ctx, 'finished', { exitCode, timedOut, lastMessagePath });

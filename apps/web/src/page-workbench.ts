@@ -38,14 +38,93 @@ export function workbenchEnvironmentSummary(project: ProjectDto | null, runner: 
   return { value: '正常', kind: 'good' };
 }
 
+import { render } from './render-core';
+
 export function renderWorkbenchPage(): HTMLElement {
   return el('section', {
     class: 'page-grid',
     children: [
+      renderWelcomeGuide(),
       renderWorkbenchActionPanel(),
       renderWorkbenchOverviewPanel(),
       renderTaskListPanel(),
       renderWorkbenchEnvironmentPanel(),
+    ],
+  });
+}
+
+function renderWelcomeGuide(): HTMLElement | null {
+  const hasSeenWelcome = localStorage.getItem('hasSeenWelcome') === 'true';
+  if (hasSeenWelcome) return null;
+
+  const hasProjects = data.projects.length > 0;
+  const hasRunner = latestRunner() !== null;
+  const hasAnyRequests = data.requests.length > 0;
+
+  // 如果已经有项目和请求，说明用户已经熟悉了系统，自动隐藏引导
+  if (hasProjects && hasAnyRequests) {
+    localStorage.setItem('hasSeenWelcome', 'true');
+    return null;
+  }
+
+  return el('article', {
+    class: 'welcome-guide panel',
+    children: [
+      panelHeader('🎉 欢迎使用 AI Native Platform', '完成以下步骤即可开始'),
+      el('div', {
+        class: 'welcome-checklist',
+        children: [
+          renderChecklistItem('启动执行器 (Runner)', hasRunner, null, '已检测到 Runner 正在运行'),
+          renderChecklistItem('接入第一个项目', hasProjects, hasRunner ? 'projects' : null, hasRunner ? '立即接入项目' : '请先启动 Runner'),
+          renderChecklistItem('创建第一个任务', hasAnyRequests, hasProjects ? 'new-task' : null, hasProjects ? '立即创建任务' : '完成项目接入后解锁'),
+        ],
+      }),
+      el('div', {
+        class: 'button-row',
+        children: [
+          (() => {
+            const btn = button('稍后再说', 'ghost');
+            btn.onclick = () => {
+              localStorage.setItem('hasSeenWelcome', 'true');
+              render();
+            };
+            return btn;
+          })(),
+        ],
+      }),
+    ],
+  });
+}
+
+function renderChecklistItem(label: string, completed: boolean, actionLink: string | null, actionLabel: string): HTMLElement {
+  const actionButton = actionLink && !completed
+    ? (() => {
+        const btn = button('前往', 'small secondary');
+        btn.onclick = () => setHash(actionLink as any);
+        return btn;
+      })()
+    : null;
+
+  return el('div', {
+    class: `checklist-item ${completed ? 'completed' : 'pending'}`,
+    children: [
+      el('div', {
+        class: 'checklist-icon',
+        text: completed ? '✅' : '⬜',
+      }),
+      el('div', {
+        class: 'checklist-content',
+        children: [
+          el('strong', { text: label }),
+          el('p', {
+            class: 'checklist-detail',
+            children: [
+              el('span', { text: actionLabel }),
+              actionButton,
+            ],
+          }),
+        ],
+      }),
     ],
   });
 }

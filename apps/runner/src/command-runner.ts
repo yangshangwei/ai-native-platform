@@ -50,6 +50,8 @@ export async function runWhitelistedCommand(input: RunCommandInput): Promise<Com
     cwd: input.cwd,
     env: input.env ? { ...process.env, ...input.env } : process.env,
     stdio: ['ignore', 'pipe', 'pipe'],
+    // R1.3: spawn in detached mode so timeout kill can target the process group
+    detached: true,
   });
 
   let stdoutBytes = 0;
@@ -92,8 +94,17 @@ export async function runWhitelistedCommand(input: RunCommandInput): Promise<Com
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
-    // SIGKILL the leader; future work: kill the whole pgid.
-    child.kill('SIGKILL');
+    // R1.3: SIGKILL the process group to terminate child processes spawned by
+    // the command (e.g., mvn spawning javac). The negative PID targets the
+    // entire process group. Future work: verify pgid stability across platforms.
+    try {
+      if (child.pid) {
+        process.kill(-child.pid, 'SIGKILL');
+      }
+    } catch {
+      // Fallback: kill the leader if pgid kill fails
+      child.kill('SIGKILL');
+    }
   }, input.timeoutMs);
 
   let exitInfo: { code: number | null; signal: NodeJS.Signals | null };

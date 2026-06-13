@@ -67,6 +67,13 @@ export { audit };
  * Anything that mutates a WorkflowRun / StepRun / Build / Test / Gate must go
  * through this module. SQLite returns fresh objects on read, so every
  * mutation must call `store.X.set(...)` to persist.
+ *
+ * R1.6: State transition invariant — all state transition functions in this
+ * module MUST be fully synchronous and MUST NOT contain any `await` calls
+ * between reading the current state and persisting the new state. This
+ * ensures atomicity via the single-process event loop. Any function that
+ * violates this rule risks TOCTOU races where concurrent requests observe
+ * stale state.
  */
 
 export function createWorkflowRun(params: {
@@ -716,8 +723,40 @@ export function setKnowledgeArtifactStatus(
   }
   const existing = store.knowledgeArtifacts.get(id);
   if (!existing) throw new Error(`knowledge artifact not found: ${id}`);
+
+  // R1.5: Validate state transition legality
+  // Legal transitions: draft → accepted | superseded
+  // Terminal states (accepted, superseded) cannot transition back to draft
+  const currentStatus = existing.status;
+  if (currentStatus === status) {
+    // Idempotent: already in target state, return existing
+    return existing;
+  }
+
+  // Accepted and superseded are terminal states and cannot transition
+  if ((currentStatus === 'accepted' || currentStatus === 'superseded') && status === 'draft') {
+    throw new KnowledgeArtifactValidationError(
+      `cannot transition from terminal state '${currentStatus}' back to 'draft'`,
+      'status',
+    );
+  }
+
+  // Draft can only transition to accepted or superseded
+  if (currentStatus === 'draft' && status !== 'accepted' && status !== 'superseded') {
+    throw new KnowledgeArtifactValidationError(
+      `invalid transition from 'draft' to '${status}' (draft can only transition to accepted or superseded)`,
+      'status',
+    );
+  }
+
   const metadata = knowledgeMetadataForStatusTransition(existing, status);
-  store.knowledgeArtifacts.updateStatus(id, status, nowIso(), metadata);
+  const success = store.knowledgeArtifacts.updateStatus(id, status, nowIso(), metadata, currentStatus);
+
+  if (!success) {
+    // R1.5: Concurrent modification detected (currentStatus changed between get and update)
+    throw new Error(`knowledge artifact status update failed: concurrent modification detected for ${id}`);
+  }
+
   const updated = store.knowledgeArtifacts.get(id);
   if (!updated) throw new Error(`knowledge artifact disappeared after update: ${id}`);
   return updated;

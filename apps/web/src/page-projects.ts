@@ -820,28 +820,37 @@ async function submitProject(event: SubmitEvent): Promise<void> {
   event.preventDefault();
   if (!projectSourceForm.detectResult?.ok) {
     ui.lastError = '请先检测项目连接，确认无误后再接入。';
+    ui.lastSuccess = null;
     render();
     return;
   }
   if (!projectSourceForm.agentBackend) {
     ui.lastError = '请选择 Claude Code 或 Codex 作为项目的 AI 执行方式。';
+    ui.lastSuccess = null;
     render();
     return;
   }
   try {
     const editingProjectId = projectSourceForm.editingProjectId;
+    const projectName = (projectSourceForm.name || projectSourceForm.detectResult.projectName).trim();
     await api<ProjectDto>(editingProjectId ? `/projects/${encodeURIComponent(editingProjectId)}` : '/projects', {
       method: editingProjectId ? 'PUT' : 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        name: (projectSourceForm.name || projectSourceForm.detectResult.projectName).trim(),
+        name: projectName,
         ...projectSourcePayload(),
       }),
     });
-    resetProjectSourceForm();
+    // 只在新接入项目时清空表单，编辑现有项目时保持表单内容
+    if (!editingProjectId) {
+      resetProjectSourceForm();
+    }
+    ui.lastError = null;
+    ui.lastSuccess = editingProjectId ? `项目"${projectName}"修改已保存。` : `项目"${projectName}"接入成功。`;
     await loadData({ render: true });
   } catch (err) {
     ui.lastError = errorMessage(err);
+    ui.lastSuccess = null;
     render();
   }
 }

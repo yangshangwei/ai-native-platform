@@ -304,7 +304,22 @@ projects.get('/:id', (c) => {
   const id = c.req.param('id');
   const project = store.projects.get(id) ?? store.projectByName(id);
   if (!project) return c.json({ error: 'not found' }, 404);
-  if (c.req.query('includeSecret') === '1') return c.json(project);
+
+  // Internal API: includeSecret=1 returns sourceCredential for runner use only.
+  // Threat model: single-machine MVP, no multi-tenancy. The runner is trusted;
+  // this endpoint should not be exposed beyond localhost. The web dev server
+  // (apps/web/serve.ts) binds to 127.0.0.1 by default and proxies /api/*
+  // requests to this backend, so a `x-ainp-internal: runner` header serves as
+  // a lightweight caller identity marker. Missing header → publicProject
+  // (sourceCredential stripped), preserving backward compatibility.
+  if (c.req.query('includeSecret') === '1') {
+    const internalHeader = c.req.header('x-ainp-internal');
+    if (internalHeader === 'runner') {
+      return c.json(project);
+    }
+    // Graceful degradation: no header or wrong value → strip secret.
+    return c.json(publicProject(project));
+  }
   return c.json(publicProject(project));
 });
 

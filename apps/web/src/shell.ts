@@ -63,19 +63,37 @@ export function renderShell(): HTMLElement {
   });
 }
 
+function pendingCount(): number {
+  const awaitingClarification = data.requests.filter((r) => r.status === 'awaiting_clarification').length;
+  const awaitingHuman = data.runs.filter((r) => r.status === 'awaiting_human').length;
+  const failed = data.requests.filter((r) => r.status === 'failed').length;
+  return awaitingClarification + awaitingHuman + failed;
+}
+
 function renderSidebar(): HTMLElement {
-  const navItems: Array<{ page: Page; label: string; help: string; path: string }> = [
-    { page: 'workbench', label: '工作台', help: '生命周期与人工确认', path: 'M4 6h16M4 12h10M4 18h16' },
-    { page: 'projects', label: '项目接入', help: '注册本地/远端 Git', path: 'M3 7h18M6 7v12h12V7M9 7V5h6v2' },
+  type NavItem = { page: Page; label: string; help: string; path: string; badge?: () => number } | { divider: true };
+
+  const navItems: NavItem[] = [
+    // 核心工作区
+    { page: 'workbench', label: '工作台', help: '生命周期与人工确认', path: 'M4 6h16M4 12h10M4 18h16', badge: pendingCount },
     { page: 'new-task', label: '新建任务', help: '说明想做什么', path: 'M12 5v14M5 12h14' },
-    { page: 'reports', label: '报告', help: '交付证据汇总', path: 'M7 3h7l5 5v13H7zM14 3v6h6' },
+    { page: 'reports', label: '任务报告', help: '交付证据汇总', path: 'M7 3h7l5 5v13H7zM14 3v6h6' },
+    { divider: true },
+    // 知识与配置
     { page: 'knowledge', label: '知识库', help: '候选与沉淀', path: 'M4 19V5a2 2 0 012-2h12v16H6a2 2 0 01-2-2zM8 7h8M8 11h8M8 15h5' },
-    { page: 'settings', label: '配置', help: '本地 worktree 模式', path: 'M12 8a4 4 0 100 8 4 4 0 000-8zM4 12h2m12 0h2M12 4v2m0 12v2' },
+    { page: 'projects', label: '项目接入', help: '注册本地/远端 Git', path: 'M3 7h18M6 7v12h12V7M9 7V5h6v2' },
+    { page: 'settings', label: '运行配置', help: '本地 worktree 模式', path: 'M12 8a4 4 0 100 8 4 4 0 000-8zM4 12h2m12 0h2M12 4v2m0 12v2' },
   ];
 
   const nav = el('nav', { class: 'nav-list' });
   for (const item of navItems) {
-    const a = el('button', {
+    if ('divider' in item) {
+      nav.appendChild(el('div', { class: 'nav-divider' }));
+      continue;
+    }
+
+    const badgeCount = item.badge?.() ?? 0;
+    const navButton = el('button', {
       class: `nav-item ${ui.activePage === item.page ? 'active' : ''}`,
       attrs: { type: 'button' },
       children: [
@@ -83,10 +101,11 @@ function renderSidebar(): HTMLElement {
         el('span', {
           children: [el('strong', { text: item.label }), el('small', { text: item.help })],
         }),
+        badgeCount > 0 ? el('span', { class: 'nav-badge', text: String(badgeCount) }) : null,
       ],
     });
-    a.onclick = () => setHash(item.page);
-    nav.appendChild(a);
+    navButton.onclick = () => setHash(item.page);
+    nav.appendChild(navButton);
   }
 
   return el('aside', {
@@ -134,6 +153,16 @@ function renderQueueSummary(): HTMLElement {
   });
 }
 
+function renderGlobalStatusBadge(label: string, count: number, kind: StatusKind): HTMLElement {
+  return el('div', {
+    class: `global-status-badge ${kind}`,
+    children: [
+      el('span', { class: 'status-badge-count', text: String(count) }),
+      el('span', { class: 'status-badge-label', text: label }),
+    ],
+  });
+}
+
 function renderTopbar(): HTMLElement {
   const project = ui.activePage === 'new-task'
     ? activeProjects().find((p) => p.id === newTaskFormDraft.projectId) ?? activeProjects()[0] ?? null
@@ -147,6 +176,13 @@ function renderTopbar(): HTMLElement {
   const reportStatus = reportStatusSummary();
   const knowledgeStatus = knowledgeStatusSummary();
   const settingsRuntime = settingsRuntimeSummary(project, runner);
+
+  // 全局状态统计
+  const pending = pendingCount();
+  const runningRuns = data.runs.filter((r) => r.status === 'running').length;
+  const claimedRequests = data.requests.filter((r) => r.status === 'claimed').length;
+  const running = runningRuns + claimedRequests;
+
   const contextItems = ui.activePage === 'new-task'
     ? [contextItem('创建准备', newTaskReadiness.value, newTaskReadiness.kind)]
     : ui.activePage === 'workbench'
@@ -166,6 +202,7 @@ function renderTopbar(): HTMLElement {
         contextItem('Agent Backend', backend.value, backend.kind),
         contextItem('Build Env', buildEnvLabel(), runner ? 'good' : 'warn'),
       ];
+
   return el('header', {
     class: 'topbar',
     children: [
@@ -177,8 +214,21 @@ function renderTopbar(): HTMLElement {
         ],
       }),
       el('div', {
-        class: 'context-strip',
-        children: contextItems,
+        class: 'topbar-right',
+        children: [
+          el('div', {
+            class: 'global-status-strip',
+            children: [
+              pending > 0 ? renderGlobalStatusBadge('待处理', pending, 'bad') : null,
+              running > 0 ? renderGlobalStatusBadge('运行中', running, 'info') : null,
+              renderGlobalStatusBadge(workbenchEnvironment.value, 0, workbenchEnvironment.kind),
+            ],
+          }),
+          el('div', {
+            class: 'context-strip',
+            children: contextItems,
+          }),
+        ],
       }),
     ],
   });
@@ -270,8 +320,15 @@ function contextItem(label: string, value: string, kind: StatusKind): HTMLElemen
 }
 
 function renderPage(): HTMLElement {
+  const notifications: HTMLElement[] = [];
+  if (ui.lastSuccess && ui.activePage !== 'new-task') {
+    notifications.push(renderSuccess(ui.lastSuccess));
+  }
   if (ui.lastError && ui.activePage !== 'new-task') {
-    return el('section', { class: 'page-stack', children: [renderError(ui.lastError), renderCurrentPage()] });
+    notifications.push(renderError(ui.lastError));
+  }
+  if (notifications.length > 0) {
+    return el('section', { class: 'page-stack', children: [...notifications, renderCurrentPage()] });
   }
   return renderCurrentPage();
 }
@@ -299,6 +356,13 @@ function renderError(message: string): HTMLElement {
   return el('div', {
     class: 'notice bad',
     children: [el('strong', { text: '数据刷新失败' }), el('span', { text: message })],
+  });
+}
+
+function renderSuccess(message: string): HTMLElement {
+  return el('div', {
+    class: 'notice good',
+    children: [el('strong', { text: '操作成功' }), el('span', { text: message })],
   });
 }
 

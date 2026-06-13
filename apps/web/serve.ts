@@ -43,12 +43,14 @@ async function browserModuleResponse(file: string): Promise<Response> {
   });
 }
 
-export function createWebServer(options: { port?: number; apiBase?: string } = {}) {
+export function createWebServer(options: { port?: number; apiBase?: string; hostname?: string } = {}) {
   const port = options.port ?? PORT;
   const apiBase = options.apiBase ?? API_BASE;
+  const hostname = options.hostname ?? (process.env.AINP_WEB_HOST ?? '127.0.0.1');
 
   return Bun.serve({
     port,
+    hostname,
     async fetch(req) {
       const url = new URL(req.url);
 
@@ -64,7 +66,24 @@ export function createWebServer(options: { port?: number; apiBase?: string } = {
           signal: req.signal,
         };
         try {
-          return await fetch(target, init);
+          const response = await fetch(target, init);
+          // When upstream returns HTML error page (Bun fallback or similar),
+          // convert to structured JSON so the frontend can detect and handle
+          // it gracefully instead of rendering raw HTML inline.
+          const contentType = response.headers.get('content-type') || '';
+          if (!response.ok && contentType.includes('text/html')) {
+            const htmlBody = await response.text();
+            return Response.json(
+              {
+                error: 'api error',
+                detail: `API returned ${response.status} with HTML error page`,
+                htmlBody,
+                apiBase,
+              },
+              { status: response.status },
+            );
+          }
+          return response;
         } catch (err) {
           const message = errorMessage(err);
           return Response.json(

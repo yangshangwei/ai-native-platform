@@ -248,9 +248,17 @@ export class ClaudeCodeBackend implements AgentBackend {
     let lastMessage: string | null = null;
     let graceTimer: ReturnType<typeof setTimeout> | null = null;
     let graceShutdownInitiated = false;
+    let hardKillTimer: ReturnType<typeof setTimeout> | null = null;
+
     const hardTimer = setTimeout(() => {
       timedOut = true;
       child.kill('SIGTERM');
+      // R1.3: SIGKILL upgrade after 5-10s if SIGTERM doesn't terminate the process
+      hardKillTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill('SIGKILL');
+        }
+      }, 10_000);
     }, timeoutMs);
 
     // Some Claude Code local setups (hooks, session keepalives) keep the
@@ -266,6 +274,12 @@ export class ClaudeCodeBackend implements AgentBackend {
         if (child.exitCode === null && child.signalCode === null) {
           graceShutdownInitiated = true;
           child.kill('SIGTERM');
+          // R1.3: SIGKILL upgrade after 5-10s if SIGTERM doesn't work
+          hardKillTimer = setTimeout(() => {
+            if (child.exitCode === null && child.signalCode === null) {
+              child.kill('SIGKILL');
+            }
+          }, 10_000);
         }
       }, postResultGraceMs);
     };
@@ -298,6 +312,7 @@ export class ClaudeCodeBackend implements AgentBackend {
     await Promise.allSettled([stdoutDone, stderrDone]);
     clearTimeout(hardTimer);
     if (graceTimer) clearTimeout(graceTimer);
+    if (hardKillTimer) clearTimeout(hardKillTimer);
 
     // Exit code reconciliation:
     //   - Natural exit (code !== null) wins regardless of how we got here.

@@ -384,7 +384,9 @@ test('registers GitHub, Gitee, generic Git, and private GitLab sources by repo U
     });
     expect(project).not.toHaveProperty('sourceCredential');
     if ('sourceCredential' in input) {
-      const secretRes = await app.request(`/projects/${project.id}?includeSecret=1`);
+      const secretRes = await app.request(`/projects/${project.id}?includeSecret=1`, {
+        headers: { 'x-ainp-internal': 'runner' },
+      });
       expect(await secretRes.json()).toMatchObject({ sourceCredential: input.sourceCredential });
     }
     expect(project.localPath).toMatch(new RegExp(`${project.id}/source$`));
@@ -483,7 +485,9 @@ test('updates an existing project while keeping saved credential when omitted', 
     defaultBranch: 'master',
   });
 
-  const secretRes = await app.request(`/projects/${created.id}?includeSecret=1`);
+  const secretRes = await app.request(`/projects/${created.id}?includeSecret=1`, {
+    headers: { 'x-ainp-internal': 'runner' },
+  });
   expect(await secretRes.json()).toMatchObject({ sourceCredential: 'old-secret' });
 });
 
@@ -773,4 +777,83 @@ test('archives a project with completed history and keeps it out of active proje
     body: JSON.stringify({ projectId: project.id, title: 'should be blocked', type: 'feature' }),
   });
   expect(createAfterArchive.status).toBe(400);
+});
+
+// ---------------------------------------------------------------------------
+// R1.2: includeSecret endpoint contract hardening
+// ---------------------------------------------------------------------------
+
+test('includeSecret=1 without x-ainp-internal header strips sourceCredential', async () => {
+  const res = await app.request('/projects', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: `secret-test-${Date.now()}`,
+      sourceKind: 'github',
+      sourceUrl: 'https://github.com/acme/secret-test.git',
+      sourceAuthKind: 'token',
+      sourceCredential: 'ghp_secret_token',
+      defaultBranch: 'main',
+    }),
+  });
+  expect(res.status).toBe(201);
+  const project = (await res.json()) as { id: string };
+
+  // Without x-ainp-internal header, includeSecret=1 should NOT return credential
+  const withoutHeader = await app.request(`/projects/${project.id}?includeSecret=1`);
+  expect(withoutHeader.status).toBe(200);
+  const body = await withoutHeader.json();
+  expect(body).not.toHaveProperty('sourceCredential');
+  expect(body).toMatchObject({ hasSourceCredential: true });
+});
+
+test('includeSecret=1 with x-ainp-internal=runner returns sourceCredential', async () => {
+  const res = await app.request('/projects', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: `runner-secret-test-${Date.now()}`,
+      sourceKind: 'github',
+      sourceUrl: 'https://github.com/acme/runner-test.git',
+      sourceAuthKind: 'token',
+      sourceCredential: 'ghp_runner_token',
+      defaultBranch: 'main',
+    }),
+  });
+  expect(res.status).toBe(201);
+  const project = (await res.json()) as { id: string };
+
+  // With x-ainp-internal: runner header, includeSecret=1 should return credential
+  const withHeader = await app.request(`/projects/${project.id}?includeSecret=1`, {
+    headers: { 'x-ainp-internal': 'runner' },
+  });
+  expect(withHeader.status).toBe(200);
+  const body = await withHeader.json();
+  expect(body).toMatchObject({ sourceCredential: 'ghp_runner_token' });
+});
+
+test('includeSecret=1 with wrong x-ainp-internal value strips sourceCredential', async () => {
+  const res = await app.request('/projects', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: `wrong-header-test-${Date.now()}`,
+      sourceKind: 'github',
+      sourceUrl: 'https://github.com/acme/wrong-header.git',
+      sourceAuthKind: 'token',
+      sourceCredential: 'ghp_wrong_token',
+      defaultBranch: 'main',
+    }),
+  });
+  expect(res.status).toBe(201);
+  const project = (await res.json()) as { id: string };
+
+  // With wrong x-ainp-internal value, should strip credential
+  const withWrongHeader = await app.request(`/projects/${project.id}?includeSecret=1`, {
+    headers: { 'x-ainp-internal': 'web' },
+  });
+  expect(withWrongHeader.status).toBe(200);
+  const body = await withWrongHeader.json();
+  expect(body).not.toHaveProperty('sourceCredential');
+  expect(body).toMatchObject({ hasSourceCredential: true });
 });

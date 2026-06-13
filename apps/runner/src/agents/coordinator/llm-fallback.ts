@@ -439,8 +439,15 @@ function spawnCandidate(
     let out = '';
     let errOut = '';
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let hardKillTimer: ReturnType<typeof setTimeout> | null = null;
     timer = setTimeout(() => {
       child.kill('SIGTERM');
+      // R1.3: SIGKILL upgrade after 5-10s if SIGTERM doesn't terminate the process
+      hardKillTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill('SIGKILL');
+        }
+      }, 10_000);
       reject(new Error(`${bin} one-shot timed out`));
     }, timeoutMs);
     child.stdout?.on('data', (d: Buffer) => {
@@ -451,11 +458,13 @@ function spawnCandidate(
     });
     child.on('error', (err) => {
       if (timer) clearTimeout(timer);
+      if (hardKillTimer) clearTimeout(hardKillTimer);
       cleanupHome();
       reject(err);
     });
     child.on('close', (code) => {
       if (timer) clearTimeout(timer);
+      if (hardKillTimer) clearTimeout(hardKillTimer);
       cleanupHome();
       if (code !== 0) {
         reject(
@@ -497,9 +506,16 @@ function spawnCandidateStreaming(
     let out = '';
     let errOut = '';
     let timedOut = false;
+    let hardKillTimer: ReturnType<typeof setTimeout> | null = null;
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill('SIGTERM');
+      // R1.3: SIGKILL upgrade after 5-10s if SIGTERM doesn't terminate the process
+      hardKillTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill('SIGKILL');
+        }
+      }, 10_000);
     }, timeoutMs);
 
     const stdoutDone = consumeLines(child.stdout, async (line) => {
@@ -517,11 +533,13 @@ function spawnCandidateStreaming(
 
     child.on('error', (err) => {
       clearTimeout(timer);
+      if (hardKillTimer) clearTimeout(hardKillTimer);
       cleanupHome();
       reject(err);
     });
     child.on('close', async (code) => {
       clearTimeout(timer);
+      if (hardKillTimer) clearTimeout(hardKillTimer);
       await Promise.allSettled([stdoutDone, stderrDone]);
       cleanupHome();
       if (timedOut) {

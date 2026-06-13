@@ -24,10 +24,14 @@ import type {
 } from '@ainp/shared';
 import { API_BASE } from './config';
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, extraHeaders?: Record<string, string>): Promise<T> {
+  const headers: Record<string, string> = body ? { 'content-type': 'application/json' } : {};
+  if (extraHeaders) {
+    Object.assign(headers, extraHeaders);
+  }
   const res = await fetch(`${API_BASE}${path}`, {
     method,
-    headers: body ? { 'content-type': 'application/json' } : undefined,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -52,7 +56,9 @@ export const api = {
     defaultBranch?: string;
   }) => request<Project>('POST', '/projects', params),
 
-  getProject: (idOrName: string) => request<Project>('GET', `/projects/${encodeURIComponent(idOrName)}?includeSecret=1`),
+  getProject: (idOrName: string) => request<Project>('GET', `/projects/${encodeURIComponent(idOrName)}?includeSecret=1`, undefined, {
+    'x-ainp-internal': 'runner',
+  }),
 
   createWorkflowRun: (params: {
     projectName: string;

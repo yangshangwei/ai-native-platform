@@ -138,14 +138,26 @@ interface InlineNoticeDiagnostics {
 function summarizeProjectLoadError(error: string): string {
   const status = error.match(/^api\s+\/projects:\s+(\d{3})\b/i)?.[1] ?? null;
   const isHtmlError = /<!doctype\s+html|<html[\s>]|<body[\s>]|<script[\s>]/i.test(error);
+
+  // Check for the structured JSON error from the proxy
+  if (error.includes('api proxy unavailable') || error.includes('ECONNREFUSED') || error.includes('connect ECONNREFUSED')) {
+    return 'API 服务未启动或无法连接。请先启动 API 服务（bun run api），然后重试。';
+  }
+
   if (isHtmlError) {
     return status
       ? `项目接口返回 ${status}，前端收到的是服务错误页。请确认 API 服务和代理正常后重试。`
       : '项目接口返回了服务错误页。请确认 API 服务和代理正常后重试。';
   }
+
   if (/failed to fetch|networkerror|load failed/i.test(error)) {
     return '无法连接项目接口。请确认 API 服务正在运行，然后重试。';
   }
+
+  if (status === '502') {
+    return 'API 服务网关错误。请确认 API 服务正在运行，然后重试。';
+  }
+
   if (status) return `项目接口返回 ${status}。请确认 API 服务正常后重试。`;
   return '项目接口暂时不可用。请重试，或展开技术细节查看原始错误。';
 }

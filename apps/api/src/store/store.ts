@@ -812,16 +812,24 @@ const knowledgeArtifacts = {
     status: KnowledgeArtifactStatus,
     updatedAt: string,
     metadata?: Record<string, unknown>,
-  ): void {
+    currentStatus?: KnowledgeArtifactStatus,
+  ): boolean {
+    // R1.5: Add WHERE status = ? precondition for state transition guard
+    const whereClause = currentStatus !== undefined ? 'WHERE id = ? AND status = ?' : 'WHERE id = ?';
+    const params = currentStatus !== undefined ? [id, currentStatus] : [id];
+
     if (metadata === undefined) {
-      db.prepare(
-        'UPDATE knowledge_artifacts SET status = ?, updated_at = ? WHERE id = ?',
-      ).run(status, updatedAt, id);
-      return;
+      const stmt = db.prepare(
+        `UPDATE knowledge_artifacts SET status = ?, updated_at = ? ${whereClause}`,
+      );
+      const result = stmt.run(status, updatedAt, ...params);
+      return result.changes > 0;
     }
-    db.prepare(
-      'UPDATE knowledge_artifacts SET status = ?, metadata_json = ?, updated_at = ? WHERE id = ?',
-    ).run(status, JSON.stringify(metadata), updatedAt, id);
+    const stmt = db.prepare(
+      `UPDATE knowledge_artifacts SET status = ?, metadata_json = ?, updated_at = ? ${whereClause}`,
+    );
+    const result = stmt.run(status, JSON.stringify(metadata), updatedAt, ...params);
+    return result.changes > 0;
   },
   updateMetadata(id: string, metadata: Record<string, unknown>, updatedAt: string): void {
     db.prepare(

@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/archive/2026-06/06-12-architecture-optimization-round-two-audit/research/robustness.md", "reason": "全部加固项的文件:行号证据与严重度依据"}
+{"file": ".trellis/spec/runner/backend/logging-guidelines.md", "reason": "runner 日志双 sink 纪律（R1.6 maskSecrets 落点参照）"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "api 错误双通道模式（R1.2/R1.5 的错误语义参照）"}

@@ -120,60 +120,69 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
 
   const env = new TrustedLocalWorktreeEnvironment(project);
   const workspace = await env.prepare(run);
-  await api.workspacePrepared({ workflowRunId: run.id, workspacePath: workspace.path });
-  console.log(`[runner] workspace at ${workspace.path}`);
 
-  const runArtifactsDir = join(ARTIFACTS_BASE, run.id);
-  await mkdir(runArtifactsDir, { recursive: true });
-
-  const contextPolicy = await loadContextPolicy();
-  /**
-   * V2 P0-1 / PR3: `draftsToPromote` captures requirement_draft / design_doc
-   * stage outputs for promoteToKnowledge after acceptance. Promotion lifts
-   * the draft into a knowledge entity row (REQ-### / DSN-###) on acceptance
-   * approval. ADR Q2 (2-beta).
-   */
+  // R1.4: Variables declared outside try block for access in catch/finally
   const ok: OkRef = { value: true };
-  const ctx: RunCtx = {
-    project,
-    run,
-    workspace,
-    backend,
-    tools,
-    opts,
-    runArtifactsDir,
-    inputs: {
-      user_request: agentUserRequestForOrchestrate(opts),
-    },
-    inputArtifactIds: {},
-    contextFoundation: {
-      projectProfileResult: null,
-      acceptedKnowledge: null,
-      knowledgeArtifacts: null,
-      runHistory: null,
-    },
-    contextPolicy,
-    contextRequestChain: [],
-    draftsToPromote: [] as PromoteDraftInput[],
-    ok,
-  };
+  let runArtifactsDir: string;
+  let contextPolicy: ContextPolicy;
+  let ctx: RunCtx;
 
-  const flow = FLOW_REGISTRY[run.flowId];
-  if (!flow) {
-    throw new Error(
-      `unknown flowId in registry: ${String(run.flowId)} (run=${run.id})`,
-    );
-  }
-
-  const stagesToRun = sliceStagesFromStartStage({
-    flowId: run.flowId,
-    runId: run.id,
-    stages: flow.stages,
-    startStage: run.startStage,
-    log: (m) => console.log(m),
-  });
-
+  // R1.4: try block starts immediately after env.prepare to ensure cleanup
+  // protects all subsequent operations (workspacePrepared, mkdir, loadContextPolicy,
+  // flowId validation) that can throw and leave the worktree behind.
   try {
+    await api.workspacePrepared({ workflowRunId: run.id, workspacePath: workspace.path });
+    console.log(`[runner] workspace at ${workspace.path}`);
+
+    runArtifactsDir = join(ARTIFACTS_BASE, run.id);
+    await mkdir(runArtifactsDir, { recursive: true });
+
+    contextPolicy = await loadContextPolicy();
+    /**
+     * V2 P0-1 / PR3: `draftsToPromote` captures requirement_draft / design_doc
+     * stage outputs for promoteToKnowledge after acceptance. Promotion lifts
+     * the draft into a knowledge entity row (REQ-### / DSN-###) on acceptance
+     * approval. ADR Q2 (2-beta).
+     */
+    ctx = {
+      project,
+      run,
+      workspace,
+      backend,
+      tools,
+      opts,
+      runArtifactsDir,
+      inputs: {
+        user_request: agentUserRequestForOrchestrate(opts),
+      },
+      inputArtifactIds: {},
+      contextFoundation: {
+        projectProfileResult: null,
+        acceptedKnowledge: null,
+        knowledgeArtifacts: null,
+        runHistory: null,
+      },
+      contextPolicy,
+      contextRequestChain: [],
+      draftsToPromote: [] as PromoteDraftInput[],
+      ok,
+    };
+
+    const flow = FLOW_REGISTRY[run.flowId];
+    if (!flow) {
+      throw new Error(
+        `unknown flowId in registry: ${String(run.flowId)} (run=${run.id})`,
+      );
+    }
+
+    const stagesToRun = sliceStagesFromStartStage({
+      flowId: run.flowId,
+      runId: run.id,
+      stages: flow.stages,
+      startStage: run.startStage,
+      log: (m) => console.log(m),
+    });
+
     for (const step of stagesToRun) {
       await dispatchStep(step, ctx);
     }
