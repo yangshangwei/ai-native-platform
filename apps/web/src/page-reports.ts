@@ -49,8 +49,8 @@ import {
 import { actionLink, setHash } from './router';
 import { render } from './render-core';
 import { loadRunDetail } from './data-loading';
-import { pieChart } from './chart';
-import { getPlatformDistribution } from './chart-data';
+import { pieChart } from './charts';
+import { getPlatformDistribution } from './charts';
 
 let reportsActiveView: ReportViewId = 'all';
 

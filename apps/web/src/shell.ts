@@ -77,14 +77,14 @@ function renderSidebar(): HTMLElement {
 
   const navItems: NavItem[] = [
     // 核心工作区
-    { page: 'workbench', label: '工作台', help: '生命周期与人工确认', path: 'M4 6h16M4 12h10M4 18h16', badge: pendingCount },
-    { page: 'new-task', label: '新建任务', help: '说明想做什么', path: 'M12 5v14M5 12h14' },
-    { page: 'reports', label: '任务报告', help: '交付证据汇总', path: 'M7 3h7l5 5v13H7zM14 3v6h6' },
+    { page: 'workbench', label: '工作台', help: '生命周期与人工确认', path: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6', badge: pendingCount },
+    { page: 'new-task', label: '新建任务', help: '说明想做什么', path: 'M12 4v16m8-8H4' },
+    { page: 'reports', label: '任务报告', help: '交付证据汇总', path: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
     { divider: true },
     // 知识与配置
-    { page: 'knowledge', label: '知识库', help: '候选与沉淀', path: 'M4 19V5a2 2 0 012-2h12v16H6a2 2 0 01-2-2zM8 7h8M8 11h8M8 15h5' },
-    { page: 'projects', label: '项目接入', help: '注册本地/远端 Git', path: 'M3 7h18M6 7v12h12V7M9 7V5h6v2' },
-    { page: 'settings', label: '运行配置', help: '本地 worktree 模式', path: 'M12 8a4 4 0 100 8 4 4 0 000-8zM4 12h2m12 0h2M12 4v2m0 12v2' },
+    { page: 'knowledge', label: '知识库', help: '候选与沉淀', path: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253' },
+    { page: 'projects', label: '项目接入', help: '注册本地/远端 Git', path: 'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z' },
+    { page: 'settings', label: '运行配置', help: '本地 worktree 模式', path: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
   ];
 
   const nav = el('nav', { class: 'nav-list' });
@@ -110,29 +110,35 @@ function renderSidebar(): HTMLElement {
     nav.appendChild(navButton);
   }
 
-  // Theme toggle button
+  // 侧边栏底部工具栏（深色模式 + 收起）
   const isDark = getResolvedTheme() === 'dark';
   const themeButton = el('button', {
-    class: 'nav-item',
+    class: 'sidebar-footer-btn',
     attrs: { type: 'button', title: '切换深色/浅色模式' },
     children: [
       icon(isDark
         ? 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z'
         : 'M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z'
       ),
-      el('span', {
-        children: [
-          el('strong', { text: isDark ? '浅色模式' : '深色模式' }),
-          el('small', { text: '切换主题' }),
-        ],
-      }),
+      el('span', { text: isDark ? '浅色模式' : '深色模式' }),
     ],
   });
   themeButton.onclick = () => {
     toggleTheme();
-    render(); // Re-render to update icon
+    render();
   };
-  nav.appendChild(themeButton);
+
+  const collapseButton = el('button', {
+    class: 'sidebar-footer-btn',
+    attrs: { type: 'button', title: '收起侧边栏' },
+    children: [
+      icon('M15 19l-7-7 7-7'),
+      el('span', { text: '收起' }),
+    ],
+  });
+  collapseButton.onclick = () => {
+    document.querySelector('.app-shell')?.classList.toggle('sidebar-collapsed');
+  };
 
   return el('aside', {
     class: 'sidebar',
@@ -151,6 +157,13 @@ function renderSidebar(): HTMLElement {
       }),
       nav,
       renderQueueSummary(),
+      // 底部工具栏
+      el('div', {
+        class: 'sidebar-footer',
+        children: [themeButton, collapseButton],
+      }),
+      // 侧边栏收起时显示的图标栏
+      renderSidebarCollapsedIcons(),
     ],
   });
 }
@@ -435,4 +448,71 @@ function renderExpandedAgentStreamOverlay(runId: string): HTMLElement {
     if (event.target === overlay) closeExpandedStream();
   };
   return overlay;
+}
+
+function renderSidebarCollapsedIcons(): HTMLElement {
+  const navItems = [
+    { page: 'workbench' as Page, label: '工作台', path: 'M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6', badge: pendingCount },
+    { page: 'new-task' as Page, label: '新建任务', path: 'M12 4v16m8-8H4' },
+    { page: 'reports' as Page, label: '任务报告', path: 'M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z' },
+    { divider: true },
+    { page: 'knowledge' as Page, label: '知识库', path: 'M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253' },
+    { page: 'projects' as Page, label: '项目接入', path: 'M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z' },
+    { page: 'settings' as Page, label: '运行配置', path: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z M15 12a3 3 0 11-6 0 3 3 0 016 0z' },
+  ];
+
+  const icons: HTMLElement[] = [];
+
+  for (const item of navItems) {
+    if ('divider' in item) {
+      icons.push(el('div', { class: 'sidebar-collapsed-divider' }));
+      continue;
+    }
+
+    const badgeCount = item.badge?.() ?? 0;
+    const iconButton = el('button', {
+      class: `sidebar-collapsed-icon-btn ${ui.activePage === item.page ? 'active' : ''}`,
+      attrs: { type: 'button', title: item.label },
+      children: [
+        icon(item.path),
+        badgeCount > 0 ? el('span', { class: 'nav-badge', text: String(badgeCount) }) : null,
+      ],
+    });
+    iconButton.onclick = () => setHash(item.page);
+    icons.push(iconButton);
+  }
+
+  // 底部：主题切换和展开按钮
+  const isDark = getResolvedTheme() === 'dark';
+  const themeIconButton = el('button', {
+    class: 'sidebar-collapsed-icon-btn',
+    attrs: { type: 'button', title: '切换深色/浅色模式' },
+    children: [
+      icon(isDark
+        ? 'M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z'
+        : 'M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z'
+      ),
+    ],
+  });
+  themeIconButton.onclick = () => {
+    toggleTheme();
+    render();
+  };
+
+  const expandButton = el('button', {
+    class: 'sidebar-collapsed-icon-btn',
+    attrs: { type: 'button', title: '展开侧边栏' },
+    children: [icon('M9 5l7 7-7 7')],
+  });
+  expandButton.onclick = () => {
+    document.querySelector('.app-shell')?.classList.remove('sidebar-collapsed');
+  };
+
+  return el('div', {
+    class: 'sidebar-collapsed-icons',
+    children: [
+      ...icons,
+      el('div', { class: 'sidebar-collapsed-expand', children: [themeIconButton, expandButton] }),
+    ],
+  });
 }

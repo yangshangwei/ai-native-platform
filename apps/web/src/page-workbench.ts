@@ -48,7 +48,7 @@ export function renderWorkbenchPage(): HTMLElement {
       renderWelcomeGuide(),
       renderWorkbenchActionPanel(),
       renderWorkbenchOverviewPanel(),
-      renderTokenUsageChart(),
+      renderTaskExecutionChart(),
       renderTaskListPanel(),
       renderWorkbenchEnvironmentPanel(),
     ],
@@ -421,38 +421,67 @@ function renderRunsPanel(): HTMLElement {
   });
 }
 
-function renderTokenUsageChart(): HTMLElement {
+function renderTaskExecutionChart(): HTMLElement {
   const canvas = document.createElement('canvas');
-  canvas.id = 'token-usage-chart';
+  canvas.id = 'task-execution-chart';
   canvas.style.maxHeight = '300px';
 
   // Defer chart creation until canvas is mounted
   requestAnimationFrame(() => {
-    // Generate sample data from recent runs
-    const recentRuns = data.runs.slice(-7); // Last 7 runs
-    const labels = recentRuns.length > 0
-      ? recentRuns.map((run) => {
-          const date = new Date(run.createdAt);
-          return `${date.getMonth() + 1}/${date.getDate()}`;
-        })
-      : ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7'];
+    // Group runs by date and status
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (6 - i));
+      return date;
+    });
 
-    const tokenData = recentRuns.length > 0
-      ? recentRuns.map((run) => run.totalTokens || 0)
-      : [1200, 1500, 1800, 1600, 2100, 1900, 2300]; // Sample data
+    const labels = last7Days.map((date) => `${date.getMonth() + 1}/${date.getDate()}`);
+
+    // Count runs by status for each day
+    const successData: number[] = [];
+    const failedData: number[] = [];
+    const runningData: number[] = [];
+
+    last7Days.forEach((date) => {
+      const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayEnd.getDate() + 1);
+
+      const runsInDay = data.runs.filter((run) => {
+        const runDate = new Date(run.createdAt);
+        return runDate >= dayStart && runDate < dayEnd;
+      });
+
+      successData.push(runsInDay.filter((r) => r.status === 'passed').length);
+      failedData.push(runsInDay.filter((r) => r.status === 'failed').length);
+      runningData.push(runsInDay.filter((r) => r.status === 'running' || r.status === 'pending').length);
+    });
+
+    // Use sample data if no real data
+    const hasRealData = successData.some((v) => v > 0) || failedData.some((v) => v > 0) || runningData.some((v) => v > 0);
 
     createLineChart(
       canvas,
       labels,
-      [{ label: 'Token 消耗', data: tokenData }],
-      'Token 使用趋势'
+      hasRealData
+        ? [
+            { label: '成功', data: successData },
+            { label: '失败', data: failedData },
+            { label: '进行中', data: runningData },
+          ]
+        : [
+            { label: '成功', data: [2, 3, 1, 4, 2, 3, 5] },
+            { label: '失败', data: [0, 1, 0, 0, 1, 0, 0] },
+            { label: '进行中', data: [1, 0, 2, 1, 0, 1, 2] },
+          ],
+      '任务执行趋势'
     );
   });
 
   return el('section', {
     class: 'panel chart-panel',
     children: [
-      panelHeader('Token 使用趋势', '最近 7 天的 Token 消耗统计'),
+      panelHeader('任务执行趋势', '最近 7 天的任务完成情况'),
       el('div', {
         class: 'chart-container',
         children: [canvas],

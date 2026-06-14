@@ -414,3 +414,27 @@ export function updateChartTheme(chart: Chart): void {
 
   chart.update();
 }
+
+/**
+ * Get platform distribution data from runs
+ * Returns mock data for now - will be connected to real data later
+ */
+export function getPlatformDistribution(): { labels: string[]; data: number[] } {
+  // Mock data - replace with real data from API
+  return {
+    labels: ['Claude Opus 4.8', 'Claude Sonnet 4.6', 'Claude Haiku 4.5'],
+    data: [65, 25, 10],
+  };
+}
+
+/**
+ * Create and render a pie chart
+ * Helper function that wraps createPieChart with simplified API
+ */
+export function pieChart(
+  canvas: HTMLCanvasElement,
+  chartData: { labels: string[]; data: number[] },
+  title?: string
+): Chart {
+  return createPieChart(canvas, chartData.labels, chartData.data, title);
+}

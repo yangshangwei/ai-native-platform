@@ -18,6 +18,7 @@
 import {
   activeTaskRequest,
   data,
+  latestRunner,
   runnerAutoStartAttemptedForRequest,
   ui,
 } from './state';
@@ -94,12 +95,30 @@ initTheme();
 parseHash();
 await loadData({ render: true });
 maybeAutoStartRunnerForActiveTask();
-setInterval(() => {
-  if (ui.activePage === 'new-task' || ui.activePage === 'projects') {
-    void loadData({ render: false, keepDetail: true });
-    return;
+
+// Track data changes to avoid unnecessary re-renders
+let lastDataFingerprint = '';
+
+setInterval(async () => {
+  // Always load data silently first
+  await loadData({ render: false, keepDetail: true });
+
+  // Calculate fingerprint of key data that affects UI
+  const currentFingerprint = JSON.stringify({
+    requestStatuses: data.requests.map(r => `${r.id}:${r.status}:${r.updatedAt}`),
+    runStatuses: data.runs.map(r => `${r.id}:${r.status}:${r.currentStage}`),
+    runnerStatus: latestRunner()?.status,
+    runnerLastSeen: latestRunner()?.lastSeenAt,
+    projectCount: data.projects.length,
+    activeDetail: data.activeDetail?.run.id,
+  });
+
+  // Only render if data actually changed
+  if (currentFingerprint !== lastDataFingerprint) {
+    lastDataFingerprint = currentFingerprint;
+    render();
   }
-  void loadData({ render: true, keepDetail: true });
+
   if (ui.activeRunId) void loadRunDetail(ui.activeRunId, true);
   maybeAutoStartRunnerForActiveTask();
 }, 3000);
