@@ -42,6 +42,7 @@ import {
 } from './coordinator-chat';
 import { captureNewTaskFormState, restoreNewTaskFormFocus } from './page-new-task';
 import { renderShell } from './shell';
+import { initTheme } from './theme';
 
 function maybeAutoStartRunnerForActiveTask(): void {
   const request = activeTaskRequest();
@@ -86,6 +87,9 @@ window.addEventListener('beforeunload', detachStream);
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && expandedStreamRunId) closeExpandedStream();
 });
+
+// Initialize theme system
+initTheme();
 
 parseHash();
 await loadData({ render: true });

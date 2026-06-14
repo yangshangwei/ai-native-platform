@@ -6,8 +6,10 @@
     <title>AI Native Platform · Delivery Workbench</title>
     <!-- Design System - Sub2API Style -->
     <link rel="stylesheet" href="/design-tokens.css" />
+    <link rel="stylesheet" href="/design-tokens-dark.css" />
     <link rel="stylesheet" href="/components.css" />
     <link rel="stylesheet" href="/utilities.css" />
+    <link rel="stylesheet" href="/animations.css" />
     <style>
       :root {
         --bg: #f8fafc;
@@ -1057,6 +1059,66 @@
         }
         .toast {
           min-width: 0;
+        }
+      }
+
+      /* Skeleton Loading States */
+      .skeleton-card {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 14px 16px;
+        background: #fbfdff;
+        display: grid;
+        gap: 10px;
+      }
+      .skeleton-header {
+        height: 24px;
+        width: 60%;
+        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+        background-size: 200% 100%;
+        animation: skeleton 1.5s ease-in-out infinite;
+        border-radius: 4px;
+      }
+      .skeleton-body {
+        height: 16px;
+        width: 100%;
+        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+        background-size: 200% 100%;
+        animation: skeleton 1.5s ease-in-out infinite;
+        border-radius: 4px;
+      }
+      .skeleton-body.short {
+        width: 40%;
+      }
+      .skeleton-list {
+        display: grid;
+        gap: 10px;
+      }
+      .skeleton-list-item {
+        height: 80px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+        background-size: 200% 100%;
+        animation: skeleton 1.5s ease-in-out infinite;
+      }
+      .skeleton-text {
+        height: 16px;
+        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+        background-size: 200% 100%;
+        animation: skeleton 1.5s ease-in-out infinite;
+        border-radius: 4px;
+      }
+      .skeleton-text.short { width: 40%; }
+      .skeleton-text.medium { width: 70%; }
+      .skeleton-text.long { width: 100%; }
+      @media (prefers-color-scheme: dark) {
+        .skeleton-header,
+        .skeleton-body,
+        .skeleton-list-item,
+        .skeleton-text {
+          background: linear-gradient(90deg, #2a2a2a 25%, #3a3a3a 50%, #2a2a2a 75%);
+          background-size: 200% 100%;
         }
       }
     </style>
