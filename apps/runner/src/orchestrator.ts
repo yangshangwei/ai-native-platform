@@ -52,7 +52,12 @@ export {
 } from './orchestrator/steps';
 export type { PromoteDraftInput } from './orchestrator/types';
 
-const ARTIFACTS_BASE = process.env.AINP_ARTIFACTS_DIR ?? join(homedir(), '.ai-native', 'artifacts');
+// Storage base for stage artifacts. Honors AINP_ARTIFACTS_DIR, then AINP_HOME
+// (so a single AINP_HOME relocates worktrees/projects/knowledge/artifacts
+// together), then the ~/.ai-native default.
+const ARTIFACTS_BASE =
+  process.env.AINP_ARTIFACTS_DIR ??
+  join(process.env.AINP_HOME ?? join(homedir(), '.ai-native'), 'artifacts');
 
 async function loadContextPolicy(): Promise<ContextPolicy> {
   const [

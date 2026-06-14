@@ -6,7 +6,11 @@ import { store } from './store/store';
 import { createArtifact, audit } from './workflow-engine';
 import { buildContextGovernanceReadModel } from './context-governance';
 
-const REPORTS_DIR = process.env.AINP_REPORTS_DIR ?? join(homedir(), '.ai-native', 'reports');
+// Honors AINP_REPORTS_DIR, then AINP_HOME (so one AINP_HOME relocates the
+// whole local store together), then the ~/.ai-native default.
+const REPORTS_DIR =
+  process.env.AINP_REPORTS_DIR ??
+  join(process.env.AINP_HOME ?? join(homedir(), '.ai-native'), 'reports');
 
 export interface GeneratedArtifactWithSidecar {
   artifact: Artifact;
