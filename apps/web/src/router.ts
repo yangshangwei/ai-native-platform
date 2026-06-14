@@ -13,6 +13,15 @@ import { button } from './dom';
 import { data, ui } from './state';
 
 export function setHash(page: Page, id?: string): void {
+  // Add exit animation to current page
+  const mainShell = document.querySelector('.main-shell');
+  if (mainShell) {
+    mainShell.classList.add('page-exit');
+    setTimeout(() => {
+      mainShell.classList.remove('page-exit');
+    }, 200);
+  }
+
   if (page === 'task' && id) window.location.hash = `task/${encodeURIComponent(id)}`;
   else if (id) window.location.hash = `run/${encodeURIComponent(id)}`;
   else window.location.hash = page;
@@ -36,6 +45,18 @@ export function parseHash(): void {
   ui.activeTaskRequestId = null;
   if (['workbench', 'projects', 'new-task', 'reports', 'knowledge', 'settings'].includes(raw)) {
     ui.activePage = raw as Page;
+  }
+}
+
+// Apply page enter animation after render
+export function applyPageEnterAnimation(): void {
+  const mainShell = document.querySelector('.main-shell');
+  if (mainShell) {
+    mainShell.classList.remove('page-exit');
+    mainShell.classList.add('page-enter');
+    setTimeout(() => {
+      mainShell.classList.remove('page-enter');
+    }, 300);
   }
 }
 

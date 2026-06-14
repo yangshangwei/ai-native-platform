@@ -60,6 +60,12 @@ export function setStreamHooks(hooks: StreamHooks): void {
 }
 
 export async function loadData(opts: { render?: boolean; keepDetail?: boolean } = {}): Promise<void> {
+  // Show skeleton loading state
+  if (opts.render !== false && !data.health) {
+    ui.isLoadingData = true;
+    render();
+  }
+
   try {
     const [health, projects, runners, requests, runs, runnerControl] = await Promise.all([
       api<HealthDto>('/health').catch(() => null),
@@ -93,6 +99,8 @@ export async function loadData(opts: { render?: boolean; keepDetail?: boolean } 
     ui.lastError = null;
   } catch (err) {
     ui.lastError = errorMessage(err);
+  } finally {
+    ui.isLoadingData = false;
   }
   streamHooks.syncActiveStreamSubscription();
   if (opts.render !== false) render();

@@ -30,6 +30,7 @@ import {
   ui,
 } from './state';
 import { setHash } from './router';
+import { render } from './render-core';
 import { toggleTheme, getResolvedTheme } from './theme';
 import {
   buildAgentStreamViewForRun,

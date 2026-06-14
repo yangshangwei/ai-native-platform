@@ -175,3 +175,40 @@ export function controlledInput(
 export function normalizeSelectionDirection(direction: string | null): 'forward' | 'backward' | 'none' {
   return direction === 'forward' || direction === 'backward' ? direction : 'none';
 }
+
+/**
+ * skeletonCard - Card skeleton placeholder
+ * Returns a shimmer-animated card skeleton with header and body bars.
+ */
+export function skeletonCard(): HTMLElement {
+  return el('div', {
+    class: 'skeleton-card',
+    children: [
+      el('div', { class: 'skeleton-header' }),
+      el('div', { class: 'skeleton-body' }),
+      el('div', { class: 'skeleton-body short' }),
+    ],
+  });
+}
+
+/**
+ * skeletonList - List skeleton placeholder
+ * Returns a shimmer-animated list skeleton with multiple rows.
+ */
+export function skeletonList(rows = 5): HTMLElement {
+  const items = Array.from({ length: rows }, () =>
+    el('div', { class: 'skeleton-list-item' }),
+  );
+  return el('div', {
+    class: 'skeleton-list',
+    children: items,
+  });
+}
+
+/**
+ * skeletonText - Text skeleton placeholder
+ * Returns a shimmer-animated text line skeleton.
+ */
+export function skeletonText(width: 'short' | 'medium' | 'long' = 'medium'): HTMLElement {
+  return el('div', { class: `skeleton-text ${width}` });
+}

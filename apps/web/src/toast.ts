@@ -70,7 +70,7 @@ export function showToast(options: ToastOptions): void {
   const progressBar = el('div', { class: 'toast-progress' });
 
   const toast = el('div', {
-    class: `toast toast-${type}`,
+    class: `toast toast-${type} toast-enter`,
     // a11y: errors are assertive (interrupt), successes are polite.
     attrs: {
       role: type === 'error' ? 'alert' : 'status',
@@ -114,7 +114,8 @@ export function showToast(options: ToastOptions): void {
     cancelAnimationFrame(animationFrame);
     clearInterval(countdownInterval);
 
-    toast.classList.add('toast-hiding');
+    toast.classList.remove('toast-enter');
+    toast.classList.add('toast-exit');
     setTimeout(() => {
       if (toast.parentElement) {
         container.removeChild(toast);
@@ -124,7 +125,7 @@ export function showToast(options: ToastOptions): void {
         document.body.removeChild(container);
         toastContainer = null;
       }
-    }, 280); // Match animation duration
+    }, 200); // Match toast-exit animation duration
   };
 
   closeButton.onclick = dismissToast;

@@ -17,6 +17,7 @@
 
 import { clear } from './dom';
 import { ui } from './state';
+import { applyPageEnterAnimation } from './router';
 
 interface RenderHooks {
   renderShell: () => HTMLElement;
@@ -68,6 +69,7 @@ export function render(): void {
     restoreViewportScrollPosition();
     hooks.restoreCoordinatorReplyComposerFocus(root);
     hooks.restoreNewTaskFormFocus(root);
+    applyPageEnterAnimation();
   } finally {
     ui.isReplacingAppRootForRender = false;
   }
