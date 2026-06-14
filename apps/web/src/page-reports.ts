@@ -33,6 +33,7 @@ import {
   field,
   fmtTime,
   metric,
+  metricCardV2,
   panelHeader,
   pill,
   previewText,
