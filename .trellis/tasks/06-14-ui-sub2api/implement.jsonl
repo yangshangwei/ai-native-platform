@@ -1,0 +1,6 @@
+{"role": "spec", "path": ".trellis/tasks/06-14-ui-sub2api/prd.md", "reason": "完整的 UI 改造需求和设计系统规范"}
+{"role": "spec", "path": "design-system/ai-native-platform/MASTER.md", "reason": "UI/UX Pro Max 生成的设计系统基础（配色、字体、风格）"}
+{"role": "context", "path": "apps/web/src/shell.ts", "reason": "当前 shell 结构和组件渲染逻辑"}
+{"role": "context", "path": "apps/web/src/dom.ts", "reason": "DOM 辅助函数和组件构建工具"}
+{"role": "context", "path": "apps/web/src/page-projects.ts", "reason": "项目接入页面的卡片和表单实现"}
+{"role": "context", "path": "apps/web/public/index.html", "reason": "当前样式定义和 HTML 结构"}

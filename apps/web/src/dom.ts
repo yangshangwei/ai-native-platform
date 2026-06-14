@@ -87,6 +87,37 @@ export function metric(label: string, value: string, hint?: string, kind: Status
   });
 }
 
+/**
+ * metricCardV2 - Sub2API 风格的统计卡片
+ * 彩色圆形图标 + 大数字 + 辅助文字
+ */
+export function metricCardV2(
+  label: string,
+  value: string,
+  iconPath: string,
+  kind: StatusKind | 'success' | 'warning' | 'danger' | 'primary' | 'purple' = 'info',
+  hint?: string,
+): HTMLElement {
+  const iconCircle = el('div', {
+    class: `metric-icon ${kind}`,
+    children: [icon(iconPath)],
+  });
+
+  const content = el('div', {
+    class: 'metric-content',
+    children: [
+      el('div', { class: 'metric-label', text: label }),
+      el('div', { class: 'metric-value', text: value }),
+      hint ? el('div', { class: 'metric-hint', text: hint }) : null,
+    ],
+  });
+
+  return el('div', {
+    class: 'metric-card-v2',
+    children: [iconCircle, content],
+  });
+}
+
 export function field(label: string, value: Node | string): HTMLElement {
   const valueNode = typeof value === 'string' ? el('span', { text: value }) : value;
   return el('div', {

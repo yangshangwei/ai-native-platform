@@ -14,7 +14,7 @@
 
 import { STAGE_LABELS, type WorkflowRunDto } from './projection';
 import type { ProjectDto, RunnerDto, StatusKind, WorkflowRequestDto } from './types';
-import { button, el, field, fmtTime, panelHeader, pill, statusKind } from './dom';
+import { button, el, field, fmtTime, panelHeader, pill, statusKind, metricCardV2 } from './dom';
 import {
   agentBackendContextLabel,
   agentBackendStatusForProject,
@@ -248,38 +248,46 @@ function renderWorkbenchActionPanel(): HTMLElement {
 
 function renderWorkbenchOverviewPanel(): HTMLElement {
   const actions = workbenchActionItems();
-  const active = [
-    ...data.requests.filter(isRequestInProgress).map((request) => request.title),
-    ...data.runs.filter((run) => run.status === 'running').map((run) => run.title),
-  ];
-  const completed = data.runs.filter((run) => statusKind(run.status) === 'good').slice(0, 5);
+  const activeRequests = data.requests.filter(isRequestInProgress);
+  const activeRuns = data.runs.filter((run) => run.status === 'running');
+  const active = activeRequests.length + activeRuns.length;
+  const completed = data.runs.filter((run) => statusKind(run.status) === 'good');
+  const totalTasks = data.requests.length;
+
   return el('section', {
     class: 'panel overview-panel',
     children: [
-      panelHeader('工作台概览', '按你的下一步行动组织任务。'),
+      panelHeader('工作台概览', '关键指标一览'),
       el('div', {
-        class: 'overview-grid',
+        class: 'grid-stats',
         children: [
-          renderWorkbenchStatCard(
-            '需要我处理',
-            actions.length,
-            actions.length ? '有任务等待输入或确认。' : '暂无需要你处理的任务。',
-            actions.map((item) => (item.kind === 'request' ? item.request.title : item.run.title)),
-            actions.length ? 'warn' : 'good',
+          metricCardV2(
+            '需要处理',
+            String(actions.length),
+            'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z',
+            actions.length > 0 ? 'warning' : 'success',
+            actions.length > 0 ? '等待你的输入或确认' : '暂无待处理任务',
           ),
-          renderWorkbenchStatCard(
+          metricCardV2(
             'AI 正在处理',
-            active.length,
-            active.length ? '这些任务正在排队或执行。' : '当前没有执行中的任务。',
-            active,
-            active.length ? 'info' : 'muted',
+            String(active),
+            'M13 10V3L4 14h7v7l9-11h-7z',
+            active > 0 ? 'primary' : 'muted',
+            active > 0 ? '正在排队或执行中' : '当前无执行任务',
           ),
-          renderWorkbenchStatCard(
+          metricCardV2(
             '最近完成',
-            completed.length,
-            completed.length ? '最近交付结果可查看。' : '还没有完成的任务。',
-            completed.map((run) => run.title),
-            completed.length ? 'good' : 'muted',
+            String(completed.length),
+            'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+            completed.length > 0 ? 'success' : 'muted',
+            completed.length > 0 ? '可查看交付结果' : '还没有完成任务',
+          ),
+          metricCardV2(
+            '任务总数',
+            String(totalTasks),
+            'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
+            'info',
+            '累计创建任务数',
           ),
         ],
       }),
