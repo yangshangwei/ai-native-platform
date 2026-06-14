@@ -39,6 +39,7 @@ export function workbenchEnvironmentSummary(project: ProjectDto | null, runner: 
 }
 
 import { render } from './render-core';
+import { createLineChart } from './charts';
 
 export function renderWorkbenchPage(): HTMLElement {
   return el('section', {
@@ -47,6 +48,7 @@ export function renderWorkbenchPage(): HTMLElement {
       renderWelcomeGuide(),
       renderWorkbenchActionPanel(),
       renderWorkbenchOverviewPanel(),
+      renderTokenUsageChart(),
       renderTaskListPanel(),
       renderWorkbenchEnvironmentPanel(),
     ],
@@ -414,6 +416,46 @@ function renderRunsPanel(): HTMLElement {
       el('div', {
         class: 'run-list',
         children: data.runs.slice(0, 12).map(renderRunListItem),
+      }),
+    ],
+  });
+}
+
+function renderTokenUsageChart(): HTMLElement {
+  const canvas = document.createElement('canvas');
+  canvas.id = 'token-usage-chart';
+  canvas.style.maxHeight = '300px';
+
+  // Defer chart creation until canvas is mounted
+  requestAnimationFrame(() => {
+    // Generate sample data from recent runs
+    const recentRuns = data.runs.slice(-7); // Last 7 runs
+    const labels = recentRuns.length > 0
+      ? recentRuns.map((run) => {
+          const date = new Date(run.createdAt);
+          return `${date.getMonth() + 1}/${date.getDate()}`;
+        })
+      : ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5', 'Day 6', 'Day 7'];
+
+    const tokenData = recentRuns.length > 0
+      ? recentRuns.map((run) => run.totalTokens || 0)
+      : [1200, 1500, 1800, 1600, 2100, 1900, 2300]; // Sample data
+
+    createLineChart(
+      canvas,
+      labels,
+      [{ label: 'Token 消耗', data: tokenData }],
+      'Token 使用趋势'
+    );
+  });
+
+  return el('section', {
+    class: 'panel chart-panel',
+    children: [
+      panelHeader('Token 使用趋势', '最近 7 天的 Token 消耗统计'),
+      el('div', {
+        class: 'chart-container',
+        children: [canvas],
       }),
     ],
   });

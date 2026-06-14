@@ -8,6 +8,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@ainp/shared": "workspace:*"
+    "@ainp/shared": "workspace:*",
+    "chart.js": "^4.5.1"
   }
 }
