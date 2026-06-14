@@ -191,7 +191,7 @@ function renderNewTaskInlineNotice(
 }
 
 function renderNewTaskNoProjectPage(): HTMLElement {
-  const refresh = button('刷新', 'button secondary');
+  const refresh = button('刷新', 'btn btn-secondary');
   refresh.onclick = () => void loadData({ keepDetail: true });
   return el('section', {
     class: 'page-grid two-col',
@@ -318,13 +318,13 @@ export function renderNewTaskPage(): HTMLElement {
     if (hasOption) projectSelect.value = newTaskFormDraft.projectId;
   }
   const branchSelect = el('select', { attrs: { name: 'branch' } });
-  const branchRefresh = el('button', { class: 'button secondary small', text: '刷新分支', attrs: { type: 'button' } });
+  const branchRefresh = el('button', { class: 'btn btn-secondary btn-sm', text: '刷新分支', attrs: { type: 'button' } });
   const branchHint = el('p', { class: 'muted compact' });
   const backendHint = el('p', { class: 'muted compact' });
-  const backendCheck = el('button', { class: 'button secondary small', text: '检测连接', attrs: { type: 'button' } });
+  const backendCheck = el('button', { class: 'btn btn-secondary btn-sm', text: '检测连接', attrs: { type: 'button' } });
   const backendLabel = el('strong', { text: '未选择项目' });
   const clickedBranchProjects = new Set<string>();
-  const submit = el('button', { class: 'button primary', text: '创建任务', attrs: { type: 'submit' } });
+  const submit = el('button', { class: 'btn btn-primary', text: '创建任务', attrs: { type: 'submit' } });
   const submitHint = el('p', { class: 'compact muted' });
   const readiness = el('div', { class: 'new-task-readiness' });
 
@@ -644,7 +644,7 @@ export function renderNewTaskPage(): HTMLElement {
   advanced.appendChild(startStageRow);
   advanced.appendChild(recoCard);
 
-  const retryProjects = button('重试', 'button secondary small');
+  const retryProjects = button('重试', 'btn btn-secondary btn-sm');
   retryProjects.onclick = () => void loadData({ keepDetail: true });
   const projectIssue = ui.projectsLoadError
     ? renderNewTaskInlineNotice(

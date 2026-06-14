@@ -350,18 +350,18 @@ function renderConfigRow(row: SettingsRowVM): HTMLElement {
 
   const editor = renderConfigEditor(key, entry, editorValue);
 
-  const saveBtn = button(saving ? '保存中…' : '保存', 'button primary');
+  const saveBtn = button(saving ? '保存中…' : '保存', 'btn btn-primary');
   saveBtn.disabled = !dirty || saving;
   saveBtn.onclick = () => void saveConfigOverride(key);
 
-  const resetBtn = button('重置为默认', 'button secondary');
+  const resetBtn = button('重置为默认', 'btn btn-secondary');
   resetBtn.disabled = !isOverridden || saving;
   resetBtn.onclick = () => void resetConfigOverride(key);
 
-  const copyBtn = button('复制默认值', 'button secondary');
+  const copyBtn = button('复制默认值', 'btn btn-secondary');
   copyBtn.onclick = () => copyConfigDefaultToDraft(key);
 
-  const historyBtn = button(expandedHistory ? '收起历史' : '历史', 'button secondary');
+  const historyBtn = button(expandedHistory ? '收起历史' : '历史', 'btn btn-secondary');
   historyBtn.onclick = () => void toggleConfigHistory(key);
 
   const editDetails = el('details', {
@@ -526,17 +526,17 @@ function renderSettingsOverview(vm: SettingsViewModel | null): HTMLElement {
   const totalKeys = vm?.summary.totalKeys ?? settingsConfig.registry?.keys.length ?? 0;
   const backend = agentBackendStatusForProject(project);
 
-  const refresh = button(settingsConfig.loading ? '刷新中…' : '刷新配置', 'button secondary');
+  const refresh = button(settingsConfig.loading ? '刷新中…' : '刷新配置', 'btn btn-secondary');
   refresh.disabled = settingsConfig.loading;
   refresh.onclick = () => void loadSettingsConfig();
 
-  const checkBackend = button(agentBackendPreflightInFlight.has(project?.id ?? '') ? '检测中…' : '检测执行方式', 'button secondary');
+  const checkBackend = button(agentBackendPreflightInFlight.has(project?.id ?? '') ? '检测中…' : '检测执行方式', 'btn btn-secondary');
   checkBackend.disabled = !project?.agentBackend || agentBackendPreflightInFlight.has(project?.id ?? '');
   checkBackend.onclick = () => {
     if (project?.agentBackend) void checkAgentBackend(project.agentBackend, project.id);
   };
 
-  const startRunner = button(ui.runnerStartInFlight ? '启动中…' : '启动执行器', 'button secondary');
+  const startRunner = button(ui.runnerStartInFlight ? '启动中…' : '启动执行器', 'btn btn-secondary');
   startRunner.disabled = Boolean(runner) || ui.runnerStartInFlight;
   startRunner.onclick = () => void ensureRunnerStarted();
 

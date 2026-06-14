@@ -49,6 +49,8 @@ import {
 import { actionLink, setHash } from './router';
 import { render } from './render-core';
 import { loadRunDetail } from './data-loading';
+import { pieChart } from './chart';
+import { getPlatformDistribution } from './chart-data';
 
 let reportsActiveView: ReportViewId = 'all';
 
@@ -98,6 +100,7 @@ export function renderReportsPage(): HTMLElement {
     class: 'reports-page stack',
     children: [
       renderReportsOverview(stats),
+      renderPlatformDistributionChart(),
       renderActiveReportDetail(),
       el('section', {
         class: 'panel reports-list-panel',
@@ -269,6 +272,29 @@ function renderActiveReportDetail(): HTMLElement | null {
           reportArtifact ? field('URI', el('code', { text: reportArtifact.uri })) : null,
           field('Worktree', el('code', { text: detail.run.workspacePath ?? '尚未准备' })),
         ],
+      }),
+    ],
+  });
+}
+
+function renderPlatformDistributionChart(): HTMLElement {
+  const canvas = document.createElement('canvas');
+  canvas.id = 'platform-distribution-chart';
+  canvas.style.maxHeight = '400px';
+
+  // Defer chart creation until canvas is mounted
+  requestAnimationFrame(() => {
+    const chartData = getPlatformDistribution();
+    pieChart(canvas, chartData);
+  });
+
+  return el('section', {
+    class: 'panel chart-panel',
+    children: [
+      panelHeader('平台分布', '按执行平台统计已完成任务'),
+      el('div', {
+        class: 'chart-container',
+        children: [canvas],
       }),
     ],
   });

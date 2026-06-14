@@ -114,12 +114,12 @@ export function renderProjectsPage(): HTMLElement {
     renderProjectDetectPanel(),
   );
 
-  const detect = el('button', { class: 'button secondary', text: projectSourceForm.detecting ? '检测中…' : '检测项目连接', attrs: { type: 'button' } });
+  const detect = el('button', { class: 'btn btn-secondary', text: projectSourceForm.detecting ? '检测中…' : '检测项目连接', attrs: { type: 'button' } });
   detect.disabled = projectSourceForm.detecting;
   detect.onclick = () => void detectProjectSource();
-  const submit = el('button', { class: 'button primary', text: actionState.submitLabel, attrs: { type: 'submit' } });
+  const submit = el('button', { class: 'btn btn-primary', text: actionState.submitLabel, attrs: { type: 'submit' } });
   submit.disabled = !actionState.canSubmit;
-  const cancelEdit = isEditing ? el('button', { class: 'button ghost', text: '取消编辑', attrs: { type: 'button' } }) : null;
+  const cancelEdit = isEditing ? el('button', { class: 'btn btn-ghost', text: '取消编辑', attrs: { type: 'button' } }) : null;
   if (cancelEdit) cancelEdit.onclick = () => { resetProjectSourceForm(); render(); };
   form.append(
     el('div', { class: 'project-form-actions', children: [detect, submit, cancelEdit] }),
@@ -263,7 +263,7 @@ function renderAgentBackendConfigFields(): HTMLElement {
   const matchingCheck = check?.backend === selectedBackend ? check : null;
   const checking = key ? agentBackendPreflightInFlight.has(key) : false;
   const test = el('button', {
-    class: 'button secondary small',
+    class: 'btn btn-secondary btn-sm',
     text: checking ? '检测中…' : '检测连接',
     attrs: { type: 'button' },
   });
@@ -312,7 +312,7 @@ function renderLocalPathPickerField(): HTMLElement {
     projectSourceForm.sourceValue = input.value;
     projectSourceForm.detectResult = null;
   };
-  const browse = el('button', { class: 'button secondary', text: '选择文件夹', attrs: { type: 'button' } });
+  const browse = el('button', { class: 'btn btn-secondary', text: '选择文件夹', attrs: { type: 'button' } });
   browse.onclick = () => void openLocalDirectoryPicker();
   return el('label', {
     class: 'input-block',
@@ -329,9 +329,9 @@ function renderLocalDirectoryPicker(): HTMLElement {
   if (localDirectoryPicker.loading) rows.push(el('p', { class: 'muted compact', text: '正在读取本地文件夹…' }));
   if (localDirectoryPicker.error) rows.push(el('p', { class: 'notice-inline warn', text: localDirectoryPicker.error }));
   if (listing) {
-    const chooseCurrent = el('button', { class: 'button primary small', text: '选择当前文件夹', attrs: { type: 'button' } });
+    const chooseCurrent = el('button', { class: 'btn btn-primary btn-sm', text: '选择当前文件夹', attrs: { type: 'button' } });
     chooseCurrent.onclick = () => chooseLocalDirectory(listing.path);
-    const parent = el('button', { class: 'button secondary small', text: '上一级', attrs: { type: 'button' } });
+    const parent = el('button', { class: 'btn btn-secondary btn-sm', text: '上一级', attrs: { type: 'button' } });
     parent.onclick = () => void loadLocalDirectories(listing.parent);
     rows.push(
       field('当前路径', el('code', { text: listing.path })),
@@ -350,7 +350,7 @@ function renderLocalDirectoryPicker(): HTMLElement {
       }),
     );
   }
-  const close = el('button', { class: 'button ghost', text: '关闭选择器', attrs: { type: 'button' } });
+  const close = el('button', { class: 'btn btn-ghost', text: '关闭选择器', attrs: { type: 'button' } });
   close.onclick = () => {
     localDirectoryPicker.open = false;
     render();
@@ -606,7 +606,7 @@ function renderProjectCard(project: ProjectDto): HTMLElement {
     ? `${agentBackendDisplayName(project.agentBackend)} · ${backendStatusText(backendStatus.label)}`
     : `未配置 · ${backendStatusText(backendStatus.label)}`;
   const action = el('button', {
-    class: status === 'archived' ? 'button ghost small' : 'button danger small',
+    class: status === 'archived' ? 'button ghost small' : 'btn btn-danger btn-sm',
     text: projectActionInFlight.has(project.id) ? '处理中…' : status === 'archived' ? '已归档' : '删除 / 归档',
     attrs: { type: 'button' },
   });
@@ -616,7 +616,7 @@ function renderProjectCard(project: ProjectDto): HTMLElement {
     void deleteOrArchiveProject(project);
   };
   const backendCheck = el('button', {
-    class: 'button secondary small',
+    class: 'btn btn-secondary btn-sm',
     text: agentBackendPreflightInFlight.has(project.id) ? '检测中…' : '检测连接',
     attrs: { type: 'button' },
   });

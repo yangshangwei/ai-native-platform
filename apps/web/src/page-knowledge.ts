@@ -200,7 +200,7 @@ function renderKnowledgeSuggestionEditor(item: KnowledgeSuggestionItem, detail: 
     }
   });
 
-  const save = button('保存为知识', 'button primary small');
+  const save = button('保存为知识', 'btn btn-primary btn-sm');
   save.onclick = () => {
     const next = (knowledgeEditDrafts.get(item.key) ?? editor.value).trim();
     if (!next) return;
@@ -212,7 +212,7 @@ function renderKnowledgeSuggestionEditor(item: KnowledgeSuggestionItem, detail: 
       evidence: item.suggestion.evidence,
     });
   };
-  const cancel = button('取消', 'button secondary small');
+  const cancel = button('取消', 'btn btn-secondary btn-sm');
   cancel.onclick = () => {
     knowledgeEditing.delete(item.key);
     knowledgeEditDrafts.delete(item.key);
@@ -226,21 +226,21 @@ function renderKnowledgeSuggestionEditor(item: KnowledgeSuggestionItem, detail: 
 }
 
 export function renderKnowledgeSuggestion(item: KnowledgeSuggestionItem, detail: RunDetail): HTMLElement {
-  const accept = button(item.decision === 'accepted' ? '已收录' : '收录', 'button secondary small');
+  const accept = button(item.decision === 'accepted' ? '已收录' : '收录', 'btn btn-secondary btn-sm');
   accept.onclick = () => void submitKnowledgeAction(detail.run.id, item.targetId, 'accepted', {
     text: item.text,
     kind: item.suggestion.kind,
     evidence: item.suggestion.evidence,
   });
 
-  const edit = button(item.decision === 'edited' ? '已编辑' : '编辑后收录', 'button secondary small');
+  const edit = button(item.decision === 'edited' ? '已编辑' : '编辑后收录', 'btn btn-secondary btn-sm');
   edit.onclick = () => {
     knowledgeEditing.add(item.key);
     knowledgeEditDrafts.set(item.key, item.text);
     render();
   };
 
-  const ignore = button(item.decision === 'ignored' ? '已忽略' : '忽略', 'button secondary small');
+  const ignore = button(item.decision === 'ignored' ? '已忽略' : '忽略', 'btn btn-secondary btn-sm');
   ignore.onclick = () => void submitKnowledgeAction(detail.run.id, item.targetId, 'ignored', {
     text: item.text,
     kind: item.suggestion.kind,
@@ -449,12 +449,12 @@ function renderKnowledgeOverview(
     .map((artifact) => metadataString(artifact, 'lastUsedAt'))
     .filter((value): value is string => Boolean(value))
     .sort((a, b) => b.localeCompare(a))[0] ?? null;
-  const refresh = button(knowledgeArtifactsState.loading ? '刷新中…' : '刷新知识', 'button secondary small');
+  const refresh = button(knowledgeArtifactsState.loading ? '刷新中…' : '刷新知识', 'btn btn-secondary btn-sm');
   refresh.disabled = !project || knowledgeArtifactsState.loading;
   refresh.onclick = () => {
     if (project) void loadKnowledgeArtifacts(project.id);
   };
-  const openCurrentTask = button(detail ? '查看任务结果' : '去工作台', 'button secondary');
+  const openCurrentTask = button(detail ? '查看任务结果' : '去工作台', 'btn btn-secondary');
   openCurrentTask.onclick = () => {
     const request = detail ? data.requests.find((candidate) => candidate.workflowRunId === detail.run.id) : null;
     if (request) setHash('task', request.id);
@@ -500,7 +500,7 @@ function renderKnowledgeOverview(
 
 function renderKnowledgePendingView(detail: RunDetail | null, items: KnowledgeSuggestionItem[]): HTMLElement {
   const pendingKnowledge = detail?.run.status === 'awaiting_human' && detail.run.currentStage === 'knowledge';
-  const approve = pendingKnowledge ? button('确认已处理建议并入库', 'button primary') : null;
+  const approve = pendingKnowledge ? button('确认已处理建议并入库', 'btn btn-primary') : null;
   if (approve && detail) {
     approve.onclick = async () => {
       await submitApproval(detail.run.id, 'knowledge_gate', true);
@@ -509,7 +509,7 @@ function renderKnowledgePendingView(detail: RunDetail | null, items: KnowledgeSu
       render();
     };
   }
-  const openTask = button(detail ? '查看任务结果' : '去工作台', 'button secondary');
+  const openTask = button(detail ? '查看任务结果' : '去工作台', 'btn btn-secondary');
   openTask.onclick = () => {
     const request = detail ? data.requests.find((candidate) => candidate.workflowRunId === detail.run.id) : null;
     if (request) setHash('task', request.id);
