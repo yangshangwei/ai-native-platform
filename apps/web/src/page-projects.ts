@@ -57,6 +57,7 @@ import {
 } from './state';
 import { render } from './render-core';
 import { checkAgentBackend, formAgentBackendKey, loadData } from './data-loading';
+import { showSuccessToast } from './toast';
 
 // Page-private mutable state (moved verbatim from state.ts, T2.3 page split).
 const projectActionInFlight = new Set<string>();
@@ -820,13 +821,11 @@ async function submitProject(event: SubmitEvent): Promise<void> {
   event.preventDefault();
   if (!projectSourceForm.detectResult?.ok) {
     ui.lastError = '请先检测项目连接，确认无误后再接入。';
-    ui.lastSuccess = null;
     render();
     return;
   }
   if (!projectSourceForm.agentBackend) {
     ui.lastError = '请选择 Claude Code 或 Codex 作为项目的 AI 执行方式。';
-    ui.lastSuccess = null;
     render();
     return;
   }
@@ -846,11 +845,12 @@ async function submitProject(event: SubmitEvent): Promise<void> {
       resetProjectSourceForm();
     }
     ui.lastError = null;
-    ui.lastSuccess = editingProjectId ? `项目"${projectName}"修改已保存。` : `项目"${projectName}"接入成功。`;
+    // Success is surfaced via an auto-dismissing toast.
+    const successMessage = editingProjectId ? `项目"${projectName}"修改已保存。` : `项目"${projectName}"接入成功。`;
+    showSuccessToast(successMessage);
     await loadData({ render: true });
   } catch (err) {
     ui.lastError = errorMessage(err);
-    ui.lastSuccess = null;
     render();
   }
 }

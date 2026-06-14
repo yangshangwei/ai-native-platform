@@ -1515,11 +1515,15 @@ function renderApprovalPanel(detail: RunDetail, pendingGate: string | null, curr
     })();
   };
 
+  // Render document preview for the pending gate
+  const docPreview = renderGateDocumentPreview(detail, pendingGate);
+
   return el('section', {
     class: 'panel side-panel checkpoint',
     children: [
       panelHeader('等待你确认', copy.subtitle),
       el('p', { text: copy.description }),
+      docPreview,
       el('div', { class: 'button-row', children: [approveBtn, rejectBtn] }),
     ],
   });
@@ -1567,6 +1571,129 @@ function renderApprovalRow(approval: { gateId: string; decision: string; actor: 
     children: [
       el('span', { children: [pill(approval.decision), document.createTextNode(` ${gateDisplayLabel(approval.gateId)}`)] }),
       el('small', { text: `${approval.actor} · ${fmtTime(approval.decidedAt)}` }),
+    ],
+  });
+}
+
+function renderGateDocumentPreview(detail: RunDetail, gateId: string): HTMLElement | null {
+  if (gateId === 'requirement_gate') {
+    const req = parsedRequirement(detail);
+    const hasContent = req.goals.length || req.acceptanceCriteria.length || req.nonGoals.length || req.openQuestions.length;
+
+    if (!hasContent) {
+      return el('p', { class: 'muted compact', text: '需求文档正在生成中...' });
+    }
+
+    return el('details', {
+      class: 'checkpoint-doc-preview',
+      attrs: { open: 'true' },
+      children: [
+        el('summary', { text: '📄 查看需求文档' }),
+        el('div', {
+          class: 'checkpoint-doc-content',
+          children: [
+            req.goals.length ? renderCompactTextList('🎯 目标', req.goals) : null,
+            req.acceptanceCriteria.length ? renderCompactAcList('✓ 验收标准', req.acceptanceCriteria) : null,
+            req.nonGoals.length ? renderCompactTextList('⊘ 非目标', req.nonGoals) : null,
+            req.openQuestions.length ? renderCompactTextList('❓ 待确认', req.openQuestions) : null,
+          ],
+        }),
+      ],
+    });
+  }
+
+  if (gateId === 'design_gate') {
+    const design = parsedDesign(detail);
+    const hasContent = design.coverage.length || design.testStrategy.length || design.risks.length || design.filesTouched.length;
+
+    if (!hasContent) {
+      return el('p', { class: 'muted compact', text: '方案文档正在生成中...' });
+    }
+
+    return el('details', {
+      class: 'checkpoint-doc-preview',
+      attrs: { open: 'true' },
+      children: [
+        el('summary', { text: '📄 查看方案文档' }),
+        el('div', {
+          class: 'checkpoint-doc-content',
+          children: [
+            design.coverage.length ? el('div', { class: 'checkpoint-section', children: [el('strong', { text: '📊 需求覆盖' }), el('p', { class: 'compact', text: `${design.coverage.length} 项需求已覆盖` })] }) : null,
+            design.testStrategy.length ? renderCompactTextList('🧪 测试策略', design.testStrategy) : null,
+            design.risks.length ? renderCompactTextList('⚠️ 风险', design.risks) : null,
+            design.filesTouched.length ? el('div', { class: 'checkpoint-section', children: [el('strong', { text: '📝 影响文件' }), el('p', { class: 'compact', text: `${design.filesTouched.length} 个文件` })] }) : null,
+          ],
+        }),
+      ],
+    });
+  }
+
+  if (gateId === 'acceptance_gate') {
+    const req = parsedRequirement(detail);
+    const design = parsedDesign(detail);
+    const checklist = buildAcceptanceChecklist(req, design, detail);
+    const passedCount = checklist.filter(ac => ac.status === 'passed').length;
+    const totalCount = checklist.length;
+
+    if (totalCount === 0) {
+      return el('p', { class: 'muted compact', text: '验收报告正在生成中...' });
+    }
+
+    return el('details', {
+      class: 'checkpoint-doc-preview',
+      attrs: { open: 'true' },
+      children: [
+        el('summary', { text: `📄 查看验收报告 (${passedCount}/${totalCount} 通过)` }),
+        el('div', {
+          class: 'checkpoint-doc-content',
+          children: [
+            el('div', {
+              class: 'acceptance-list',
+              children: checklist.slice(0, 8).map(ac =>
+                el('div', {
+                  class: `acceptance-card ${ac.status}`,
+                  children: [
+                    el('div', { children: [pill(ac.id, ac.status === 'passed' ? 'good' : ac.status === 'at_risk' ? 'warn' : 'bad'), el('strong', { text: ` ${ac.text}` })] }),
+                    ac.evidence.length ? el('small', { class: 'muted', text: `证据: ${ac.evidence.join(' · ')}` }) : el('small', { class: 'warn', text: '缺少证据' }),
+                    ac.risk ? el('small', { class: 'warn', text: ac.risk }) : null,
+                  ],
+                }),
+              ),
+            }),
+            totalCount > 8 ? el('p', { class: 'muted compact', text: `还有 ${totalCount - 8} 项验收标准，查看主面板了解详情。` }) : null,
+          ],
+        }),
+      ],
+    });
+  }
+
+  return null;
+}
+
+function renderCompactTextList(title: string, items: string[]): HTMLElement {
+  return el('div', {
+    class: 'checkpoint-section',
+    children: [
+      el('strong', { text: title }),
+      el('ul', {
+        class: 'checkpoint-list',
+        children: items.slice(0, 5).map(item => el('li', { text: item })),
+      }),
+      items.length > 5 ? el('p', { class: 'muted compact', text: `还有 ${items.length - 5} 项，查看主面板了解详情。` }) : null,
+    ],
+  });
+}
+
+function renderCompactAcList(title: string, items: Array<{ id: string; text: string }>): HTMLElement {
+  return el('div', {
+    class: 'checkpoint-section',
+    children: [
+      el('strong', { text: title }),
+      el('ul', {
+        class: 'checkpoint-list',
+        children: items.slice(0, 5).map(item => el('li', { children: [el('code', { text: item.id }), document.createTextNode(` ${item.text}`)] })),
+      }),
+      items.length > 5 ? el('p', { class: 'muted compact', text: `还有 ${items.length - 5} 项，查看主面板了解详情。` }) : null,
     ],
   });
 }

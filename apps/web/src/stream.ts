@@ -120,7 +120,7 @@ export function buildAgentStreamView(channel: StreamChannel | null): AgentStream
     summary: streamSummaryText(channel, events.length),
     status: streamStatusForChannel(channel),
     events,
-    lines: buildStreamDisplayLines(events),
+    lines: buildStreamDisplayLines(events, true), // Native mode: hide metadata prefixes
   };
 }
 
@@ -218,9 +218,9 @@ function renderStreamDisplayLine(line: StreamDisplayLine): HTMLElement {
       ...(line.title ? { title: line.title } : {}),
     },
     children: [
-      el('span', { class: 'stream-prefix', text: line.prefix }),
-      el('span', { class: 'stream-text', text: ` ${line.text}` }),
-    ],
+      line.prefix ? el('span', { class: 'stream-prefix', text: line.prefix }) : null,
+      el('span', { class: 'stream-text', text: line.prefix ? ` ${line.text}` : line.text }),
+    ].filter(Boolean) as Node[],
   });
 }
 

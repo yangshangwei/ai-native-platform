@@ -321,12 +321,10 @@ function contextItem(label: string, value: string, kind: StatusKind): HTMLElemen
 
 function renderPage(): HTMLElement {
   const notifications: HTMLElement[] = [];
-  if (ui.lastSuccess && ui.activePage !== 'new-task') {
-    notifications.push(renderSuccess(ui.lastSuccess));
-  }
   if (ui.lastError && ui.activePage !== 'new-task') {
     notifications.push(renderError(ui.lastError));
   }
+  // Success messages now handled by toast notifications
   if (notifications.length > 0) {
     return el('section', { class: 'page-stack', children: [...notifications, renderCurrentPage()] });
   }

@@ -126,7 +126,7 @@ export function lastStreamSequenceForRun<T extends StreamChannelEvent & { workfl
   return lastStreamSequenceForChannel(cache, { kind: 'run', id: runId });
 }
 
-export function buildStreamDisplayLines(events: readonly StreamDisplayEvent[]): StreamDisplayLine[] {
+export function buildStreamDisplayLines(events: readonly StreamDisplayEvent[], nativeMode = true): StreamDisplayLine[] {
   const lines: StreamDisplayLine[] = [];
   let pending: PendingAssistantGroup | null = null;
 
@@ -139,10 +139,10 @@ export function buildStreamDisplayLines(events: readonly StreamDisplayEvent[]): 
       const time = formatEventTime(pending.firstTs);
       lines.push({
         className: 'stream-line assistant assistant-readable',
-        prefix: `[${time} ${sequenceLabel} ${backend} assistant]`,
+        prefix: nativeMode ? '' : `[${time} ${sequenceLabel} ${backend} assistant]`,
         text,
         sequences: [...pending.sequences],
-        title: `raw sequences: ${formatSequenceTitle(pending.sequences)}`,
+        title: nativeMode ? undefined : `raw sequences: ${formatSequenceTitle(pending.sequences)}`,
         ts: pending.firstTs,
       });
     }
@@ -150,10 +150,10 @@ export function buildStreamDisplayLines(events: readonly StreamDisplayEvent[]): 
   };
 
   for (const event of events) {
-    for (const segment of streamTextSegments(event)) {
+    for (const segment of streamTextSegments(event, nativeMode)) {
       if (!segment.mergeable) {
         flushPending();
-        lines.push(renderBoundaryLine(segment.event, segment.text));
+        lines.push(renderBoundaryLine(segment.event, segment.text, nativeMode));
         continue;
       }
 
@@ -185,11 +185,16 @@ export function streamAgentBackendDisplayName(kind: string | null | undefined): 
   return 'Legacy test backend';
 }
 
-function streamTextSegments(event: StreamDisplayEvent): StreamTextSegment[] {
+function streamTextSegments(event: StreamDisplayEvent, nativeMode = true): StreamTextSegment[] {
   const text = event.text ?? renderStreamFallbackText(event);
   if (event.type === 'assistant') {
     const assistantSegments = assistantTextSegments(event, text);
     if (assistantSegments.length > 0) return assistantSegments;
+  }
+
+  // In native mode, filter out noisy events
+  if (nativeMode && shouldFilterEventInNativeMode(event)) {
+    return [];
   }
 
   const lines = splitRenderableLines(text);
@@ -286,12 +291,12 @@ function appendAssistantText(
   return `${current}\n${next}`;
 }
 
-function renderBoundaryLine(event: StreamDisplayEvent, text: string): StreamDisplayLine {
+function renderBoundaryLine(event: StreamDisplayEvent, text: string, nativeMode = true): StreamDisplayLine {
   const backend = streamAgentBackendDisplayName(event.agentKind);
   const time = formatEventTime(event.ts);
   return {
     className: `stream-line ${event.type}`,
-    prefix: `[${time} ${event.sequence} ${backend} ${event.type}]`,
+    prefix: nativeMode ? '' : `[${time} ${event.sequence} ${backend} ${event.type}]`,
     text,
     sequences: [event.sequence],
     ts: event.ts,
@@ -350,4 +355,22 @@ function formatEventTime(ts: string | null | undefined): string {
   } catch {
     return '--:--:--';
   }
+}
+
+function shouldFilterEventInNativeMode(event: StreamDisplayEvent): boolean {
+  // Filter out noisy internal events in native mode
+  if (event.type === 'meta') {
+    const metaEvent = typeof event.payload.event === 'string' ? event.payload.event : '';
+    // Keep only important meta events like session_start/end
+    if (!['session_start', 'session_end', 'message_start'].includes(metaEvent)) {
+      return true;
+    }
+  }
+
+  // Filter out raw JSON payloads that don't have meaningful text
+  if (event.type === 'raw' && (!event.text || event.text.startsWith('{"'))) {
+    return true;
+  }
+
+  return false;
 }

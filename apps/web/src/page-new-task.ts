@@ -47,6 +47,7 @@ import { actionLink } from './router';
 import { render } from './render-core';
 import { checkAgentBackend, ensureRunnerStarted, loadData } from './data-loading';
 import { loadCoordinatorChat } from './coordinator-chat';
+import { showSuccessToast } from './toast';
 
 // Per-project branch-refresh re-entry guard (moved verbatim from state.ts,
 // T2.3 page split — only this page reads/writes it).
@@ -731,7 +732,8 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
     ui.activeTaskRequestId = request.id;
     ui.activeRunId = request.workflowRunId;
     ui.lastError = null;
-    ui.lastSuccess = `任务"${request.title}"创建成功！AI 正在执行中，你可以在任务详情页查看实时进度。`;
+    // Success is surfaced via an auto-dismissing toast.
+    showSuccessToast(`任务"${request.title}"创建成功！AI 正在执行中，你可以在任务详情页查看实时进度。`);
     ui.activePage = 'task';
     window.location.hash = `task/${encodeURIComponent(request.id)}`;
     runnerAutoStartAttemptedForRequest.add(request.id);

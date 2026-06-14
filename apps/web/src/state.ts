@@ -64,7 +64,6 @@ export const ui = {
   loadingDetailFor: null as string | null,
   runnerStartInFlight: false,
   lastError: null as string | null,
-  lastSuccess: null as string | null,
   projectsLoadError: null as string | null,
   knowledgeEditComposing: null as { key: string } | null,
   knowledgeEditRenderDeferred: false,

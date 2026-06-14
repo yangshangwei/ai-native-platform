@@ -62,9 +62,21 @@ function requestStreamEvent(
   };
 }
 
+// `buildStreamDisplayLines` now defaults to nativeMode=true: the production
+// stream view (stream.ts) hides the `[time seq backend type]` metadata
+// prefixes and filters noisy meta/raw events. The suite below pins the
+// *verbose* rendering contract — prefixes + boundaries + merge/dedup/channel
+// logic — so it calls the verbose path explicitly. Native-mode behavior (the
+// production default) is covered in its own describe block at the end.
+function verboseLines(
+  events: readonly StreamDisplayEvent[],
+): ReturnType<typeof buildStreamDisplayLines> {
+  return buildStreamDisplayLines(events, false);
+}
+
 describe('web agent stream rendering', () => {
   it('merges consecutive Claude assistant text deltas into one readable block', () => {
-    const lines = buildStreamDisplayLines([
+    const lines = verboseLines([
       event(1, 'assistant', '[claude…] Hel'),
       event(2, 'assistant', '[claude…] lo'),
       event(3, 'assistant', '[claude…]  world'),
@@ -81,7 +93,7 @@ describe('web agent stream rendering', () => {
   });
 
   it('keeps tool, stderr, and result boundaries between assistant prose blocks', () => {
-    const lines = buildStreamDisplayLines([
+    const lines = verboseLines([
       event(1, 'assistant', '[claude…] Reading the file'),
       event(2, 'assistant', '[tool→ Read…]'),
       event(3, 'assistant', '[claude…] Done'),
@@ -108,7 +120,7 @@ describe('web agent stream rendering', () => {
   });
 
   it('keeps system and tool-result boundaries between assistant prose blocks', () => {
-    const lines = buildStreamDisplayLines([
+    const lines = verboseLines([
       event(1, 'system', '[init] cwd=/tmp model=claude'),
       event(2, 'assistant', '[claude…] Inspecting'),
       event(3, 'user', '[tool← ok] file contents'),
@@ -132,7 +144,7 @@ describe('web agent stream rendering', () => {
   });
 
   it('splits mixed assistant prose and tool-use text so tool lines remain a boundary', () => {
-    const lines = buildStreamDisplayLines([
+    const lines = verboseLines([
       event(10, 'assistant', '[claude] I will inspect this.\n[tool→ Read] {"file_path":"apps/web/src/main.ts"}'),
       event(11, 'assistant', '[claude…] Continuing after the tool.'),
     ]);
@@ -156,7 +168,7 @@ describe('web agent stream rendering', () => {
   });
 
   it('keeps raw fallback metadata visible when assistant events have no prose text', () => {
-    const lines = buildStreamDisplayLines([
+    const lines = verboseLines([
       event(20, 'assistant', null, { type: 'stream_event', event: { type: 'message_start' } }),
       event(21, 'assistant', '[claude…] visible text'),
     ]);
@@ -186,7 +198,7 @@ describe('web agent stream rendering', () => {
     const stored = streamEventsForRun(cache, runId);
     expect(stored.map((storedEvent) => storedEvent.sequence)).toEqual([1, 2, 3]);
     expect(lastStreamSequenceForRun(cache, runId)).toBe(3);
-    expect(buildStreamDisplayLines(stored)).toMatchObject([
+    expect(verboseLines(stored)).toMatchObject([
       {
         prefix: `[${T} 1–3 Claude Code assistant]`,
         text: 'Hello',
@@ -213,7 +225,7 @@ describe('web agent stream rendering', () => {
     expect(streamEventsForChannel(cache, runChannel).map((stored) => stored.sequence)).toEqual([1]);
     expect(lastStreamSequenceForChannel(cache, requestChannel)).toBe(2);
     expect(lastStreamSequenceForChannel(cache, runChannel)).toBe(1);
-    expect(buildStreamDisplayLines(streamEventsForChannel(cache, requestChannel)).at(-1)).toMatchObject({
+    expect(verboseLines(streamEventsForChannel(cache, requestChannel)).at(-1)).toMatchObject({
       prefix: `[${T} 2 Claude Code assistant]`,
       text: 'Coordinating',
     });
@@ -240,15 +252,15 @@ describe('web agent stream rendering', () => {
     rememberStreamEventInCache(cache, streamEvent(runId, 1, 'assistant', '[claude…] First'));
     rememberStreamEventInCache(cache, streamEvent(runId, 2, 'assistant', '[claude…]  line'));
 
-    const compactBefore = buildStreamDisplayLines(streamEventsForRun(cache, runId));
-    const expandedBefore = buildStreamDisplayLines(streamEventsForRun(cache, runId));
+    const compactBefore = verboseLines(streamEventsForRun(cache, runId));
+    const expandedBefore = verboseLines(streamEventsForRun(cache, runId));
     expect(expandedBefore).toEqual(compactBefore);
 
     rememberStreamEventInCache(cache, streamEvent(runId, 3, 'stderr', 'warning from cli'));
     rememberStreamEventInCache(cache, streamEvent(runId, 4, 'assistant', '[claude…] Continuing live'));
 
-    const compactAfter = buildStreamDisplayLines(streamEventsForRun(cache, runId));
-    const expandedAfter = buildStreamDisplayLines(streamEventsForRun(cache, runId));
+    const compactAfter = verboseLines(streamEventsForRun(cache, runId));
+    const expandedAfter = verboseLines(streamEventsForRun(cache, runId));
     expect(expandedAfter).toEqual(compactAfter);
     expect(compactAfter.map((line) => line.text)).toEqual([
       'First line',
@@ -258,7 +270,7 @@ describe('web agent stream rendering', () => {
   });
 
   it('merges consecutive Codex assistant deltas using [codex…] prefix', () => {
-    const lines = buildStreamDisplayLines([
+    const lines = verboseLines([
       { ...event(1, 'assistant', '[codex…] Sum'), agentKind: 'codex' },
       { ...event(2, 'assistant', '[codex…] marizing'), agentKind: 'codex' },
       { ...event(3, 'assistant', '[codex…]  repo'), agentKind: 'codex' },
@@ -274,7 +286,7 @@ describe('web agent stream rendering', () => {
   });
 
   it('keeps Codex tool and result events as boundaries between prose blocks', () => {
-    const lines = buildStreamDisplayLines([
+    const lines = verboseLines([
       { ...event(10, 'assistant', '[codex…] Planning'), agentKind: 'codex' },
       { ...event(11, 'assistant', '[tool→ exec…] bash -lc ls'), agentKind: 'codex' },
       { ...event(12, 'user', '[tool← ok] exec exit=0 — bash -lc ls'), agentKind: 'codex' },
@@ -302,7 +314,7 @@ describe('web agent stream rendering', () => {
   });
 
   it('does not merge Claude and Codex prose blocks across backends', () => {
-    const lines = buildStreamDisplayLines([
+    const lines = verboseLines([
       { ...event(1, 'assistant', '[claude…] Claude speaking'), agentKind: 'claude_code' },
       { ...event(2, 'assistant', '[codex…] Codex speaking'), agentKind: 'codex' },
     ]);
@@ -310,5 +322,71 @@ describe('web agent stream rendering', () => {
     expect(lines).toHaveLength(2);
     expect(lines[0]).toMatchObject({ prefix: `[${T} 1 Claude Code assistant]`, text: 'Claude speaking' });
     expect(lines[1]).toMatchObject({ prefix: `[${T} 2 Codex assistant]`, text: 'Codex speaking' });
+  });
+});
+
+describe('web agent stream rendering — native mode (production default)', () => {
+  it('hides metadata prefixes for merged assistant prose by default', () => {
+    const lines = buildStreamDisplayLines([
+      event(1, 'assistant', '[claude…] Hel'),
+      event(2, 'assistant', '[claude…] lo'),
+    ]);
+
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ prefix: '', text: 'Hello', sequences: [1, 2] });
+    // Native mode drops the raw-sequence tooltip too.
+    expect(lines[0]?.title).toBeUndefined();
+  });
+
+  it('hides prefixes on boundary lines while preserving boundaries and text', () => {
+    const lines = buildStreamDisplayLines([
+      event(1, 'assistant', '[claude…] Reading'),
+      event(2, 'assistant', '[tool→ Read…]'),
+      event(3, 'stderr', 'warning from cli'),
+    ]);
+
+    expect(lines.map((line) => line.prefix)).toEqual(['', '', '']);
+    expect(lines.map((line) => line.text)).toEqual(['Reading', '[tool→ Read…]', 'warning from cli']);
+    // The tool-use line is still a non-readable boundary, not merged into prose.
+    expect(lines[0]?.className).toContain('assistant-readable');
+    expect(lines[1]?.className).not.toContain('assistant-readable');
+  });
+
+  it('filters noisy meta events except session/message boundaries', () => {
+    const lines = buildStreamDisplayLines([
+      event(1, 'meta', '[meta:cli_started]', { type: 'meta' }),
+      event(2, 'meta', 'session begins', { type: 'meta', event: 'session_start' }),
+      event(3, 'assistant', '[claude…] Working'),
+    ]);
+
+    // meta seq1 (non-session) is filtered out; session_start meta + assistant survive.
+    expect(lines.map((line) => line.text)).toEqual(['session begins', 'Working']);
+  });
+
+  it('filters raw JSON-payload events that carry no readable text', () => {
+    const lines = buildStreamDisplayLines([
+      event(1, 'raw', '{"internal":true}'),
+      event(2, 'assistant', '[claude…] Visible'),
+    ]);
+
+    expect(lines.map((line) => line.text)).toEqual(['Visible']);
+  });
+
+  it('still merges consecutive assistant deltas (mode only changes prefix, not structure)', () => {
+    const nativeLines = buildStreamDisplayLines([
+      event(1, 'assistant', '[claude…] Hel'),
+      event(2, 'assistant', '[claude…] lo'),
+    ]);
+    const verbose = verboseLines([
+      event(1, 'assistant', '[claude…] Hel'),
+      event(2, 'assistant', '[claude…] lo'),
+    ]);
+
+    // Same merge structure + text + sequences; only the prefix differs.
+    expect(nativeLines).toHaveLength(verbose.length);
+    expect(nativeLines[0]?.text).toBe(verbose[0]?.text);
+    expect(nativeLines[0]?.sequences).toEqual(verbose[0]?.sequences);
+    expect(nativeLines[0]?.prefix).toBe('');
+    expect(verbose[0]?.prefix).not.toBe('');
   });
 });
