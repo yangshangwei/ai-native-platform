@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { errorMessage } from '@ainp/shared';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
+const PUBLIC_DIR = join(ROOT, 'public');
 const PORT = Number(process.env.AINP_WEB_PORT ?? 5173);
 const API_BASE = process.env.AINP_API_BASE ?? 'http://127.0.0.1:8787';
 
@@ -100,11 +101,15 @@ export function createWebServer(options: { port?: number; apiBase?: string; host
       let path = url.pathname === '/' ? '/index.html' : url.pathname;
       let file = safeJoin(ROOT, path);
       if (!file) return new Response('forbidden', { status: 403 });
-      if (!existsSync(file) && !path.includes('.') && existsSync(`${file}.ts`)) {
+
+      // Try public/ directory first for static assets (CSS, images, etc.)
+      const publicFile = safeJoin(PUBLIC_DIR, path);
+      if (publicFile && existsSync(publicFile) && statSync(publicFile).isFile()) {
+        file = publicFile;
+      } else if (!existsSync(file) && !path.includes('.') && existsSync(`${file}.ts`)) {
         file = `${file}.ts`;
         path = `${path}.ts`;
-      }
-      if (!existsSync(file) || !statSync(file).isFile()) {
+      } else if (!existsSync(file) || !statSync(file).isFile()) {
         // SPA fallback: serve index.html for unknown routes
         file = join(ROOT, 'index.html');
         path = '/index.html';
