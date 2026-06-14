@@ -1,0 +1,3 @@
+{"_example": "Each line is a JSON object with 'agent_type' and 'files'. Agent gets these files injected into context."}
+{"agent_type": "trellis-implement", "files": ["research/wcag-dark-mode-contrast.md", "research/css-variable-theming-patterns.md", ".trellis/tasks/06-14-ui/prd.md"]}
+{"agent_type": "trellis-check", "files": ["research/wcag-dark-mode-contrast.md", ".trellis/tasks/06-14-ui/prd.md"]}

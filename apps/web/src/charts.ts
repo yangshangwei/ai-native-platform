@@ -403,10 +403,10 @@ export function updateChartTheme(chart: Chart): void {
   // Update scales
   if (chart.options.scales) {
     Object.values(chart.options.scales).forEach((scale) => {
-      if (scale.grid) {
+      if (scale?.grid) {
         scale.grid.color = colors.gridLines;
       }
-      if (scale.ticks) {
+      if (scale?.ticks) {
         scale.ticks.color = colors.textMuted;
       }
     });

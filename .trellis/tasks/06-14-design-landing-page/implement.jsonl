@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/06-14-design-landing-page/prd.md", "reason": "Landing page requirements, sections, acceptance criteria, and ADR decision"}
+{"file": ".trellis/tasks/06-14-design-landing-page/research/landing-page-patterns.md", "reason": "DevTools landing-page section structure, differentiated value props, copy frameworks, reference tools"}
+{"file": ".trellis/tasks/06-14-design-landing-page/research/animation-approaches.md", "reason": "Existing animations.css inventory + IntersectionObserver scroll-reveal pattern (the one net-new piece)"}
