@@ -60,7 +60,9 @@ bun run smoke   # quick: just `mvn -B test`
 bun run e2e     # full 9-stage lifecycle, auto-approval
 
 # Tests + types
-bun test
+bun run test       # vitest (canonical). Use `bun run test`, NOT `bun test`:
+                   # Bun's native runner shares module state across files and
+                   # trips the initDb single-instance guard, causing false fails.
 bun run typecheck
 ```
 
