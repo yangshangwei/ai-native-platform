@@ -18,7 +18,6 @@
 import {
   activeTaskRequest,
   data,
-  latestRunner,
   runnerAutoStartAttemptedForRequest,
   ui,
 } from './state';
@@ -42,6 +41,7 @@ import {
   restoreCoordinatorReplyComposerFocus,
 } from './coordinator-chat';
 import { captureNewTaskFormState, restoreNewTaskFormFocus } from './page-new-task';
+import { buildPollingRenderFingerprint, shouldReloadActiveRunDetail } from './polling';
 import { renderShell } from './shell';
 import { initTheme } from './theme';
 
@@ -97,28 +97,41 @@ await loadData({ render: true });
 maybeAutoStartRunnerForActiveTask();
 
 // Track data changes to avoid unnecessary re-renders
-let lastDataFingerprint = '';
+let lastDataFingerprint = pollingRenderFingerprint();
 
 setInterval(async () => {
   // Always load data silently first
   await loadData({ render: false, keepDetail: true });
 
-  // Calculate fingerprint of key data that affects UI
-  const currentFingerprint = JSON.stringify({
-    requestStatuses: data.requests.map(r => `${r.id}:${r.status}:${r.updatedAt}`),
-    runStatuses: data.runs.map(r => `${r.id}:${r.status}:${r.currentStage}`),
-    runnerStatus: latestRunner()?.status,
-    runnerLastSeen: latestRunner()?.lastSeenAt,
-    projectCount: data.projects.length,
-    activeDetail: data.activeDetail?.run.id,
-  });
+  // Refresh details before rendering so status/stage changes paint once with
+  // the latest detail payload instead of rendering stale detail first.
+  if (ui.activeRunId) {
+    const latestRunSnapshot = data.runs.find((run) => run.id === ui.activeRunId);
+    if (shouldReloadActiveRunDetail({
+      activeRunId: ui.activeRunId,
+      latestRunSnapshot,
+      currentDetail: data.activeDetail,
+    })) {
+      await loadRunDetail(ui.activeRunId, false);
+    }
+  }
 
   // Only render if data actually changed
+  const currentFingerprint = pollingRenderFingerprint();
   if (currentFingerprint !== lastDataFingerprint) {
     lastDataFingerprint = currentFingerprint;
     render();
   }
-
-  if (ui.activeRunId) void loadRunDetail(ui.activeRunId, true);
   maybeAutoStartRunnerForActiveTask();
 }, 3000);
+
+function pollingRenderFingerprint(): string {
+  return buildPollingRenderFingerprint({
+    requests: data.requests,
+    runs: data.runs,
+    runners: data.runners,
+    runnerControl: data.runnerControl,
+    projectCount: data.projects.length,
+    activeDetailRunId: data.activeDetail?.run.id ?? null,
+  });
+}
