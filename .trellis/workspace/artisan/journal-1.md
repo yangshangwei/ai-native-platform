@@ -1544,3 +1544,36 @@ Four research agents audited leftover debt, robustness, performance, and test/ob
 5. Phase 4-5：文件系统修复 + 测试验证（6-9 小时）
 
 **并行任务**: 2 个后台进程运行中（工作流 + agent）
+
+
+## Session 40: Fix workbench page flashing due to aggressive polling
+
+**Date**: 2026-06-15
+**Task**: Fix workbench page flashing due to aggressive polling
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Fixed task detail page flashing by adding conditional detail reload logic. Only reloads when run status or currentStage changes, eliminating unnecessary DOM updates while maintaining 3s polling responsiveness.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f2ffe3c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
