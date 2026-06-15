@@ -1,0 +1,4 @@
+{"ref":"_example","reason":"This seed row shows the schema. Real rows: ref = relative path from repo root, reason = 1-line why the implement agent needs this file."}
+{"ref":"apps/web/src/main.ts","reason":"Contains the polling logic (line 102-125) that needs conditional detail reload"}
+{"ref":"apps/web/src/state.ts","reason":"Defines data.runs and data.activeDetail structure for comparison"}
+{"ref":"apps/web/src/projection.ts","reason":"Defines WorkflowRunDto and RunDetail types for type safety"}

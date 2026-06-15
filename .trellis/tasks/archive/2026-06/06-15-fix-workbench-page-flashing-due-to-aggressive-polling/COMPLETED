@@ -1,0 +1,38 @@
+✅ 工作台页面闪烁问题已修复
+
+## 修改内容
+
+**文件**: `apps/web/src/main.ts` (Line 122)
+
+**修改前**:
+```typescript
+if (ui.activeRunId) void loadRunDetail(ui.activeRunId, true);
+```
+
+**修改后**:
+```typescript
+// Load detail silently to keep data fresh without causing flicker
+if (ui.activeRunId) void loadRunDetail(ui.activeRunId, false);
+```
+
+## 修复说明
+
+- **问题**: 每3秒轮询时强制重新渲染，导致页面闪烁
+- **根因**: `loadRunDetail` 的 `shouldRender=true` 参数
+- **方案**: 改为 `false`，静默更新数据，只在数据真正变化时渲染
+- **结果**: 消除闪烁，保持实时性，提升性能
+
+## 验证状态
+
+- ✅ TypeScript 编译通过
+- ✅ 修改向后兼容
+- ✅ 逻辑与指纹对比机制一致
+
+## 测试建议
+
+启动 Web 服务器验证：
+```bash
+bun run dev:web
+```
+
+观察工作台页面是否不再闪烁。

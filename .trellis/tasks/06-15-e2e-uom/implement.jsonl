@@ -1,0 +1,3 @@
+{"type":"spec","path":"/Volumes/artisan/code/2026/uom-9.5.5/modules/server/src/main/java/com/zfsoft/controller/LoginControl.java","reason":"登录控制器，包含验证码开关逻辑"}
+{"type":"spec","path":"/Volumes/artisan/code/2026/uom-9.5.5/web-vue/src/pages/login/index.vue","reason":"登录页面前端，包含验证码输入框"}
+{"type":"spec","path":"/Volumes/artisan/code/2026/uom-9.5.5/modules/server/src/main/resources/application-local.yml","reason":"本地配置文件，包含 login.code.ignore 配置"}

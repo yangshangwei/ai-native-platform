@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Defines render stability contracts for polling-triggered root rebuilds, user-owned state, disclosure state, and IME safety."}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Defines task detail and Runner/Agent backend UI contracts affected by polling and diagnostics rendering."}
+{"file": ".trellis/tasks/06-15-fix-workbench-page-flashing-due-to-aggressive-polling/fix-report.md", "reason": "Prior investigation of the same flicker class; confirms previous run-detail reload fix and remaining polling-render context."}
