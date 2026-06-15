@@ -1577,3 +1577,36 @@ Fixed task detail page flashing by adding conditional detail reload logic. Only 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 41: 将需求澄清页面改造为分步问答式交互
+
+**Date**: 2026-06-16
+**Task**: 将需求澄清页面改造为分步问答式交互
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+实现了分步问答式的需求澄清交互：一次只显示一个问题，用户回答后点击下一个或提交；添加了进度指示、跳过功能、历史记录折叠；后端 Coordinator 行为研究确认了问题数组完整替换策略；创建了 polling.ts 辅助模块用于渲染指纹计算。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d744cfb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

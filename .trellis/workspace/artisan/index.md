@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 40
-- **Last Active**: 2026-06-15
+- **Total Sessions**: 41
+- **Last Active**: 2026-06-16
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1579 | Active |
+| `journal-1.md` | ~1612 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 41 | 2026-06-16 | 将需求澄清页面改造为分步问答式交互 | `d744cfb` | `feat/context-injection-layer-mvp` |
 | 40 | 2026-06-15 | Fix workbench page flashing due to aggressive polling | `f2ffe3c` | `feat/context-injection-layer-mvp` |
 | 39 | 2026-06-12 | Architecture optimization round-2 audit (roadmap v2) | - | `feat/context-injection-layer-mvp` |
 | 38 | 2026-06-12 | Web DTO derivation from shared types (roadmap T2.4, roadmap complete) | `79c8371` | `feat/context-injection-layer-mvp` |
