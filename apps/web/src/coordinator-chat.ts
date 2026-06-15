@@ -185,7 +185,15 @@ export async function loadCoordinatorChat(requestId: string): Promise<void> {
     const state = await api<CoordinatorChatState>(
       `/workflow-requests/${encodeURIComponent(requestId)}/messages`,
     );
-    const previousDecision = coordinatorChats.get(requestId)?.decision;
+    const previousState = coordinatorChats.get(requestId);
+    const previousDecision = previousState?.decision;
+
+    // Check if state actually changed to avoid unnecessary re-renders
+    const stateChanged = !previousState ||
+      previousState.status !== state.status ||
+      previousState.messages.length !== state.messages.length ||
+      JSON.stringify(previousState.decision) !== JSON.stringify(state.decision);
+
     coordinatorChats.set(requestId, state);
 
     // Reset question state if we got a new set of questions
@@ -203,7 +211,11 @@ export async function loadCoordinatorChat(requestId: string): Promise<void> {
     }
 
     if (state.status !== 'awaiting_clarification') clearCoordinatorReplyComposerState(requestId);
-    if (ui.activeTaskRequestId === requestId) render();
+
+    // Only render if state actually changed (prevents flashing from polling)
+    if (stateChanged && ui.activeTaskRequestId === requestId) {
+      queueMicrotask(() => render());
+    }
     // While the request is still pending or awaiting clarification, keep polling
     // so the UI surfaces the Coordinator's questions as soon as they land.
     if (
