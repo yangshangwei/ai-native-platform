@@ -76,6 +76,9 @@ const coordinatorPolling = new Set<string>();
 const coordinatorReplyDrafts = new Map<string, string>();
 const coordinatorOptionSelections = new Map<string, Map<string, Set<string>>>();
 const coordinatorAutoReplyBlocks = new Map<string, string>();
+// Step-by-step Q&A state (T06-15)
+const coordinatorCurrentQuestionIndex = new Map<string, number>();
+const coordinatorAnswerDrafts = new Map<string, Map<number, string>>();
 const COORDINATOR_REPLY_SELECTOR = 'textarea[data-coordinator-reply-request-id]';
 
 let coordinatorReplyFocus: {
@@ -134,10 +137,40 @@ function setCoordinatorReplyDraft(requestId: string, value: string): void {
   else coordinatorReplyDrafts.delete(requestId);
 }
 
+// Step-by-step Q&A state helpers (T06-15)
+function getCurrentQuestionIndex(requestId: string): number {
+  return coordinatorCurrentQuestionIndex.get(requestId) ?? 0;
+}
+
+function setCurrentQuestionIndex(requestId: string, index: number): void {
+  coordinatorCurrentQuestionIndex.set(requestId, index);
+}
+
+function resetQuestionState(requestId: string): void {
+  coordinatorCurrentQuestionIndex.set(requestId, 0);
+  coordinatorAnswerDrafts.delete(requestId);
+}
+
+function getAnswerDraft(requestId: string, questionIndex: number): string {
+  return coordinatorAnswerDrafts.get(requestId)?.get(questionIndex) ?? '';
+}
+
+function setAnswerDraft(requestId: string, questionIndex: number, value: string): void {
+  let drafts = coordinatorAnswerDrafts.get(requestId);
+  if (!drafts) {
+    drafts = new Map<number, string>();
+    coordinatorAnswerDrafts.set(requestId, drafts);
+  }
+  if (value.length > 0) drafts.set(questionIndex, value);
+  else drafts.delete(questionIndex);
+}
+
 export function clearCoordinatorReplyComposerState(requestId: string): void {
   coordinatorReplyDrafts.delete(requestId);
   coordinatorOptionSelections.delete(requestId);
   coordinatorAutoReplyBlocks.delete(requestId);
+  coordinatorCurrentQuestionIndex.delete(requestId);
+  coordinatorAnswerDrafts.delete(requestId);
   if (coordinatorReplyFocus?.requestId === requestId) coordinatorReplyFocus = null;
   if (ui.coordinatorReplyComposing?.requestId === requestId) {
     ui.coordinatorReplyComposing = null;
@@ -152,7 +185,23 @@ export async function loadCoordinatorChat(requestId: string): Promise<void> {
     const state = await api<CoordinatorChatState>(
       `/workflow-requests/${encodeURIComponent(requestId)}/messages`,
     );
+    const previousDecision = coordinatorChats.get(requestId)?.decision;
     coordinatorChats.set(requestId, state);
+
+    // Reset question state if we got a new set of questions
+    const newDecision = state.decision;
+    if (newDecision?.decision.action === 'pause_for_human') {
+      const previousQuestions = previousDecision?.decision.action === 'pause_for_human'
+        ? previousDecision.decision.questions
+        : [];
+      const newQuestions = newDecision.decision.questions;
+
+      // If questions array changed, reset to first question
+      if (JSON.stringify(previousQuestions) !== JSON.stringify(newQuestions)) {
+        resetQuestionState(requestId);
+      }
+    }
+
     if (state.status !== 'awaiting_clarification') clearCoordinatorReplyComposerState(requestId);
     if (ui.activeTaskRequestId === requestId) render();
     // While the request is still pending or awaiting clarification, keep polling
@@ -172,11 +221,7 @@ export async function loadCoordinatorChat(requestId: string): Promise<void> {
   }
 }
 
-async function sendCoordinatorReply(requestId: string, textArea: HTMLTextAreaElement): Promise<void> {
-  const content = textArea.value.trim();
-  if (!content) return;
-  const wasDisabled = textArea.disabled;
-  textArea.disabled = true;
+async function sendCoordinatorReply(requestId: string, content: string): Promise<void> {
   try {
     await api(`/workflow-requests/${encodeURIComponent(requestId)}/messages`, {
       method: 'POST',
@@ -190,16 +235,23 @@ async function sendCoordinatorReply(requestId: string, textArea: HTMLTextAreaEle
       body: JSON.stringify({ status: 'pending' }),
     });
     clearCoordinatorReplyComposerState(requestId);
-    textArea.value = '';
     await loadCoordinatorChat(requestId);
   } catch (err) {
     ui.lastError = errorMessage(err);
     render();
-    // Only restore disabled state if the textarea is still in the DOM
-    if (document.body.contains(textArea)) {
-      textArea.disabled = wasDisabled;
-    }
+    throw err;
   }
+}
+
+// T06-15: Submit all answers from step-by-step Q&A
+async function submitAllAnswers(requestId: string, questions: string[]): Promise<void> {
+  const drafts = coordinatorAnswerDrafts.get(requestId) ?? new Map();
+  const allAnswers = questions.map((q, i) => {
+    const answer = drafts.get(i) ?? '';
+    return `Q${i + 1}: ${q}\nA${i + 1}: ${answer || '(未回答)'}`;
+  }).join('\n\n');
+
+  await sendCoordinatorReply(requestId, allAnswers);
 }
 
 function coordinatorStreamChannelForRequest(request: WorkflowRequestDto): StreamChannel {
@@ -278,119 +330,146 @@ function coordinatorChoiceReplySelections(
   });
 }
 
-function updateCoordinatorReplyFromSelectedOptions(
-  requestId: string,
-  questions: string[],
-  replyArea: HTMLTextAreaElement,
-  updateSendState: () => void,
-): void {
-  const nextAutoReply = buildCoordinatorChoiceReply(coordinatorChoiceReplySelections(requestId, questions));
-  const previousAutoReply = coordinatorAutoReplyBlocks.get(requestId) ?? '';
-  const nextReply = mergeCoordinatorAutoReply(replyArea.value, previousAutoReply, nextAutoReply);
-  if (nextAutoReply) coordinatorAutoReplyBlocks.set(requestId, nextAutoReply);
-  else coordinatorAutoReplyBlocks.delete(requestId);
-  replyArea.value = nextReply;
-  setCoordinatorReplyDraft(requestId, replyArea.value);
-  updateSendState();
-}
-
-function renderCoordinatorQuestionCard(
-  requestId: string,
-  question: string,
-  index: number,
-  questions: string[],
-  replyArea: HTMLTextAreaElement,
-  updateSendState: () => void,
-): HTMLElement {
-  const parsed = parseCoordinatorQuestion(question);
-  const questionKey = coordinatorQuestionKey(parsed, index);
-  const selectedLabels = coordinatorSelectedOptionLabels(requestId, questionKey);
-  return el('article', {
-    class: 'coordinator-question-card',
-    children: [
-      el('span', { class: 'coordinator-question-index', text: String(index + 1) }),
-      el('div', {
-        class: 'coordinator-question-body',
-        children: [
-          el('div', {
-            class: 'coordinator-question-title-row',
-            children: [
-              el('p', { class: 'coordinator-question-text', text: parsed.prompt }),
-              parsed.options.length > 0
-                ? el('span', {
-                    class: 'coordinator-question-mode',
-                    text: parsed.multiple ? '可多选' : '单选',
-                  })
-                : null,
-            ],
-          }),
-          parsed.options.length > 0
-            ? el('ul', {
-                class: 'coordinator-option-list',
-                children: parsed.options.map((option) =>
-                  el('li', {
-                    children: [
-                      renderCoordinatorOptionButton(
-                        requestId,
-                        questionKey,
-                        option,
-                        parsed,
-                        selectedLabels.has(option.label),
-                        questions,
-                        replyArea,
-                        updateSendState,
-                      ),
-                    ],
-                  }),
-                ),
-              })
-            : null,
-        ],
-      }),
-    ],
-  });
-}
-
-function renderCoordinatorOptionButton(
-  requestId: string,
-  questionKey: string,
-  option: CoordinatorQuestionOption,
-  parsed: ParsedCoordinatorQuestion,
-  selected: boolean,
-  questions: string[],
-  replyArea: HTMLTextAreaElement,
-  updateSendState: () => void,
-): HTMLButtonElement {
-  const optionButton = el('button', {
-    class: `coordinator-option${selected ? ' is-selected' : ''}`,
-    attrs: {
-      type: 'button',
-      'aria-pressed': String(selected),
-      'data-coordinator-option-request-id': requestId,
-      'data-coordinator-question-key': questionKey,
-      'data-coordinator-option-label': option.label,
-    },
-    children: [
-      el('span', { class: 'coordinator-option-key', text: option.label }),
-      el('span', { class: 'coordinator-option-text', text: option.text }),
-    ],
-  }) as HTMLButtonElement;
-  optionButton.onclick = () => {
-    setCoordinatorSelectedOptionLabel(requestId, questionKey, option.label, parsed.multiple);
-    syncCoordinatorOptionButtonState(requestId, questionKey);
-    updateCoordinatorReplyFromSelectedOptions(requestId, questions, replyArea, updateSendState);
-  };
-  return optionButton;
-}
-
 function renderCoordinatorActionPanel(
   requestId: string,
   questions: string[],
   reason: string | null,
-  replyArea: HTMLTextAreaElement,
-  sendBtn: HTMLButtonElement,
-  updateSendState: () => void,
 ): HTMLElement {
+  if (questions.length === 0) {
+    return el('section', {
+      class: 'coordinator-action',
+      children: [
+        el('p', { class: 'muted compact', text: 'Coordinator 正在整理需要你确认的问题。' }),
+      ],
+    });
+  }
+
+  // Step-by-step Q&A state (T06-15)
+  const currentIndex = getCurrentQuestionIndex(requestId);
+  const totalQuestions = questions.length;
+
+  // Safety: if index is out of bounds, reset to 0
+  if (currentIndex >= totalQuestions || currentIndex < 0) {
+    setCurrentQuestionIndex(requestId, 0);
+    render();
+    return el('div', { class: 'muted compact', text: '正在重置问题索引...' });
+  }
+
+  const currentQuestion = questions[currentIndex];
+  if (!currentQuestion) {
+    // Should never happen after bounds check, but satisfy TypeScript
+    return el('div', { class: 'muted compact', text: '问题加载中...' });
+  }
+
+  const isLastQuestion = currentIndex === totalQuestions - 1;
+  const parsed = parseCoordinatorQuestion(currentQuestion);
+  const questionKey = coordinatorQuestionKey(parsed, currentIndex);
+  const selectedLabels = coordinatorSelectedOptionLabels(requestId, questionKey);
+
+  // Create textarea for current question
+  const replyArea = el('textarea', {
+    class: 'chat-input',
+    attrs: {
+      rows: '3',
+      placeholder: '回答当前问题…',
+      'data-coordinator-reply-request-id': requestId,
+      'data-coordinator-question-index': String(currentIndex),
+    },
+  }) as HTMLTextAreaElement;
+
+  // Load draft for current question
+  replyArea.value = getAnswerDraft(requestId, currentIndex);
+
+  // Update send button state
+  const updateSendState = (): void => {
+    const hasAnswer = replyArea.value.trim().length > 0;
+    if (isLastQuestion) {
+      submitBtn.disabled = !hasAnswer;
+    } else {
+      nextBtn.disabled = !hasAnswer;
+    }
+  };
+
+  // Skip button
+  const skipBtn = button('跳过', 'button secondary small');
+  skipBtn.onclick = () => {
+    setAnswerDraft(requestId, currentIndex, '(跳过)');
+    if (currentIndex < totalQuestions - 1) {
+      setCurrentQuestionIndex(requestId, currentIndex + 1);
+      render();
+    } else {
+      void submitAllAnswers(requestId, questions);
+    }
+  };
+
+  // Next button (for non-last questions)
+  const nextBtn = button('下一个 →', 'button primary small');
+  nextBtn.disabled = replyArea.value.trim().length === 0;
+  nextBtn.onclick = () => {
+    setAnswerDraft(requestId, currentIndex, replyArea.value.trim());
+    setCurrentQuestionIndex(requestId, currentIndex + 1);
+    render();
+  };
+
+  // Submit button (for last question)
+  const submitBtn = button('提交回复', 'button primary');
+  submitBtn.disabled = replyArea.value.trim().length === 0;
+  submitBtn.onclick = () => {
+    setAnswerDraft(requestId, currentIndex, replyArea.value.trim());
+    void submitAllAnswers(requestId, questions);
+  };
+
+  // Handle textarea input
+  replyArea.oninput = () => {
+    setAnswerDraft(requestId, currentIndex, replyArea.value);
+    updateSendState();
+  };
+
+  // IME composition guard
+  replyArea.addEventListener('compositionstart', () => {
+    ui.coordinatorReplyComposing = { requestId };
+  });
+  replyArea.addEventListener('compositionend', () => {
+    ui.coordinatorReplyComposing = null;
+    setAnswerDraft(requestId, currentIndex, replyArea.value);
+    updateSendState();
+    if (ui.coordinatorReplyRenderDeferred) {
+      ui.coordinatorReplyRenderDeferred = false;
+      queueMicrotask(() => render());
+    }
+  });
+  replyArea.onblur = () => {
+    setAnswerDraft(requestId, currentIndex, replyArea.value);
+    if (!ui.isReplacingAppRootForRender) {
+      if (ui.coordinatorReplyComposing?.requestId === requestId) {
+        ui.coordinatorReplyComposing = null;
+        if (ui.coordinatorReplyRenderDeferred) {
+          ui.coordinatorReplyRenderDeferred = false;
+          queueMicrotask(() => render());
+        }
+      }
+    }
+  };
+
+  // Handle option button clicks (for multiple choice questions)
+  const handleOptionClick = (option: CoordinatorQuestionOption): void => {
+    setCoordinatorSelectedOptionLabel(requestId, questionKey, option.label, parsed.multiple);
+    syncCoordinatorOptionButtonState(requestId, questionKey);
+
+    // Build auto-reply from selected options
+    const requestSelections = coordinatorOptionSelections.get(requestId);
+    if (requestSelections) {
+      const selected = requestSelections.get(questionKey);
+      if (selected && selected.size > 0) {
+        const selectedOptions = parsed.options.filter(opt => selected.has(opt.label));
+        const autoReply = selectedOptions.map(opt => opt.label).join(', ');
+        replyArea.value = autoReply;
+        setAnswerDraft(requestId, currentIndex, autoReply);
+        updateSendState();
+      }
+    }
+  };
+
   return el('section', {
     class: 'coordinator-action',
     children: [
@@ -400,22 +479,64 @@ function renderCoordinatorActionPanel(
           el('div', {
             children: [
               el('strong', { text: '等待你回复' }),
-              el('p', { text: '回答后系统会继续判断任务类型和执行路径。' }),
+              el('p', { text: reason || '回答后系统会继续判断任务类型和执行路径。' }),
             ],
           }),
-          pill(`${questions.length || 1} 个问题`, 'warn'),
+          pill(`问题 ${currentIndex + 1}/${totalQuestions}`, 'warn'),
         ],
       }),
-      reason ? el('p', { class: 'coordinator-action-reason', text: reason }) : null,
-      el('div', {
-        class: 'coordinator-question-list',
-        children: questions.length > 0
-          ? questions.map((question, index) =>
-              renderCoordinatorQuestionCard(requestId, question, index, questions, replyArea, updateSendState),
-            )
-          : [el('p', { class: 'muted compact', text: 'Coordinator 正在整理需要你确认的问题。' })],
+      el('article', {
+        class: 'coordinator-question-card coordinator-question-single',
+        children: [
+          el('span', { class: 'coordinator-question-badge', text: String(currentIndex + 1) }),
+          el('div', {
+            class: 'coordinator-question-body',
+            children: [
+              el('p', { class: 'coordinator-question-text', text: parsed.prompt }),
+              parsed.options.length > 0
+                ? el('div', {
+                    class: 'coordinator-question-mode-hint',
+                    children: [
+                      el('small', { text: parsed.multiple ? '可多选，点击选项后会自动填入答案' : '单选，点击选项后会自动填入答案' }),
+                    ],
+                  })
+                : null,
+              parsed.options.length > 0
+                ? el('ul', {
+                    class: 'coordinator-option-list',
+                    children: parsed.options.map((option) => {
+                      const selected = selectedLabels.has(option.label);
+                      const optionButton = el('button', {
+                        class: `coordinator-option${selected ? ' is-selected' : ''}`,
+                        attrs: {
+                          type: 'button',
+                          'aria-pressed': String(selected),
+                          'data-coordinator-option-request-id': requestId,
+                          'data-coordinator-question-key': questionKey,
+                          'data-coordinator-option-label': option.label,
+                        },
+                        children: [
+                          el('span', { class: 'coordinator-option-key', text: option.label }),
+                          el('span', { class: 'coordinator-option-text', text: option.text }),
+                        ],
+                      }) as HTMLButtonElement;
+                      optionButton.onclick = () => handleOptionClick(option);
+                      return el('li', { children: [optionButton] });
+                    }),
+                  })
+                : null,
+            ],
+          }),
+        ],
       }),
-      el('div', { class: 'chat-composer', children: [replyArea, sendBtn] }),
+      el('div', { class: 'chat-composer', children: [replyArea] }),
+      el('div', {
+        class: 'coordinator-action-buttons',
+        children: [
+          skipBtn,
+          isLastQuestion ? submitBtn : nextBtn,
+        ],
+      }),
     ],
   });
 }
@@ -450,62 +571,6 @@ export function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLEle
     }),
   );
 
-  const replyArea = canReply ? el('textarea', {
-    class: 'chat-input',
-    attrs: {
-      rows: '3',
-      placeholder: '可一次回答多个问题，也可以补充约束、例子或验收方式…',
-      'data-coordinator-reply-request-id': requestId,
-    },
-  }) as HTMLTextAreaElement : null;
-  const sendBtn = replyArea ? button('提交回复', 'button primary small') : null;
-  let updateCoordinatorReplySendState = (): void => {};
-
-  if (replyArea && sendBtn) {
-    updateCoordinatorReplySendState = () => {
-      sendBtn.disabled = replyArea.value.trim().length === 0;
-    };
-    replyArea.value = coordinatorReplyDrafts.get(requestId) ?? '';
-    updateCoordinatorReplySendState();
-    replyArea.oninput = () => {
-      setCoordinatorReplyDraft(requestId, replyArea.value);
-      updateCoordinatorReplySendState();
-    };
-    replyArea.addEventListener('compositionstart', () => {
-      ui.coordinatorReplyComposing = { requestId };
-    });
-    replyArea.addEventListener('compositionend', () => {
-      ui.coordinatorReplyComposing = null;
-      // Flush whatever the IME just committed into the draft so a follow-up
-      // render (deferred or otherwise) rehydrates the final characters.
-      setCoordinatorReplyDraft(requestId, replyArea.value);
-      updateCoordinatorReplySendState();
-      if (ui.coordinatorReplyRenderDeferred) {
-        ui.coordinatorReplyRenderDeferred = false;
-        queueMicrotask(() => render());
-      }
-    });
-    replyArea.onblur = () => {
-      setCoordinatorReplyDraft(requestId, replyArea.value);
-      if (!ui.isReplacingAppRootForRender) {
-        // A genuine blur (not render replacement) ends any composition this
-        // textarea may have been carrying; `compositionend` would otherwise
-        // never fire once the node is detached.
-        if (ui.coordinatorReplyComposing?.requestId === requestId) {
-          ui.coordinatorReplyComposing = null;
-          if (ui.coordinatorReplyRenderDeferred) {
-            ui.coordinatorReplyRenderDeferred = false;
-            queueMicrotask(() => render());
-          }
-        }
-        if (coordinatorReplyFocus?.requestId === requestId) {
-          coordinatorReplyFocus = null;
-        }
-      }
-    };
-    sendBtn.onclick = () => void sendCoordinatorReply(requestId, replyArea);
-  }
-
   const decisionLine = state?.decision
     ? el('div', {
         class: 'chat-decision',
@@ -534,14 +599,13 @@ export function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLEle
       : null,
     renderCoordinatorStreamDetails(request, streamView, 'live'),
   ];
-  const actionPanel = replyArea && sendBtn
+
+  // T06-15: Use step-by-step action panel when there are questions
+  const actionPanel = canReply && pendingQuestions.length > 0
     ? renderCoordinatorActionPanel(
         requestId,
         pendingQuestions,
         state?.decision?.decision.action === 'pause_for_human' ? state.decision.decision.reason : null,
-        replyArea,
-        sendBtn,
-        updateCoordinatorReplySendState,
       )
     : null;
 
@@ -553,10 +617,10 @@ export function renderCoordinatorChatPanel(request: WorkflowRequestDto): HTMLEle
       actionPanel ? null : decisionLine,
       waitingLine,
       thread.length > 0
-        ? el('section', {
-            class: 'chat-thread-section',
+        ? el('details', {
+            class: 'coordinator-history-details',
             children: [
-              el('h3', { class: 'chat-section-title', text: '沟通记录' }),
+              el('summary', { text: '查看沟通记录 ▼' }),
               el('div', { class: 'chat-thread', children: thread }),
             ],
           })

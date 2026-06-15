@@ -1,1 +1,4 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/06-15-refactor-clarification-page-to-step-by-step-qa/prd.md", "reason": "核心需求文档：分步问答交互的目标、决策、验收标准"}
+{"file": ".trellis/tasks/06-15-refactor-clarification-page-to-step-by-step-qa/research/coordinator-behavior.md", "reason": "后端 Coordinator 行为研究：问题数组替换策略、skip 语义、消息历史机制"}
+{"file": ".trellis/spec/web/frontend-architecture.md", "reason": "前端架构规范：状态管理、渲染模式、IME composition guard"}
+{"file": ".trellis/spec/web/ui-conventions.md", "reason": "UI 交互规范：按钮、表单、进度指示器样式约定"}

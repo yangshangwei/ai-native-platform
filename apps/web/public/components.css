@@ -454,3 +454,71 @@
 .shadow-lg {
   box-shadow: var(--shadow-lg);
 }
+
+/* T06-15: Step-by-step Q&A styles */
+.coordinator-question-single {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.coordinator-question-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  background: var(--color-primary);
+  color: white;
+  border-radius: 50%;
+  font-weight: 600;
+  font-size: 0.875rem;
+  margin-right: 0.75rem;
+  flex-shrink: 0;
+}
+
+.coordinator-question-text {
+  font-size: 1rem;
+  line-height: 1.6;
+  margin: 0 0 0.5rem 0;
+  color: var(--text-primary);
+}
+
+.coordinator-question-mode-hint {
+  margin: 0.5rem 0 0.75rem 0;
+}
+
+.coordinator-question-mode-hint small {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.coordinator-action-buttons {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
+.coordinator-history-details {
+  margin-top: 1.5rem;
+}
+
+.coordinator-history-details summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--text-secondary);
+  padding: 0.5rem 0;
+}
+
+.coordinator-history-details summary:hover {
+  color: var(--text-primary);
+}
+
+.coordinator-history-details .chat-thread {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-subtle);
+}
