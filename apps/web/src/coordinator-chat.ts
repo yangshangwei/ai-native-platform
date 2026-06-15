@@ -351,7 +351,7 @@ function renderCoordinatorActionPanel(
   // Safety: if index is out of bounds, reset to 0
   if (currentIndex >= totalQuestions || currentIndex < 0) {
     setCurrentQuestionIndex(requestId, 0);
-    render();
+    queueMicrotask(() => render());
     return el('div', { class: 'muted compact', text: '正在重置问题索引...' });
   }
 
@@ -396,7 +396,7 @@ function renderCoordinatorActionPanel(
     setAnswerDraft(requestId, currentIndex, '(跳过)');
     if (currentIndex < totalQuestions - 1) {
       setCurrentQuestionIndex(requestId, currentIndex + 1);
-      render();
+      queueMicrotask(() => render());
     } else {
       void submitAllAnswers(requestId, questions);
     }
@@ -408,7 +408,7 @@ function renderCoordinatorActionPanel(
   nextBtn.onclick = () => {
     setAnswerDraft(requestId, currentIndex, replyArea.value.trim());
     setCurrentQuestionIndex(requestId, currentIndex + 1);
-    render();
+    queueMicrotask(() => render());
   };
 
   // Submit button (for last question)
