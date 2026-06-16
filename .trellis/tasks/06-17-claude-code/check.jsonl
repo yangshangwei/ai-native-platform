@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/06-17-claude-code/prd.md", "reason": "验证测试结果是否符合验收标准"}
+{"file": "docs/2026-05-06-end-to-end-business-flow.md", "reason": "确认所有业务流程阶段和 gates 都被正确验证"}
+{"file": "test-report-e2e-2026-06-16.md", "reason": "参考现有测试报告格式和验证点"}

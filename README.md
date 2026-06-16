@@ -57,7 +57,11 @@ bun run runner -- watch
 
 # One-shot smokes (no manual interaction):
 bun run smoke   # quick: just `mvn -B test`
-bun run e2e     # full 9-stage lifecycle, auto-approval
+bun run e2e     # full 9-stage lifecycle, auto-approval (default: Codex backend)
+
+# E2E with specific Agent Backend:
+AINP_E2E_AGENT_BACKEND=claude_code bun run e2e  # test with Claude Code
+AINP_E2E_AGENT_BACKEND=codex bun run e2e        # test with Codex (default)
 
 # Tests + types
 bun run test       # vitest (canonical). Use `bun run test`, NOT `bun test`:
