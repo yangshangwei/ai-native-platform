@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/06-16-configurable-clarification-questioning-style-with-grill-me-template/prd.md", "reason": "完整需求定义、技术方案、实施计划"}
+{"file": ".trellis/tasks/06-16-configurable-clarification-questioning-style-with-grill-me-template/research/current-clarification-config.md", "reason": "配置系统现状、提示词构造逻辑、精确的 file:line 引用"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "packages/shared 的 config registry/defaults 编码规范"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "apps/runner 的 coordinator/llm-fallback 架构与约定"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "apps/web 的 coordinator-chat UI 模式与状态管理约定"}
+{"file": ".trellis/spec/guides/index.md", "reason": "项目共享编码规范、测试策略、commit 约定"}

@@ -1,8 +1,8 @@
 /**
  * Static registry of all runtime-configurable keys exposed via UI.
  *
- * MVP-M + Context Governance scope: 29 keys
- * (15 coordinator + 5 skill_prompts + 5 runtime + 4 context_policy).
+ * MVP-M + Context Governance scope: 32 keys
+ * (18 coordinator + 5 skill_prompts + 5 runtime + 4 context_policy).
  * Adding / removing a key REQUIRES a code PR; the UI never creates new keys.
  *
  * Source-of-truth defaults live in `./defaults.ts` (byte-for-byte transcribed
@@ -19,6 +19,9 @@ import {
   COORDINATOR_REFACTOR_KEYWORDS_DEFAULT,
   COORDINATOR_CONFIDENCE_THRESHOLD_DEFAULT,
   COORDINATOR_SYSTEM_PROMPT_DEFAULT,
+  COORDINATOR_CLARIFICATION_STYLE_DEFAULT,
+  COORDINATOR_MAX_CLARIFICATION_ROUNDS_DEFAULT,
+  COORDINATOR_SYSTEM_PROMPT_GRILL_ME_DEFAULT,
   COORDINATOR_FALLBACK_TOO_SHORT_QUESTIONS_DEFAULT,
   COORDINATOR_FALLBACK_LARGE_SCOPE_TEMPLATE_DEFAULT,
   COORDINATOR_FALLBACK_LARGE_SCOPE_FOLLOWUP_DEFAULT,
@@ -62,7 +65,7 @@ export interface ConfigEntry {
 }
 
 export const CONFIG_REGISTRY = {
-  // ============ Tab "coordinator" — 15 keys ============
+  // ============ Tab "coordinator" — 18 keys ============
 
   'coordinator.confidence_threshold': {
     type: 'number',
@@ -115,6 +118,30 @@ export const CONFIG_REGISTRY = {
     description: 'LLM 兜底分诊的 system prompt（输出 schema 钉死在 prompt 里）',
     category: 'coordinator',
     source: 'apps/runner/src/agents/coordinator/prompt.ts:9',
+  },
+  'coordinator.clarification_style': {
+    type: 'string',
+    default: COORDINATOR_CLARIFICATION_STYLE_DEFAULT,
+    description: '澄清提问风格：default(批量中性) / grill-me(逐题深挖)',
+    category: 'coordinator',
+    source: 'apps/runner/src/agents/coordinator/llm-fallback.ts',
+  },
+  'coordinator.max_clarification_rounds': {
+    type: 'number',
+    default: COORDINATOR_MAX_CLARIFICATION_ROUNDS_DEFAULT,
+    min: 1,
+    max: 20,
+    description: '最大澄清追问轮数，达到后强制收敛(防止无限追问)',
+    category: 'coordinator',
+    source: 'apps/runner/src/agents/coordinator/llm-fallback.ts',
+  },
+  'coordinator.system_prompt_grill_me': {
+    type: 'string',
+    default: COORDINATOR_SYSTEM_PROMPT_GRILL_ME_DEFAULT,
+    multiline: true,
+    description: 'grill-me 风格的 system prompt（逐题深挖、决策树推进）',
+    category: 'coordinator',
+    source: 'apps/runner/src/agents/coordinator/llm-fallback.ts',
   },
   'coordinator.fallback.too_short_questions': {
     type: 'string_array',

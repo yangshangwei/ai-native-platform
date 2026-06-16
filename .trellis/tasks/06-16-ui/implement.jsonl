@@ -1,0 +1,5 @@
+{"type":"spec","path":".trellis/tasks/06-16-ui/prd.md","reason":"核心需求文档，定义UI重构目标和验收标准"}
+{"type":"impl","path":"apps/web/src/page-settings.ts","reason":"主要实现文件：渲染逻辑、状态管理、交互函数"}
+{"type":"impl","path":"apps/web/index.html","reason":"CSS样式调整：边框颜色、折叠默认状态、toast组件"}
+{"type":"reference","path":"apps/web/src/settings-projection.ts","reason":"view model builder，了解数据结构，但不修改"}
+{"type":"reference","path":"apps/web/src/dom.ts","reason":"DOM helper函数，可能需要新增pill/toast相关辅助函数"}

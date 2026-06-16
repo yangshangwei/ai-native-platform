@@ -208,8 +208,40 @@ export async function classifyByLlm(
     };
   }
 
-  const systemPrompt = await getConfig('coordinator.system_prompt');
-  const timeoutMs = await getConfig('runner.coordinator.oneshot_timeout_ms');
+  // PR2: Read clarification style and max rounds configuration
+  const [clarificationStyle, maxClarificationRounds, defaultPrompt, grillMePrompt, timeoutMs] =
+    await Promise.all([
+      getConfig('coordinator.clarification_style'),
+      getConfig('coordinator.max_clarification_rounds'),
+      getConfig('coordinator.system_prompt'),
+      getConfig('coordinator.system_prompt_grill_me'),
+      getConfig('runner.coordinator.oneshot_timeout_ms'),
+    ]);
+
+  // PR2: Count coordinator messages in history to enforce max rounds
+  const coordinatorMessageCount = input.messageHistory.filter((m) => m.role === 'coordinator').length;
+
+  // PR2: Select system prompt based on clarification style
+  let systemPrompt: string;
+  if (clarificationStyle === 'grill-me') {
+    systemPrompt = grillMePrompt;
+  } else {
+    if (clarificationStyle !== 'default') {
+      // Invalid style value - log warning and fallback to default
+      process.stderr.write(
+        `[coordinator:llm-fallback] Invalid clarification_style "${clarificationStyle}", falling back to "default"\n`,
+      );
+    }
+    systemPrompt = defaultPrompt;
+  }
+
+  // PR2: Append convergence instruction if max rounds reached
+  if (coordinatorMessageCount >= maxClarificationRounds) {
+    systemPrompt += `\n\nIMPORTANT: You have reached the maximum clarification rounds (${maxClarificationRounds}). You MUST make a decision (proceed or abort) based on current information. Do not ask more questions.`;
+    process.stdout.write(
+      `[coordinator:llm-fallback] Max clarification rounds (${maxClarificationRounds}) reached, forcing convergence\n`,
+    );
+  }
   const userPrompt = buildUserPrompt(input.userRequest, input.messageHistory);
   const emit =
     opts.workflowRequestId == null
@@ -249,7 +281,23 @@ export async function classifyByLlm(
     };
   }
 
-  const decision = parseDecision(raw, chosen, fallback);
+  let decision = parseDecision(raw, chosen, fallback);
+
+  // PR2: grill-me mode output validation - truncate to single question if multiple returned
+  if (
+    clarificationStyle === 'grill-me' &&
+    decision.action === 'pause_for_human' &&
+    decision.questions.length > 1
+  ) {
+    process.stderr.write(
+      `[coordinator:llm-fallback] grill-me mode returned ${decision.questions.length} questions, truncating to first one\n`,
+    );
+    decision = {
+      ...decision,
+      questions: [decision.questions[0]!],
+    };
+  }
+
   // Transient-failure annotation: an `empty` decision means the CLI ran but
   // produced no usable output, which we treat as availability degradation
   // (same family as invocation_failed / unavailable). `invalid_json` /

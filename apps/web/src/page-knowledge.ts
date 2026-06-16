@@ -147,6 +147,96 @@ function knowledgeSuggestionImpact(kind: KnowledgeSuggestion['kind']): string {
   }
 }
 
+type EvidenceKind = 'command_passed' | 'command_problem' | 'gate_passed' | 'gate_problem' | 'workflow_trace' | 'unknown';
+
+interface KnowledgeEvidenceSummary {
+  reason: string;
+  chips: Array<{ label: string; kind: StatusKind }>;
+}
+
+function evidenceHasToken(evidence: string, token: string): boolean {
+  return new RegExp(`(?:^|[;,\\s])${token}s?=`, 'i').test(evidence);
+}
+
+function evidenceCount(evidence: string, token: string): number {
+  const match = evidence.match(new RegExp(`(?:^|[;,\\s])${token}s?=([^;\\s]+)`, 'i'));
+  if (!match?.[1]) return 0;
+  return match[1].split(',').map((part) => part.trim()).filter(Boolean).length;
+}
+
+function classifyKnowledgeEvidence(evidence: string): EvidenceKind {
+  const normalized = evidence.trim();
+  if (!normalized) return 'unknown';
+  if (evidenceHasToken(normalized, 'commandRun')) {
+    return /status=(failed|fail|error)|exit=(?!0\b)|stderr=/i.test(normalized) ? 'command_problem' : 'command_passed';
+  }
+  if (evidenceHasToken(normalized, 'gateRun')) {
+    return /status=(failed|fail|warn|error)|rules=/i.test(normalized) ? 'gate_problem' : 'gate_passed';
+  }
+  if (evidenceHasToken(normalized, 'workflowAction') || evidenceHasToken(normalized, 'artifact') || evidenceHasToken(normalized, 'sourceRef')) {
+    return 'workflow_trace';
+  }
+  return 'unknown';
+}
+
+export function knowledgeEvidenceSummary(kind: KnowledgeSuggestion['kind'], evidence: string): KnowledgeEvidenceSummary {
+  const normalized = evidence.trim();
+  const commandCount = evidenceCount(normalized, 'commandRun');
+  const gateCount = evidenceCount(normalized, 'gateRun');
+  const chips: KnowledgeEvidenceSummary['chips'] = [{ label: '来自本次任务', kind: 'info' }];
+  if (commandCount > 0) chips.push({ label: commandCount > 1 ? `${commandCount} 条命令记录` : '有命令记录', kind: 'good' });
+  if (gateCount > 0) chips.push({ label: gateCount > 1 ? `${gateCount} 个质量检查` : '有质量检查', kind: 'good' });
+
+  switch (classifyKnowledgeEvidence(normalized)) {
+    case 'command_passed':
+      return {
+        reason: '本条建议来自实际执行过的验证命令，可证明这次结论不是凭空生成。',
+        chips,
+      };
+    case 'command_problem':
+      return {
+        reason: '本条建议记录了一次失败或异常路径，后续遇到类似问题时可优先排查。',
+        chips: [...chips, { label: '包含异常线索', kind: 'warn' }],
+      };
+    case 'gate_passed':
+      return {
+        reason: '本条建议来自已通过的质量检查，可作为后续任务复用的可信经验。',
+        chips,
+      };
+    case 'gate_problem':
+      return {
+        reason: '本条建议来自质量检查发现的问题或风险，收录后可提醒后续任务重点确认。',
+        chips: [...chips, { label: '包含检查风险', kind: 'warn' }],
+      };
+    case 'workflow_trace':
+      return {
+        reason: '本条建议来自本次任务的流程记录，收录后可帮助后续任务复用判断。',
+        chips,
+      };
+    case 'unknown':
+      return {
+        reason: knowledgeSuggestionEvidenceFallback(kind),
+        chips,
+      };
+  }
+}
+
+function knowledgeSuggestionEvidenceFallback(kind: KnowledgeSuggestion['kind']): string {
+  switch (kind) {
+    case 'Decision': return '这是一条本次任务形成的决策，收录后可减少后续同类取舍的重复讨论。';
+    case 'Pitfall': return '这是一条本次任务暴露出的风险经验，收录后可帮助后续任务少走弯路。';
+    case 'Pattern': return '这是一条可复用做法，收录后可帮助后续实现保持一致。';
+    case 'Lesson': return '这是一条本次任务沉淀的经验，收录后可放入后续任务上下文。';
+  }
+}
+
+function renderEvidenceChips(summary: KnowledgeEvidenceSummary): HTMLElement {
+  return el('div', {
+    class: 'knowledge-evidence-chips chip-row',
+    children: summary.chips.map((chip) => pill(chip.label, chip.kind)),
+  });
+}
+
 function knowledgeActionLabel(action: KnowledgeActionDecision | undefined): string {
   if (action === 'accepted') return '已收录';
   if (action === 'edited') return '编辑后收录';
@@ -226,6 +316,7 @@ function renderKnowledgeSuggestionEditor(item: KnowledgeSuggestionItem, detail: 
 }
 
 export function renderKnowledgeSuggestion(item: KnowledgeSuggestionItem, detail: RunDetail): HTMLElement {
+  const evidenceSummary = knowledgeEvidenceSummary(item.suggestion.kind, item.suggestion.evidence);
   const accept = button(item.decision === 'accepted' ? '已收录' : '收录', 'btn btn-secondary btn-sm');
   accept.onclick = () => void submitKnowledgeAction(detail.run.id, item.targetId, 'accepted', {
     text: item.text,
@@ -263,21 +354,28 @@ export function renderKnowledgeSuggestion(item: KnowledgeSuggestionItem, detail:
           el('div', { class: 'chip-row', children: [pill(knowledgeActionLabel(item.decision), knowledgeActionKind(item.decision))] }),
         ],
       }),
-      el('p', { class: 'knowledge-summary', text: item.text }),
+      el('section', {
+        class: 'knowledge-readable-section',
+        children: [
+          el('span', { class: 'knowledge-section-label', text: '建议收录的知识' }),
+          el('p', { class: 'knowledge-summary', text: item.text }),
+        ],
+      }),
       el('div', {
         class: 'knowledge-impact-grid',
         children: [
-          configSummaryItem('为什么值得收录', item.suggestion.evidence || '来自本次任务执行证据，可帮助后续任务复用判断。'),
-          configSummaryItem('后续价值', knowledgeSuggestionImpact(item.suggestion.kind)),
+          configSummaryItem('为什么值得收录', evidenceSummary.reason),
+          configSummaryItem('后续怎么帮你', knowledgeSuggestionImpact(item.suggestion.kind)),
         ],
       }),
+      renderEvidenceChips(evidenceSummary),
       knowledgeEditing.has(item.key) ? renderKnowledgeSuggestionEditor(item, detail) : null,
       el('div', { class: 'button-row', children: [accept, edit, ignore] }),
       el('details', {
         class: 'knowledge-source-details',
         attrs: { 'data-details-key': `knowledge-suggestion-source:${item.key}` },
         children: [
-          el('summary', { text: '来源详情' }),
+          el('summary', { text: '查看技术来源' }),
           field('来源任务', detail.run.title),
           field('建议编号', item.targetId),
           field('Run', el('code', { text: detail.run.id })),

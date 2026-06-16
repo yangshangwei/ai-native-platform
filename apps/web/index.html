@@ -529,8 +529,14 @@
       .knowledge-title-copy { min-width: 0; display: grid; gap: 3px; }
       .knowledge-title-copy strong { min-width: 0; overflow-wrap: anywhere; }
       .knowledge-title-copy small { color: var(--muted); overflow-wrap: anywhere; }
+      .knowledge-readable-section {
+        display: grid; gap: 5px; min-width: 0; padding: 10px 12px;
+        border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2);
+      }
+      .knowledge-section-label { color: var(--muted); font-size: 11px; font-weight: 800; }
       .knowledge-summary { margin: 0; line-height: 1.55; overflow-wrap: anywhere; }
       .knowledge-impact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+      .knowledge-evidence-chips { padding-top: 2px; }
       .knowledge-source-details { border-top: 1px dashed var(--line); padding-top: 8px; }
       .knowledge-source-details summary { cursor: pointer; min-height: 30px; font-weight: 800; }
       .knowledge-source-details code { overflow-wrap: anywhere; word-break: break-all; }
@@ -929,21 +935,25 @@
       .config-list { display: grid; gap: 10px; margin-top: 4px; }
       .config-row {
         border: 1px solid var(--line);
+        border-left: 4px solid var(--line);
         border-radius: 14px;
         padding: 14px 16px;
         background: var(--surface);
         display: grid;
         gap: 8px;
-        transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
+        transition: border-color .16s ease, background .16s ease, box-shadow .16s ease, border-left-color .16s ease;
       }
       .config-row:hover { border-color: var(--line-strong); }
       .config-row.overridden {
-        border-color: var(--info);
-        box-shadow: 0 0 0 1px rgba(29, 78, 216, .12) inset;
+        border-left-color: var(--info);
       }
       .config-row.dirty {
-        border-color: var(--warn);
+        border-left-color: var(--warn);
         background: var(--warn-bg);
+      }
+      .config-row.recently-saved {
+        border-left-color: var(--good);
+        background: var(--good-bg);
       }
       .config-row-header {
         display: grid;
@@ -954,6 +964,41 @@
       .config-title-copy { min-width: 0; display: grid; gap: 3px; }
       .config-title { font-size: 15px; color: var(--text); overflow-wrap: anywhere; }
       .config-row-badges { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+      .config-row-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .config-value-preview {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .config-value-label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        flex-shrink: 0;
+      }
+      .config-value-text {
+        font-family: "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+        color: var(--text);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1 1 auto;
+        min-width: 0;
+      }
+      .config-quick-actions {
+        display: flex;
+        gap: 6px;
+        flex-shrink: 0;
+      }
       .config-key {
         font-family: "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         font-size: 13px;
@@ -999,6 +1044,25 @@
       .config-row textarea:focus,
       .config-row input[type="text"]:focus,
       .config-row input[type="number"]:focus {
+        outline: 3px solid rgba(37, 99, 235, .32);
+        outline-offset: 1px;
+        border-color: var(--primary);
+      }
+      .config-row select,
+      .config-row .config-input {
+        width: 100%;
+        font-family: "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 13px;
+        line-height: 1.55;
+        padding: 10px 12px;
+        border-radius: 12px;
+        border: 1px solid var(--line-strong);
+        background: var(--surface);
+        color: var(--text);
+        transition: border-color .12s ease, box-shadow .12s ease;
+      }
+      .config-row select:focus,
+      .config-row .config-input:focus {
         outline: 3px solid rgba(37, 99, 235, .32);
         outline-offset: 1px;
         border-color: var(--primary);
@@ -1166,7 +1230,6 @@
         background: var(--surface-2);
         padding: 2px 6px;
         border-radius: 4px;
-      }
       }
       .toast-progress {
         position: absolute;

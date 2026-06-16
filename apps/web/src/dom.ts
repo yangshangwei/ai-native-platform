@@ -212,3 +212,56 @@ export function skeletonList(rows = 5): HTMLElement {
 export function skeletonText(width: 'short' | 'medium' | 'long' = 'medium'): HTMLElement {
   return el('div', { class: `skeleton-text ${width}` });
 }
+
+/**
+ * showToast - Display a toast notification
+ * @param message - Main message to display
+ * @param type - 'success' or 'error'
+ * @param duration - Auto-dismiss duration in milliseconds (default 3000)
+ */
+export function showToast(message: string, type: 'success' | 'error' = 'success', duration = 3000): void {
+  let container = document.getElementById('toast-container') as HTMLElement | null;
+  if (!container) {
+    container = el('div', { id: 'toast-container', class: 'toast-container' });
+    document.body.appendChild(container);
+  }
+
+  const toast = el('div', {
+    class: `toast toast-${type}`,
+    children: [
+      el('div', {
+        class: 'toast-header',
+        children: [
+          el('div', { class: 'toast-icon', text: type === 'success' ? '✓' : '✕' }),
+          el('div', {
+            class: 'toast-content',
+            children: [
+              el('h3', { class: 'toast-title', text: type === 'success' ? '保存成功' : '操作失败' }),
+              el('p', { class: 'toast-message', text: message }),
+            ],
+          }),
+          (() => {
+            const closeBtn = el('button', { class: 'toast-close', text: '×', attrs: { type: 'button' } });
+            closeBtn.onclick = () => dismissToast(toast);
+            return closeBtn;
+          })(),
+        ],
+      }),
+    ],
+  });
+
+  container.appendChild(toast);
+
+  setTimeout(() => dismissToast(toast), duration);
+}
+
+function dismissToast(toast: HTMLElement): void {
+  toast.classList.add('toast-hiding');
+  setTimeout(() => {
+    toast.remove();
+    const container = document.getElementById('toast-container');
+    if (container && container.children.length === 0) {
+      container.remove();
+    }
+  }, 300);
+}

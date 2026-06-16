@@ -1,0 +1,6 @@
+{"file": ".trellis/tasks/06-16-configurable-clarification-questioning-style-with-grill-me-template/prd.md", "reason": "验收标准、技术方案、风险点"}
+{"file": ".trellis/tasks/06-16-configurable-clarification-questioning-style-with-grill-me-template/research/current-clarification-config.md", "reason": "现状基线，用于回归对比"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "config 类型校验规范"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "coordinator 决策输出格式、测试覆盖要求"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "UI 行为一致性检查、轮询逻辑约定"}
+{"file": ".trellis/spec/guides/index.md", "reason": "测试策略、lint/typecheck 标准"}

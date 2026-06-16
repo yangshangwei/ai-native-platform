@@ -373,6 +373,7 @@ function renderCoordinatorActionPanel(
     return el('div', { class: 'muted compact', text: '问题加载中...' });
   }
 
+  const isSingleQuestionMode = questions.length === 1;
   const isLastQuestion = currentIndex === totalQuestions - 1;
   const parsed = parseCoordinatorQuestion(currentQuestion);
   const questionKey = coordinatorQuestionKey(parsed, currentIndex);
@@ -395,7 +396,7 @@ function renderCoordinatorActionPanel(
   // Update send button state
   const updateSendState = (): void => {
     const hasAnswer = replyArea.value.trim().length > 0;
-    if (isLastQuestion) {
+    if (isSingleQuestionMode || isLastQuestion) {
       submitBtn.disabled = !hasAnswer;
     } else {
       nextBtn.disabled = !hasAnswer;
@@ -494,7 +495,12 @@ function renderCoordinatorActionPanel(
               el('p', { text: reason || '回答后系统会继续判断任务类型和执行路径。' }),
             ],
           }),
-          pill(`问题 ${currentIndex + 1}/${totalQuestions}`, 'warn'),
+          pill(
+            isSingleQuestionMode
+              ? `问题 ${currentIndex + 1}`
+              : `问题 ${currentIndex + 1}/${totalQuestions}`,
+            'warn'
+          ),
         ],
       }),
       el('article', {
@@ -546,7 +552,7 @@ function renderCoordinatorActionPanel(
         class: 'coordinator-action-buttons',
         children: [
           skipBtn,
-          isLastQuestion ? submitBtn : nextBtn,
+          isSingleQuestionMode || isLastQuestion ? submitBtn : nextBtn,
         ],
       }),
     ],

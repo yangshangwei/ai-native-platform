@@ -1,0 +1,3 @@
+{"type":"spec","path":".trellis/tasks/06-16-ui/prd.md","reason":"验收标准对照"}
+{"type":"impl","path":"apps/web/src/page-settings.ts","reason":"检查编辑区域默认折叠、toast通知、recently-saved状态"}
+{"type":"impl","path":"apps/web/index.html","reason":"检查CSS：左侧边框颜色、折叠状态样式、toast动画"}

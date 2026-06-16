@@ -20,15 +20,15 @@ beforeAll(async () => {
 });
 
 describe('GET /config/registry', () => {
-  it('returns all 29 keys with type / default / category metadata', async () => {
+  it('returns all 32 keys with type / default / category metadata', async () => {
     const res = await app.request('/config/registry');
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
       keys: string[];
       entries: Record<string, { type: string; category: string; default: unknown; min?: number; max?: number }>;
     };
-    expect(body.keys).toHaveLength(29);
-    expect(new Set(body.keys).size).toBe(29);
+    expect(body.keys).toHaveLength(32);
+    expect(new Set(body.keys).size).toBe(32);
     expect(body.entries['coordinator.confidence_threshold']).toMatchObject({
       type: 'number',
       category: 'coordinator',

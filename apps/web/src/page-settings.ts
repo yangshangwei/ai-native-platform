@@ -32,6 +32,7 @@ import {
   metric,
   panelHeader,
   pill,
+  showToast,
 } from './dom';
 import {
   agentBackendDisplayName,
@@ -62,6 +63,7 @@ interface SettingsConfigState {
   expandedHistory: Set<string>;
   audits: Map<string, ProjectionConfigAudit[]>;
   loadedOnce: boolean;
+  recentlySaved: Set<string>;
 }
 
 export const settingsConfig: SettingsConfigState = {
@@ -75,6 +77,7 @@ export const settingsConfig: SettingsConfigState = {
   expandedHistory: new Set(),
   audits: new Map(),
   loadedOnce: false,
+  recentlySaved: new Set(),
 };
 
 async function loadSettingsConfig(): Promise<void> {
@@ -172,8 +175,23 @@ async function saveConfigOverride(key: string): Promise<void> {
     settingsConfig.drafts.delete(key);
     settingsConfig.audits.delete(key);
     await loadSettingsConfig();
+
+    // Show success toast with display name from projection
+    const vm = currentSettingsViewModel();
+    const rowVM = vm?.perKey.get(key);
+    const displayName = rowVM?.displayName ?? key;
+    showToast(`${displayName} 已保存`, 'success');
+
+    // Add to recently saved and remove after 2 seconds
+    settingsConfig.recentlySaved.add(key);
+    render();
+    setTimeout(() => {
+      settingsConfig.recentlySaved.delete(key);
+      render();
+    }, 2000);
   } catch (err) {
     settingsConfig.error = errorMessage(err);
+    showToast(errorMessage(err), 'error');
   } finally {
     settingsConfig.saving.delete(key);
     render();
@@ -242,6 +260,31 @@ function renderConfigEditor(
       settingsConfig.drafts.set(key, input.value);
     };
     return input;
+  }
+  // Special handling for clarification_style: render as dropdown
+  if (key === 'coordinator.clarification_style') {
+    const select = el('select', {
+      class: 'config-input',
+    }) as unknown as HTMLSelectElement;
+    const options = [
+      { value: 'default', label: 'default - 批量中性' },
+      { value: 'grill-me', label: 'grill-me - 逐题深挖' },
+    ];
+    select.append(
+      ...options.map((opt) => {
+        const option = el('option', {
+          attrs: { value: opt.value },
+          text: opt.label,
+        }) as unknown as HTMLOptionElement;
+        if (value === opt.value) option.selected = true;
+        return option;
+      }),
+    );
+    select.onchange = () => {
+      settingsConfig.drafts.set(key, select.value);
+      render();
+    };
+    return select;
   }
   if (entry.type === 'string' && !entry.multiline) {
     const input = el('input', {
@@ -345,24 +388,40 @@ function renderConfigRow(row: SettingsRowVM): HTMLElement {
   const draft = row.draftValue;
   const dirty = row.hasDraft;
   const saving = settingsConfig.saving.has(key);
+  const recentlySaved = settingsConfig.recentlySaved.has(key);
   const editorValue = draft ?? effectiveValueAsEditorString(entry, override);
   const expandedHistory = settingsConfig.expandedHistory.has(key);
 
   const editor = renderConfigEditor(key, entry, editorValue);
 
-  const saveBtn = button(saving ? '保存中…' : '保存', 'btn btn-primary');
+  const saveBtn = button(saving ? '保存中…' : '保存', 'button small');
   saveBtn.disabled = !dirty || saving;
   saveBtn.onclick = () => void saveConfigOverride(key);
 
-  const resetBtn = button('重置为默认', 'btn btn-secondary');
+  const cancelBtn = button('取消', 'button small secondary');
+  cancelBtn.disabled = saving;
+  cancelBtn.onclick = () => {
+    settingsConfig.drafts.delete(key);
+    render();
+  };
+
+  const resetBtn = button('重置为默认', 'button small secondary');
   resetBtn.disabled = !isOverridden || saving;
   resetBtn.onclick = () => void resetConfigOverride(key);
 
-  const copyBtn = button('复制默认值', 'btn btn-secondary');
+  const copyBtn = button('复制默认值', 'button small secondary');
   copyBtn.onclick = () => copyConfigDefaultToDraft(key);
 
-  const historyBtn = button(expandedHistory ? '收起历史' : '历史', 'btn btn-secondary');
+  const historyBtn = button(expandedHistory ? '收起历史' : '历史', 'button small secondary');
   historyBtn.onclick = () => void toggleConfigHistory(key);
+
+  const editBtn = button('编辑', 'button small secondary');
+  editBtn.onclick = () => {
+    if (!settingsConfig.drafts.has(key)) {
+      settingsConfig.drafts.set(key, effectiveValueAsEditorString(entry, override));
+      render();
+    }
+  };
 
   const editDetails = el('details', {
     class: 'config-edit-details',
@@ -372,7 +431,7 @@ function renderConfigRow(row: SettingsRowVM): HTMLElement {
       editor,
       el('div', {
         class: 'config-actions',
-        children: [saveBtn, resetBtn, copyBtn, historyBtn],
+        children: dirty ? [saveBtn, cancelBtn, resetBtn, historyBtn] : [copyBtn, resetBtn, historyBtn],
       }),
     ],
   });
@@ -390,6 +449,12 @@ function renderConfigRow(row: SettingsRowVM): HTMLElement {
     ],
   });
 
+  // Build state/risk badges - only show high risk badge
+  const badges: HTMLElement[] = [pill(configStateLabel(row), configStateKind(row))];
+  if (row.risk === 'high') {
+    badges.push(pill(configRiskLabel(row.risk), configRiskKind(row.risk)));
+  }
+
   const children: Array<Node | null | false | undefined> = [
     el('header', {
       class: 'config-row-header',
@@ -403,17 +468,25 @@ function renderConfigRow(row: SettingsRowVM): HTMLElement {
         }),
         el('div', {
           class: 'config-row-badges',
-          children: [pill(configStateLabel(row), configStateKind(row)), pill(configRiskLabel(row.risk), configRiskKind(row.risk))],
+          children: badges,
         }),
       ],
     }),
+    // Value preview and action buttons
     el('div', {
-      class: 'settings-summary-grid config-summary-grid',
+      class: 'config-row-actions',
       children: [
-        configSummaryItem('当前值', row.valuePreview),
-        configSummaryItem('状态', configStateLabel(row)),
-        configSummaryItem('风险', configRiskLabel(row.risk)),
-        configSummaryItem('最近变更', row.latestAuditAt ? fmtTime(row.latestAuditAt) : '暂无记录'),
+        el('div', {
+          class: 'config-value-preview',
+          children: [
+            el('span', { class: 'config-value-label', text: '当前值：' }),
+            el('code', { class: 'config-value-text', text: row.valuePreview }),
+          ],
+        }),
+        el('div', {
+          class: 'config-quick-actions',
+          children: dirty ? [] : [editBtn, historyBtn],
+        }),
       ],
     }),
     editDetails,
@@ -422,8 +495,14 @@ function renderConfigRow(row: SettingsRowVM): HTMLElement {
 
   if (expandedHistory) children.push(renderConfigHistoryPanel(key));
 
+  // Build CSS classes
+  let cssClass = 'config-row';
+  if (isOverridden) cssClass += ' overridden';
+  if (dirty) cssClass += ' dirty';
+  if (recentlySaved) cssClass += ' recently-saved';
+
   return el('article', {
-    class: `config-row${isOverridden ? ' overridden' : ''}${dirty ? ' dirty' : ''}`,
+    class: cssClass,
     children,
   });
 }

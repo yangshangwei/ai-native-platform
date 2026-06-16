@@ -409,6 +409,327 @@ describe('classifyByLlm selection strategy (PR3)', () => {
   });
 });
 
+describe('classifyByLlm clarification style and max rounds (PR2 grill-me)', () => {
+  it('uses default system prompt when clarification_style is "default"', async () => {
+    invalidateConfigCache();
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          overrides: {
+            'coordinator.clarification_style': {
+              key: 'coordinator.clarification_style',
+              scope: 'global',
+              valueJson: JSON.stringify('default'),
+              updatedAt: new Date().toISOString(),
+              updatedBy: null,
+            },
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as typeof fetch;
+
+    let capturedSystem = '';
+    const deps: LlmFallbackDeps = {
+      checkAvailability: async () => true,
+      runOneShot: async (_backend, system) => {
+        capturedSystem = system;
+        return FAKE_PROCEED_JSON;
+      },
+    };
+
+    await classifyByLlm(BLANK_INPUT, { deps });
+
+    expect(capturedSystem).toContain('ask AT MOST 2');
+    expect(capturedSystem).not.toContain('ONE question at a time');
+  });
+
+  it('uses grill-me system prompt when clarification_style is "grill-me"', async () => {
+    invalidateConfigCache();
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          overrides: {
+            'coordinator.clarification_style': {
+              key: 'coordinator.clarification_style',
+              scope: 'global',
+              valueJson: JSON.stringify('grill-me'),
+              updatedAt: new Date().toISOString(),
+              updatedBy: null,
+            },
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as typeof fetch;
+
+    let capturedSystem = '';
+    const deps: LlmFallbackDeps = {
+      checkAvailability: async () => true,
+      runOneShot: async (_backend, system) => {
+        capturedSystem = system;
+        return FAKE_PROCEED_JSON;
+      },
+    };
+
+    await classifyByLlm(BLANK_INPUT, { deps });
+
+    expect(capturedSystem).toContain('ONE question at a time');
+    expect(capturedSystem).toContain('EXACTLY 1 element');
+    expect(capturedSystem).not.toContain('AT MOST 2');
+  });
+
+  it('appends convergence instruction when max clarification rounds is reached', async () => {
+    invalidateConfigCache();
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          overrides: {
+            'coordinator.max_clarification_rounds': {
+              key: 'coordinator.max_clarification_rounds',
+              scope: 'global',
+              valueJson: JSON.stringify(3),
+              updatedAt: new Date().toISOString(),
+              updatedBy: null,
+            },
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as typeof fetch;
+
+    let capturedSystem = '';
+    const deps: LlmFallbackDeps = {
+      checkAvailability: async () => true,
+      runOneShot: async (_backend, system) => {
+        capturedSystem = system;
+        return FAKE_PROCEED_JSON;
+      },
+    };
+
+    const inputWithHistory = {
+      userRequest: 'do the thing',
+      messageHistory: [
+        { role: 'coordinator' as const, content: 'Q1' },
+        { role: 'user' as const, content: 'A1' },
+        { role: 'coordinator' as const, content: 'Q2' },
+        { role: 'user' as const, content: 'A2' },
+        { role: 'coordinator' as const, content: 'Q3' },
+        { role: 'user' as const, content: 'A3' },
+      ],
+    };
+
+    await classifyByLlm(inputWithHistory, { deps });
+
+    expect(capturedSystem).toContain('reached the maximum clarification rounds (3)');
+    expect(capturedSystem).toContain('You MUST make a decision');
+    expect(capturedSystem).toContain('Do not ask more questions');
+  });
+
+  it('does not append convergence instruction when below max rounds', async () => {
+    invalidateConfigCache();
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          overrides: {
+            'coordinator.max_clarification_rounds': {
+              key: 'coordinator.max_clarification_rounds',
+              scope: 'global',
+              valueJson: JSON.stringify(5),
+              updatedAt: new Date().toISOString(),
+              updatedBy: null,
+            },
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as typeof fetch;
+
+    let capturedSystem = '';
+    const deps: LlmFallbackDeps = {
+      checkAvailability: async () => true,
+      runOneShot: async (_backend, system) => {
+        capturedSystem = system;
+        return FAKE_PROCEED_JSON;
+      },
+    };
+
+    const inputWithHistory = {
+      userRequest: 'do the thing',
+      messageHistory: [
+        { role: 'coordinator' as const, content: 'Q1' },
+        { role: 'user' as const, content: 'A1' },
+        { role: 'coordinator' as const, content: 'Q2' },
+      ],
+    };
+
+    await classifyByLlm(inputWithHistory, { deps });
+
+    expect(capturedSystem).not.toContain('reached the maximum clarification rounds');
+    expect(capturedSystem).not.toContain('Do not ask more questions');
+  });
+
+  it('truncates multiple questions to single question in grill-me mode', async () => {
+    invalidateConfigCache();
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          overrides: {
+            'coordinator.clarification_style': {
+              key: 'coordinator.clarification_style',
+              scope: 'global',
+              valueJson: JSON.stringify('grill-me'),
+              updatedAt: new Date().toISOString(),
+              updatedBy: null,
+            },
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as typeof fetch;
+
+    const deps = makeDeps({
+      claudeAvailable: true,
+      codexAvailable: false,
+      output: {
+        claude: JSON.stringify({
+          action: 'pause_for_human',
+          questions: ['Q1', 'Q2', 'Q3'],
+          reason: 'LLM returned multiple despite instructions',
+        }),
+      },
+    });
+
+    const r = await classifyByLlm(BLANK_INPUT, { deps });
+
+    expect(r.decision.action).toBe('pause_for_human');
+    if (r.decision.action === 'pause_for_human') {
+      expect(r.decision.questions).toEqual(['Q1']);
+      expect(r.decision.questions.length).toBe(1);
+    }
+  });
+
+  it('does not truncate questions in default mode', async () => {
+    invalidateConfigCache();
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          overrides: {
+            'coordinator.clarification_style': {
+              key: 'coordinator.clarification_style',
+              scope: 'global',
+              valueJson: JSON.stringify('default'),
+              updatedAt: new Date().toISOString(),
+              updatedBy: null,
+            },
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as typeof fetch;
+
+    const deps = makeDeps({
+      claudeAvailable: true,
+      codexAvailable: false,
+      output: {
+        claude: JSON.stringify({
+          action: 'pause_for_human',
+          questions: ['Q1', 'Q2'],
+          reason: 'default mode allows multiple',
+        }),
+      },
+    });
+
+    const r = await classifyByLlm(BLANK_INPUT, { deps });
+
+    expect(r.decision.action).toBe('pause_for_human');
+    if (r.decision.action === 'pause_for_human') {
+      expect(r.decision.questions).toEqual(['Q1', 'Q2']);
+      expect(r.decision.questions.length).toBe(2);
+    }
+  });
+
+  it('falls back to default prompt when clarification_style is invalid', async () => {
+    invalidateConfigCache();
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          overrides: {
+            'coordinator.clarification_style': {
+              key: 'coordinator.clarification_style',
+              scope: 'global',
+              valueJson: JSON.stringify('invalid-style'),
+              updatedAt: new Date().toISOString(),
+              updatedBy: null,
+            },
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as typeof fetch;
+
+    let capturedSystem = '';
+    const deps: LlmFallbackDeps = {
+      checkAvailability: async () => true,
+      runOneShot: async (_backend, system) => {
+        capturedSystem = system;
+        return FAKE_PROCEED_JSON;
+      },
+    };
+
+    await classifyByLlm(BLANK_INPUT, { deps });
+
+    // Should use default prompt
+    expect(capturedSystem).toContain('ask AT MOST 2');
+    expect(capturedSystem).not.toContain('ONE question at a time');
+  });
+
+  it('combines grill-me style with max rounds convergence instruction', async () => {
+    invalidateConfigCache();
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          overrides: {
+            'coordinator.clarification_style': {
+              key: 'coordinator.clarification_style',
+              scope: 'global',
+              valueJson: JSON.stringify('grill-me'),
+              updatedAt: new Date().toISOString(),
+              updatedBy: null,
+            },
+            'coordinator.max_clarification_rounds': {
+              key: 'coordinator.max_clarification_rounds',
+              scope: 'global',
+              valueJson: JSON.stringify(2),
+              updatedAt: new Date().toISOString(),
+              updatedBy: null,
+            },
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as typeof fetch;
+
+    let capturedSystem = '';
+    const deps: LlmFallbackDeps = {
+      checkAvailability: async () => true,
+      runOneShot: async (_backend, system) => {
+        capturedSystem = system;
+        return FAKE_PROCEED_JSON;
+      },
+    };
+
+    const inputWithHistory = {
+      userRequest: 'do the thing',
+      messageHistory: [
+        { role: 'coordinator' as const, content: 'Q1' },
+        { role: 'user' as const, content: 'A1' },
+        { role: 'coordinator' as const, content: 'Q2' },
+        { role: 'user' as const, content: 'A2' },
+      ],
+    };
+
+    await classifyByLlm(inputWithHistory, { deps });
+
+    // Should have both grill-me prompt AND convergence instruction
+    expect(capturedSystem).toContain('ONE question at a time');
+    expect(capturedSystem).toContain('reached the maximum clarification rounds (2)');
+    expect(capturedSystem).toContain('You MUST make a decision');
+  });
+});
+
 describe('classifyByLlm coordinator request-channel streaming (PR2)', () => {
   it('emits cli lifecycle, assistant chunks, and final decision to workflowRequestId', async () => {
     const events = captureAgentEvents();

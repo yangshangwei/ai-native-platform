@@ -1,0 +1,4 @@
+{"file":".trellis/tasks/06-16-optimize-knowledge-suggestions-display/prd.md","reason":"Task requirements, proposed UX hierarchy, and acceptance criteria for the knowledge suggestion display cleanup."}
+{"file":".trellis/spec/web/frontend/index.md","reason":"Frontend spec index and required guideline routing for web package work."}
+{"file":".trellis/spec/web/frontend/agent-backend-ui.md","reason":"User-facing Chinese copy and collapsed technical diagnostics conventions for backend/evidence-heavy UI."}
+{"file":".trellis/spec/web/frontend/state-management.md","reason":"Details disclosure state preservation requirements for polling renders."}
