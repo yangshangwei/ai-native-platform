@@ -249,9 +249,19 @@ function renderConfigEditor(
   value: string,
 ): HTMLElement {
   if (entry.type === 'number') {
+    // Determine appropriate step based on min/max range
+    let step = '1';
+    if (entry.min !== undefined && entry.max !== undefined) {
+      const range = entry.max - entry.min;
+      if (range <= 1) {
+        step = '0.01'; // For 0-1 range, allow 2 decimal places
+      } else if (range <= 10) {
+        step = '0.1'; // For small ranges, allow 1 decimal place
+      }
+    }
     const input = el('input', {
       class: 'config-input',
-      attrs: { type: 'number', step: 'any' },
+      attrs: { type: 'number', step },
     }) as unknown as HTMLInputElement;
     input.value = value;
     if (entry.min !== undefined) input.min = String(entry.min);
