@@ -1,0 +1,4 @@
+{"type":"spec","path":".trellis/tasks/06-16-refactor-config-categories-business-driven/prd.md","reason":"验收标准检查"}
+{"type":"impl","path":"packages/shared/src/config/registry.ts","reason":"验证ConfigCategory类型和32个配置的category"}
+{"type":"impl","path":"apps/web/src/settings-projection.ts","reason":"验证5个tab定义"}
+{"type":"impl","path":"apps/web/src/page-settings.ts","reason":"验证默认tab"}

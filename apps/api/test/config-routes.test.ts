@@ -31,29 +31,29 @@ describe('GET /config/registry', () => {
     expect(new Set(body.keys).size).toBe(32);
     expect(body.entries['coordinator.confidence_threshold']).toMatchObject({
       type: 'number',
-      category: 'coordinator',
+      category: 'intelligent_analysis',
       default: 0.65,
       min: 0,
       max: 1,
     });
     expect(body.entries['skill.requirement_draft.instructions']).toMatchObject({
       type: 'string',
-      category: 'skill_prompts',
+      category: 'workflow_custom',
     });
     expect(body.entries['runner.watch.poll_ms']).toMatchObject({
       type: 'number',
-      category: 'runtime',
+      category: 'performance_resource',
       default: 2000,
     });
     expect(body.entries['context.policy.max_tokens']).toMatchObject({
       type: 'number',
-      category: 'context_policy',
+      category: 'performance_resource',
       default: 12000,
       min: 1000,
     });
     expect(body.entries['context.policy.sensitive_path_patterns']).toMatchObject({
       type: 'string_array',
-      category: 'context_policy',
+      category: 'troubleshooting',
     });
   });
 });

@@ -96,24 +96,29 @@ export interface BuildSettingsViewModelInput {
 
 const TABS_CONFIG: ReadonlyArray<{ id: SettingsTabId; label: string; help: string }> = [
   {
-    id: 'coordinator',
-    label: '任务理解',
-    help: '任务分类、澄清问题和 Coordinator 判断策略',
+    id: 'intelligent_analysis',
+    label: '智能分析',
+    help: '调整AI如何理解和分类用户请求',
   },
   {
-    id: 'skill_prompts',
-    label: '提示词',
-    help: '各执行阶段交给 AI 的方法论提示词',
+    id: 'conversation_ux',
+    label: '对话体验',
+    help: '控制AI如何与用户交互和追问',
   },
   {
-    id: 'runtime',
-    label: '运行环境',
-    help: 'Runner 超时、轮询和日志限制',
+    id: 'workflow_custom',
+    label: '工作流定制',
+    help: '定制各阶段（需求/设计/实现/审查）的AI行为',
   },
   {
-    id: 'context_policy',
-    label: '上下文策略',
-    help: 'ContextPack 预算、预留 token 和敏感路径过滤',
+    id: 'performance_resource',
+    label: '性能与资源',
+    help: '优化执行性能和控制资源消耗',
+  },
+  {
+    id: 'troubleshooting',
+    label: '故障处理',
+    help: '排查问题和自定义错误提示',
   },
 ];
 
@@ -168,10 +173,11 @@ export function buildSettingsViewModel(
 
   const perKey = new Map<string, SettingsRowVM>();
   const rowsByTab: Record<SettingsTabId, SettingsRowVM[]> = {
-    coordinator: [],
-    skill_prompts: [],
-    runtime: [],
-    context_policy: [],
+    intelligent_analysis: [],
+    conversation_ux: [],
+    workflow_custom: [],
+    performance_resource: [],
+    troubleshooting: [],
   };
 
   let overrideCount = 0;

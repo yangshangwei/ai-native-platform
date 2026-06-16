@@ -2,7 +2,7 @@
  * Static registry of all runtime-configurable keys exposed via UI.
  *
  * MVP-M + Context Governance scope: 32 keys
- * (18 coordinator + 5 skill_prompts + 5 runtime + 4 context_policy).
+ * (6 intelligent_analysis + 4 conversation_ux + 5 workflow_custom + 8 performance_resource + 9 troubleshooting).
  * Adding / removing a key REQUIRES a code PR; the UI never creates new keys.
  *
  * Source-of-truth defaults live in `./defaults.ts` (byte-for-byte transcribed
@@ -46,7 +46,7 @@ import {
   CONTEXT_POLICY_SENSITIVE_PATH_PATTERNS_DEFAULT,
 } from './defaults';
 
-export type ConfigCategory = 'coordinator' | 'skill_prompts' | 'runtime' | 'context_policy';
+export type ConfigCategory = 'intelligent_analysis' | 'conversation_ux' | 'workflow_custom' | 'performance_resource' | 'troubleshooting';
 export type ConfigType = 'number' | 'string' | 'string_array';
 
 export interface ConfigEntry {
@@ -65,7 +65,7 @@ export interface ConfigEntry {
 }
 
 export const CONFIG_REGISTRY = {
-  // ============ Tab "coordinator" — 18 keys ============
+  // ============ Tab "intelligent_analysis" — 6 keys ============
 
   'coordinator.confidence_threshold': {
     type: 'number',
@@ -73,57 +73,52 @@ export const CONFIG_REGISTRY = {
     min: 0,
     max: 1,
     description: '规则置信度 ≥ 此值则跳过 LLM 兜底',
-    category: 'coordinator',
+    category: 'intelligent_analysis',
     source: 'apps/runner/src/agents/coordinator/index.ts:18',
   },
   'coordinator.bug_keywords': {
     type: 'string_array',
     default: COORDINATOR_BUG_KEYWORDS_DEFAULT,
     description: 'bug 倾向关键词；任一命中加分（替换语义：保存即整段替换默认）',
-    category: 'coordinator',
+    category: 'intelligent_analysis',
     source: 'apps/runner/src/agents/coordinator/rules.ts:32',
   },
   'coordinator.feature_keywords': {
     type: 'string_array',
     default: COORDINATOR_FEATURE_KEYWORDS_DEFAULT,
     description: 'feature 倾向关键词（替换语义）',
-    category: 'coordinator',
+    category: 'intelligent_analysis',
     source: 'apps/runner/src/agents/coordinator/rules.ts:51',
+  },
+  'coordinator.refactor_keywords': {
+    type: 'string_array',
+    default: COORDINATOR_REFACTOR_KEYWORDS_DEFAULT,
+    description: '重构倾向关键词；命中 ≥1 且 length > 8 → runType=refactor（替换语义）',
+    category: 'intelligent_analysis',
+    source: 'packages/shared/src/coordinator/rules-core.ts (refactor branch)',
   },
   'coordinator.large_scope_keywords': {
     type: 'string_array',
     default: COORDINATOR_LARGE_SCOPE_KEYWORDS_DEFAULT,
     description: '大范围需求关键词（替换语义）',
-    category: 'coordinator',
+    category: 'intelligent_analysis',
     source: 'apps/runner/src/agents/coordinator/rules.ts:69',
   },
   'coordinator.large_scope_regex': {
     type: 'string',
     default: COORDINATOR_LARGE_SCOPE_REGEX_DEFAULT,
     description: '匹配 "X系统 / Y体系" 模式的正则字面量（不含 / 分隔符）',
-    category: 'coordinator',
+    category: 'intelligent_analysis',
     source: 'apps/runner/src/agents/coordinator/rules.ts:83',
   },
-  'coordinator.refactor_keywords': {
-    type: 'string_array',
-    default: COORDINATOR_REFACTOR_KEYWORDS_DEFAULT,
-    description: '重构倾向关键词；命中 ≥1 且 length > 8 → runType=refactor（替换语义）',
-    category: 'coordinator',
-    source: 'packages/shared/src/coordinator/rules-core.ts (refactor branch)',
-  },
-  'coordinator.system_prompt': {
-    type: 'string',
-    default: COORDINATOR_SYSTEM_PROMPT_DEFAULT,
-    multiline: true,
-    description: 'LLM 兜底分诊的 system prompt（输出 schema 钉死在 prompt 里）',
-    category: 'coordinator',
-    source: 'apps/runner/src/agents/coordinator/prompt.ts:9',
-  },
+
+  // ============ Tab "conversation_ux" — 4 keys ============
+
   'coordinator.clarification_style': {
     type: 'string',
     default: COORDINATOR_CLARIFICATION_STYLE_DEFAULT,
     description: '澄清提问风格：default(批量中性) / grill-me(逐题深挖)',
-    category: 'coordinator',
+    category: 'conversation_ux',
     source: 'apps/runner/src/agents/coordinator/llm-fallback.ts',
   },
   'coordinator.max_clarification_rounds': {
@@ -132,82 +127,34 @@ export const CONFIG_REGISTRY = {
     min: 1,
     max: 20,
     description: '最大澄清追问轮数，达到后强制收敛(防止无限追问)',
-    category: 'coordinator',
+    category: 'conversation_ux',
     source: 'apps/runner/src/agents/coordinator/llm-fallback.ts',
+  },
+  'coordinator.system_prompt': {
+    type: 'string',
+    default: COORDINATOR_SYSTEM_PROMPT_DEFAULT,
+    multiline: true,
+    description: 'LLM 兜底分诊的 system prompt（输出 schema 钉死在 prompt 里）',
+    category: 'conversation_ux',
+    source: 'apps/runner/src/agents/coordinator/prompt.ts:9',
   },
   'coordinator.system_prompt_grill_me': {
     type: 'string',
     default: COORDINATOR_SYSTEM_PROMPT_GRILL_ME_DEFAULT,
     multiline: true,
     description: 'grill-me 风格的 system prompt（逐题深挖、决策树推进）',
-    category: 'coordinator',
+    category: 'conversation_ux',
     source: 'apps/runner/src/agents/coordinator/llm-fallback.ts',
   },
-  'coordinator.fallback.too_short_questions': {
-    type: 'string_array',
-    default: COORDINATOR_FALLBACK_TOO_SHORT_QUESTIONS_DEFAULT,
-    description: '请求过短时反向追问的两句',
-    category: 'coordinator',
-    source: 'apps/runner/src/agents/coordinator/rules.ts:101',
-  },
-  'coordinator.fallback.large_scope_template': {
-    type: 'string',
-    default: COORDINATOR_FALLBACK_LARGE_SCOPE_TEMPLATE_DEFAULT,
-    description: '大范围需求时第一句（含 ${trigger} 占位符，runtime 替换）',
-    category: 'coordinator',
-    source: 'apps/runner/src/agents/coordinator/rules.ts:124',
-  },
-  'coordinator.fallback.large_scope_followup': {
-    type: 'string',
-    default: COORDINATOR_FALLBACK_LARGE_SCOPE_FOLLOWUP_DEFAULT,
-    description: '大范围需求时第二句',
-    category: 'coordinator',
-    source: 'apps/runner/src/agents/coordinator/rules.ts:127',
-  },
-  'coordinator.fallback.llm_unavailable': {
-    type: 'string',
-    default: COORDINATOR_FALLBACK_LLM_UNAVAILABLE_DEFAULT,
-    description: 'claude CLI 不存在时的兜底 question',
-    category: 'coordinator',
-    source: 'apps/runner/src/agents/coordinator/llm-fallback.ts:24',
-  },
-  'coordinator.fallback.llm_invocation_failed': {
-    type: 'string',
-    default: COORDINATOR_FALLBACK_LLM_INVOCATION_FAILED_DEFAULT,
-    description: 'claude CLI 调用失败时的兜底 question',
-    category: 'coordinator',
-    source: 'apps/runner/src/agents/coordinator/llm-fallback.ts:39',
-  },
-  'coordinator.fallback.llm_empty': {
-    type: 'string',
-    default: COORDINATOR_FALLBACK_LLM_EMPTY_DEFAULT,
-    description: 'LLM 返回为空时的兜底 question',
-    category: 'coordinator',
-    source: 'apps/runner/src/agents/coordinator/llm-fallback.ts:131',
-  },
-  'coordinator.fallback.llm_invalid_json': {
-    type: 'string',
-    default: COORDINATOR_FALLBACK_LLM_INVALID_JSON_DEFAULT,
-    description: 'LLM 返回非法 JSON 时的兜底 question',
-    category: 'coordinator',
-    source: 'apps/runner/src/agents/coordinator/llm-fallback.ts:147',
-  },
-  'coordinator.fallback.llm_unknown_action': {
-    type: 'string',
-    default: COORDINATOR_FALLBACK_LLM_UNKNOWN_ACTION_DEFAULT,
-    description: 'LLM 返回未知 action 时的兜底 question',
-    category: 'coordinator',
-    source: 'apps/runner/src/agents/coordinator/llm-fallback.ts:179',
-  },
 
-  // ============ Tab "skill_prompts" — 5 keys ============
+  // ============ Tab "workflow_custom" — 5 keys ============
 
   'skill.context_pack.instructions': {
     type: 'string',
     default: SKILL_CONTEXT_PACK_INSTRUCTIONS_DEFAULT,
     multiline: true,
     description: 'Stage 0 context_pack 的 instructions prompt',
-    category: 'skill_prompts',
+    category: 'workflow_custom',
     source: 'apps/runner/src/skills/index.ts:19',
   },
   'skill.requirement_draft.instructions': {
@@ -215,7 +162,7 @@ export const CONFIG_REGISTRY = {
     default: SKILL_REQUIREMENT_DRAFT_INSTRUCTIONS_DEFAULT,
     multiline: true,
     description: 'Stage 1 requirement_draft 的方法论 prompt（cs-req）',
-    category: 'skill_prompts',
+    category: 'workflow_custom',
     source: 'apps/runner/src/skills/index.ts:46',
   },
   'skill.design.instructions': {
@@ -223,7 +170,7 @@ export const CONFIG_REGISTRY = {
     default: SKILL_DESIGN_INSTRUCTIONS_DEFAULT,
     multiline: true,
     description: 'Stage 2 design 的方法论 prompt（cs-feat-design）',
-    category: 'skill_prompts',
+    category: 'workflow_custom',
     source: 'apps/runner/src/skills/index.ts:108',
   },
   'skill.implementation.instructions': {
@@ -231,7 +178,7 @@ export const CONFIG_REGISTRY = {
     default: SKILL_IMPLEMENTATION_INSTRUCTIONS_DEFAULT,
     multiline: true,
     description: 'Stage 3 implementation 的 prompt',
-    category: 'skill_prompts',
+    category: 'workflow_custom',
     source: 'apps/runner/src/skills/index.ts:174',
   },
   'skill.review.instructions': {
@@ -239,11 +186,11 @@ export const CONFIG_REGISTRY = {
     default: SKILL_REVIEW_INSTRUCTIONS_DEFAULT,
     multiline: true,
     description: 'Stage 5 review 的 prompt',
-    category: 'skill_prompts',
+    category: 'workflow_custom',
     source: 'apps/runner/src/skills/index.ts:200',
   },
 
-  // ============ Tab "runtime" — 5 keys ============
+  // ============ Tab "performance_resource" — 8 keys ============
 
   'runner.coordinator.oneshot_timeout_ms': {
     type: 'number',
@@ -251,7 +198,7 @@ export const CONFIG_REGISTRY = {
     min: 1000,
     max: 300_000,
     description: 'Coordinator LLM 兜底单次调用超时（毫秒）',
-    category: 'runtime',
+    category: 'performance_resource',
     source: 'apps/runner/src/agents/coordinator/llm-fallback.ts:17',
   },
   'runner.watch.poll_ms': {
@@ -260,7 +207,7 @@ export const CONFIG_REGISTRY = {
     min: 500,
     max: 30_000,
     description: 'Runner watch 守护进程的 poll 周期（毫秒）',
-    category: 'runtime',
+    category: 'performance_resource',
     source: 'apps/runner/src/cmd/watch.ts:127',
   },
   'runner.command.default_timeout_ms': {
@@ -269,7 +216,7 @@ export const CONFIG_REGISTRY = {
     min: 5_000,
     max: 60 * 60 * 1000,
     description: '单条命令默认超时（毫秒）；mvn compile/test 用',
-    category: 'runtime',
+    category: 'performance_resource',
     source: 'apps/runner/src/config.ts',
   },
   'runner.command.max_log_bytes': {
@@ -278,7 +225,7 @@ export const CONFIG_REGISTRY = {
     min: 1024,
     max: 50_000_000,
     description: '单 stream 日志硬上限（字节）；防爆盘',
-    category: 'runtime',
+    category: 'performance_resource',
     source: 'apps/runner/src/config.ts',
   },
   'runner.config.cache_ttl_ms': {
@@ -287,19 +234,16 @@ export const CONFIG_REGISTRY = {
     min: 200,
     max: 5_000,
     description: 'Runner 端 config 缓存 TTL（毫秒）；应略短于 watch poll',
-    category: 'runtime',
+    category: 'performance_resource',
     source: 'apps/runner/src/config-client.ts (new in this PR)',
   },
-
-  // ============ Tab "context_policy" — 4 keys ============
-
   'context.policy.max_tokens': {
     type: 'number',
     default: CONTEXT_POLICY_MAX_TOKENS_DEFAULT,
     min: 1_000,
     max: 64_000,
     description: 'ContextPack 总 token 预算；超限时按 full → summary → retrieval_hint 降级',
-    category: 'context_policy',
+    category: 'performance_resource',
     source: 'apps/runner/src/context/builder.ts:DEFAULT_BUDGET',
   },
   'context.policy.reserved_for_reasoning': {
@@ -308,7 +252,7 @@ export const CONFIG_REGISTRY = {
     min: 0,
     max: 32_000,
     description: '为模型推理预留的 context token；会从可注入上下文预算中扣除',
-    category: 'context_policy',
+    category: 'performance_resource',
     source: 'apps/runner/src/context/builder.ts:DEFAULT_BUDGET',
   },
   'context.policy.reserved_for_output': {
@@ -317,14 +261,73 @@ export const CONFIG_REGISTRY = {
     min: 0,
     max: 32_000,
     description: '为模型输出预留的 context token；会从可注入上下文预算中扣除',
-    category: 'context_policy',
+    category: 'performance_resource',
     source: 'apps/runner/src/context/builder.ts:DEFAULT_BUDGET',
+  },
+
+  // ============ Tab "troubleshooting" — 9 keys ============
+
+  'coordinator.fallback.too_short_questions': {
+    type: 'string_array',
+    default: COORDINATOR_FALLBACK_TOO_SHORT_QUESTIONS_DEFAULT,
+    description: '请求过短时反向追问的两句',
+    category: 'troubleshooting',
+    source: 'apps/runner/src/agents/coordinator/rules.ts:101',
+  },
+  'coordinator.fallback.large_scope_template': {
+    type: 'string',
+    default: COORDINATOR_FALLBACK_LARGE_SCOPE_TEMPLATE_DEFAULT,
+    description: '大范围需求时第一句（含 ${trigger} 占位符，runtime 替换）',
+    category: 'troubleshooting',
+    source: 'apps/runner/src/agents/coordinator/rules.ts:124',
+  },
+  'coordinator.fallback.large_scope_followup': {
+    type: 'string',
+    default: COORDINATOR_FALLBACK_LARGE_SCOPE_FOLLOWUP_DEFAULT,
+    description: '大范围需求时第二句',
+    category: 'troubleshooting',
+    source: 'apps/runner/src/agents/coordinator/rules.ts:127',
+  },
+  'coordinator.fallback.llm_unavailable': {
+    type: 'string',
+    default: COORDINATOR_FALLBACK_LLM_UNAVAILABLE_DEFAULT,
+    description: 'claude CLI 不存在时的兜底 question',
+    category: 'troubleshooting',
+    source: 'apps/runner/src/agents/coordinator/llm-fallback.ts:24',
+  },
+  'coordinator.fallback.llm_invocation_failed': {
+    type: 'string',
+    default: COORDINATOR_FALLBACK_LLM_INVOCATION_FAILED_DEFAULT,
+    description: 'claude CLI 调用失败时的兜底 question',
+    category: 'troubleshooting',
+    source: 'apps/runner/src/agents/coordinator/llm-fallback.ts:39',
+  },
+  'coordinator.fallback.llm_empty': {
+    type: 'string',
+    default: COORDINATOR_FALLBACK_LLM_EMPTY_DEFAULT,
+    description: 'LLM 返回为空时的兜底 question',
+    category: 'troubleshooting',
+    source: 'apps/runner/src/agents/coordinator/llm-fallback.ts:131',
+  },
+  'coordinator.fallback.llm_invalid_json': {
+    type: 'string',
+    default: COORDINATOR_FALLBACK_LLM_INVALID_JSON_DEFAULT,
+    description: 'LLM 返回非法 JSON 时的兜底 question',
+    category: 'troubleshooting',
+    source: 'apps/runner/src/agents/coordinator/llm-fallback.ts:147',
+  },
+  'coordinator.fallback.llm_unknown_action': {
+    type: 'string',
+    default: COORDINATOR_FALLBACK_LLM_UNKNOWN_ACTION_DEFAULT,
+    description: 'LLM 返回未知 action 时的兜底 question',
+    category: 'troubleshooting',
+    source: 'apps/runner/src/agents/coordinator/llm-fallback.ts:179',
   },
   'context.policy.sensitive_path_patterns': {
     type: 'string_array',
     default: CONTEXT_POLICY_SENSITIVE_PATH_PATTERNS_DEFAULT,
     description: '敏感路径/文件名片段；命中则不进入 ContextPack selected context',
-    category: 'context_policy',
+    category: 'troubleshooting',
     source: 'packages/shared/src/utils/context-policy.ts',
   },
 } satisfies Record<string, ConfigEntry>;
@@ -334,8 +337,8 @@ export type ConfigKey = keyof typeof CONFIG_REGISTRY;
 /** Resolved type of a key's default value. Use for return-type annotations on getConfig. */
 export type RegistryDefault<K extends ConfigKey> = (typeof CONFIG_REGISTRY)[K]['default'];
 
-/** Total = 15 + 5 + 5 + 4 = 29 keys. Asserted by tests. */
-export const CONFIG_REGISTRY_KEY_COUNT = 29 as const;
+/** Total = 6 + 4 + 5 + 8 + 9 = 32 keys. Asserted by tests. */
+export const CONFIG_REGISTRY_KEY_COUNT = 32 as const;
 
 /** All registered keys in declaration order. */
 export function configKeys(): ConfigKey[] {

@@ -67,7 +67,7 @@ interface SettingsConfigState {
 }
 
 export const settingsConfig: SettingsConfigState = {
-  activeTab: 'coordinator',
+  activeTab: 'intelligent_analysis',
   loading: false,
   error: null,
   registry: null,

@@ -48,25 +48,27 @@ function audit(
   };
 }
 
-describe('buildSettingsViewModel — registry → 4 tabs grouping', () => {
-  it('groups every registry key into its category tab and reports a 29-key total when given a 29-key registry', () => {
+describe('buildSettingsViewModel — registry → 5 tabs grouping', () => {
+  it('groups every registry key into its category tab and reports a 32-key total when given a 32-key registry', () => {
     const keys = [
-      // 14 coordinator
-      'c.k1', 'c.k2', 'c.k3', 'c.k4', 'c.k5', 'c.k6', 'c.k7',
-      'c.k8', 'c.k9', 'c.k10', 'c.k11', 'c.k12', 'c.k13', 'c.k14',
-      // 5 skill_prompts
-      's.k1', 's.k2', 's.k3', 's.k4', 's.k5',
-      // 5 runtime
-      'r.k1', 'r.k2', 'r.k3', 'r.k4', 'r.k5',
-      // 5 context policy in this fixture
-      'ctx.k1', 'ctx.k2', 'ctx.k3', 'ctx.k4', 'ctx.k5',
+      // 6 intelligent_analysis
+      'ia.k1', 'ia.k2', 'ia.k3', 'ia.k4', 'ia.k5', 'ia.k6',
+      // 4 conversation_ux
+      'cu.k1', 'cu.k2', 'cu.k3', 'cu.k4',
+      // 5 workflow_custom
+      'wc.k1', 'wc.k2', 'wc.k3', 'wc.k4', 'wc.k5',
+      // 8 performance_resource
+      'pr.k1', 'pr.k2', 'pr.k3', 'pr.k4', 'pr.k5', 'pr.k6', 'pr.k7', 'pr.k8',
+      // 9 troubleshooting
+      'ts.k1', 'ts.k2', 'ts.k3', 'ts.k4', 'ts.k5', 'ts.k6', 'ts.k7', 'ts.k8', 'ts.k9',
     ];
     const entries: Record<string, ProjectionConfigEntry> = {};
     for (const k of keys) {
-      const cat: SettingsTabId = k.startsWith('c.') ? 'coordinator'
-        : k.startsWith('s.') ? 'skill_prompts'
-          : k.startsWith('ctx.') ? 'context_policy'
-        : 'runtime';
+      const cat: SettingsTabId = k.startsWith('ia.') ? 'intelligent_analysis'
+        : k.startsWith('cu.') ? 'conversation_ux'
+          : k.startsWith('wc.') ? 'workflow_custom'
+            : k.startsWith('pr.') ? 'performance_resource'
+        : 'troubleshooting';
       entries[k] = entry(cat, 'string', 'default');
     }
 
@@ -77,21 +79,22 @@ describe('buildSettingsViewModel — registry → 4 tabs grouping', () => {
       audits: new Map(),
     });
 
-    expect(vm.tabs.map((t) => t.id)).toEqual(['coordinator', 'skill_prompts', 'runtime', 'context_policy']);
-    expect(vm.tabs.map((t) => t.label)).toEqual(['任务理解', '提示词', '运行环境', '上下文策略']);
-    expect(vm.tabs.find((t) => t.id === 'coordinator')!.rows).toHaveLength(14);
-    expect(vm.tabs.find((t) => t.id === 'skill_prompts')!.rows).toHaveLength(5);
-    expect(vm.tabs.find((t) => t.id === 'runtime')!.rows).toHaveLength(5);
-    expect(vm.tabs.find((t) => t.id === 'context_policy')!.rows).toHaveLength(5);
-    expect(vm.summary).toEqual({ totalKeys: 29, overrideCount: 0, dirtyCount: 0 });
-    expect(vm.perKey.size).toBe(29);
+    expect(vm.tabs.map((t) => t.id)).toEqual(['intelligent_analysis', 'conversation_ux', 'workflow_custom', 'performance_resource', 'troubleshooting']);
+    expect(vm.tabs.map((t) => t.label)).toEqual(['智能分析', '对话体验', '工作流定制', '性能与资源', '故障处理']);
+    expect(vm.tabs.find((t) => t.id === 'intelligent_analysis')!.rows).toHaveLength(6);
+    expect(vm.tabs.find((t) => t.id === 'conversation_ux')!.rows).toHaveLength(4);
+    expect(vm.tabs.find((t) => t.id === 'workflow_custom')!.rows).toHaveLength(5);
+    expect(vm.tabs.find((t) => t.id === 'performance_resource')!.rows).toHaveLength(8);
+    expect(vm.tabs.find((t) => t.id === 'troubleshooting')!.rows).toHaveLength(9);
+    expect(vm.summary).toEqual({ totalKeys: 32, overrideCount: 0, dirtyCount: 0 });
+    expect(vm.perKey.size).toBe(32);
   });
 
   it('skips keys missing from registry.entries without crashing', () => {
     const vm = buildSettingsViewModel({
       registry: {
         keys: ['present', 'missing'],
-        entries: { present: entry('runtime', 'number', 1) },
+        entries: { present: entry('performance_resource', 'number', 1) },
       },
       overrides: {},
       drafts: new Map(),
@@ -106,8 +109,8 @@ describe('buildSettingsViewModel — registry → 4 tabs grouping', () => {
       registry: {
         keys: ['coordinator.confidence_threshold', 'skill.implementation.instructions'],
         entries: {
-          'coordinator.confidence_threshold': entry('coordinator', 'number', 0.65, '规则置信度 ≥ 此值则跳过 LLM 兜底'),
-          'skill.implementation.instructions': entry('skill_prompts', 'string', '第一行\n第二行', 'Stage 3 implementation 的 prompt'),
+          'coordinator.confidence_threshold': entry('intelligent_analysis', 'number', 0.65, '规则置信度 ≥ 此值则跳过 LLM 兜底'),
+          'skill.implementation.instructions': entry('workflow_custom', 'string', '第一行\n第二行', 'Stage 3 implementation 的 prompt'),
         },
       },
       overrides: {},
@@ -131,9 +134,9 @@ describe('buildSettingsViewModel — override application', () => {
   const baseRegistry = {
     keys: ['scalar.string', 'scalar.number', 'list.array'],
     entries: {
-      'scalar.string': entry('coordinator', 'string', 'foo'),
-      'scalar.number': entry('coordinator', 'number', 1),
-      'list.array': entry('coordinator', 'string_array', ['a', 'b']),
+      'scalar.string': entry('intelligent_analysis', 'string', 'foo'),
+      'scalar.number': entry('intelligent_analysis', 'number', 1),
+      'list.array': entry('intelligent_analysis', 'string_array', ['a', 'b']),
     },
   };
 
@@ -195,7 +198,7 @@ describe('buildSettingsViewModel — dirty state', () => {
   it('tags a draft as dirty even when an override exists', () => {
     const registry = {
       keys: ['scalar.string'],
-      entries: { 'scalar.string': entry('coordinator', 'string', 'default-v') },
+      entries: { 'scalar.string': entry('intelligent_analysis', 'string', 'default-v') },
     };
     const vm = buildSettingsViewModel({
       registry,
@@ -217,8 +220,8 @@ describe('buildSettingsViewModel — dirty state', () => {
     const registry = {
       keys: ['list.array', 'scalar.number'],
       entries: {
-        'list.array': entry('coordinator', 'string_array', ['x']),
-        'scalar.number': entry('coordinator', 'number', 0),
+        'list.array': entry('intelligent_analysis', 'string_array', ['x']),
+        'scalar.number': entry('intelligent_analysis', 'number', 0),
       },
     };
     const vm = buildSettingsViewModel({
@@ -238,7 +241,7 @@ describe('buildSettingsViewModel — dirty state', () => {
   it('accepts a plain-object drafts map (interop with non-Map callers)', () => {
     const registry = {
       keys: ['scalar.string'],
-      entries: { 'scalar.string': entry('coordinator', 'string', 'd') },
+      entries: { 'scalar.string': entry('intelligent_analysis', 'string', 'd') },
     };
     const vm = buildSettingsViewModel({
       registry,
@@ -255,8 +258,8 @@ describe('buildSettingsViewModel — audit linkage', () => {
   const registry = {
     keys: ['k.with.audit', 'k.without.audit'],
     entries: {
-      'k.with.audit': entry('runtime', 'string', 'd'),
-      'k.without.audit': entry('runtime', 'string', 'd'),
+      'k.with.audit': entry('performance_resource', 'string', 'd'),
+      'k.without.audit': entry('performance_resource', 'string', 'd'),
     },
   };
 
