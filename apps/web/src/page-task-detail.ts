@@ -102,6 +102,7 @@ import {
   renderStreamStatus,
   renderStreamSummary,
   renderStreamTitle,
+  renderStreamVerbosityToggle,
 } from './stream';
 import {
   clearCoordinatorReplyComposerState,
@@ -1871,7 +1872,7 @@ function renderAgentStreamPanel(): HTMLElement {
           }),
           el('div', {
             class: 'stream-actions',
-            children: [renderStreamStatus(view), expandButton],
+            children: [renderStreamVerbosityToggle(), renderStreamStatus(view), expandButton],
           }),
         ],
       }),

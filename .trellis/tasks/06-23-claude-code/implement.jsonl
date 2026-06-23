@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/06-23-claude-code/prd.md", "reason": "完整的需求文档，包含目标、决策、技术方案和验收标准"}
+{"file": "apps/web/src/stream-rendering.ts", "reason": "核心渲染逻辑，需要扩展过滤和格式化函数"}
+{"file": "apps/web/src/stream.ts", "reason": "Stream 管理和 UI 更新，需要添加切换按钮和状态处理"}
+{"file": "apps/web/src/state.ts", "reason": "全局状态管理，需要添加 streamVerbosity 状态"}
+{"file": "apps/web/src/types.ts", "reason": "类型定义，可能需要添加新的类型"}

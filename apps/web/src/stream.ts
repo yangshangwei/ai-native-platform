@@ -120,7 +120,7 @@ export function buildAgentStreamView(channel: StreamChannel | null): AgentStream
     summary: streamSummaryText(channel, events.length),
     status: streamStatusForChannel(channel),
     events,
-    lines: buildStreamDisplayLines(events, true), // Native mode: hide metadata prefixes
+    lines: buildStreamDisplayLines(events, true, ui.streamVerbosity),
   };
 }
 
@@ -183,6 +183,21 @@ export function renderStreamStatus(view: AgentStreamViewModel): HTMLElement {
   return el('span', { class: `stream-status ${view.status.cls}`, text: view.status.label, attrs: streamViewAttrs(view, 'status') });
 }
 
+export function renderStreamVerbosityToggle(): HTMLElement {
+  const isCompact = ui.streamVerbosity === 'compact';
+  const button = el('button', {
+    class: 'stream-verbosity-toggle',
+    attrs: {
+      type: 'button',
+      title: isCompact ? '切换到详细模式' : '切换到简洁模式',
+      'aria-label': isCompact ? '切换到详细模式' : '切换到简洁模式',
+    },
+    text: isCompact ? '简洁' : '详细',
+  });
+  button.addEventListener('click', toggleStreamVerbosity);
+  return button;
+}
+
 export function renderAgentStreamBody(
   view: AgentStreamViewModel,
   opts: { id?: string; expanded?: boolean; scrollKeyPrefix: string },
@@ -240,6 +255,15 @@ export function closeExpandedStream(): void {
   if (closingRunId) {
     requestAnimationFrame(() => focusStreamExpandButton(closingRunId));
   }
+}
+
+export function toggleStreamVerbosity(): void {
+  ui.streamVerbosity = ui.streamVerbosity === 'compact' ? 'verbose' : 'compact';
+  localStorage.setItem('stream-verbosity', ui.streamVerbosity);
+  if (streamChannel) {
+    refreshStreamViewsForChannel(streamChannel);
+  }
+  render();
 }
 
 function refreshStreamViewsForChannel(channel: StreamChannel): void {

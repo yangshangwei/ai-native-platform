@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/06-23-claude-code/prd.md", "reason": "验收标准和需求定义，用于验证实现是否符合预期"}
+{"file": "apps/web/src/stream-rendering.ts", "reason": "验证过滤逻辑是否正确，工具调用格式是否简洁"}
+{"file": "apps/web/src/stream.ts", "reason": "验证切换按钮功能和状态管理是否正常"}
+{"file": "apps/web/test/stream-rendering.test.ts", "reason": "现有测试用例，确保不破坏现有功能"}

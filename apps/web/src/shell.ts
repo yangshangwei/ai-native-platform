@@ -40,6 +40,7 @@ import {
   renderStreamStatus,
   renderStreamSummary,
   renderStreamTitle,
+  renderStreamVerbosityToggle,
 } from './stream';
 import { renderTaskDetailPage } from './page-task-detail';
 import { renderProjectsPage } from './page-projects';
@@ -435,7 +436,7 @@ function renderExpandedAgentStreamOverlay(runId: string): HTMLElement {
               }),
               el('div', {
                 class: 'stream-actions',
-                children: [renderStreamStatus(view), closeButton],
+                children: [renderStreamVerbosityToggle(), renderStreamStatus(view), closeButton],
               }),
             ],
           }),

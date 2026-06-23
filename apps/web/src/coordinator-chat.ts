@@ -45,6 +45,7 @@ import {
   renderAgentStreamBody,
   renderStreamStatus,
   renderStreamSummary,
+  renderStreamVerbosityToggle,
   shouldSubscribeRequestStream,
   type AgentStreamViewModel,
 } from './stream';
@@ -663,6 +664,7 @@ function renderCoordinatorStreamDetails(
       el('summary', {
         children: [
           el('span', { text: mode === 'history' ? '开发者日志（Coordinator 阶段已缓存）' : '开发者日志' }),
+          renderStreamVerbosityToggle(),
           renderStreamStatus(view),
           renderStreamSummary(view),
         ],

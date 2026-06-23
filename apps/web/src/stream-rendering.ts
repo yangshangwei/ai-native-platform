@@ -126,7 +126,7 @@ export function lastStreamSequenceForRun<T extends StreamChannelEvent & { workfl
   return lastStreamSequenceForChannel(cache, { kind: 'run', id: runId });
 }
 
-export function buildStreamDisplayLines(events: readonly StreamDisplayEvent[], nativeMode = true): StreamDisplayLine[] {
+export function buildStreamDisplayLines(events: readonly StreamDisplayEvent[], nativeMode = true, verbosity: 'compact' | 'verbose' = 'compact'): StreamDisplayLine[] {
   const lines: StreamDisplayLine[] = [];
   let pending: PendingAssistantGroup | null = null;
 
@@ -150,7 +150,7 @@ export function buildStreamDisplayLines(events: readonly StreamDisplayEvent[], n
   };
 
   for (const event of events) {
-    for (const segment of streamTextSegments(event, nativeMode)) {
+    for (const segment of streamTextSegments(event, nativeMode, verbosity)) {
       if (!segment.mergeable) {
         flushPending();
         lines.push(renderBoundaryLine(segment.event, segment.text, nativeMode));
@@ -185,15 +185,29 @@ export function streamAgentBackendDisplayName(kind: string | null | undefined): 
   return 'Legacy test backend';
 }
 
-function streamTextSegments(event: StreamDisplayEvent, nativeMode = true): StreamTextSegment[] {
+function streamTextSegments(event: StreamDisplayEvent, nativeMode = true, verbosity: 'compact' | 'verbose' = 'compact'): StreamTextSegment[] {
   const text = event.text ?? renderStreamFallbackText(event);
   if (event.type === 'assistant') {
     const assistantSegments = assistantTextSegments(event, text);
     if (assistantSegments.length > 0) return assistantSegments;
   }
 
-  // In native mode, filter out noisy events
-  if (nativeMode && shouldFilterEventInNativeMode(event)) {
+  // Compact mode: aggressive filtering that supersedes native mode
+  if (verbosity === 'compact') {
+    if (shouldFilterEventInCompactMode(event)) {
+      return [];
+    }
+    // Simplify tool calls in compact mode
+    if (event.type === 'raw') {
+      const compactToolCall = formatToolCallCompact(event);
+      if (compactToolCall) {
+        return [{ mergeable: false, event, text: compactToolCall }];
+      }
+    }
+  }
+
+  // Native mode (when not compact): filter only noisy events
+  if (nativeMode && verbosity !== 'compact' && shouldFilterEventInNativeMode(event)) {
     return [];
   }
 
@@ -373,4 +387,81 @@ function shouldFilterEventInNativeMode(event: StreamDisplayEvent): boolean {
   }
 
   return false;
+}
+
+function shouldFilterEventInCompactMode(event: StreamDisplayEvent): boolean {
+  // Compact mode: aggressive filtering of internal metadata
+
+  // Filter all meta events (including message_start which shows token stats)
+  if (event.type === 'meta') {
+    return true;
+  }
+
+  // Filter raw events that look like stream_event wrappers or contain only metadata
+  if (event.type === 'raw') {
+    const text = event.text ?? '';
+    const payload = event.payload;
+
+    // Filter stream_event JSON wrappers
+    if (text.includes('"type":"stream_event"') || text.includes('"type": "stream_event"')) {
+      return true;
+    }
+
+    // Filter events with token statistics
+    if (text.includes('input_tokens') || text.includes('output_tokens') || text.includes('cache_')) {
+      return true;
+    }
+
+    // Filter events with internal IDs
+    if (text.includes('session_id') || text.includes('parent_tool_use_id') || text.includes('stop_reason')) {
+      return true;
+    }
+
+    // Filter message_delta/message_stop events
+    if (text.includes('message_delta') || text.includes('message_stop')) {
+      return true;
+    }
+  }
+
+  // Filter system events with no meaningful content
+  if (event.type === 'system') {
+    const text = event.text ?? '';
+    if (text === 'status' || text.trim() === '' || text === '{}') {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function formatToolCallCompact(event: StreamDisplayEvent): string | null {
+  // Extract tool name and key parameters from tool-related events
+  const text = event.text ?? '';
+
+  // Match "[tool→ ToolName...]" pattern
+  const toolMatch = /^\[tool→\s*([^\]]+)\]/.exec(text);
+  if (toolMatch) {
+    const toolName = toolMatch[1]?.trim() ?? 'Tool';
+    return `→ ${toolName}`;
+  }
+
+  // Match "[tool-input...] {JSON}" pattern
+  const inputMatch = /^\[tool-input\.\.\.\]\s*(\{.+\})/.exec(text);
+  if (inputMatch) {
+    try {
+      const json = JSON.parse(inputMatch[1] ?? '{}');
+      // Extract key parameters based on common tool patterns
+      if (json.file_path) return `  ${json.file_path}`;
+      if (json.command) return `  ${json.command}`;
+      if (json.path) return `  ${json.path}`;
+      if (json.url) return `  ${json.url}`;
+      // If no key param found, just show we have input
+      return '  (...)';
+    } catch {
+      // Invalid JSON, skip
+      return null;
+    }
+  }
+
+  return null;
 }

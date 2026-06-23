@@ -71,6 +71,7 @@ export const ui = {
   coordinatorReplyComposing: null as { requestId: string } | null,
   coordinatorReplyRenderDeferred: false,
   isReplacingAppRootForRender: false,
+  streamVerbosity: (localStorage.getItem('stream-verbosity') as 'compact' | 'verbose') ?? 'compact',
 };
 
 export const artifactContent = new Map<string, ArtifactContentDto | null>();

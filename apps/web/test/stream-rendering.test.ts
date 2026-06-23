@@ -330,7 +330,7 @@ describe('web agent stream rendering — native mode (production default)', () =
     const lines = buildStreamDisplayLines([
       event(1, 'assistant', '[claude…] Hel'),
       event(2, 'assistant', '[claude…] lo'),
-    ]);
+    ], true, 'verbose');
 
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({ prefix: '', text: 'Hello', sequences: [1, 2] });
@@ -343,7 +343,7 @@ describe('web agent stream rendering — native mode (production default)', () =
       event(1, 'assistant', '[claude…] Reading'),
       event(2, 'assistant', '[tool→ Read…]'),
       event(3, 'stderr', 'warning from cli'),
-    ]);
+    ], true, 'verbose');
 
     expect(lines.map((line) => line.prefix)).toEqual(['', '', '']);
     expect(lines.map((line) => line.text)).toEqual(['Reading', '[tool→ Read…]', 'warning from cli']);
@@ -357,7 +357,7 @@ describe('web agent stream rendering — native mode (production default)', () =
       event(1, 'meta', '[meta:cli_started]', { type: 'meta' }),
       event(2, 'meta', 'session begins', { type: 'meta', event: 'session_start' }),
       event(3, 'assistant', '[claude…] Working'),
-    ]);
+    ], true, 'verbose');
 
     // meta seq1 (non-session) is filtered out; session_start meta + assistant survive.
     expect(lines.map((line) => line.text)).toEqual(['session begins', 'Working']);
@@ -367,7 +367,7 @@ describe('web agent stream rendering — native mode (production default)', () =
     const lines = buildStreamDisplayLines([
       event(1, 'raw', '{"internal":true}'),
       event(2, 'assistant', '[claude…] Visible'),
-    ]);
+    ], true, 'verbose');
 
     expect(lines.map((line) => line.text)).toEqual(['Visible']);
   });
@@ -376,7 +376,7 @@ describe('web agent stream rendering — native mode (production default)', () =
     const nativeLines = buildStreamDisplayLines([
       event(1, 'assistant', '[claude…] Hel'),
       event(2, 'assistant', '[claude…] lo'),
-    ]);
+    ], true, 'verbose');
     const verbose = verboseLines([
       event(1, 'assistant', '[claude…] Hel'),
       event(2, 'assistant', '[claude…] lo'),
@@ -388,5 +388,82 @@ describe('web agent stream rendering — native mode (production default)', () =
     expect(nativeLines[0]?.sequences).toEqual(verbose[0]?.sequences);
     expect(nativeLines[0]?.prefix).toBe('');
     expect(verbose[0]?.prefix).not.toBe('');
+  });
+});
+
+describe('web agent stream rendering — compact mode (new default)', () => {
+  it('filters all meta events including message_start in compact mode', () => {
+    const lines = buildStreamDisplayLines([
+      event(1, 'meta', 'session begins', { type: 'meta', event: 'session_start' }),
+      event(2, 'meta', 'message starts', { type: 'meta', event: 'message_start' }),
+      event(3, 'assistant', '[claude…] Working'),
+    ], true, 'compact');
+
+    // Compact mode filters all meta events
+    expect(lines.map((line) => line.text)).toEqual(['Working']);
+  });
+
+  it('filters stream_event JSON wrappers in compact mode', () => {
+    const lines = buildStreamDisplayLines([
+      event(1, 'raw', '{"type":"stream_event","event":{"type":"message_delta"}}'),
+      event(2, 'assistant', '[claude…] Visible'),
+    ], true, 'compact');
+
+    expect(lines.map((line) => line.text)).toEqual(['Visible']);
+  });
+
+  it('filters events with token statistics in compact mode', () => {
+    const lines = buildStreamDisplayLines([
+      event(1, 'raw', '{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":200}'),
+      event(2, 'assistant', '[claude…] Visible'),
+    ], true, 'compact');
+
+    expect(lines.map((line) => line.text)).toEqual(['Visible']);
+  });
+
+  it('filters events with internal IDs in compact mode', () => {
+    const lines = buildStreamDisplayLines([
+      event(1, 'raw', '{"session_id":"sess_123","parent_tool_use_id":"tool_456","stop_reason":"end_turn"}'),
+      event(2, 'assistant', '[claude…] Visible'),
+    ], true, 'compact');
+
+    expect(lines.map((line) => line.text)).toEqual(['Visible']);
+  });
+
+  it('filters empty system status messages in compact mode', () => {
+    const lines = buildStreamDisplayLines([
+      event(1, 'system', 'status'),
+      event(2, 'system', ''),
+      event(3, 'assistant', '[claude…] Visible'),
+    ], true, 'compact');
+
+    expect(lines.map((line) => line.text)).toEqual(['Visible']);
+  });
+
+  it('simplifies tool calls to compact format', () => {
+    const lines = buildStreamDisplayLines([
+      event(1, 'assistant', '[claude…] Reading file'),
+      event(2, 'raw', '[tool→ Read...]'),
+      event(3, 'raw', '[tool-input...] {"file_path":"apps/web/src/main.ts"}'),
+      event(4, 'assistant', '[claude…] Done'),
+    ], true, 'compact');
+
+    expect(lines.map((line) => line.text)).toEqual([
+      'Reading file',
+      '→ Read...',
+      '  apps/web/src/main.ts',
+      'Done',
+    ]);
+  });
+
+  it('preserves important content in verbose mode', () => {
+    const lines = buildStreamDisplayLines([
+      event(1, 'meta', 'message starts', { type: 'meta', event: 'message_start' }),
+      event(2, 'raw', '{"input_tokens":100}'),
+      event(3, 'assistant', '[claude…] Working'),
+    ], true, 'verbose');
+
+    // Verbose mode keeps meta events (session_start) and raw events
+    expect(lines.length).toBeGreaterThan(1);
   });
 });

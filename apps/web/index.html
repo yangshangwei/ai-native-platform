@@ -724,6 +724,9 @@
       .stream-head h2 { margin: 0; font-size: 15px; }
       .stream-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
       .stream-expand-button { white-space: nowrap; }
+      .stream-verbosity-toggle { padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--text-secondary); cursor: pointer; transition: all 0.15s ease; }
+      .stream-verbosity-toggle:hover { background: var(--surface-2); border-color: var(--primary); color: var(--primary); }
+      .stream-verbosity-toggle:active { transform: scale(0.96); }
       .stream-status { font-size: 12px; font-weight: 800; }
       .stream-status.live { color: var(--good); } .stream-status.error { color: var(--bad); } .stream-status.idle { color: var(--muted); }
       .stream-body { border: 1px solid var(--line); border-radius: 14px; background: #0f172a; color: #e2e8f0; overflow: auto; padding: 12px; font-size: 12px; line-height: 1.5; }
