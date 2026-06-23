@@ -522,3 +522,209 @@
   padding-top: 0.75rem;
   border-top: 1px solid var(--border-subtle);
 }
+
+/* ==================== My Todos Page ==================== */
+
+/**
+ * My Todos Header - 页面标题和统计
+ */
+.my-todos-header {
+  border-left: 4px solid var(--color-primary, #3b82f6);
+}
+
+.my-todos-header-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+}
+
+.page-title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0 0 0.5rem 0;
+  line-height: 1.2;
+}
+
+.my-todos-count-badge {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  padding: var(--space-md) var(--space-lg);
+  background: var(--color-primary-bg, #eff6ff);
+  border: 2px solid var(--color-primary, #3b82f6);
+  border-radius: var(--radius-lg);
+  flex-shrink: 0;
+}
+
+.count-number {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--color-primary, #3b82f6);
+  line-height: 1;
+}
+
+.count-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* My Todos List */
+.my-todos-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.my-todos-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) var(--space-lg);
+  background: var(--bg-subtle, #f9fafb);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-base);
+}
+
+.my-todos-item:hover {
+  background: var(--bg-surface);
+  border-color: var(--color-primary, #3b82f6);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+
+.my-todos-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.my-todos-item-title {
+  display: block;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.my-todos-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.meta-item {
+  display: inline-flex;
+  align-items: center;
+}
+
+.meta-separator {
+  opacity: 0.5;
+}
+
+/* ==================== Todos Alert ==================== */
+
+/**
+ * Todos Alert - 工作台顶部提示条
+ * 提醒用户有待办任务需要处理
+ */
+.todos-alert {
+  background: var(--color-warning-bg, #fef3c7);
+  border: 1px solid var(--color-warning-border, #fbbf24);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg) var(--space-xl);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+}
+
+.todos-alert-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex: 1;
+}
+
+.todos-alert-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
+.todos-alert strong {
+  display: block;
+  color: var(--text-primary);
+  margin-bottom: 0.25rem;
+}
+
+/* ==================== Todos Filters ==================== */
+
+/**
+ * Todos Filters - 我的待办页面筛选器
+ * 支持按状态、项目、排序筛选
+ */
+.todos-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: var(--space-lg);
+  align-items: start;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.filter-group label {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+  min-width: auto;
+  margin-right: var(--space-xs);
+}
+
+/* ==================== Empty State ==================== */
+
+.empty-state {
+  text-align: center;
+  padding: var(--space-3xl) var(--space-xl);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.empty-state-icon {
+  font-size: 4rem;
+  line-height: 1;
+  margin-bottom: var(--space-sm);
+}
+
+.empty-state-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.empty-state-description {
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+  margin: 0 0 var(--space-lg) 0;
+  max-width: 32rem;
+}
+
+.empty-state .button-row {
+  display: flex;
+  gap: var(--space-md);
+  justify-content: center;
+}

@@ -32,7 +32,7 @@ export type {
   ProjectSourceKind,
 } from '@ainp/shared/browser';
 
-export type Page = 'workbench' | 'task' | 'projects' | 'new-task' | 'reports' | 'knowledge' | 'settings';
+export type Page = 'workbench' | 'my-todos' | 'task' | 'projects' | 'new-task' | 'reports' | 'knowledge' | 'settings';
 export type StatusKind = 'good' | 'warn' | 'bad' | 'info' | 'muted';
 export type KnowledgeArtifactDto = KnowledgeArtifact;
 export type KnowledgeActionDecision = 'accepted' | 'ignored' | 'edited';

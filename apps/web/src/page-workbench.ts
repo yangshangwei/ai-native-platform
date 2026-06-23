@@ -40,16 +40,16 @@ export function workbenchEnvironmentSummary(project: ProjectDto | null, runner: 
 
 import { render } from './render-core';
 import { createLineChart } from './charts';
+import { myTodosCount } from './state';
 
 export function renderWorkbenchPage(): HTMLElement {
   return el('section', {
     class: 'page-grid',
     children: [
       renderWelcomeGuide(),
-      renderWorkbenchActionPanel(),
+      renderTodosAlert(),
       renderWorkbenchOverviewPanel(),
       renderTaskExecutionChart(),
-      renderTaskListPanel(),
       renderWorkbenchEnvironmentPanel(),
     ],
   });
@@ -131,125 +131,38 @@ function renderChecklistItem(label: string, completed: boolean, actionLink: stri
   });
 }
 
-type WorkbenchActionItem =
-  | { kind: 'request'; request: WorkflowRequestDto; reason: string; actionLabel: string; statusLabel: string; statusKind: StatusKind }
-  | { kind: 'run'; run: WorkflowRunDto; request: WorkflowRequestDto | null; reason: string; actionLabel: string; statusLabel: string; statusKind: StatusKind };
+function renderTodosAlert(): HTMLElement | null {
+  const todosCount = myTodosCount();
+  if (todosCount === 0) return null;
 
-function requestActionLabel(status: WorkflowRequestDto['status']): string {
-  if (status === 'awaiting_clarification') return '回答问题';
-  if (status === 'completed') return '查看结果';
-  if (status === 'failed') return '查看问题';
-  if (status === 'cancelled') return '查看记录';
-  return '查看进度';
-}
+  const viewBtn = button('查看待办', 'button primary');
+  viewBtn.onclick = () => setHash('my-todos');
 
-function isRequestUserAction(request: WorkflowRequestDto): boolean {
-  return request.status === 'awaiting_clarification' || request.status === 'failed';
+  return el('section', {
+    class: 'panel todos-alert',
+    children: [
+      el('div', {
+        class: 'todos-alert-content',
+        children: [
+          el('span', { class: 'todos-alert-icon', text: '⚠️' }),
+          el('div', {
+            children: [
+              el('strong', { text: `你有 ${todosCount} 个任务需要处理` }),
+              el('p', { class: 'muted compact', text: '请及时查看并处理待办任务。' }),
+            ],
+          }),
+        ],
+      }),
+      viewBtn,
+    ],
+  });
 }
 
 function isRequestInProgress(request: WorkflowRequestDto): boolean {
   return request.status === 'pending' || request.status === 'claimed';
 }
 
-function workbenchActionItems(): WorkbenchActionItem[] {
-  const requestActions: WorkbenchActionItem[] = data.requests
-    .filter(isRequestUserAction)
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .map((request) => ({
-      kind: 'request' as const,
-      request,
-      reason: request.status === 'awaiting_clarification' ? 'AI 需要你补充信息后才能继续。' : '任务处理失败，需要查看原因。',
-      actionLabel: requestActionLabel(request.status),
-      statusLabel: requestStatusLabel(request.status),
-      statusKind: statusKind(request.status),
-    }));
-
-  const runActions: WorkbenchActionItem[] = data.runs
-    .filter((run) => run.status === 'awaiting_human')
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .map((run) => ({
-      kind: 'run' as const,
-      run,
-      request: data.requests.find((candidate) => candidate.workflowRunId === run.id) ?? null,
-      reason: `${STAGE_LABELS[run.currentStage]} 等待你确认。`,
-      actionLabel: '查看证据',
-      statusLabel: '等待确认',
-      statusKind: 'warn' as const,
-    }));
-
-  return [...requestActions, ...runActions];
-}
-
-function openWorkbenchAction(item: WorkbenchActionItem): void {
-  if (item.kind === 'request') {
-    setHash('task', item.request.id);
-    return;
-  }
-  if (item.request) setHash('task', item.request.id);
-  else setHash('workbench', item.run.id);
-}
-
-function renderWorkbenchActionPanel(): HTMLElement {
-  const actions = workbenchActionItems();
-  if (!actions.length) {
-    return el('section', {
-      class: 'panel workbench-action-panel empty-action-panel',
-      children: [
-        panelHeader('需要我处理', '暂无需要你处理的任务。'),
-        el('p', { class: 'muted compact', text: 'AI 会继续推进运行中的任务；你也可以创建一个新任务。' }),
-        el('div', { class: 'button-row', children: [actionLink('新建任务', 'new-task')] }),
-      ],
-    });
-  }
-
-  const primary = actions[0]!;
-  const open = button(primary.actionLabel, 'button primary');
-  open.onclick = () => openWorkbenchAction(primary);
-  const title = primary.kind === 'request' ? primary.request.title : primary.run.title;
-  const meta = primary.kind === 'request'
-    ? `${projectName(primary.request.projectId)} · ${fmtTime(primary.request.updatedAt)}`
-    : `${projectName(primary.run.projectId)} · ${fmtTime(primary.run.createdAt)}`;
-  return el('section', {
-    class: 'panel workbench-action-panel',
-    children: [
-      panelHeader('需要我处理', `${actions.length} 个任务等待你的输入或确认。`),
-      el('article', {
-        class: 'workbench-primary-action',
-        children: [
-          el('div', {
-            class: 'workbench-primary-copy',
-            children: [
-              pill(primary.statusLabel, primary.statusKind),
-              el('strong', { text: title }),
-              el('p', { class: 'muted compact', text: primary.reason }),
-              el('small', { text: meta }),
-            ],
-          }),
-          open,
-        ],
-      }),
-      actions.length > 1
-        ? el('div', {
-            class: 'workbench-secondary-actions',
-            children: actions.slice(1, 4).map((item) => {
-              const secondaryOpen = button(item.actionLabel, 'button secondary small');
-              secondaryOpen.onclick = () => openWorkbenchAction(item);
-              return el('div', {
-                class: 'mini-row',
-                children: [
-                  el('span', { text: item.kind === 'request' ? item.request.title : item.run.title }),
-                  secondaryOpen,
-                ],
-              });
-            }),
-          })
-        : null,
-    ],
-  });
-}
-
 function renderWorkbenchOverviewPanel(): HTMLElement {
-  const actions = workbenchActionItems();
   const activeRequests = data.requests.filter(isRequestInProgress);
   const activeRuns = data.runs.filter((run) => run.status === 'running');
   const active = activeRequests.length + activeRuns.length;
@@ -263,13 +176,6 @@ function renderWorkbenchOverviewPanel(): HTMLElement {
       el('div', {
         class: 'grid-stats',
         children: [
-          metricCardV2(
-            '需要处理',
-            String(actions.length),
-            'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z',
-            actions.length > 0 ? 'warning' : 'success',
-            actions.length > 0 ? '等待你的输入或确认' : '暂无待处理任务',
-          ),
           metricCardV2(
             'AI 正在处理',
             String(active),
@@ -297,93 +203,6 @@ function renderWorkbenchOverviewPanel(): HTMLElement {
   });
 }
 
-function renderWorkbenchStatCard(title: string, count: number, emptyText: string, items: string[], kind: StatusKind): HTMLElement {
-  return el('article', {
-    class: 'overview-card workbench-stat-card',
-    children: [
-      el('div', { class: 'overview-card-head', children: [el('strong', { text: title }), pill(String(count), kind)] }),
-      items.length
-        ? el('div', {
-            class: 'stack',
-            children: items.slice(0, 3).map((item) => el('div', { class: 'mini-row', children: [el('span', { text: item })] })),
-          })
-        : el('p', { class: 'muted compact', text: emptyText }),
-    ],
-  });
-}
-
-function renderTaskListPanel(): HTMLElement {
-  const latestRequests = [...data.requests].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  const needsAction = latestRequests.filter(isRequestUserAction);
-  const inProgress = latestRequests.filter(isRequestInProgress);
-  const completed = latestRequests.filter((request) => request.status === 'completed');
-  return el('section', {
-    class: 'panel',
-    children: [
-      panelHeader('任务列表', '按你最常处理的工作状态分组。'),
-      renderTaskListSection('需要处理', needsAction, '暂无需要你处理的任务。'),
-      renderTaskListSection('进行中', inProgress, '暂无进行中的任务。'),
-      renderTaskListSection('已完成', completed, '暂无已完成的任务。', 5),
-      latestRequests.length
-        ? el('details', {
-            class: 'raw-details workbench-all-tasks',
-            attrs: { 'data-details-key': 'workbench-all-tasks' },
-            children: [
-              el('summary', { text: `全部任务 (${latestRequests.length})` }),
-              renderTaskListSection('', latestRequests.slice(0, 12), '暂无任务。'),
-            ],
-          })
-        : null,
-    ],
-  });
-}
-
-function renderTaskListSection(title: string, requests: WorkflowRequestDto[], emptyText: string, limit = 8): HTMLElement {
-  return el('section', {
-    class: 'workbench-task-section',
-    children: [
-      title ? el('div', { class: 'workbench-section-head', children: [el('h3', { text: title }), pill(String(requests.length), requests.length ? 'info' : 'muted')] }) : null,
-      requests.length
-        ? el('div', { class: 'task-list', children: requests.slice(0, limit).map(renderTaskListItem) })
-        : el('p', { class: 'muted compact', text: emptyText }),
-    ],
-  });
-}
-
-function renderTaskListItem(request: WorkflowRequestDto): HTMLElement {
-  const open = button(requestActionLabel(request.status), 'button secondary small');
-  open.onclick = () => setHash('task', request.id);
-  return el('article', {
-    class: 'task-list-item',
-    children: [
-      el('div', {
-        class: 'task-list-main',
-        children: [
-          el('strong', { text: request.title }),
-          el('small', { text: `${projectName(request.projectId)} · ${fmtTime(request.updatedAt)}` }),
-        ],
-      }),
-      pill(requestStatusLabel(request.status), statusKind(request.status)),
-      open,
-    ],
-  });
-}
-
-function renderRunListItem(run: WorkflowRunDto): HTMLElement {
-  const request = data.requests.find((candidate) => candidate.workflowRunId === run.id);
-  const item = el('button', {
-    class: `run-item ${run.id === ui.activeRunId ? 'active' : ''}`,
-    attrs: { type: 'button' },
-    children: [
-      el('strong', { text: run.title }),
-      el('span', { text: `${projectName(run.projectId)} · ${STAGE_LABELS[run.currentStage]}` }),
-      pill(run.status),
-    ],
-  });
-  item.onclick = () => (request ? setHash('task', request.id) : setHash('workbench', run.id));
-  return item;
-}
-
 function renderWorkbenchEnvironmentPanel(): HTMLElement {
   const project = selectedProject();
   const runner = latestRunner();
@@ -404,19 +223,6 @@ function renderWorkbenchEnvironmentPanel(): HTMLElement {
     children: [
       panelHeader('执行环境', summary.kind === 'good' ? '正常时无需处理。' : '需要处理时再展开查看细节。'),
       details,
-    ],
-  });
-}
-
-function renderRunsPanel(): HTMLElement {
-  return el('section', {
-    class: 'panel side-panel',
-    children: [
-      panelHeader('Runs', '最新工作流'),
-      el('div', {
-        class: 'run-list',
-        children: data.runs.slice(0, 12).map(renderRunListItem),
-      }),
     ],
   });
 }

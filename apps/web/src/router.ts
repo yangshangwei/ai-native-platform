@@ -43,7 +43,7 @@ export function parseHash(): void {
     return;
   }
   ui.activeTaskRequestId = null;
-  if (['workbench', 'projects', 'new-task', 'reports', 'knowledge', 'settings'].includes(raw)) {
+  if (['workbench', 'my-todos', 'projects', 'new-task', 'reports', 'knowledge', 'settings'].includes(raw)) {
     ui.activePage = raw as Page;
   }
 }

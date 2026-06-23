@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Frontend architecture, component structure, and coding conventions for apps/web"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Guide for identifying reusable patterns when creating new page components"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Guide for understanding data flow between state, rendering, and routing layers"}

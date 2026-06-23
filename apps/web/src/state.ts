@@ -203,6 +203,24 @@ export function requestStatusLabel(status: WorkflowRequestDto['status']): string
   return status;
 }
 
+/**
+ * Get all todos (tasks that need user action).
+ * Returns requests with status awaiting_clarification or failed, and claimedBy is null or matches current user.
+ * For MVP: we don't have user identity yet, so return all awaiting_clarification/failed tasks.
+ */
+export function myTodos(): WorkflowRequestDto[] {
+  return data.requests.filter(
+    (request) => request.status === 'awaiting_clarification' || request.status === 'failed'
+  );
+}
+
+/**
+ * Get count of todos that need user action.
+ */
+export function myTodosCount(): number {
+  return myTodos().length;
+}
+
 export function preflightForProjectBackend(project: ProjectDto | null): AgentBackendPreflightDto | null {
   if (!project?.agentBackend) return null;
   const check = agentBackendPreflight.get(project.id);
