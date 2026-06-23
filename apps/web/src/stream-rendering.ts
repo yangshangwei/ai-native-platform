@@ -397,10 +397,14 @@ function shouldFilterEventInCompactMode(event: StreamDisplayEvent): boolean {
     return true;
   }
 
-  // Filter raw events that look like stream_event wrappers or contain only metadata
+  // Filter tool-related events entirely (tool-input, tool output, tool result)
   if (event.type === 'raw') {
     const text = event.text ?? '';
-    const payload = event.payload;
+
+    // Filter all tool call events
+    if (text.includes('[tool→') || text.includes('[tool-input') || text.includes('[tool-result') || text.includes('tool_use')) {
+      return true;
+    }
 
     // Filter stream_event JSON wrappers
     if (text.includes('"type":"stream_event"') || text.includes('"type": "stream_event"')) {

@@ -220,9 +220,29 @@ export function renderAgentStreamBody(
 }
 
 function renderStreamBodyChildren(view: AgentStreamViewModel): HTMLElement[] {
-  return view.events.length
-    ? view.lines.map(renderStreamDisplayLine)
-    : [el('div', { class: 'stream-line meta', text: '等待真实 Agent Backend 输出；连接后会先回放历史事件，再继续 live tail。' })];
+  if (!view.events.length) {
+    return [el('div', { class: 'stream-line meta', text: '等待真实 Agent Backend 输出；连接后会先回放历史事件，再继续 live tail。' })];
+  }
+
+  // Performance optimization: limit rendered lines to prevent DOM bloat
+  const MAX_RENDERED_LINES = 500;
+  const lines = view.lines;
+  const truncated = lines.length > MAX_RENDERED_LINES;
+  const visibleLines = truncated ? lines.slice(-MAX_RENDERED_LINES) : lines;
+
+  const children = visibleLines.map(renderStreamDisplayLine);
+
+  if (truncated) {
+    const skippedCount = lines.length - MAX_RENDERED_LINES;
+    children.unshift(
+      el('div', {
+        class: 'stream-line meta',
+        text: `（为避免卡顿，已隐藏前 ${skippedCount} 行日志）`,
+      })
+    );
+  }
+
+  return children;
 }
 
 function renderStreamDisplayLine(line: StreamDisplayLine): HTMLElement {

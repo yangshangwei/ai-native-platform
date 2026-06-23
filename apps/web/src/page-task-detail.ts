@@ -24,6 +24,7 @@ import {
   FLOW_LABELS,
   STAGE_HELP,
   STAGE_LABELS,
+  STAGE_TO_GATE,
   visibleStagesForRun,
   artifactViewerScrollKey,
   buildAcceptanceChecklist,
@@ -748,6 +749,12 @@ function renderTaskNextActionPanel(
     });
   }
   if (projection.pendingGate) return renderApprovalPanel(detail, projection.pendingGate, projection.currentStage);
+
+  // When current stage is failed, show actionable guidance
+  if (detail.run.status === 'failed') {
+    return renderFailedStageActionPanel(detail, projection);
+  }
+
   return el('section', {
     class: 'panel side-panel',
     children: [
@@ -978,15 +985,23 @@ function renderLifecycle(detail: RunDetail, projection: ReturnType<typeof buildR
       el('div', {
         class: 'stage-board',
         children: projection.visibleStages.map((stage, index) => {
-          return el('article', {
+          const card = el('article', {
             class: `stage-card ${stage.state}`,
             children: [
               el('span', { class: 'stage-index', text: String(index + 1).padStart(2, '0') }),
               el('strong', { text: stage.label }),
-              el('small', { text: stageCardHint(stage.state) }),
+              el('small', { text: stage.state === 'failed' ? '⚠️ 点击查看详情' : stageCardHint(stage.state) }),
               el('span', { class: `stage-state ${stage.state}`, text: stageStateLabel(stage.state) }),
             ],
           });
+          if (stage.state === 'failed') {
+            card.style.cursor = 'pointer';
+            card.onclick = () => {
+              const panel = document.querySelector('.current-stage-panel');
+              if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            };
+          }
+          return card;
         }),
       }),
     ],
@@ -2058,4 +2073,75 @@ async function submitRequirementAction(
   } finally {
     render();
   }
+}
+
+function renderFailedStageActionPanel(
+  detail: RunDetail,
+  projection: ReturnType<typeof buildRunProjection>,
+): HTMLElement {
+  const stage = projection.currentStage;
+  const failedGate = [...detail.gates]
+    .reverse()
+    .find((g) => g.status === 'fail' && (g.gateId === STAGE_TO_GATE[stage] || g.stepRunId === detail.steps.find(s => s.stage === stage)?.id));
+  const failedBuild = detail.builds.find((b) => b.status === 'failed');
+  const failedCommand = detail.commands.find((c) => c.exitCode !== 0 && c.exitCode !== null);
+
+  const failureReasons: string[] = [];
+  if (failedGate) {
+    const failedRules = failedGate.ruleResults.filter((r) => r.status === 'fail');
+    failureReasons.push(`质量门禁失败：${failedRules.map((r) => ruleLabel(r.ruleId)).join('、')}`);
+  }
+  if (failedBuild) {
+    failureReasons.push(`构建失败：${failedBuild.mavenCommand}`);
+  }
+  if (failedCommand) {
+    failureReasons.push(`命令执行失败 (exit ${failedCommand.exitCode})：${failedCommand.command}`);
+  }
+
+  const scrollToStage = button('查看失败详情', 'button secondary');
+  scrollToStage.onclick = () => {
+    const panel = document.querySelector('.current-stage-panel');
+    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const retryBtn = button('重试该阶段', 'button primary');
+  retryBtn.onclick = async () => {
+    const retryKey = `${detail.run.id}:${stage}`;
+    retryInFlight.add(retryKey);
+    render();
+    try {
+      await api(`/workflow-runs/${encodeURIComponent(detail.run.id)}/retry-step`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ stage, actor: 'web' }),
+      });
+      await api('/runner/control/retry-run', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ workflowRunId: detail.run.id, stage }),
+      }).catch(() => {});
+      await loadRunDetail(detail.run.id, false);
+      await loadData({ render: false, keepDetail: true });
+    } catch (err) {
+      ui.lastError = errorMessage(err);
+    } finally {
+      retryInFlight.delete(retryKey);
+      render();
+    }
+  };
+
+  return el('section', {
+    class: 'panel side-panel checkpoint',
+    children: [
+      panelHeader('需要处理', `${STAGE_LABELS[stage]}出现失败`),
+      el('p', { text: '该阶段执行失败，请查看详情后决定是否重试。' }),
+      failureReasons.length
+        ? el('ul', {
+            class: 'clean-list',
+            children: failureReasons.map((reason) => el('li', { text: reason })),
+          })
+        : el('p', { class: 'muted compact', text: '正在分析失败原因...' }),
+      el('div', { class: 'button-row', children: [scrollToStage, retryBtn] }),
+    ],
+  });
 }

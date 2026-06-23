@@ -407,11 +407,12 @@
       .metric-value { display: block; font-size: 22px; line-height: 1.15; margin: 3px 0; }
 
       .stage-board { display: grid; grid-template-columns: repeat(9, minmax(105px, 1fr)); gap: 10px; overflow-x: auto; padding-bottom: 4px; }
-      .stage-card { min-height: 120px; border: 1px solid var(--line); border-radius: 16px; padding: 12px; display: grid; gap: 6px; align-content: start; background: var(--surface); }
+      .stage-card { min-height: 120px; border: 1px solid var(--line); border-radius: 16px; padding: 12px; display: grid; gap: 6px; align-content: start; background: var(--surface); transition: all 0.2s ease; }
       .stage-card.done { border-color: #86efac; background: var(--good-bg); }
       .stage-card.active { border-color: #93c5fd; background: var(--info-bg); }
       .stage-card.blocked { border-color: #fdba74; background: var(--warn-bg); }
-      .stage-card.failed { border-color: #fecaca; background: var(--bad-bg); }
+      .stage-card.failed { border-color: #fecaca; background: var(--bad-bg); border-width: 2px; box-shadow: 0 0 0 3px rgba(254, 202, 202, 0.3); }
+      .stage-card.failed:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(185, 28, 28, 0.2), 0 0 0 3px rgba(254, 202, 202, 0.4); }
       .stage-index { color: var(--faint); font-weight: 800; font-size: 11px; }
       .stage-card strong { font-size: 13px; }
       .stage-card small { color: var(--muted); line-height: 1.35; }
