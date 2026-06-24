@@ -552,7 +552,7 @@
   align-items: baseline;
   gap: 0.25rem;
   padding: var(--space-md) var(--space-lg);
-  background: var(--color-primary-bg, #eff6ff);
+  background: var(--primary-50, #eff6ff);
   border: 2px solid var(--color-primary, #3b82f6);
   border-radius: var(--radius-lg);
   flex-shrink: 0;
@@ -583,14 +583,14 @@
   align-items: center;
   gap: var(--space-md);
   padding: var(--space-md) var(--space-lg);
-  background: var(--bg-subtle, #f9fafb);
+  background: var(--bg-surface, #ffffff);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-md);
   transition: all var(--transition-base);
 }
 
 .my-todos-item:hover {
-  background: var(--bg-surface);
+  background: var(--bg-surface-hover, #f9fafb);
   border-color: var(--color-primary, #3b82f6);
   box-shadow: var(--shadow-sm);
   transform: translateY(-1px);
@@ -636,8 +636,8 @@
  * 提醒用户有待办任务需要处理
  */
 .todos-alert {
-  background: var(--color-warning-bg, #fef3c7);
-  border: 1px solid var(--color-warning-border, #fbbf24);
+  background: var(--warning-100, #fef3c7);
+  border: 1px solid var(--color-warning, #fb923c);
   border-radius: var(--radius-lg);
   padding: var(--space-lg) var(--space-xl);
   display: flex;
@@ -701,12 +701,14 @@
   flex-direction: column;
   align-items: center;
   gap: var(--space-md);
+  background: var(--bg-surface, #ffffff);
 }
 
 .empty-state-icon {
   font-size: 4rem;
   line-height: 1;
   margin-bottom: var(--space-sm);
+  opacity: 0.8;
 }
 
 .empty-state-title {
