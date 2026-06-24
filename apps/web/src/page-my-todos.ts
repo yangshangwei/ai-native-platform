@@ -11,6 +11,7 @@ import type { WorkflowRequestDto } from './types';
 import { button, el, fmtTime, panelHeader, pill, statusKind } from './dom';
 import { data, myTodos, projectName, requestStatusLabel } from './state';
 import { setHash } from './router';
+import { render } from './render-core';
 
 type TodoFilter = 'all' | 'awaiting_clarification' | 'failed';
 type TodoSort = 'newest' | 'oldest';
@@ -218,6 +219,5 @@ function getFilteredTodos(): WorkflowRequestDto[] {
 
 function rerenderTodosPage(): void {
   // Trigger a full re-render
-  const event = new CustomEvent('todos-filter-changed');
-  window.dispatchEvent(event);
+  render();
 }
