@@ -1643,3 +1643,37 @@ Fixed task detail page flashing by adding conditional detail reload logic. Only 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 43: 优化工作台，新增我的待办页面
+
+**Date**: 2026-06-24
+**Task**: 优化工作台，新增我的待办页面
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+新增独立的'我的待办'页面，支持按状态/项目筛选和时间排序。重构工作台页面，移除任务列表面板，专注概览趋势。优化UI布局和深色模式样式。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `488896f` | (see git log) |
+| `bd21711` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
