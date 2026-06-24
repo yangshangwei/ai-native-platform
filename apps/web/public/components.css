@@ -676,7 +676,7 @@
   flex-wrap: wrap;
   gap: var(--space-xl);
   align-items: center;
-  padding: var(--space-lg) 0;
+  padding: var(--space-lg) var(--space-xl);
 }
 
 .filter-group {
