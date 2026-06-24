@@ -1,6 +1,7 @@
 /**
  * Component Styles - AI Native Platform
  * Modular, reusable component styles following Sub2API design system
+ * Version: 2024-06-24-v2 (筛选器样式优化)
  */
 
 /* ==================== Chart Panel ==================== */
@@ -693,27 +694,27 @@
 }
 
 /* 筛选按钮样式增强 */
-.filter-group button.button.small {
+.filter-group button.small {
   min-width: auto;
   font-weight: 500;
   transition: all 0.2s ease;
 }
 
 /* 未选中状态 */
-.filter-group button.button.small.secondary {
+.filter-group button.small.secondary {
   background: var(--bg-surface, #ffffff);
   border: 1px solid var(--border-light);
   color: var(--text-secondary);
 }
 
-.filter-group button.button.small.secondary:hover {
+.filter-group button.small.secondary:hover {
   background: var(--bg-surface-hover, #f3f4f6);
   border-color: var(--color-primary, #3b82f6);
   color: var(--text-primary);
 }
 
 /* 选中状态 */
-.filter-group button.button.small.primary {
+.filter-group button.small.primary {
   background: var(--color-primary, #3b82f6);
   border: 1px solid var(--color-primary, #3b82f6);
   color: #ffffff;
@@ -721,7 +722,7 @@
   box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3);
 }
 
-.filter-group button.button.small.primary:hover {
+.filter-group button.small.primary:hover {
   background: var(--color-primary-hover, #2563eb);
   border-color: var(--color-primary-hover, #2563eb);
 }
