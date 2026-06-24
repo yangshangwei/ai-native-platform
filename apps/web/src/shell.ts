@@ -206,7 +206,7 @@ function renderGlobalStatusBadge(label: string, count: number, kind: StatusKind)
   });
 }
 
-function renderTopbar(): HTMLElement {
+function renderTopbar(): HTMLElement | null {
   const project = ui.activePage === 'new-task'
     ? activeProjects().find((p) => p.id === newTaskFormDraft.projectId) ?? activeProjects()[0] ?? null
     : selectedProject();
@@ -230,6 +230,8 @@ function renderTopbar(): HTMLElement {
     ? [contextItem('创建准备', newTaskReadiness.value, newTaskReadiness.kind)]
     : ui.activePage === 'workbench'
       ? [contextItem('执行环境', workbenchEnvironment.value, workbenchEnvironment.kind)]
+    : ui.activePage === 'my-todos'
+      ? [] // 我的待办页面不显示上下文信息
     : ui.activePage === 'projects'
       ? [contextItem('接入状态', projectOnboarding.value, projectOnboarding.kind)]
     : ui.activePage === 'reports'
@@ -245,6 +247,11 @@ function renderTopbar(): HTMLElement {
         contextItem('Agent Backend', backend.value, backend.kind),
         contextItem('Build Env', buildEnvLabel(), runner ? 'good' : 'warn'),
       ];
+
+  // 我的待办页面不显示 topbar
+  if (ui.activePage === 'my-todos') {
+    return null;
+  }
 
   return el('header', {
     class: 'topbar',
