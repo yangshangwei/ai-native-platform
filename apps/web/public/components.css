@@ -676,7 +676,8 @@
   flex-wrap: wrap;
   gap: var(--space-xl);
   align-items: center;
-  padding: var(--space-lg) var(--space-xl);
+  /* 使用与 .panel 相同的 padding 确保对齐 */
+  padding: 18px;
 }
 
 .filter-group {
