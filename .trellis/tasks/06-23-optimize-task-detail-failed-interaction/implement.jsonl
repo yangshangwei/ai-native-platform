@@ -1,0 +1,7 @@
+{"role":"system","content":"Project spec index"}
+{"role":"user","content":"file:.trellis/spec/web/frontend/design-system.md"}
+{"role":"assistant","content":"Loaded design system guidelines"}
+{"role":"user","content":"file:.trellis/spec/web/frontend/interaction-patterns.md"}
+{"role":"assistant","content":"Loaded interaction patterns"}
+{"role":"user","content":"file:apps/web/src/page-task-detail.ts"}
+{"role":"assistant","content":"Loaded current task detail page implementation"}
