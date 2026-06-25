@@ -607,16 +607,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  /* 移除默认 padding，让卡片边界与筛选器面板边界对齐 */
   padding: 0;
 }
-
-/* 移除待办列表容器的 padding */
-.panel:has(> .my-todos-list) {
-  padding: 0;
-}
-
-/* 待办卡片本身保持内边距用于内容 */
 
 .my-todos-item {
   display: flex;
@@ -667,6 +659,32 @@
 
 .meta-separator {
   opacity: 0.5;
+}
+
+@media (max-width: 640px) {
+  .my-todos-item {
+    display: grid;
+    align-items: start;
+    gap: var(--space-sm);
+  }
+
+  .my-todos-item .pill {
+    justify-self: start;
+  }
+
+  .my-todos-item-title {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .my-todos-item-meta {
+    flex-wrap: wrap;
+  }
+
+  .my-todos-item > .button {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 /* ==================== Todos Alert ==================== */
@@ -804,6 +822,15 @@
   display: flex;
   gap: var(--space-md);
   justify-content: center;
+}
+
+.empty-state.my-todos-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  text-align: center;
 }
 
 /* ==================== Report Cards V2 (Card-based Layout) ==================== */

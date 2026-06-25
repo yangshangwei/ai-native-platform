@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/06-26-align-my-todos-layout/prd.md", "reason": "Defines the layout bug, acceptance criteria, and narrow implementation approach."}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Entry point for web frontend conventions."}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "Documents the vanilla TypeScript SPA rendering and styling conventions."}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "Defines the web frontend quality gate and typecheck expectations."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking guide index required by the Trellis workflow."}

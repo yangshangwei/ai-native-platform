@@ -128,7 +128,7 @@ function renderSortButton(label: string, sort: TodoSort): HTMLButtonElement {
 
 function renderTodoList(todos: WorkflowRequestDto[]): HTMLElement {
   return el('section', {
-    class: 'panel',
+    class: 'panel my-todos-list-panel',
     children: [
       el('div', {
         class: 'my-todos-list',
@@ -167,7 +167,7 @@ function renderTodoItem(request: WorkflowRequestDto): HTMLElement {
 
 function renderEmptyState(): HTMLElement {
   return el('section', {
-    class: 'panel empty-state',
+    class: 'panel empty-state my-todos-empty-state',
     children: [
       el('div', {
         class: 'empty-state-icon',

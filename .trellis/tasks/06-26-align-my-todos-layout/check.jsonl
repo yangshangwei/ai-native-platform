@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/06-26-align-my-todos-layout/prd.md", "reason": "Acceptance criteria and definition of done for verification."}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "Quality gate for web frontend changes."}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "Renderer and styling conventions to validate against."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared guide index required by the Trellis workflow."}
