@@ -24,6 +24,7 @@ import {
   type LlmBackendKind,
   type LlmFallbackDeps,
 } from './llm-fallback';
+import { countCoordinatorMessages, enforceMaxClarificationRounds } from './clarification-policy';
 import { getConfig } from '../../config-client';
 
 export interface TriageInput {
@@ -49,13 +50,27 @@ export async function triageRequest(input: TriageInput): Promise<CoordinatorDeci
   };
 
   const ruleResult = await classifyByRules(ruleInput);
-  const threshold = await getConfig('coordinator.confidence_threshold');
+  const [threshold, clarificationStyle, maxClarificationRounds] = await Promise.all([
+    getConfig('coordinator.confidence_threshold'),
+    getConfig('coordinator.clarification_style'),
+    getConfig('coordinator.max_clarification_rounds'),
+  ]);
+  const coordinatorMessageCount = countCoordinatorMessages(input.messageHistory);
+  const ruleNeedsClarification = ruleResult.decision.action === 'pause_for_human';
+  const mustUseLlmForGrillMeClarification =
+    clarificationStyle === 'grill-me' && ruleNeedsClarification;
+  const mustUseLlmForMaxRoundConvergence =
+    coordinatorMessageCount >= maxClarificationRounds && ruleNeedsClarification;
 
   let final: ClassifyOutput;
   let source: CoordinatorDecision['source'];
   let llmAgentKind: LlmBackendKind | null = null;
 
-  if (ruleResult.confidence >= threshold) {
+  if (
+    ruleResult.confidence >= threshold &&
+    !mustUseLlmForGrillMeClarification &&
+    !mustUseLlmForMaxRoundConvergence
+  ) {
     final = ruleResult;
     source = 'rules';
   } else {
@@ -94,6 +109,12 @@ export async function triageRequest(input: TriageInput): Promise<CoordinatorDeci
       source = 'llm';
     }
   }
+
+  final = enforceMaxClarificationRounds(
+    final,
+    maxClarificationRounds,
+    coordinatorMessageCount,
+  );
 
   if (llmAgentKind) {
     await emitCoordinatorDecisionEvent({

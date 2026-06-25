@@ -170,9 +170,26 @@ describe('triageRequest degraded fallback (Issue 2 fix)', () => {
     expect(decision.source).toBe('llm');
   });
 
-  it('does not degrade when rule itself paused (e.g. too short)', async () => {
-    // Very-short input → rules emit pause with confidence 0.85 (≥ threshold),
-    // LLM is never called, no degraded path triggers.
+  it('preserves default-style rule pause when rule itself paused (e.g. too short)', async () => {
+    invalidateConfigCache();
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          overrides: {
+            'coordinator.clarification_style': {
+              key: 'coordinator.clarification_style',
+              scope: 'global',
+              valueJson: JSON.stringify('default'),
+              updatedAt: '2026-01-01T00:00:00Z',
+              updatedBy: 'test',
+            },
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as typeof fetch;
+
+    // Very-short input in default style → rules emit pause with confidence
+    // 0.85 (≥ threshold), LLM is not called, no degraded path triggers.
     const decision = await triageRequest({
       workflowRequestId: 'wreq_too_short_test' as never,
       userRequest: '?',

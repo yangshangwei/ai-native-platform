@@ -34,6 +34,7 @@ import {
 } from '@ainp/shared';
 import { buildUserPrompt } from './prompt';
 import { parseDecision, type FallbackQuestions } from './decision';
+import { countCoordinatorMessages, enforceMaxClarificationRounds } from './clarification-policy';
 import { claudeCliAvailable, emptyClaudeHooksSettings, readUserSettingsEnv } from '../claude-code';
 import { codexCliAvailable } from '../codex';
 import { consumeLines } from '../cli-common';
@@ -187,27 +188,6 @@ export async function classifyByLlm(
   const fallback = await loadFallbackQuestions();
   const deps = opts.deps ?? DEFAULT_DEPS;
   const order = selectionOrder(opts.preferredBackend);
-
-  let chosen: LlmBackendKind | null = null;
-  for (const candidate of order) {
-    if (await deps.checkAvailability(candidate)) {
-      chosen = candidate;
-      break;
-    }
-  }
-  if (!chosen) {
-    return {
-      decision: {
-        action: 'pause_for_human',
-        questions: [fallback.unavailable],
-        reason: 'no LLM backend available',
-      },
-      confidence: 0.5,
-      rulesFired: ['llm.unavailable'],
-      failureKind: 'unavailable',
-    };
-  }
-
   // PR2: Read clarification style and max rounds configuration
   const [clarificationStyle, maxClarificationRounds, defaultPrompt, grillMePrompt, timeoutMs] =
     await Promise.all([
@@ -218,8 +198,31 @@ export async function classifyByLlm(
       getConfig('runner.coordinator.oneshot_timeout_ms'),
     ]);
 
-  // PR2: Count coordinator messages in history to enforce max rounds
-  const coordinatorMessageCount = input.messageHistory.filter((m) => m.role === 'coordinator').length;
+  const coordinatorMessageCount = countCoordinatorMessages(input.messageHistory);
+
+  let chosen: LlmBackendKind | null = null;
+  for (const candidate of order) {
+    if (await deps.checkAvailability(candidate)) {
+      chosen = candidate;
+      break;
+    }
+  }
+  if (!chosen) {
+    return enforceMaxClarificationRounds(
+      {
+        decision: {
+          action: 'pause_for_human',
+          questions: [fallback.unavailable],
+          reason: 'no LLM backend available',
+        },
+        confidence: 0.5,
+        rulesFired: ['llm.unavailable'],
+        failureKind: 'unavailable',
+      },
+      maxClarificationRounds,
+      coordinatorMessageCount,
+    );
+  }
 
   // PR2: Select system prompt based on clarification style
   let systemPrompt: string;
@@ -265,20 +268,27 @@ export async function classifyByLlm(
       questions: [fallback.invocationFailed],
       reason: `${chosen} CLI invocation failed: ${errorMessage(err)}`,
     };
-    if (shouldEmitDecision) {
-      await emitDecision(emit, decision, 0.5, ['llm.invocation_failed'], 'llm');
-    }
-    return {
-      decision: {
-        action: 'pause_for_human',
-        questions: [fallback.invocationFailed],
-        reason: `${chosen} CLI invocation failed: ${errorMessage(err)}`,
+    const failedOutput = enforceMaxClarificationRounds(
+      {
+        decision,
+        confidence: 0.5,
+        rulesFired: ['llm.invocation_failed'],
+        agentKind: chosen,
+        failureKind: 'invocation_failed',
       },
-      confidence: 0.5,
-      rulesFired: ['llm.invocation_failed'],
-      agentKind: chosen,
-      failureKind: 'invocation_failed',
-    };
+      maxClarificationRounds,
+      coordinatorMessageCount,
+    );
+    if (shouldEmitDecision) {
+      await emitDecision(
+        emit,
+        failedOutput.decision,
+        failedOutput.confidence,
+        failedOutput.rulesFired,
+        'llm',
+      );
+    }
+    return failedOutput;
   }
 
   let decision = parseDecision(raw, chosen, fallback);
@@ -302,21 +312,33 @@ export async function classifyByLlm(
   // produced no usable output, which we treat as availability degradation
   // (same family as invocation_failed / unavailable). `invalid_json` /
   // `unknown_action` are NOT transient — the LLM answered, just badly.
-  const failureKind: ClassifyOutput['failureKind'] =
-    decision.action === 'pause_for_human' && decision.reason === 'empty LLM output'
-      ? 'empty'
-      : null;
-  if (shouldEmitDecision) {
-    await emitDecision(emit, decision, 0.7, [`llm.classified.${chosen}`], 'llm');
-  }
-
-  return {
+  const outputWithParsedDecision: ClassifyOutput = {
     decision,
     confidence: 0.7,
     rulesFired: [`llm.classified.${chosen}`],
     agentKind: chosen,
-    failureKind,
+    failureKind:
+      decision.action === 'pause_for_human' && decision.reason === 'empty LLM output'
+        ? 'empty'
+        : null,
   };
+  const finalOutput = enforceMaxClarificationRounds(
+    outputWithParsedDecision,
+    maxClarificationRounds,
+    coordinatorMessageCount,
+  );
+
+  if (shouldEmitDecision) {
+    await emitDecision(
+      emit,
+      finalOutput.decision,
+      finalOutput.confidence,
+      finalOutput.rulesFired,
+      'llm',
+    );
+  }
+
+  return finalOutput;
 }
 
 // ---- Claude Code one-shot --------------------------------------------------
@@ -656,4 +678,3 @@ function compactCliError(value: string): string {
   if (!masked) return 'no output';
   return masked.length <= 500 ? masked : `${masked.slice(0, 499)}…`;
 }
-
