@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 45
-- **Last Active**: 2026-06-24
+- **Total Sessions**: 46
+- **Last Active**: 2026-06-25
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1748 | Active |
+| `journal-1.md` | ~1782 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 46 | 2026-06-25 | 新增只读问答（ask）类型 + Octopus 品牌升级 | `5d086ed`, `8d60585` | `feat/context-injection-layer-mvp` |
 | 45 | 2026-06-24 | 我的待办页面交互优化和样式修复 | `715da6f`, `8c47b4c`, `27feb35`, `70351fd` | `feat/context-injection-layer-mvp` |
 | 44 | 2026-06-24 | 修复我的待办页面筛选器交互 | `715da6f` | `feat/context-injection-layer-mvp` |
 | 43 | 2026-06-24 | 优化工作台，新增我的待办页面 | `488896f`, `bd21711` | `feat/context-injection-layer-mvp` |

@@ -1746,3 +1746,37 @@ Fixed task detail page flashing by adding conditional detail reload logic. Only 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 46: 新增只读问答（ask）类型 + Octopus 品牌升级
+
+**Date**: 2026-06-25
+**Task**: 新增只读问答（ask）类型 + Octopus 品牌升级
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+实现 ask 类型（只读问答，避免提问误跑 flow）：规则+LLM 双路判定、任务列表过滤、前端下拉+preview hint。792 tests 全绿。Web UI 品牌升级为 Octopus，工作台卡片加点击导航。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5d086ed` | (see git log) |
+| `8d60585` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
