@@ -1813,3 +1813,36 @@ Fixed task detail page flashing by adding conditional detail reload logic. Only 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 48: Fix Coordinator Grill Me routing
+
+**Date**: 2026-06-26
+**Task**: Fix Coordinator Grill Me routing
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Made Coordinator clarification_style=grill-me apply to rule-originated clarification as well as LLM fallback, added shared max-round enforcement, tests, and runner backend spec coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3dfb230` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
