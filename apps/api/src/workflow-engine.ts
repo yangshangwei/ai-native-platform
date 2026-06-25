@@ -162,6 +162,8 @@ export function createWorkflowRequest(params: {
   flowId?: WorkflowRequest['flowId'];
   /** Optional UI override pinning the run's first stage (PRD 05-08). */
   startStage?: WorkflowRequest['startStage'];
+  /** 06-25 ask-flow: discriminator for read-only Q&A. */
+  kind?: WorkflowRequest['kind'];
 }): WorkflowRequest {
   const now = nowIso();
   const request: WorkflowRequest = {
@@ -170,7 +172,7 @@ export function createWorkflowRequest(params: {
     type: params.type,
     title: params.title,
     branch: params.branch,
-    status: 'pending',
+    status: params.kind === 'ask' ? 'awaiting_clarification' : 'pending',
     claimedBy: null,
     workflowRunId: null,
     error: null,
@@ -178,6 +180,7 @@ export function createWorkflowRequest(params: {
     updatedAt: now,
     flowId: params.flowId ?? null,
     startStage: params.startStage ?? null,
+    kind: params.kind ?? null,
   };
   if (params.firstMessage) {
     const message: RequestMessage = {

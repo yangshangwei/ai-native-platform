@@ -5,6 +5,7 @@ import type { Iso8601, WorkflowRequestId, WorkflowRunId } from './ids';
  *
  * Mirrors cs-brainstorm's three cases plus an explicit bugfix track and an
  * `unclear` escape hatch that always pauses for human clarification.
+ * 06-25 ask-flow: added 'ask' for read-only Q&A requests.
  */
 export type RouteCase =
   | 'feature_clear'
@@ -12,6 +13,7 @@ export type RouteCase =
   | 'roadmap_needed'
   | 'bugfix'
   | 'refactor_clear'
+  | 'ask'
   | 'unclear';
 
 /**
@@ -27,7 +29,7 @@ export type CoordinatorAction =
   | {
       action: 'proceed';
       routeCase: RouteCase;
-      runType: 'feature' | 'bugfix' | 'smoke' | 'refactor';
+      runType: 'feature' | 'bugfix' | 'smoke' | 'refactor' | 'ask';
       reason: string;
     }
   | {

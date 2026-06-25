@@ -17,6 +17,7 @@ import {
   COORDINATOR_LARGE_SCOPE_KEYWORDS_DEFAULT,
   COORDINATOR_LARGE_SCOPE_REGEX_DEFAULT,
   COORDINATOR_REFACTOR_KEYWORDS_DEFAULT,
+  COORDINATOR_ASK_KEYWORDS_DEFAULT,
   COORDINATOR_CONFIDENCE_THRESHOLD_DEFAULT,
   COORDINATOR_SYSTEM_PROMPT_DEFAULT,
   COORDINATOR_CLARIFICATION_STYLE_DEFAULT,
@@ -110,6 +111,13 @@ export const CONFIG_REGISTRY = {
     description: '匹配 "X系统 / Y体系" 模式的正则字面量（不含 / 分隔符）',
     category: 'intelligent_analysis',
     source: 'apps/runner/src/agents/coordinator/rules.ts:83',
+  },
+  'coordinator.ask_keywords': {
+    type: 'string_array',
+    default: COORDINATOR_ASK_KEYWORDS_DEFAULT,
+    description: '提问式关键词；命中 ≥1 或有疑问标点 → runType=ask（只读问答，替换语义）',
+    category: 'intelligent_analysis',
+    source: 'packages/shared/src/coordinator/rules-core.ts (ask branch)',
   },
 
   // ============ Tab "conversation_ux" — 4 keys ============

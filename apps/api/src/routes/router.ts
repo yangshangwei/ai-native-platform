@@ -25,6 +25,7 @@ const KNOWN_RUN_TYPES: readonly WorkflowRunType[] = [
   'bugfix',
   'smoke',
   'refactor',
+  'ask',
 ];
 
 function isWorkflowRunType(value: unknown): value is WorkflowRunType {

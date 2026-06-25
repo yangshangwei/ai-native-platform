@@ -61,7 +61,7 @@ const projectBranchRefreshInFlight = new Set<string>();
 // drafts across polling renders".
 export const newTaskFormDraft: {
   projectId: string;
-  type: '' | 'feature' | 'bugfix' | 'smoke' | 'refactor';
+  type: '' | 'feature' | 'bugfix' | 'smoke' | 'refactor' | 'ask';
   title: string;
   details: string;
   branch: string;
@@ -230,10 +230,10 @@ export function renderNewTaskPage(): HTMLElement {
   // Default to "let AI decide" — the server-side coordinator picks runType
   // from title alone; smart-router output is preview/audit unless explicitly
   // plumbed through a future override. Users only touch this dropdown
-  // when they want to override the AI judgment (e.g. for refactor / smoke
+  // when they want to override the AI judgment (e.g. for refactor / smoke / ask
   // which the coordinator's rules may not pick up reliably).
   typeSelect.appendChild(el('option', { text: '(让 AI 自动判定)', attrs: { value: '' } }));
-  for (const type of ['feature', 'bugfix', 'smoke', 'refactor']) typeSelect.appendChild(el('option', { text: type, attrs: { value: type } }));
+  for (const type of ['feature', 'bugfix', 'smoke', 'refactor', 'ask']) typeSelect.appendChild(el('option', { text: type, attrs: { value: type } }));
 
   // 05-08 new-task-form-flow-startstage-override: explicit Flow override.
   // Mirrors the FLOW_REGISTRY entries in `packages/shared/src/flows/registry.ts`
@@ -356,7 +356,7 @@ export function renderNewTaskPage(): HTMLElement {
     rulesFired: string[];
   };
   type CoordinatorPreviewResponse = {
-    predictedRunType: 'feature' | 'bugfix' | 'smoke' | 'refactor' | null;
+    predictedRunType: 'feature' | 'bugfix' | 'smoke' | 'refactor' | 'ask' | null;
     confidence: number;
     rulesFired: string[];
     hint: 'too_short' | 'large_scope' | null;
@@ -369,7 +369,8 @@ export function renderNewTaskPage(): HTMLElement {
       | 'feature'
       | 'bugfix'
       | 'smoke'
-      | 'refactor';
+      | 'refactor'
+      | 'ask';
     if (!projectId || !titleText) {
       recoCard.style.display = 'none';
       return;
@@ -388,10 +389,10 @@ export function renderNewTaskPage(): HTMLElement {
       }),
     );
     try {
-      let runTypeForRouter: 'feature' | 'bugfix' | 'smoke' | 'refactor';
+      let runTypeForRouter: 'feature' | 'bugfix' | 'smoke' | 'refactor' | 'ask';
       let coordPreview: CoordinatorPreviewResponse | null = null;
       if (userOverrideType) {
-        runTypeForRouter = userOverrideType;
+        runTypeForRouter = userOverrideType || 'feature';
       } else {
         coordPreview = await api<CoordinatorPreviewResponse>('/coordinator/preview', {
           method: 'POST',
@@ -422,7 +423,9 @@ export function renderNewTaskPage(): HTMLElement {
       if (coordPreview) {
         const confPct = Math.round(coordPreview.confidence * 100);
         const aiVerdictText = coordPreview.predictedRunType
-          ? `AI 判定: ${coordPreview.predictedRunType} · 置信 ${confPct}%`
+          ? coordPreview.predictedRunType === 'ask'
+            ? `AI 判定: ask（只读问答）· 置信 ${confPct}%`
+            : `AI 判定: ${coordPreview.predictedRunType} · 置信 ${confPct}%`
           : `AI 判定: 暂无（先看下方 hint）· 置信 ${confPct}%`;
         children.push(el('p', { class: 'compact', text: aiVerdictText }));
         if (coordPreview.hint === 'too_short') {
@@ -437,6 +440,15 @@ export function renderNewTaskPage(): HTMLElement {
             el('p', {
               class: 'muted compact warn',
               text: '⚠ 范围较大，提交后 Coordinator 会建议先拆 2-3 个子能力做最小闭环。',
+            }),
+          );
+        }
+        // 06-25 ask-flow: hint when ask type detected
+        if (coordPreview.predictedRunType === 'ask') {
+          children.push(
+            el('p', {
+              class: 'muted compact',
+              text: '📖 问答模式：不开分支、不改文件，只回答问题。',
             }),
           );
         }
@@ -716,6 +728,8 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
         ...(typeOverride && { type: typeOverride }),
         ...(flowOverride && { flowId: flowOverride }),
         ...(startStageOverride && { startStage: startStageOverride }),
+        // 06-25 ask-flow: when user selects 'ask' type, set kind='ask'
+        ...(typeOverride === 'ask' && { kind: 'ask' as const }),
         title,
         branch: String(fd.get('branch') ?? '').trim() || project?.defaultBranch,
         // PR1 atomic intake (PRD §P0-2 / P0-3): API persists the request

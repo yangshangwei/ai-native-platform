@@ -106,10 +106,14 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     run = detail.run;
     console.log(`[runner] resuming workflow-run ${run.id} at stage ${opts.startStage ?? run.currentStage} (flow=${run.flowId})`);
   } else {
+    // 06-25 ask-flow: 'ask' requests never reach orchestrator (they have
+    // status='awaiting_clarification', not 'pending'), but TypeScript doesn't
+    // know that. Filter out 'ask' to satisfy createWorkflowRun's type constraint.
+    const executableRunType = opts.runType === 'ask' ? 'feature' : (opts.runType ?? 'feature');
     run = await api.createWorkflowRun({
       projectName: project.name,
       title: opts.title,
-      type: opts.runType ?? 'feature',
+      type: executableRunType,
       sourceBranch: opts.sourceBranch ?? project.defaultBranch,
       flowId: opts.flowId,
       startStage: opts.startStage,

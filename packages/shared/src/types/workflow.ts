@@ -57,7 +57,7 @@ export type WorkflowRunStatus =
   | 'failed'
   | 'cancelled';
 
-export type WorkflowRunType = 'feature' | 'bugfix' | 'smoke' | 'refactor';
+export type WorkflowRunType = 'feature' | 'bugfix' | 'smoke' | 'refactor' | 'ask';
 
 // ---------------------------------------------------------------------------
 // V2 W2-1: FLOW_REGISTRY contracts (shared types)
@@ -234,6 +234,12 @@ export interface WorkflowRequest {
    * The orchestrator slices `FLOW_REGISTRY[flowId].stages` at this stage.
    */
   startStage: WorkflowStage | null;
+  /**
+   * 06-25 ask-flow: discriminator for read-only Q&A requests. NULL means
+   * "normal task" (proceeds through workflow run). 'ask' means "read-only Q&A"
+   * (chat only, never enters runner watch loop).
+   */
+  kind: 'ask' | null;
 }
 
 export type StepRunStatus =

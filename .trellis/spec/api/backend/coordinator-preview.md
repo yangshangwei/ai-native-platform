@@ -24,15 +24,17 @@ Identical to the runner-side coordinator's rule fast-path. Order matters:
 
 1. **`rule.too_short`** — `userRequest.trim().length < 6` → `pause_for_human`. `predictedRunType = null`. `hint = 'too_short'`.
 2. **`rule.large_scope_detected`** — large-scope keyword hit OR `(\S+?\s*系统|\S+?\s*体系)` regex hit, AND text length > 8 → `pause_for_human`. `predictedRunType = null`. `hint = 'large_scope'`.
-3. **`rule.refactor_keywords_dominant`** *(2026-05-06 added)* — `refactor.count >= 1 && length > 8` → `proceed/refactor`. `predictedRunType = 'refactor'`. **MUST precede** the bug-vs-feature ratio because refactor verbs (`重构`, `优化`, `refactor`, `extract`, ...) are neither bug nor feature, and would otherwise fall through to the ambiguous default.
-4. **`rule.bug_keywords_dominant`** — `bug.count - feature.count >= 2` → `proceed/bugfix`.
-5. **`rule.feature_keywords_dominant`** — `feature.count - bug.count >= 2 && length > 20` → `proceed/feature`.
-6. **`rule.ambiguous`** (default) — confidence 0.4 → `proceed/feature`. The runner-side `triageRequest` will trigger LLM fallback (preview never does — preview is rules-only by design).
+3. **`rule.ask_question_detected`** *(2026-06-25 added)* — `(askKeywords.count >= 1 OR /[?？]/.test(text) OR /^(为什么|怎么|如何|在哪|是不是|能不能|可以|解释|告诉我|查一下|what|why|how|where|when|can|could|is it|explain|tell me)/i.test(text)) && length > 6` → `proceed/ask`. `predictedRunType = 'ask'`. **MUST precede refactor** to avoid "怎么重构 X" being misclassified as refactor when it's actually a question asking how to refactor.
+4. **`rule.refactor_keywords_dominant`** *(2026-05-06 added)* — `refactor.count >= 1 && length > 8` → `proceed/refactor`. `predictedRunType = 'refactor'`. **MUST precede** the bug-vs-feature ratio because refactor verbs (`重构`, `优化`, `refactor`, `extract`, ...) are neither bug nor feature, and would otherwise fall through to the ambiguous default.
+5. **`rule.bug_keywords_dominant`** — `bug.count - feature.count >= 2` → `proceed/bugfix`.
+6. **`rule.feature_keywords_dominant`** — `feature.count - bug.count >= 2 && length > 20` → `proceed/feature`.
+7. **`rule.ambiguous`** (default) — confidence 0.4 → `proceed/feature`. The runner-side `triageRequest` will trigger LLM fallback (preview never does — preview is rules-only by design).
 
 #### Confidence
 
 - `too_short`: 0.85 (high — rule is unambiguous)
 - `large_scope`: 0.75
+- `ask`: `min(0.9, 0.6 + askKeywords.count * 0.1)` *(2026-06-25 added)*
 - `refactor`: `min(0.9, 0.6 + count * 0.08)`
 - `bugfix`: `min(0.95, 0.6 + count * 0.08)`
 - `feature_clear`: `min(0.9, 0.55 + count * 0.08)`
@@ -44,8 +46,9 @@ The UI renders confidence as a percentage. The runner-side threshold (`coordinat
 
 ```ts
 {
-  predictedRunType: 'feature' | 'bugfix' | 'smoke' | 'refactor' | null,
+  predictedRunType: 'feature' | 'bugfix' | 'smoke' | 'refactor' | 'ask' | null,
   // null when decision.action !== 'proceed' (too_short / large_scope cases)
+  // 'ask' = read-only Q&A (2026-06-25 added)
   confidence: number,        // 0..1
   rulesFired: string[],      // each id matches /^rule\./
   hint: 'too_short' | 'large_scope' | null,

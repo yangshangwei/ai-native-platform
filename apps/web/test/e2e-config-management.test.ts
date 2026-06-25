@@ -15,9 +15,9 @@ import { buildSettingsViewModel } from '../src/settings-projection';
 describe('E2E: 配置管理业务流程', () => {
 
   describe('场景1: 配置注册表加载和分类', () => {
-    it('应该包含所有32个配置项', () => {
+    it('应该包含所有33个配置项', () => {
       const allKeys = Object.keys(CONFIG_REGISTRY);
-      expect(allKeys).toHaveLength(32);
+      expect(allKeys).toHaveLength(33);
     });
 
     it('应该有5个业务场景分类', () => {
@@ -35,15 +35,16 @@ describe('E2E: 配置管理业务流程', () => {
       });
     });
 
-    it('智能分析分类应该包含6个配置项', () => {
+    it('智能分析分类应该包含7个配置项', () => {
       const keys = configKeysByCategory('intelligent_analysis' as any);
-      expect(keys).toHaveLength(6);
+      expect(keys).toHaveLength(7);
       expect(keys).toContain('coordinator.confidence_threshold');
       expect(keys).toContain('coordinator.bug_keywords');
       expect(keys).toContain('coordinator.feature_keywords');
       expect(keys).toContain('coordinator.refactor_keywords');
       expect(keys).toContain('coordinator.large_scope_keywords');
       expect(keys).toContain('coordinator.large_scope_regex');
+      expect(keys).toContain('coordinator.ask_keywords');
     });
 
     it('对话体验分类应该包含4个配置项', () => {
@@ -113,7 +114,7 @@ describe('E2E: 配置管理业务流程', () => {
         audits: new Map()
       });
 
-      expect(vm.tabs[0].rows).toHaveLength(6); // 智能分析
+      expect(vm.tabs[0].rows).toHaveLength(7); // 智能分析 (added coordinator.ask_keywords)
       expect(vm.tabs[1].rows).toHaveLength(4); // 对话体验
       expect(vm.tabs[2].rows).toHaveLength(5); // 工作流定制
       expect(vm.tabs[3].rows).toHaveLength(8); // 性能与资源
@@ -277,7 +278,7 @@ describe('E2E: 配置管理业务流程', () => {
 
       // 至少应该有一些配置有值预览
       const totalRows = vm.tabs.reduce((sum, tab) => sum + tab.rows.length, 0);
-      expect(totalRows).toBe(32);
+      expect(totalRows).toBe(33);
     });
 
     it('高风险配置应该被正确标记', () => {

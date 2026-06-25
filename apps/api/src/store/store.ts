@@ -296,6 +296,7 @@ interface WorkflowRequestRow {
   updated_at: string;
   flow_id: string | null;
   start_stage: string | null;
+  kind: string | null;
 }
 
 function rowToWorkflowRequest(r: WorkflowRequestRow): WorkflowRequest {
@@ -313,6 +314,7 @@ function rowToWorkflowRequest(r: WorkflowRequestRow): WorkflowRequest {
     updatedAt: r.updated_at,
     flowId: r.flow_id as WorkflowRequest['flowId'],
     startStage: r.start_stage as WorkflowRequest['startStage'],
+    kind: r.kind as WorkflowRequest['kind'],
   };
 }
 
@@ -333,6 +335,7 @@ const workflowRequestsTable = defineTable<WorkflowRequestRow, WorkflowRequest>({
     updated_at: req.updatedAt,
     flow_id: req.flowId,
     start_stage: req.startStage,
+    kind: req.kind,
   }),
 });
 

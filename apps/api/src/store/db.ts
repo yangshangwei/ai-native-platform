@@ -513,6 +513,11 @@ export const MIGRATIONS: Migration[] = [
   // allow-listed at execution time via the whitelist extraAllow mechanism.
   addColumn(22, 'projects', 'build_compile_command', `build_compile_command TEXT`),
   addColumn(23, 'projects', 'build_test_command', `build_test_command TEXT`),
+  // 06-25 ask-flow: workflow_requests.kind — discriminator for read-only
+  // question/answer requests that bypass the workflow run pipeline. NULL means
+  // "normal task" (proceeds through runner watch → coordinator → flow execution).
+  // 'ask' means "read-only Q&A" (stays in chat, never enters watch loop).
+  addColumn(24, 'workflow_requests', 'kind', `kind TEXT CHECK (kind IN ('ask'))`),
 ];
 
 // ---------------------------------------------------------------------------

@@ -15,16 +15,19 @@ import type { CoordinatorAction } from '../types/coordinator';
  *   1. Very short (< 6 chars) → `pause_for_human` (rule.too_short).
  *   2. Large-scope keyword OR `X系统/Y体系` regex hit (length > 8) → `pause_for_human`
  *      (rule.large_scope_detected). Asks user to decompose.
- *   3. Refactor keywords dominate (count ≥ 1, length > 8) → proceed/refactor
+ *   3. Ask keywords (≥ 1) OR question mark OR question word (length > 6) → proceed/ask
+ *      (rule.ask_question_detected). Read-only Q&A, NOT a code change task.
+ *      MUST precede refactor to avoid "怎么重构 X" being classified as refactor.
+ *   4. Refactor keywords dominate (count ≥ 1, length > 8) → proceed/refactor
  *      (rule.refactor_keywords_dominant). Refactor verbs (优化 / 重构) are
  *      neither bug nor feature, so this MUST precede the bug-vs-feature ratio
  *      check below — otherwise "重构 user 模块" would fall through to the
  *      ambiguous default.
- *   4. Bug count − feature count ≥ 2 → proceed/bugfix
+ *   5. Bug count − feature count ≥ 2 → proceed/bugfix
  *      (rule.bug_keywords_dominant).
- *   5. Feature count − bug count ≥ 2 (length > 20) → proceed/feature
+ *   6. Feature count − bug count ≥ 2 (length > 20) → proceed/feature
  *      (rule.feature_keywords_dominant).
- *   6. Otherwise → proceed/feature with low confidence (rule.ambiguous);
+ *   7. Otherwise → proceed/feature with low confidence (rule.ambiguous);
  *      runner-side wrapper's threshold check will trigger LLM fallback.
  *
  * Confidence is conservative on purpose: it controls whether the runner-side
@@ -37,6 +40,7 @@ export interface ClassifyCoreInput {
   bugKeywords: readonly string[];
   featureKeywords: readonly string[];
   refactorKeywords: readonly string[];
+  askKeywords: readonly string[];
   largeScopeKeywords: readonly string[];
   /** Compiled regex matching the "X系统 / Y体系" pattern. Caller is responsible for compilation. */
   largeScopeRegex: RegExp;
@@ -85,6 +89,7 @@ export function classifyByRulesCore(input: ClassifyCoreInput): ClassifyCoreOutpu
   const bug = countMatches(text, input.bugKeywords);
   const feature = countMatches(text, input.featureKeywords);
   const refactor = countMatches(text, input.refactorKeywords);
+  const ask = countMatches(text, input.askKeywords);
   const largeScope = countMatches(text, input.largeScopeKeywords);
   const systemPattern = input.largeScopeRegex.test(text);
 
@@ -102,6 +107,24 @@ export function classifyByRulesCore(input: ClassifyCoreInput): ClassifyCoreOutpu
         reason: `large scope detected: ${trigger}; decompose first`,
       },
       confidence: 0.75,
+      rulesFired,
+    };
+  }
+
+  // Ask detection MUST come before refactor to avoid "怎么重构 X" being classified as refactor.
+  const hasQuestionMark = /[?？]/.test(text);
+  const hasQuestionWord = /^(为什么|怎么|如何|在哪|是不是|能不能|可以|解释|告诉我|查一下|what|why|how|where|when|can|could|is it|explain|tell me)/i.test(text);
+
+  if ((ask.count >= 1 || hasQuestionMark || hasQuestionWord) && text.length > 6) {
+    rulesFired.push('rule.ask_question_detected');
+    return {
+      decision: {
+        action: 'proceed',
+        routeCase: 'ask',
+        runType: 'ask',
+        reason: `question detected: ${ask.hits.length > 0 ? ask.hits.slice(0, 2).join(', ') : 'question mark or question word'}`,
+      },
+      confidence: Math.min(0.9, 0.6 + ask.count * 0.1),
       rulesFired,
     };
   }

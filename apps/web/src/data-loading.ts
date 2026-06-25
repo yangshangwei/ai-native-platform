@@ -84,7 +84,8 @@ export async function loadData(opts: { render?: boolean; keepDetail?: boolean } 
     data.projects = projects.items;
     ui.projectsLoadError = projects.error;
     data.runners = runners;
-    data.requests = requests;
+    // 06-25 ask-flow: API already filters kind='ask', but defense-in-depth filter here too
+    data.requests = requests.filter(r => r.kind !== 'ask');
     data.runs = [...runs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     data.runnerControl = runnerControl;
 

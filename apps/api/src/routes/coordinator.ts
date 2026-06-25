@@ -45,7 +45,7 @@ export interface CoordinatorPreviewResponse {
    * large_scope) returns null so the UI doesn't lie about a runType the
    * classifier didn't actually pick.
    */
-  predictedRunType: 'feature' | 'bugfix' | 'smoke' | 'refactor' | null;
+  predictedRunType: 'feature' | 'bugfix' | 'smoke' | 'refactor' | 'ask' | null;
   /** 0..1 — same scale as the runner-side coordinator. */
   confidence: number;
   rulesFired: string[];
@@ -70,6 +70,8 @@ coordinator.post('/preview', async (c) => {
     featureKeywords: CONFIG_REGISTRY['coordinator.feature_keywords']
       .default as readonly string[],
     refactorKeywords: CONFIG_REGISTRY['coordinator.refactor_keywords']
+      .default as readonly string[],
+    askKeywords: CONFIG_REGISTRY['coordinator.ask_keywords']
       .default as readonly string[],
     largeScopeKeywords: CONFIG_REGISTRY['coordinator.large_scope_keywords']
       .default as readonly string[],

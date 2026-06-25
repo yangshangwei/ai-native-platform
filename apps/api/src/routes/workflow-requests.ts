@@ -44,7 +44,9 @@ workflowRequests.get('/', (c) => {
     return c.json({ error: `invalid workflow request status: ${status}` }, 400);
   }
   const items = status ? store.workflowRequests.byStatus(status) : store.workflowRequests.values();
-  return c.json({ items });
+  // 06-25 ask-flow: exclude kind='ask' from task list (R2 filtering requirement)
+  const filtered = items.filter(r => r.kind !== 'ask');
+  return c.json({ items: filtered });
 });
 
 workflowRequests.get('/:id', (c) => {
@@ -63,6 +65,7 @@ workflowRequests.post('/', async (c) => {
     firstMessage?: { role?: MessageRole; content?: string };
     flowId?: string | null;
     startStage?: string | null;
+    kind?: 'ask' | null;
   };
 
   let project = body.projectId ? store.projects.get(body.projectId) : undefined;
@@ -139,6 +142,7 @@ workflowRequests.post('/', async (c) => {
     firstMessage,
     flowId: flowId ?? null,
     startStage: startStage ?? null,
+    kind: body.kind ?? null,
   });
   return c.json(request, 201);
 });

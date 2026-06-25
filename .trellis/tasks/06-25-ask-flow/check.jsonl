@@ -1,0 +1,5 @@
+{"file":"research/coordinator-classification.md","reason":"验证 7 处类型 union 是否同步、规则优先级是否正确"}
+{"file":"research/lightweight-ask-channel.md","reason":"验证过滤点（GET + 前端 data.requests）是否全覆盖、无遗漏"}
+{"file":".trellis/spec/api/backend/workflow-requests.md","reason":"验证 kind='ask' 创建逻辑、status 不为 pending"}
+{"file":".trellis/spec/web/frontend/new-task-form.md","reason":"验证下拉选项、preview 展示、升级按钮"}
+{"file":"prd.md","reason":"对照 PRD 验收标准逐条检查"}

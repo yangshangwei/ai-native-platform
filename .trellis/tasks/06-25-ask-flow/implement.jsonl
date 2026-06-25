@@ -1,0 +1,6 @@
+{"file":"research/coordinator-classification.md","reason":"规则分类器现状、runType 定义的 7 处镜像、优先级排序位置"}
+{"file":"research/lightweight-ask-channel.md","reason":"request→run→chat 数据流、任务列表过滤点清单、落点 B 的实现细节"}
+{"file":"research/flow-registry.md","reason":"runType→flow 映射现状（ask 不走 flow 但需确认 Router/workflow-engine 无需改动）"}
+{"file":".trellis/spec/api/backend/workflow-requests.md","reason":"POST /workflow-requests handler 现有逻辑、kind 字段设计"}
+{"file":".trellis/spec/api/backend/coordinator-preview.md","reason":"/coordinator/preview 端点、rules-core 调用方式"}
+{"file":".trellis/spec/web/frontend/new-task-form.md","reason":"type 下拉、preview 卡片、表单提交逻辑"}

@@ -80,6 +80,33 @@ export const COORDINATOR_REFACTOR_KEYWORDS_DEFAULT: readonly string[] = [
   'simplify',
 ];
 
+/** 06-25 ask-flow — question-phrased keywords for read-only Q&A detection */
+export const COORDINATOR_ASK_KEYWORDS_DEFAULT: readonly string[] = [
+  '为什么',
+  '怎么',
+  '如何',
+  '在哪',
+  '是不是',
+  '能不能',
+  '可以吗',
+  '解释',
+  '告诉我',
+  '查一下',
+  'what',
+  'why',
+  'how',
+  'where',
+  'when',
+  'can',
+  'could',
+  'should',
+  'is it',
+  'does it',
+  'explain',
+  'tell me',
+  'look up',
+];
+
 // ---- Coordinator: thresholds (apps/runner/src/agents/coordinator/index.ts) ----
 
 /** apps/runner/src/agents/coordinator/index.ts:18 */
@@ -104,9 +131,11 @@ Your ONLY job: triage the user's incoming request into ONE of these route cases.
 3. bugfix — describes broken existing behavior (报错 / 异常 / 不对 / 预期 vs 实际).
 4. roadmap_needed — large request that decomposes into multiple features (e.g. "权限系统", "通知中心"). Ask the user to identify 2-3 top sub-capabilities and a minimal closed loop.
 5. unclear — too vague to classify; ask for more context.
+6. ask — user is asking a question about the codebase (phrased with question words like 为什么/怎么/how/why, or question marks, or asks for explanation). This is read-only Q&A, NOT a task to implement changes.
 
 Hard rules:
 - You are NOT writing requirements. You are NOT proposing implementation. You are ONLY triaging.
+- When the user's title is phrased as a question (contains question words like 为什么/怎么/在哪/是不是/能不能/解释/how/why/what/explain or question marks ?/？), classify as **ask** (read-only Q&A). Ask requests do not open branches or change code — they only answer questions.
 - If the user came with a solution in mind, FIRST ask what problem it solves before accepting the framing.
 - Be a thinking partner, not a recorder. Don't echo the user's words back.
 - If you ask questions, ask AT MOST 2.
@@ -115,8 +144,8 @@ OUTPUT FORMAT — emit ONE JSON object exactly matching this schema, with NO pro
 
 {
   "action": "proceed" | "pause_for_human" | "abort",
-  "routeCase": "feature_clear" | "feature_brainstorm" | "bugfix" | "roadmap_needed" | "unclear",
-  "runType": "feature" | "bugfix" | "smoke",
+  "routeCase": "feature_clear" | "feature_brainstorm" | "bugfix" | "roadmap_needed" | "unclear" | "ask",
+  "runType": "feature" | "bugfix" | "smoke" | "ask",
   "reason": "<one short line>",
   "questions": ["<q1>", "<q2>"]
 }
@@ -136,6 +165,7 @@ Route cases:
 3. bugfix — describes broken existing behavior (报错 / 异常 / 不对 / 预期 vs 实际).
 4. roadmap_needed — large request that decomposes into multiple features (e.g. "权限系统", "通知中心").
 5. unclear — too vague to classify even after questioning.
+6. ask — user is asking a question about the codebase (phrased with question words like 为什么/怎么/how/why, or question marks, or asks for explanation). This is read-only Q&A, NOT a task to implement changes.
 
 GRILL-ME QUESTIONING PROTOCOL:
 - You MUST ask ONE question at a time. The questions array MUST contain EXACTLY 1 element.
@@ -147,6 +177,7 @@ GRILL-ME QUESTIONING PROTOCOL:
 
 Hard rules:
 - You are NOT writing requirements. You are NOT proposing implementation. You are ONLY triaging through deep understanding.
+- When the user's title is phrased as a question (contains question words like 为什么/怎么/在哪/是不是/能不能/解释/how/why/what/explain or question marks ?/？), classify as **ask** (read-only Q&A). Ask requests do not open branches or change code — they only answer questions.
 - If the user came with a solution in mind, FIRST ask what problem it solves before accepting the framing.
 - Be a thinking partner who stress-tests assumptions, not a recorder who accepts statements at face value.
 - The questions array MUST have length 1 (one question per round). Never batch multiple questions.
@@ -156,8 +187,8 @@ OUTPUT FORMAT — emit ONE JSON object exactly matching this schema, with NO pro
 
 {
   "action": "proceed" | "pause_for_human" | "abort",
-  "routeCase": "feature_clear" | "feature_brainstorm" | "bugfix" | "roadmap_needed" | "unclear",
-  "runType": "feature" | "bugfix" | "smoke",
+  "routeCase": "feature_clear" | "feature_brainstorm" | "bugfix" | "roadmap_needed" | "unclear" | "ask",
+  "runType": "feature" | "bugfix" | "smoke" | "ask",
   "reason": "<one short line>",
   "questions": ["<single question>"]
 }
