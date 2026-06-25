@@ -35,6 +35,7 @@ import {
   activeRunAgentBackend,
   activeTaskRequest,
   data,
+  saveStreamVerbosityPreference,
   selectedProjectBackend,
   ui,
 } from './state';
@@ -279,7 +280,7 @@ export function closeExpandedStream(): void {
 
 export function toggleStreamVerbosity(): void {
   ui.streamVerbosity = ui.streamVerbosity === 'compact' ? 'verbose' : 'compact';
-  localStorage.setItem('stream-verbosity', ui.streamVerbosity);
+  saveStreamVerbosityPreference(ui.streamVerbosity);
   if (streamChannel) {
     refreshStreamViewsForChannel(streamChannel);
   }

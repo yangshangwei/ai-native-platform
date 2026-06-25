@@ -194,15 +194,15 @@ function streamTextSegments(event: StreamDisplayEvent, nativeMode = true, verbos
 
   // Compact mode: aggressive filtering that supersedes native mode
   if (verbosity === 'compact') {
-    if (shouldFilterEventInCompactMode(event)) {
-      return [];
-    }
     // Simplify tool calls in compact mode
     if (event.type === 'raw') {
       const compactToolCall = formatToolCallCompact(event);
       if (compactToolCall) {
         return [{ mergeable: false, event, text: compactToolCall }];
       }
+    }
+    if (shouldFilterEventInCompactMode(event)) {
+      return [];
     }
   }
 
@@ -401,8 +401,8 @@ function shouldFilterEventInCompactMode(event: StreamDisplayEvent): boolean {
   if (event.type === 'raw') {
     const text = event.text ?? '';
 
-    // Filter all tool call events
-    if (text.includes('[tool→') || text.includes('[tool-input') || text.includes('[tool-result') || text.includes('tool_use')) {
+    // Filter noisy tool result payloads; readable tool calls/inputs are compacted first.
+    if (text.includes('[tool-result') || text.includes('tool_use')) {
       return true;
     }
 

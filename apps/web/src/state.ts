@@ -33,6 +33,31 @@ import {
   type RunDetail,
 } from './projection';
 
+export type StreamVerbosity = 'compact' | 'verbose';
+
+const STREAM_VERBOSITY_STORAGE_KEY = 'stream-verbosity';
+
+function isStreamVerbosity(value: string | null): value is StreamVerbosity {
+  return value === 'compact' || value === 'verbose';
+}
+
+function loadStreamVerbosityPreference(): StreamVerbosity {
+  try {
+    const stored = globalThis.localStorage?.getItem(STREAM_VERBOSITY_STORAGE_KEY) ?? null;
+    return isStreamVerbosity(stored) ? stored : 'compact';
+  } catch {
+    return 'compact';
+  }
+}
+
+export function saveStreamVerbosityPreference(value: StreamVerbosity): void {
+  try {
+    globalThis.localStorage?.setItem(STREAM_VERBOSITY_STORAGE_KEY, value);
+  } catch {
+    // Browser storage can be unavailable in tests or privacy-restricted contexts.
+  }
+}
+
 export const data: AppData = {
   health: null,
   projects: [],
@@ -71,7 +96,7 @@ export const ui = {
   coordinatorReplyComposing: null as { requestId: string } | null,
   coordinatorReplyRenderDeferred: false,
   isReplacingAppRootForRender: false,
-  streamVerbosity: (localStorage.getItem('stream-verbosity') as 'compact' | 'verbose') ?? 'compact',
+  streamVerbosity: loadStreamVerbosityPreference(),
 };
 
 export const artifactContent = new Map<string, ArtifactContentDto | null>();
