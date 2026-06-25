@@ -65,9 +65,10 @@ const KNOWN_ROUTE_CASES = new Set([
   'roadmap_needed',
   'bugfix',
   'refactor_clear',
+  'ask',
   'unclear',
 ]);
-const KNOWN_RUN_TYPES = new Set(['feature', 'bugfix', 'smoke', 'refactor']);
+const KNOWN_RUN_TYPES = new Set(['feature', 'bugfix', 'smoke', 'refactor', 'ask']);
 
 function stripOuterMarkdownFence(value: string): string {
   const match = value.match(/^```(?:json)?\s*\n?([\s\S]*?)\n?```\s*$/i);

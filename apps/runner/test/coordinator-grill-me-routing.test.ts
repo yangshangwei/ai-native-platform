@@ -57,6 +57,22 @@ function codexDepsReturningPause(
   };
 }
 
+function codexDepsReturningProceedAsk(capture: { calls: number; systemPrompt: string }): LlmFallbackDeps {
+  return {
+    checkAvailability: async (backend) => backend === 'codex',
+    runOneShot: async (_backend, system) => {
+      capture.calls += 1;
+      capture.systemPrompt = system;
+      return JSON.stringify({
+        action: 'proceed',
+        routeCase: 'ask',
+        runType: 'ask',
+        reason: 'simple answerable question',
+      });
+    },
+  };
+}
+
 beforeEach(() => {
   invalidateConfigCache();
   mockConfigWithOverrides({});
@@ -67,6 +83,89 @@ afterEach(() => {
 });
 
 describe('triageRequest Grill Me routing policy', () => {
+  it('routes rule-detected ask through Grill Me gate when enabled', async () => {
+    invalidateConfigCache();
+    mockConfigWithOverrides({
+      'coordinator.clarification_style': 'grill-me',
+      'coordinator.max_clarification_rounds': 10,
+    });
+    const capture = { calls: 0, systemPrompt: '' };
+
+    const decision = await triageRequest({
+      workflowRequestId: 'wreq_grill_ask_direct' as never,
+      userRequest: '怎么实现登录流程？',
+      messageHistory: [],
+      preferredBackend: 'codex',
+      llmDeps: codexDepsReturningProceedAsk(capture),
+    });
+
+    expect(capture.calls).toBe(1);
+    expect(capture.systemPrompt).toContain('ONE question at a time');
+    expect(decision.source).toBe('llm');
+    expect(decision.decision.action).toBe('proceed');
+    if (decision.decision.action === 'proceed') {
+      expect(decision.decision.runType).toBe('ask');
+      expect(decision.decision.routeCase).toBe('ask');
+    }
+  });
+
+  it('allows Grill Me to ask one follow-up for ambiguous ask requests', async () => {
+    invalidateConfigCache();
+    mockConfigWithOverrides({
+      'coordinator.clarification_style': 'grill-me',
+      'coordinator.max_clarification_rounds': 10,
+    });
+    const capture = { calls: 0, systemPrompt: '' };
+
+    const decision = await triageRequest({
+      workflowRequestId: 'wreq_grill_ask_followup' as never,
+      userRequest: '这个为什么不对？',
+      messageHistory: [],
+      preferredBackend: 'codex',
+      llmDeps: codexDepsReturningPause(
+        ['你说的“不对”具体是哪个页面或操作结果？', '你期望看到什么？'],
+        capture,
+      ),
+    });
+
+    expect(capture.calls).toBe(1);
+    expect(capture.systemPrompt).toContain('ONE question at a time');
+    expect(decision.source).toBe('llm');
+    expect(decision.decision.action).toBe('pause_for_human');
+    if (decision.decision.action === 'pause_for_human') {
+      expect(decision.decision.questions).toEqual([
+        '你说的“不对”具体是哪个页面或操作结果？',
+      ]);
+    }
+  });
+
+  it('preserves default style rule ask behavior', async () => {
+    invalidateConfigCache();
+    mockConfigWithOverrides({
+      'coordinator.clarification_style': 'default',
+      'coordinator.max_clarification_rounds': 10,
+    });
+
+    const decision = await triageRequest({
+      workflowRequestId: 'wreq_default_ask_direct' as never,
+      userRequest: '怎么实现登录流程？',
+      messageHistory: [],
+      preferredBackend: 'codex',
+      llmDeps: {
+        checkAvailability: async () => true,
+        runOneShot: async () => {
+          throw new Error('default style should not call LLM for rule-detected ask');
+        },
+      },
+    });
+
+    expect(decision.source).toBe('rules');
+    expect(decision.decision.action).toBe('proceed');
+    if (decision.decision.action === 'proceed') {
+      expect(decision.decision.runType).toBe('ask');
+    }
+  });
+
   it('routes too-short rule clarification through Grill Me when enabled', async () => {
     invalidateConfigCache();
     mockConfigWithOverrides({

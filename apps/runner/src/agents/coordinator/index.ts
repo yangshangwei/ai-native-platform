@@ -57,8 +57,12 @@ export async function triageRequest(input: TriageInput): Promise<CoordinatorDeci
   ]);
   const coordinatorMessageCount = countCoordinatorMessages(input.messageHistory);
   const ruleNeedsClarification = ruleResult.decision.action === 'pause_for_human';
+  const ruleDetectedAsk =
+    ruleResult.decision.action === 'proceed' && ruleResult.decision.runType === 'ask';
   const mustUseLlmForGrillMeClarification =
     clarificationStyle === 'grill-me' && ruleNeedsClarification;
+  const mustUseLlmForGrillMeAsk =
+    clarificationStyle === 'grill-me' && ruleDetectedAsk;
   const mustUseLlmForMaxRoundConvergence =
     coordinatorMessageCount >= maxClarificationRounds && ruleNeedsClarification;
 
@@ -69,6 +73,7 @@ export async function triageRequest(input: TriageInput): Promise<CoordinatorDeci
   if (
     ruleResult.confidence >= threshold &&
     !mustUseLlmForGrillMeClarification &&
+    !mustUseLlmForGrillMeAsk &&
     !mustUseLlmForMaxRoundConvergence
   ) {
     final = ruleResult;
