@@ -182,6 +182,7 @@ function renderWorkbenchOverviewPanel(): HTMLElement {
             'M13 10V3L4 14h7v7l9-11h-7z',
             active > 0 ? 'primary' : 'muted',
             active > 0 ? '正在排队或执行中' : '当前无执行任务',
+            () => setHash('my-todos'),
           ),
           metricCardV2(
             '最近完成',
@@ -189,6 +190,7 @@ function renderWorkbenchOverviewPanel(): HTMLElement {
             'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
             completed.length > 0 ? 'success' : 'muted',
             completed.length > 0 ? '可查看交付结果' : '还没有完成任务',
+            () => setHash('reports'),
           ),
           metricCardV2(
             '任务总数',
@@ -196,6 +198,7 @@ function renderWorkbenchOverviewPanel(): HTMLElement {
             'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2',
             'info',
             '累计创建任务数',
+            () => setHash('reports'),
           ),
         ],
       }),

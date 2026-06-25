@@ -49,8 +49,6 @@ import {
 import { actionLink, setHash } from './router';
 import { render } from './render-core';
 import { loadRunDetail } from './data-loading';
-import { pieChart } from './charts';
-import { getPlatformDistribution } from './charts';
 
 let reportsActiveView: ReportViewId = 'all';
 
@@ -100,7 +98,6 @@ export function renderReportsPage(): HTMLElement {
     class: 'reports-page stack',
     children: [
       renderReportsOverview(stats),
-      renderPlatformDistributionChart(),
       renderActiveReportDetail(),
       el('section', {
         class: 'panel reports-list-panel',
@@ -126,7 +123,10 @@ function renderReportsOverview(stats: ReturnType<typeof reportStats>): HTMLEleme
           panelHeader('交付概览', '先判断哪些交付可以验收。'),
           el('div', {
             class: 'settings-kpi-row',
-            children: [metric('可验收', String(stats.acceptable), '已完成交付', stats.acceptable ? 'good' : 'muted'), metric('需处理', String(stats.attention), '失败或等待人工', stats.attention ? 'warn' : 'good')],
+            children: [
+              metric('可验收', String(stats.acceptable), '已完成交付', stats.acceptable ? 'good' : 'muted', () => setReportsView('acceptable')),
+              metric('需处理', String(stats.attention), '失败或等待人工', stats.attention ? 'warn' : 'good', () => setReportsView('attention')),
+            ],
           }),
           configSummaryItem('报告总数', `${stats.total} 个`),
         ],
@@ -135,7 +135,7 @@ function renderReportsOverview(stats: ReturnType<typeof reportStats>): HTMLEleme
         class: 'panel reports-overview-card',
         children: [
           panelHeader('风险队列', '优先处理失败和等待确认。'),
-          metric('失败', String(stats.failed), '需要看证据', stats.failed ? 'bad' : 'good'),
+          metric('失败', String(stats.failed), '需要看证据', stats.failed ? 'bad' : 'good', () => setReportsView('attention')),
           el('p', { class: 'muted compact', text: stats.attention ? '先打开需处理项，查看失败证据或人工确认点。' : '当前没有阻塞交付的报告。' }),
         ],
       }),
@@ -143,7 +143,7 @@ function renderReportsOverview(stats: ReturnType<typeof reportStats>): HTMLEleme
         class: 'panel reports-overview-card',
         children: [
           panelHeader('执行进度', '还在生成中的交付。'),
-          metric('执行中', String(stats.running), '报告会自动更新', stats.running ? 'info' : 'muted'),
+          metric('执行中', String(stats.running), '报告会自动更新', stats.running ? 'info' : 'muted', () => setReportsView('running')),
           configSummaryItem('已完成', `${stats.completed} 个`),
         ],
       }),
@@ -182,6 +182,9 @@ function renderReportsEmptyState(): HTMLElement {
 
 function renderReportRow(run: WorkflowRunDto): HTMLElement {
   const request = data.requests.find((candidate) => candidate.workflowRunId === run.id);
+  const detail = data.activeDetail?.run.id === run.id ? data.activeDetail : null;
+  const projection = detail ? buildRunProjection(detail) : null;
+
   const open = button('打开任务', 'button secondary small');
   open.onclick = () => (request ? setHash('task', request.id) : setHash('workbench', run.id));
   const viewReport = button('查看报告', 'button secondary small');
@@ -189,40 +192,70 @@ function renderReportRow(run: WorkflowRunDto): HTMLElement {
     ui.activeRunId = run.id;
     void loadRunDetail(run.id, true);
   };
+
   return el('article', {
-    class: `report-row report-card ${run.status}`,
+    class: `report-card-v2 ${run.status}${ui.activeRunId === run.id ? ' selected' : ''}`,
     children: [
+      // Left: Title and metadata
       el('div', {
-        class: 'report-card-main',
+        class: 'report-card-header',
         children: [
+          el('h3', { class: 'report-card-title', text: run.title }),
           el('div', {
-            class: 'report-title-copy',
+            class: 'report-card-meta',
             children: [
-              el('strong', { text: run.title }),
-              el('small', { text: `${projectName(run.projectId)} · ${fmtTime(run.createdAt)}` }),
+              el('span', { class: 'report-card-project', text: projectName(run.projectId) }),
+              el('span', { class: 'report-card-time', text: fmtTime(run.createdAt) }),
             ],
           }),
-          pill(reportStatusLabel(run.status), statusKind(run.status)),
         ],
       }),
+
+      // Center: Status badge and key metrics
       el('div', {
-        class: 'report-card-summary',
+        class: 'report-card-status',
         children: [
-          configSummaryItem('证据摘要', reportEvidenceSummary(run)),
-          configSummaryItem('下一步', reportNextAction(run)),
+          pill(reportStatusLabel(run.status), statusKind(run.status)),
+          projection
+            ? el('div', {
+                class: 'report-card-metrics',
+                children: [
+                  el('span', {
+                    class: 'report-metric',
+                    text: `Gate ${projection.summary.gatesPassed}/${detail!.gates.length}`,
+                    attrs: { title: `${projection.summary.gatesWarned} warn · ${projection.summary.gatesFailed} fail` },
+                  }),
+                  projection.summary.testsTotal
+                    ? el('span', {
+                        class: 'report-metric',
+                        text: `测试 ${projection.summary.testsPassed}/${projection.summary.testsTotal}`,
+                      })
+                    : null,
+                ],
+              })
+            : el('div', { class: 'report-card-next-action', text: reportNextAction(run) }),
         ],
       }),
+
+      // Right: Actions
+      el('div', { class: 'report-card-actions', children: [viewReport, open] }),
+
+      // Collapsible tech details
       el('details', {
-        class: 'report-tech-details',
+        class: 'report-card-details',
         attrs: { 'data-details-key': `report-run-tech:${run.id}` },
         children: [
           el('summary', { text: '技术详情' }),
-          field('Run', el('code', { text: run.id })),
-          field('分支', el('code', { text: run.branch })),
-          run.workspacePath ? field('Worktree', el('code', { text: run.workspacePath })) : null,
+          el('div', {
+            class: 'report-card-details-content',
+            children: [
+              field('Run', el('code', { text: run.id })),
+              field('分支', el('code', { text: run.branch })),
+              run.workspacePath ? field('Worktree', el('code', { text: run.workspacePath })) : null,
+            ],
+          }),
         ],
       }),
-      el('div', { class: 'button-row report-actions', children: [viewReport, open] }),
     ],
   });
 }
@@ -272,29 +305,6 @@ function renderActiveReportDetail(): HTMLElement | null {
           reportArtifact ? field('URI', el('code', { text: reportArtifact.uri })) : null,
           field('Worktree', el('code', { text: detail.run.workspacePath ?? '尚未准备' })),
         ],
-      }),
-    ],
-  });
-}
-
-function renderPlatformDistributionChart(): HTMLElement {
-  const canvas = document.createElement('canvas');
-  canvas.id = 'platform-distribution-chart';
-  canvas.style.maxHeight = '400px';
-
-  // Defer chart creation until canvas is mounted
-  requestAnimationFrame(() => {
-    const chartData = getPlatformDistribution();
-    pieChart(canvas, chartData);
-  });
-
-  return el('section', {
-    class: 'panel chart-panel',
-    children: [
-      panelHeader('平台分布', '按执行平台统计已完成任务'),
-      el('div', {
-        class: 'chart-container',
-        children: [canvas],
       }),
     ],
   });

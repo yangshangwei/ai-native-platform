@@ -57,6 +57,22 @@
   transform: translateY(-1px);
 }
 
+/* Enhanced hover for clickable cards */
+.metric-card-v2.clickable {
+  cursor: pointer;
+}
+
+.metric-card-v2.clickable:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+  border-color: var(--color-primary);
+}
+
+.metric-card-v2.clickable:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
 /* Icon circle - 彩色圆形图标容器 */
 .metric-icon {
   width: 48px;
@@ -125,6 +141,19 @@
   line-height: var(--line-height-tight);
   color: var(--text-primary);
   font-family: var(--font-mono);
+}
+
+.metric-value.clickable {
+  cursor: pointer;
+  transition: color var(--transition-base), text-decoration-color var(--transition-base);
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 4px;
+}
+
+.metric-value.clickable:hover {
+  color: var(--color-primary);
+  text-decoration-color: currentColor;
 }
 
 .metric-hint {
@@ -553,16 +582,17 @@
   align-items: baseline;
   gap: 0.25rem;
   padding: var(--space-md) var(--space-lg);
-  background: var(--primary-50, #eff6ff);
-  border: 2px solid var(--color-primary, #3b82f6);
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 2px solid #93c5fd;
   border-radius: var(--radius-lg);
   flex-shrink: 0;
+  box-shadow: 0 2px 4px rgba(147, 197, 253, 0.15);
 }
 
 .count-number {
   font-size: 2rem;
   font-weight: 700;
-  color: var(--color-primary, #3b82f6);
+  color: #3b82f6;
   line-height: 1;
 }
 
@@ -577,7 +607,16 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
+  /* 移除默认 padding，让卡片边界与筛选器面板边界对齐 */
+  padding: 0;
 }
+
+/* 移除待办列表容器的 padding */
+.panel:has(> .my-todos-list) {
+  padding: 0;
+}
+
+/* 待办卡片本身保持内边距用于内容 */
 
 .my-todos-item {
   display: flex;
@@ -765,4 +804,161 @@
   display: flex;
   gap: var(--space-md);
   justify-content: center;
+}
+
+/* ==================== Report Cards V2 (Card-based Layout) ==================== */
+
+/**
+ * Report Card V2 - Optimized layout for delivery reports
+ * Three-column grid: Header (title/meta) | Status/Metrics | Actions
+ * Collapsible tech details at bottom
+ */
+.report-card-v2 {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  padding: var(--space-lg);
+  margin-bottom: var(--space-md);
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  grid-template-rows: auto auto;
+  gap: var(--space-md) var(--space-xl);
+  align-items: start;
+  transition: box-shadow var(--transition-base), border-color var(--transition-base);
+}
+
+.report-card-v2:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-medium);
+}
+
+/* Selected state */
+.report-card-v2.selected {
+  box-shadow: var(--shadow-lg);
+}
+
+.report-card-v2.selected:hover {
+  box-shadow: var(--shadow-xl);
+}
+
+/* Status color indicators via left border accent */
+.report-card-v2.completed {
+  border-left: 4px solid var(--success-500);
+}
+
+.report-card-v2.failed {
+  border-left: 4px solid var(--error-500);
+}
+
+.report-card-v2.awaiting_human {
+  border-left: 4px solid var(--warning-500);
+}
+
+.report-card-v2.running {
+  border-left: 4px solid var(--info-500);
+}
+
+/* Header: Title and metadata */
+.report-card-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+  min-width: 0; /* Allow text truncation */
+}
+
+.report-card-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.report-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.report-card-project {
+  font-weight: 500;
+}
+
+.report-card-time::before {
+  content: '·';
+  margin-right: var(--space-sm);
+}
+
+/* Status and metrics column */
+.report-card-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  align-items: flex-start;
+}
+
+.report-card-metrics {
+  display: flex;
+  gap: var(--space-md);
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.report-metric {
+  white-space: nowrap;
+}
+
+.report-card-next-action {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  max-width: 240px;
+}
+
+/* Actions column */
+.report-card-actions {
+  display: flex;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Collapsible tech details - spans full width */
+.report-card-details {
+  grid-column: 1 / -1;
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border-light);
+  margin-top: var(--space-sm);
+}
+
+.report-card-details summary {
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.report-card-details summary:hover {
+  color: var(--text-secondary);
+}
+
+.report-card-details-content {
+  margin-top: var(--space-sm);
+  padding-left: var(--space-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+/* Responsive: Stack on narrow viewports */
+@media (max-width: 768px) {
+  .report-card-v2 {
+    grid-template-columns: 1fr;
+    gap: var(--space-md);
+  }
+
+  .report-card-actions {
+    justify-content: flex-start;
+  }
 }

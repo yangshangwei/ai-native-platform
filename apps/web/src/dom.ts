@@ -49,6 +49,65 @@ export function icon(path: string): SVGElement {
   return svg;
 }
 
+export function octopusIcon(): SVGElement {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 32 32');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('width', '28');
+  svg.setAttribute('height', '28');
+  svg.style.display = 'block';
+
+  // Octopus head (ellipse)
+  const head = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
+  head.setAttribute('cx', '16');
+  head.setAttribute('cy', '12');
+  head.setAttribute('rx', '7');
+  head.setAttribute('ry', '8');
+  head.setAttribute('fill', 'none');
+  head.setAttribute('stroke', 'currentColor');
+  head.setAttribute('stroke-width', '2.5');
+
+  // Tentacle 1 (left)
+  const tentacle1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  tentacle1.setAttribute('d', 'M 11 18 Q 8 22, 7 28');
+  tentacle1.setAttribute('fill', 'none');
+  tentacle1.setAttribute('stroke', 'currentColor');
+  tentacle1.setAttribute('stroke-width', '2.5');
+  tentacle1.setAttribute('stroke-linecap', 'round');
+
+  // Tentacle 2 (center-left)
+  const tentacle2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  tentacle2.setAttribute('d', 'M 13 19 Q 12 24, 11 29');
+  tentacle2.setAttribute('fill', 'none');
+  tentacle2.setAttribute('stroke', 'currentColor');
+  tentacle2.setAttribute('stroke-width', '2.5');
+  tentacle2.setAttribute('stroke-linecap', 'round');
+
+  // Tentacle 3 (center-right)
+  const tentacle3 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  tentacle3.setAttribute('d', 'M 19 19 Q 20 24, 21 29');
+  tentacle3.setAttribute('fill', 'none');
+  tentacle3.setAttribute('stroke', 'currentColor');
+  tentacle3.setAttribute('stroke-width', '2.5');
+  tentacle3.setAttribute('stroke-linecap', 'round');
+
+  // Tentacle 4 (right)
+  const tentacle4 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  tentacle4.setAttribute('d', 'M 21 18 Q 24 22, 25 28');
+  tentacle4.setAttribute('fill', 'none');
+  tentacle4.setAttribute('stroke', 'currentColor');
+  tentacle4.setAttribute('stroke-width', '2.5');
+  tentacle4.setAttribute('stroke-linecap', 'round');
+
+  svg.appendChild(head);
+  svg.appendChild(tentacle1);
+  svg.appendChild(tentacle2);
+  svg.appendChild(tentacle3);
+  svg.appendChild(tentacle4);
+
+  return svg;
+}
+
 export function clear(node: HTMLElement): void {
   node.replaceChildren();
 }
@@ -76,12 +135,19 @@ export function pill(label: string, kind: StatusKind = statusKind(label)): HTMLE
   return el('span', { class: `pill ${kind}`, text: label });
 }
 
-export function metric(label: string, value: string, hint?: string, kind: StatusKind = 'muted'): HTMLElement {
+export function metric(label: string, value: string, hint?: string, kind: StatusKind = 'muted', onClick?: () => void): HTMLElement {
+  const valueElement = el('strong', { class: `metric-value ${kind} ${onClick ? 'clickable' : ''}`, text: value });
+
+  if (onClick) {
+    valueElement.onclick = onClick;
+    valueElement.style.cursor = 'pointer';
+  }
+
   return el('div', {
     class: 'metric-card',
     children: [
       el('span', { class: 'metric-label', text: label }),
-      el('strong', { class: `metric-value ${kind}`, text: value }),
+      valueElement,
       hint ? el('span', { class: 'metric-hint', text: hint }) : null,
     ],
   });
@@ -97,6 +163,7 @@ export function metricCardV2(
   iconPath: string,
   kind: StatusKind | 'success' | 'warning' | 'danger' | 'primary' | 'purple' = 'info',
   hint?: string,
+  onClick?: () => void,
 ): HTMLElement {
   const iconCircle = el('div', {
     class: `metric-icon ${kind}`,
@@ -112,10 +179,17 @@ export function metricCardV2(
     ],
   });
 
-  return el('div', {
-    class: 'metric-card-v2',
+  const card = el('div', {
+    class: `metric-card-v2 ${onClick ? 'clickable' : ''}`,
     children: [iconCircle, content],
   });
+
+  if (onClick) {
+    card.onclick = onClick;
+    card.style.cursor = 'pointer';
+  }
+
+  return card;
 }
 
 export function field(label: string, value: Node | string): HTMLElement {

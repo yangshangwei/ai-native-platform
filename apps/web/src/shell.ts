@@ -14,7 +14,7 @@
 
 import { reportStats } from './projection';
 import type { Page, ProjectDto, RunnerDto, StatusKind } from './types';
-import { button, el, icon, metric, shortId, statusKind } from './dom';
+import { button, el, icon, metric, shortId, statusKind, octopusIcon } from './dom';
 import {
   activeProjects,
   activeTaskRequest,
@@ -150,11 +150,11 @@ function renderSidebar(): HTMLElement {
       el('div', {
         class: 'brand',
         children: [
-          el('div', { class: 'brand-mark', text: 'AI' }),
+          el('div', { class: 'brand-mark', children: [octopusIcon()] }),
           el('div', {
             children: [
-              el('strong', { text: 'AI Native Platform' }),
-              el('span', { text: 'Delivery Workbench' }),
+              el('strong', { text: 'Octopus' }),
+              el('span', { text: 'AI Delivery Workbench' }),
             ],
           }),
         ],
