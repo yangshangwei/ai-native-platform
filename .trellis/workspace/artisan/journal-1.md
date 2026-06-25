@@ -1846,3 +1846,36 @@ Made Coordinator clarification_style=grill-me apply to rule-originated clarifica
 ### Next Steps
 
 - None - task complete
+
+
+## Session 49: Extend Grill Me to ask routing
+
+**Date**: 2026-06-26
+**Task**: Extend Grill Me to ask routing
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Made rule-detected ask requests pass through the Grill Me LLM gate when configured, preserved direct default-style ask routing, fixed Coordinator parser ask normalization, and updated tests/specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e4af594` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

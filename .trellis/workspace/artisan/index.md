@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 48
+- **Total Sessions**: 49
 - **Last Active**: 2026-06-26
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1848 | Active |
+| `journal-1.md` | ~1881 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 49 | 2026-06-26 | Extend Grill Me to ask routing | `e4af594` | `feat/context-injection-layer-mvp` |
 | 48 | 2026-06-26 | Fix Coordinator Grill Me routing | `3dfb230` | `feat/context-injection-layer-mvp` |
 | 47 | 2026-06-25 | 完成任务详情页失败交互优化 - 质量验收 + spec 更新 | `fa8794d` | `feat/context-injection-layer-mvp` |
 | 46 | 2026-06-25 | 新增只读问答（ask）类型 + Octopus 品牌升级 | `5d086ed`, `8d60585` | `feat/context-injection-layer-mvp` |
