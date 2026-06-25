@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/06-26-grill-me-ask-routing/prd.md", "reason": "Requirements and acceptance criteria for applying Grill Me gate to ask routing"}
+{"file": ".trellis/spec/runner/backend/coordinator-clarification.md", "reason": "Coordinator Grill Me and max clarification policy contract"}
+{"file": ".trellis/spec/runner/backend/agent-backend-runtime.md", "reason": "Coordinator LLM fallback runtime and streaming behavior constraints"}
