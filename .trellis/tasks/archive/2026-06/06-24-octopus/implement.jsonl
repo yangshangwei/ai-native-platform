@@ -1,0 +1,4 @@
+{"role":"system","content":"You are implementing: 设计并实现 Octopus 品牌图标. Read prd.md for requirements."}
+{"role":"user","content":"Spec context: apps/web/src/dom.ts - SVG icon utility functions"}
+{"role":"user","content":"Spec context: apps/web/src/shell.ts - Brand mark rendering (line 153)"}
+{"role":"user","content":"Spec context: apps/web/index.html - .brand-mark styles (line 204-208)"}

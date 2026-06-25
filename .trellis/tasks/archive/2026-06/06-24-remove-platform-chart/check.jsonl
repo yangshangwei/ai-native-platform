@@ -1,0 +1,1 @@
+{"file": "apps/web/src/page-reports.ts", "reason": "Verify renderPlatformDistributionChart() is removed and no longer called in renderReportsPage()"}

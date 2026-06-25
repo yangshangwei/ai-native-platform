@@ -1,0 +1,3 @@
+{"file": "apps/web/src/dom.ts", "reason": "Contains metric() function definition that needs onClick parameter added"}
+{"file": "apps/web/src/page-reports.ts", "reason": "Contains renderReportsOverview() that calls metric() - needs to pass onClick handlers"}
+{"file": ".trellis/tasks/06-24-reports-cards-click-navigation/prd.md", "reason": "Requirements and technical approach for implementation"}

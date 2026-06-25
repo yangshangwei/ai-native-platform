@@ -1,0 +1,4 @@
+{"file": "apps/web/src/dom.ts", "reason": "Verify metricCardV2() signature includes optional onClick parameter"}
+{"file": "apps/web/src/page-workbench.ts", "reason": "Verify all three cards in renderWorkbenchOverviewPanel() have onClick handlers"}
+{"file": "apps/web/public/components.css", "reason": "Verify .metric-card-v2 has proper clickable hover styles"}
+{"file": ".trellis/tasks/06-24-workbench-card-click-navigation/prd.md", "reason": "Reference for acceptance criteria and requirements"}

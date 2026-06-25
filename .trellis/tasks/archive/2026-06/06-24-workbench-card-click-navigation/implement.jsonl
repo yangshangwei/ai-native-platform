@@ -1,0 +1,4 @@
+{"file": "apps/web/src/dom.ts", "reason": "Contains metricCardV2() function definition that needs onClick parameter added"}
+{"file": "apps/web/src/page-workbench.ts", "reason": "Contains renderWorkbenchOverviewPanel() that calls metricCardV2() - needs to pass onClick handlers"}
+{"file": "apps/web/src/router.ts", "reason": "Contains setHash() function used for navigation"}
+{"file": "apps/web/public/components.css", "reason": "Contains .metric-card-v2 styles that need clickable hover enhancement"}

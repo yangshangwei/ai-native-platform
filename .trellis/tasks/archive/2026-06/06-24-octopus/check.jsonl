@@ -1,0 +1,4 @@
+{"role":"system","content":"You are checking: 设计并实现 Octopus 品牌图标. Verify implementation against prd.md requirements."}
+{"role":"user","content":"Check: octopusIcon() function exists in dom.ts"}
+{"role":"user","content":"Check: shell.ts uses octopusIcon() instead of text 'AI'"}
+{"role":"user","content":"Check: Icon displays correctly in browser (light/dark theme, sidebar expanded/collapsed)"}
