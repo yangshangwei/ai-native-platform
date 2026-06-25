@@ -104,6 +104,31 @@ clarity comes from a small file count, not many tiny files.
 
 ---
 
+## Performance: large DOM lists
+
+Streaming logs, event timelines, or any view that can grow unbounded
+**must** cap the rendered element count. The DOM cannot handle thousands
+of nodes without jank — even if the data is available, only render the
+most recent N items and show a truncation notice.
+
+Reference implementation: `stream.ts` → `MAX_RENDERED_LINES = 500`.
+
+Pattern:
+```ts
+const MAX_RENDERED = 500;
+const items = allItems.slice(-MAX_RENDERED);
+const skipped = allItems.length - items.length;
+if (skipped > 0) {
+  // prepend a notice: "（已隐藏前 ${skipped} 条）"
+}
+```
+
+Also avoid `replaceChildren(...)` on every incremental update when the
+list is large — prefer appending new items and trimming old ones from
+the front.
+
+---
+
 ## Anti-patterns this team has hit
 
 ### 1. Coordinator reply input reset
