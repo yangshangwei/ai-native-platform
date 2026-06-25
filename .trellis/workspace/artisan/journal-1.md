@@ -1780,3 +1780,36 @@ Fixed task detail page flashing by adding conditional detail reload logic. Only 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 47: 完成任务详情页失败交互优化 - 质量验收 + spec 更新
+
+**Date**: 2026-06-25
+**Task**: 完成任务详情页失败交互优化 - 质量验收 + spec 更新
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+质量检查通过所有 4 个 AC（失败状态操作入口、失败卡片点击、日志 500 行限制、compact 模式过滤工具调用）；新增 spec：大列表 DOM 性能限制规范；归档任务
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fa8794d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
