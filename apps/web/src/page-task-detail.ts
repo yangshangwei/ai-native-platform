@@ -117,7 +117,44 @@ function requestTypeLabel(type: WorkflowRequestDto['type'] | string): string {
   if (type === 'bugfix') return '问题修复';
   if (type === 'smoke') return '冒烟检查';
   if (type === 'refactor') return '重构任务';
+  if (type === 'ask') return '问答';
   return type;
+}
+
+function isAskRouted(request: WorkflowRequestDto): boolean {
+  if (request.kind === 'ask') return true;
+  const state = coordinatorChats.get(request.id);
+  const decision = state?.decision?.decision;
+  return decision?.action === 'proceed' && decision.routeCase === 'ask';
+}
+
+function renderAskActivityIndicator(request: WorkflowRequestDto): HTMLElement {
+  const status = request.status;
+  let label: string;
+  let hint: string;
+  if (status === 'completed' || status === 'cancelled') {
+    label = '问答已结束';
+    hint = '回答已生成，请查看上方对话。';
+  } else if (status === 'awaiting_clarification') {
+    label = 'AI 正在回答';
+    hint = '问答模式：不开分支、不改文件，只回答问题。';
+  } else {
+    label = '等待处理';
+    hint = '问答请求已提交，等待回答。';
+  }
+  return el('section', {
+    class: 'panel ask-activity-panel',
+    children: [
+      panelHeader('问答模式', '轻量流程 · 无阶段'),
+      el('div', {
+        class: 'ask-activity-indicator',
+        children: [
+          el('strong', { text: label }),
+          el('p', { class: 'muted', text: hint }),
+        ],
+      }),
+    ],
+  });
 }
 
 function stageStateLabel(state: 'done' | 'active' | 'blocked' | 'failed' | 'waiting'): string {
@@ -299,10 +336,12 @@ export function renderTaskDetailPage(): HTMLElement {
           renderTaskHero(request, detail, projection),
           el('div', { class: 'mobile-next-action', children: [nextActionPanel()] }),
           coordinatorPanel,
-          detail ? renderLifecycle(detail, projection!) : renderQueuedLifecycle(request),
-          renderCurrentStagePanel(request, detail, projection),
+          isAskRouted(request)
+            ? renderAskActivityIndicator(request)
+            : detail ? renderLifecycle(detail, projection!) : renderQueuedLifecycle(request),
+          isAskRouted(request) ? null : renderCurrentStagePanel(request, detail, projection),
           detail ? renderContextGovernancePanel(detail) : null,
-          detail ? renderStageBackendDetails(detail, projection!) : renderQueuedBackendDetails(request),
+          isAskRouted(request) ? null : (detail ? renderStageBackendDetails(detail, projection!) : renderQueuedBackendDetails(request)),
         ],
       }),
       el('aside', {
