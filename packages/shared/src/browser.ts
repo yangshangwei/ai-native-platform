@@ -13,6 +13,8 @@ export * from './types/command';
 export * from './types/gate';
 export * from './types/build';
 export * from './types/agent';
+export * from './types/agent-session';
+export * from './types/tool-invocation';
 export * from './types/agent-event';
 export * from './types/context';
 export * from './types/execution-environment';

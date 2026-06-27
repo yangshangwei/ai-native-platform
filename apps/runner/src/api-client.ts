@@ -21,6 +21,7 @@ import type {
   AgentSessionStatus,
   AgentTaskKind,
   ContextRequest,
+  ToolInvocation,
   CoordinatorDecision,
   RequestMessage,
 } from '@ainp/shared';
@@ -195,6 +196,9 @@ export const api = {
 
   commandRun: (commandRun: CommandRun) =>
     request('POST', '/runner/events/command-run', { commandRun }),
+
+  toolInvocation: (toolInvocation: ToolInvocation) =>
+    request('POST', '/runner/events/tool-invocation', { toolInvocation }),
 
   stageTransition: (params: {
     workflowRunId: string;

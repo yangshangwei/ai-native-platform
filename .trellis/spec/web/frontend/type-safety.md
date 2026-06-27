@@ -25,7 +25,8 @@ The api's response shapes are defined in `packages/shared/src/types/`:
 
 - `Project`, `WorkflowRun`, `WorkflowRequest`, `KnowledgeArtifact`, `Artifact`,
   `CommandRun`, `BuildRun`, `TestRun`, `GateRun`, `AgentTask`, `AgentResult`,
-  `AgentStreamEvent`, `RouterRecommendation`, `RequirementEntity`,
+  `AgentSession`, `AgentStreamEvent`, `ToolInvocation`, `RouterRecommendation`,
+  `RequirementEntity`,
   `DesignEntity`, `RequestMessage`, `CoordinatorDecision`.
 
 The web SPA imports these directly:
@@ -60,6 +61,7 @@ The patterns, in order of preference:
 ```ts
 // 1. Exact alias — the api serializes the shared entity verbatim.
 export type WorkflowRequestDto = WorkflowRequest;
+export type ToolInvocationDto = ToolInvocation;
 
 // 2. Pick — declare only what the SPA actually consumes.
 export type BuildRunDto = Pick<BuildRun, 'id' | 'status' | 'jdkVersion' | 'mavenCommand'>;

@@ -35,6 +35,7 @@ import {
   type StepRun,
   type StepRunId,
   type TestRun,
+  type ToolInvocation,
   type WorkflowRun,
   type WorkflowRequest,
   type WorkflowRunId,
@@ -346,6 +347,17 @@ export function recordCommandRun(commandRun: CommandRun): CommandRun {
     exitCode: commandRun.exitCode,
   });
   return commandRun;
+}
+
+export function recordToolInvocation(toolInvocation: ToolInvocation): ToolInvocation {
+  store.toolInvocations.insert(toolInvocation);
+  audit(toolInvocation.workflowRunId, 'tool_invocation.recorded', {
+    toolInvocationId: toolInvocation.id,
+    toolId: toolInvocation.toolId,
+    status: toolInvocation.status,
+    resultRefs: toolInvocation.resultRefs,
+  });
+  return toolInvocation;
 }
 
 export function completeWorkflowRun(workflowRunId: string, ok: boolean): WorkflowRun {

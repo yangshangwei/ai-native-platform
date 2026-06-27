@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/shared/backend/evidence-verifier-protocol.md", "reason": "Check ToolInvocation does not replace digest-backed CommandRun/Artifact evidence."}
+{"file": ".trellis/spec/runner/backend/database-guidelines.md", "reason": "Check Runner records ToolInvocations through API ingress only."}
+{"file": ".trellis/spec/runner/backend/error-handling.md", "reason": "Check denied/failed commands remain auditable and not swallowed."}
+{"file": ".trellis/spec/api/backend/database.md", "reason": "Check migration/store changes follow SQLite discipline."}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "Check Web DTOs derive from shared ToolInvocation types."}
+{"file": ".trellis/tasks/06-27-typed-tool-registry-mvp/research/tool-registry-slice.md", "reason": "Check implementation covers B1-B4 red/green requirements."}

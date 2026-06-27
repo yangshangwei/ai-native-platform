@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type {
   CommandRun,
+  ToolInvocation,
   WorkflowStage,
   ArtifactKind,
   GateRun,
@@ -15,11 +16,17 @@ import {
   isAgentSessionStatus,
   isContextRequestStatus,
   isPerRunArtifactKind,
+  isRunnerToolId,
+  isToolInvocationStatus,
+  isToolPermissionDecision,
+  isToolPermissionTier,
+  isToolSideEffectLevel,
   isWorkflowStage,
 } from '@ainp/shared';
 import {
   finishStep,
   recordCommandRun,
+  recordToolInvocation,
   setWorkspace,
   startStep,
   transitionStage,
@@ -83,6 +90,46 @@ runnerEvents.post('/command-run', async (c) => {
   const cr = recordCommandRun(body.commandRun);
   return c.json({ ok: true, commandRun: cr });
 });
+
+runnerEvents.post('/tool-invocation', async (c) => {
+  const body = (await c.req.json()) as { toolInvocation: ToolInvocation };
+  const validationError = validateToolInvocation(body.toolInvocation);
+  if (validationError) return c.json({ error: validationError }, 400);
+  const invocation = recordToolInvocation(body.toolInvocation);
+  return c.json({ ok: true, toolInvocation: invocation });
+});
+
+function validateToolInvocation(invocation: ToolInvocation | undefined): string | null {
+  if (!invocation) return 'toolInvocation required';
+  if (!invocation.id || !invocation.workflowRunId || !invocation.toolId || !invocation.argumentsDigest) {
+    return 'toolInvocation id, workflowRunId, toolId, argumentsDigest required';
+  }
+  if (!store.workflowRuns.get(invocation.workflowRunId)) {
+    return `workflow run not found: ${invocation.workflowRunId}`;
+  }
+  if (!isRunnerToolId(invocation.toolId)) {
+    return `unknown toolId: ${String(invocation.toolId)}`;
+  }
+  if (!isToolInvocationStatus(invocation.status)) {
+    return `unknown tool invocation status: ${String(invocation.status)}`;
+  }
+  if (!isToolSideEffectLevel(invocation.sideEffect)) {
+    return `unknown tool sideEffect: ${String(invocation.sideEffect)}`;
+  }
+  if (!isToolPermissionTier(invocation.permissionTier)) {
+    return `unknown tool permissionTier: ${String(invocation.permissionTier)}`;
+  }
+  if (!isToolPermissionDecision(invocation.permissionDecision)) {
+    return `unknown tool permissionDecision: ${String(invocation.permissionDecision)}`;
+  }
+  if (!Array.isArray(invocation.resultRefs)) {
+    return 'toolInvocation resultRefs must be an array';
+  }
+  if (!invocation.metadata || typeof invocation.metadata !== 'object' || Array.isArray(invocation.metadata)) {
+    return 'toolInvocation metadata must be an object';
+  }
+  return null;
+}
 
 runnerEvents.post('/stage-transition', async (c) => {
   const body = (await c.req.json()) as {

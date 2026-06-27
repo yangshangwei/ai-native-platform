@@ -38,7 +38,7 @@ The api over HTTP. The runner sees these resource shapes (defined in
 - `Project` (read-only from the runner's view)
 - `WorkflowRun`, `WorkflowRequest`, `StepRun`, `CommandRun`, `BuildRun`,
   `TestRun`, `GateRun`, `Artifact`, `KnowledgeArtifact`, `AgentTask`,
-  `AgentResult`, `AgentStreamEvent`
+  `AgentResult`, `AgentSession`, `AgentStreamEvent`, `ToolInvocation`
 
 Plus runtime-only types like `WorkspaceRef` (computed in the runner, not
 persisted).
@@ -98,6 +98,8 @@ So the runner POSTs events:
 - `POST /runner/events/step-started` → engine creates StepRun row.
 - `POST /runner/events/step-finished` → engine updates the row.
 - `POST /runner/events/command-run` → engine inserts CommandRun row.
+- `POST /runner/events/tool-invocation` → engine inserts ToolInvocation audit
+  row for Runner-owned tools.
 - `POST /runner/events/agent-event` → engine inserts AgentStreamEvent and
   publishes to live SSE subscribers.
 - `POST /runner/events/workspace-prepared` → engine sets `workspace_path`.
@@ -122,6 +124,10 @@ must guard at the call site:
   CommandRun — it would insert a second row. The runner generates a fresh
   `CommandRunId` per attempt, so retry-after-throw means retry the work, not
   retry the recording.
+- `api.toolInvocation` is **not** idempotent. The runner generates a fresh
+  `ToolInvocation` id per command/diff capture attempt and records it only
+  after the underlying event is known. For denied whitelist attempts, record
+  a denied invocation with no `CommandRun` ref because no command was spawned.
 
 Document any new event endpoint you add as idempotent or not, and pick the
 matching call shape.
@@ -142,3 +148,7 @@ matching call shape.
 - **Caching api responses across run invocations.** The api is the source of
   truth; cache only within a single `cmdOrchestrate` invocation when the
   cost is real (e.g., `getProject` once per orchestrate is fine).
+- **Treating ToolInvocation as a command gate.** It is an audit/read-model
+  index over `CommandRun` and `Artifact` evidence. Whitelist enforcement stays
+  inside `runWhitelistedCommand()`, and Gate Engine remains the verdict
+  authority.

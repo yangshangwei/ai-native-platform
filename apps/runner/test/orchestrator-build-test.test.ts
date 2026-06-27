@@ -3,9 +3,9 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { CommandRun, StepRun } from '@ainp/shared';
-import { executeBuildTest, type StepDeps } from '../src/orchestrator/steps';
+import { executeBuildTest, executeImplementation, type StepDeps } from '../src/orchestrator/steps';
 import type { RunCommandInput } from '../src/command-runner';
-import { projectFixture, runCtxFixture } from './helpers/orchestrator-fixtures';
+import { projectFixture, runCtxFixture, skillFixture } from './helpers/orchestrator-fixtures';
 
 // ---------------------------------------------------------------------------
 // T3.2 build-command de-hardcoding: executeBuildTest gets its first direct
@@ -26,6 +26,7 @@ function buildTestDeps() {
       stepStarted: vi.fn(async () => ({ step: { id: 'step_bt' } as unknown as StepRun })),
       stepFinished: vi.fn(async () => ({})),
       commandRun: vi.fn(async () => ({})),
+      toolInvocation: vi.fn(async () => ({})),
       mavenBuild: vi.fn(async (params: Record<string, unknown>) => {
         mavenBuildCalls.push(params);
         return {
@@ -43,6 +44,9 @@ function buildTestDeps() {
         stage: input.stage,
         status: 'passed',
         exitCode: 0,
+        finishedAt: '2026-06-27T00:00:01.000Z',
+        durationMs: 1,
+        combinedSha256: `digest_${input.stage}`,
       } as unknown as CommandRun;
     }),
     collectReports: vi.fn(async () => []),
@@ -75,6 +79,17 @@ describe('executeBuildTest (T3.2 command source)', () => {
       reports: [],
     });
     expect(raw.api.stepFinished).toHaveBeenCalledWith({ stepRunId: 'step_bt', status: 'passed' });
+    expect(raw.api.toolInvocation).toHaveBeenCalledTimes(2);
+    expect(raw.api.toolInvocation).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      toolId: 'runner.command',
+      status: 'success',
+      permissionDecision: 'allowed',
+      resultRefs: [expect.objectContaining({
+        kind: 'command_run',
+        id: 'cmd_compile',
+        digest: 'digest_compile',
+      })],
+    }));
     expect(c.ok.value).toBe(true);
   });
 
@@ -132,5 +147,105 @@ describe('executeBuildTest (T3.2 command source)', () => {
     for (const input of commandInputs) {
       expect(input.extraAllow).toEqual(['npm test']);
     }
+  });
+
+  test('denied command records a denied ToolInvocation without posting CommandRun', async () => {
+    const { deps, raw } = buildTestDeps();
+    raw.runWhitelistedCommand.mockRejectedValueOnce(new Error('command not on whitelist: rm -rf /'));
+    const c = runCtxFixture({
+      project: {
+        ...projectFixture(),
+        buildCompileCommand: 'rm -rf /',
+        buildTestCommand: 'npm test',
+      },
+    });
+
+    await expect(executeBuildTest(c, deps)).rejects.toThrow('command not on whitelist');
+
+    expect(raw.api.commandRun).not.toHaveBeenCalled();
+    expect(raw.api.toolInvocation).toHaveBeenCalledWith(expect.objectContaining({
+      toolId: 'runner.command',
+      status: 'denied',
+      permissionDecision: 'denied',
+      resultRefs: [],
+      error: 'command not on whitelist: rm -rf /',
+    }));
+  });
+});
+
+describe('executeImplementation ToolInvocation evidence', () => {
+  test('records git diff capture with diff artifact evidence and changed-file metadata', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'ainp-impl-tool-'));
+    const diffPath = join(workspace, 'diff.patch');
+    const changedFilesPath = join(workspace, 'changed-files.txt');
+    writeFileSync(diffPath, 'diff --git a/src/app.ts b/src/app.ts\n', 'utf8');
+    writeFileSync(changedFilesPath, 'src/app.ts\nsrc/app.test.ts\n', 'utf8');
+    const c = runCtxFixture({
+      workspace: {
+        workflowRunId: 'run_orch',
+        path: workspace,
+        branch: 'ai/run-1',
+        environmentKind: 'trusted_local_worktree',
+      },
+      runArtifactsDir: workspace,
+    });
+    const deps = {
+      api: {
+        stepStarted: vi.fn(async () => ({ step: { id: 'step_impl' } as unknown as StepRun })),
+        postArtifact: vi.fn(async () => ({
+          id: 'art_diff',
+          sha256: 'diff_sha',
+        })),
+        toolInvocation: vi.fn(async () => ({})),
+        runGate: vi.fn(async () => ({ gate: { status: 'pass' } })),
+        stepFinished: vi.fn(async () => ({})),
+        awaitHuman: vi.fn(async () => ({})),
+      },
+      mustSkill: vi.fn(async () => skillFixture('implementation')),
+      invokeSkill: vi.fn(async () => ({
+        task: { id: 'agtask_impl' },
+        outputs: [
+          { name: 'diff', path: diffPath, size: 36, contentType: 'text/x-diff' },
+          { name: 'changed-files', path: changedFilesPath, size: 23, contentType: 'text/plain' },
+        ],
+      })),
+      finishAgentSuccess: vi.fn(async () => ({})),
+      enforceSensitiveChangeCheckpoint: vi.fn(async () => ({})),
+      awaitApproval: vi.fn(async () => ({})),
+      postRejectionFeedback: vi.fn(async () => ({})),
+    };
+
+    await executeImplementation(c, deps as unknown as StepDeps);
+
+    expect(deps.api.postArtifact).toHaveBeenCalledWith(expect.objectContaining({
+      workflowRunId: 'run_orch',
+      stepRunId: 'step_impl',
+      kind: 'diff',
+      metadata: { changedFilesPath },
+    }));
+    expect(deps.api.toolInvocation).toHaveBeenCalledWith(expect.objectContaining({
+      workflowRunId: 'run_orch',
+      stepRunId: 'step_impl',
+      toolId: 'runner.git_diff_capture',
+      status: 'success',
+      permissionDecision: 'not_required',
+      resultRefs: [expect.objectContaining({
+        kind: 'artifact',
+        id: 'art_diff',
+        digest: 'diff_sha',
+      })],
+      metadata: expect.objectContaining({
+        diffPath,
+        changedFilesPath,
+        changedFileCount: 2,
+        changedFiles: ['src/app.ts', 'src/app.test.ts'],
+      }),
+    }));
+    expect(deps.finishAgentSuccess).toHaveBeenCalledWith(
+      expect.anything(),
+      ['art_diff'],
+      'implementation produced 2 changed file(s)',
+    );
+    expect(c.inputs.diff).toBe('diff --git a/src/app.ts b/src/app.ts\n');
   });
 });

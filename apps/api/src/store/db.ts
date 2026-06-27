@@ -403,6 +403,26 @@ const BASELINE_DDL: string[] = [
      changed_by TEXT
    )`,
   `CREATE INDEX IF NOT EXISTS idx_config_audit_key ON config_audit(key, changed_at)`,
+  `CREATE TABLE IF NOT EXISTS tool_invocations (
+     id TEXT PRIMARY KEY,
+     workflow_run_id TEXT NOT NULL,
+     step_run_id TEXT,
+     tool_id TEXT NOT NULL,
+     tool_name TEXT NOT NULL,
+     schema_version TEXT NOT NULL,
+     status TEXT NOT NULL,
+     side_effect TEXT NOT NULL,
+     permission_tier TEXT NOT NULL,
+     permission_decision TEXT NOT NULL,
+     arguments_digest TEXT NOT NULL,
+     result_refs_json TEXT NOT NULL,
+     started_at TEXT NOT NULL,
+     completed_at TEXT,
+     duration_ms INTEGER,
+     error TEXT,
+     metadata_json TEXT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_tool_invocations_workflow ON tool_invocations(workflow_run_id, started_at)`,
 ];
 
 // ---------------------------------------------------------------------------
@@ -571,6 +591,33 @@ export const MIGRATIONS: Migration[] = [
        )`);
       run(database, `CREATE INDEX IF NOT EXISTS idx_agent_sessions_workflow ON agent_sessions(workflow_run_id, started_at)`);
       run(database, `CREATE INDEX IF NOT EXISTS idx_agent_sessions_task ON agent_sessions(agent_task_id)`);
+    },
+  },
+  {
+    version: 26,
+    name: 'tool_invocations-create-table',
+    isApplied: (database) => hasTable(database, 'tool_invocations'),
+    up: (database) => {
+      run(database, `CREATE TABLE tool_invocations (
+         id TEXT PRIMARY KEY,
+         workflow_run_id TEXT NOT NULL,
+         step_run_id TEXT,
+         tool_id TEXT NOT NULL,
+         tool_name TEXT NOT NULL,
+         schema_version TEXT NOT NULL,
+         status TEXT NOT NULL,
+         side_effect TEXT NOT NULL,
+         permission_tier TEXT NOT NULL,
+         permission_decision TEXT NOT NULL,
+         arguments_digest TEXT NOT NULL,
+         result_refs_json TEXT NOT NULL,
+         started_at TEXT NOT NULL,
+         completed_at TEXT,
+         duration_ms INTEGER,
+         error TEXT,
+         metadata_json TEXT NOT NULL
+       )`);
+      run(database, `CREATE INDEX IF NOT EXISTS idx_tool_invocations_workflow ON tool_invocations(workflow_run_id, started_at)`);
     },
   },
 ];

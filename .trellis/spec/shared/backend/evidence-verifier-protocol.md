@@ -17,6 +17,11 @@
   - `combinedSha256?: string | null`
 - File artifact evidence field on `Artifact`:
   - `sha256?: string | null`
+- Tool invocation audit type: `ToolInvocation`
+  - Runner-owned MVP tool ids: `runner.command`, `runner.git_diff_capture`,
+    `runner.artifact_read`, `runner.context_supplement`
+  - Result refs may point at digest-backed `CommandRun` / `Artifact` evidence,
+    but the invocation row itself is only an audit index.
 - Verifier metadata constants:
   - `VERIFIER_AC_MATRIX_SCHEMA_VERSION = 'ainp.verifier_ac_matrix.v1'`
   - `VERIFIER_MEDIA_SCHEMA_VERSION = 'ainp.verifier_media.v1'`
@@ -57,6 +62,18 @@
 - Runner review flow must run the verifier sub-stage for UI-titled tasks before human acceptance, then run `evidence_gate` before waiting for acceptance.
 - Verifier media artifacts must be explicitly tagged with verifier metadata. Plain `image/*` or `video/*` artifacts must not satisfy verifier evidence by content type alone.
 - Verifier artifacts currently use `kind='other'`, but they must not count as the generic acceptance review artifact.
+- Runner-owned tool executions must record `ToolInvocation` rows through API
+  runner-event ingress. `runner.command` invocations must keep
+  `runWhitelistedCommand()` as the hard command gate and link successful or
+  failed executions to the resulting `CommandRun` id plus command digest when
+  available. Denied whitelist attempts may record `status='denied'` with no
+  `CommandRun` result ref because no subprocess was spawned.
+- `runner.git_diff_capture` invocations must link to the diff `Artifact` and
+  include changed-file path/count metadata. This makes diff capture auditable
+  without making ToolInvocation the evidence artifact itself.
+- Gate Engine remains the only pass/warn/fail authority. Do not derive gate
+  status from `ToolInvocation.status`; gates must continue resolving primary
+  `CommandRun` / `Artifact` evidence.
 
 ### 4. Validation & Error Matrix
 
@@ -65,6 +82,10 @@
 - Passing compile/test gate has only artifact evidence and no resolvable `CommandRun` -> `evidence.command_digests_present` fail.
 - Compile/test command evidence lacks any command digest -> `evidence.command_digests_present` fail.
 - File artifact evidence lacks `sha256` -> `evidence.artifact_digests_present` warn.
+- ToolInvocation claims `runner.command` success but does not reference
+  digest-bearing `CommandRun` evidence -> audit/read-model defect; fix the
+  runner recording path and keep Evidence Gate rules anchored to the
+  `CommandRun` / `Artifact` evidence graph.
 - Acceptance gate has only human/manual evidence -> `evidence.acceptance_has_execution_evidence` fail.
 - UI-titled run has no verifier matrix -> `evidence.ui_verifier_matrix_present` fail.
 - Verifier matrix row lacks video or before+after screenshots -> `evidence.ui_verifier_media_refs_present` fail.

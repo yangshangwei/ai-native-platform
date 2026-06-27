@@ -143,6 +143,7 @@ workflowRuns.get('/:id', (c) => {
   const agentTasks = store.agentTasks.byWorkflow(id);
   const agentResults = store.agentResults.byWorkflow(id);
   const agentSessions = store.agentSessions.byWorkflow(id);
+  const toolInvocations = store.toolInvocations.byWorkflow(id);
   const audit = store.auditLog.byWorkflow(id);
   return c.json({
     run,
@@ -157,6 +158,7 @@ workflowRuns.get('/:id', (c) => {
     agentTasks,
     agentResults,
     agentSessions,
+    toolInvocations,
     audit,
   });
 });

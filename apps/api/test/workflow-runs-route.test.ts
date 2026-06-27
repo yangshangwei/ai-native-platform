@@ -2,7 +2,15 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, expect, test } from 'vitest';
-import { newId, nowIso, type KnowledgeArtifact, type Project, type WorkflowRun } from '@ainp/shared';
+import {
+  RUNNER_TOOL_SPECS,
+  newId,
+  nowIso,
+  type KnowledgeArtifact,
+  type Project,
+  type ToolInvocation,
+  type WorkflowRun,
+} from '@ainp/shared';
 
 process.env.AINP_DB_PATH = join(
   mkdtempSync(join(tmpdir(), 'ainp-workflow-runs-route-test-')),
@@ -158,6 +166,102 @@ test('runner event ingress records and exposes agent sessions by workflow run', 
       agentResultId: resultBody.result.id,
     },
   ]);
+});
+
+test('runner event ingress records and exposes tool invocations by workflow run', async () => {
+  const project = registerProject('tool-invocations-route');
+  const create = await app.request('/workflow-runs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      type: 'feature',
+      title: 'record tool invocation',
+    }),
+  });
+  const run = (await create.json()) as WorkflowRun;
+  const spec = RUNNER_TOOL_SPECS['runner.command'];
+  const toolInvocation: ToolInvocation = {
+    id: 'tinv_route_command',
+    workflowRunId: run.id,
+    stepRunId: null,
+    toolId: spec.id,
+    toolName: spec.name,
+    schemaVersion: spec.schemaVersion,
+    status: 'success',
+    sideEffect: spec.sideEffect,
+    permissionTier: spec.permissionTier,
+    permissionDecision: 'allowed',
+    argumentsDigest: 'digest_args',
+    resultRefs: [{ kind: 'command_run', id: 'cmd_route', digest: 'digest_cmd' }],
+    startedAt: nowIso(),
+    completedAt: nowIso(),
+    durationMs: 10,
+    error: null,
+    metadata: { command: 'bun test' },
+  };
+
+  const record = await app.request('/runner/events/tool-invocation', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ toolInvocation }),
+  });
+  expect(record.status).toBe(200);
+
+  const res = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}`);
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { toolInvocations: ToolInvocation[] };
+  expect(body.toolInvocations).toMatchObject([{
+    id: 'tinv_route_command',
+    toolId: 'runner.command',
+    status: 'success',
+    resultRefs: [{ kind: 'command_run', id: 'cmd_route', digest: 'digest_cmd' }],
+  }]);
+});
+
+test('runner event ingress rejects invalid tool invocation trust-boundary fields', async () => {
+  const project = registerProject('tool-invocations-invalid-route');
+  const create = await app.request('/workflow-runs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      type: 'feature',
+      title: 'reject invalid tool invocation',
+    }),
+  });
+  const run = (await create.json()) as WorkflowRun;
+  const spec = RUNNER_TOOL_SPECS['runner.command'];
+  const invalidInvocation = {
+    id: 'tinv_invalid',
+    workflowRunId: run.id,
+    stepRunId: null,
+    toolId: spec.id,
+    toolName: spec.name,
+    schemaVersion: spec.schemaVersion,
+    status: 'skipped',
+    sideEffect: spec.sideEffect,
+    permissionTier: spec.permissionTier,
+    permissionDecision: 'allowed',
+    argumentsDigest: 'digest_args',
+    resultRefs: [],
+    startedAt: nowIso(),
+    completedAt: nowIso(),
+    durationMs: 1,
+    error: null,
+    metadata: {},
+  };
+
+  const record = await app.request('/runner/events/tool-invocation', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ toolInvocation: invalidInvocation }),
+  });
+
+  expect(record.status).toBe(400);
+  const body = (await record.json()) as { error: string };
+  expect(body.error).toContain('unknown tool invocation status');
+  expect(storeMod.store.toolInvocations.get('tinv_invalid')).toBeUndefined();
 });
 
 test('runner event ingress validates agent session finish envelopes', async () => {

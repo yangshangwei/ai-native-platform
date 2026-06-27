@@ -1800,6 +1800,7 @@ function renderEvidencePanel(detail: RunDetail): HTMLElement {
         children: [
           el('summary', { text: '查看 Gate、命令、产物和 Agent 记录' }),
           renderDetails('Gate Runs', detail.gates.map(renderGateRow), `evidence-gates:${detail.run.id}`),
+          renderDetails('Tool Invocations', detail.toolInvocations.map(renderToolInvocationRow), `evidence-tools:${detail.run.id}`),
           renderDetails('Command Runs', detail.commands.map(renderCommandRow), `evidence-commands:${detail.run.id}`),
           renderDetails('Artifacts', detail.artifacts.map((artifact) => renderArtifactRow(artifact, 'evidence')), `evidence-artifacts:${detail.run.id}`),
           renderDetails('Agent Audit', detail.agentTasks.map((task) => renderAgentTaskRow(task, detail)), `evidence-agent-audit:${detail.run.id}`),
@@ -1839,6 +1840,20 @@ function renderCommandRow(command: RunDetail['commands'][number]): HTMLElement {
       logs
         ? el('small', { text: `stdout ${digestStatusText(logs.stdout.digest)} · stderr ${digestStatusText(logs.stderr.digest)}` })
         : null,
+    ],
+  });
+}
+
+function renderToolInvocationRow(invocation: RunDetail['toolInvocations'][number]): HTMLElement {
+  return el('div', {
+    class: 'evidence-row',
+    children: [
+      el('span', { children: [pill(invocation.status), document.createTextNode(` ${invocation.toolId}`)] }),
+      el('small', { text: `${invocation.permissionDecision} · ${invocation.sideEffect} · ${invocation.durationMs ?? 0}ms` }),
+      invocation.resultRefs.length
+        ? el('small', { text: invocation.resultRefs.map((ref) => `${ref.kind}:${shortId(ref.id)}`).join(' · ') })
+        : el('small', { text: 'no result evidence refs' }),
+      invocation.error ? el('small', { text: invocation.error }) : null,
     ],
   });
 }

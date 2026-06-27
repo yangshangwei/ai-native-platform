@@ -1,14 +1,24 @@
 import { join } from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import type {
   ArtifactKind,
+  CommandRun,
   GateRun,
   SkillSpec,
+  ToolInvocation,
   VerifierAcMatrix,
   VerifierStatus,
 } from '@ainp/shared';
-import { VERIFIER_AC_MATRIX_SCHEMA_VERSION, errorMessage, nowIso, pathToFileUri } from '@ainp/shared';
+import {
+  RUNNER_TOOL_SPECS,
+  VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+  errorMessage,
+  newId,
+  nowIso,
+  pathToFileUri,
+} from '@ainp/shared';
 import { api } from '../api-client';
 import type { AgentBackend } from '../agents/types';
 import { runWhitelistedCommand } from '../command-runner';
@@ -56,6 +66,7 @@ type StepApi = Pick<
   | 'runGate'
   | 'awaitHuman'
   | 'commandRun'
+  | 'toolInvocation'
   | 'mavenBuild'
   | 'stageTransition'
   | 'generateCompletionReport'
@@ -116,6 +127,136 @@ export const DEFAULT_STEP_DEPS: StepDeps = {
   persistKnowledgeCandidate,
 };
 
+type ToolCommandInput = Parameters<typeof runWhitelistedCommand>[0];
+
+async function runWhitelistedCommandWithToolInvocation(
+  deps: StepDeps,
+  input: ToolCommandInput,
+): Promise<CommandRun> {
+  const startedAt = nowIso();
+  const startedMs = Date.now();
+  const spec = RUNNER_TOOL_SPECS['runner.command'];
+  const base = {
+    id: newId('tinv'),
+    workflowRunId: input.workflowRunId,
+    stepRunId: input.stepRunId,
+    toolId: spec.id,
+    toolName: spec.name,
+    schemaVersion: spec.schemaVersion,
+    sideEffect: spec.sideEffect,
+    permissionTier: spec.permissionTier,
+    argumentsDigest: digestJson({
+      command: input.command,
+      cwd: input.cwd,
+      stage: input.stage,
+      extraAllow: input.extraAllow ?? [],
+    }),
+    startedAt,
+    metadata: {
+      command: input.command,
+      cwd: input.cwd,
+      stage: input.stage,
+      extraAllow: input.extraAllow ?? [],
+    },
+  } satisfies Pick<
+    ToolInvocation,
+    | 'id'
+    | 'workflowRunId'
+    | 'stepRunId'
+    | 'toolId'
+    | 'toolName'
+    | 'schemaVersion'
+    | 'sideEffect'
+    | 'permissionTier'
+    | 'argumentsDigest'
+    | 'startedAt'
+    | 'metadata'
+  >;
+
+  try {
+    const commandRun = await deps.runWhitelistedCommand(input);
+    await deps.api.commandRun(commandRun);
+    await deps.api.toolInvocation({
+      ...base,
+      status: commandRun.status === 'passed' ? 'success' : 'failed',
+      permissionDecision: 'allowed',
+      resultRefs: [{
+        kind: 'command_run',
+        id: commandRun.id,
+        digest: commandRun.combinedSha256 ?? null,
+        claim: `${commandRun.command} status=${commandRun.status} exit=${commandRun.exitCode ?? 'null'}`,
+      }],
+      completedAt: commandRun.finishedAt ?? nowIso(),
+      durationMs: commandRun.durationMs ?? Date.now() - startedMs,
+      error: commandRun.status === 'passed' ? null : `command ${commandRun.status}`,
+    });
+    return commandRun;
+  } catch (err) {
+    const message = errorMessage(err);
+    const denied = message.includes('command not on whitelist');
+    await deps.api.toolInvocation({
+      ...base,
+      status: denied ? 'denied' : 'failed',
+      permissionDecision: denied ? 'denied' : 'allowed',
+      resultRefs: [],
+      completedAt: nowIso(),
+      durationMs: Date.now() - startedMs,
+      error: message,
+    });
+    throw err;
+  }
+}
+
+function toolInvocationForDiffCapture(input: {
+  workflowRunId: string;
+  stepRunId: string;
+  diffArtifactId: string;
+  diffDigest: string | null;
+  diffPath: string;
+  changedFilesPath: string;
+  changedFiles: string[];
+}): ToolInvocation {
+  const now = nowIso();
+  const spec = RUNNER_TOOL_SPECS['runner.git_diff_capture'];
+  return {
+    id: newId('tinv'),
+    workflowRunId: input.workflowRunId,
+    stepRunId: input.stepRunId,
+    toolId: spec.id,
+    toolName: spec.name,
+    schemaVersion: spec.schemaVersion,
+    status: 'success',
+    sideEffect: spec.sideEffect,
+    permissionTier: spec.permissionTier,
+    permissionDecision: 'not_required',
+    argumentsDigest: digestJson({
+      diffPath: input.diffPath,
+      changedFilesPath: input.changedFilesPath,
+      changedFiles: input.changedFiles,
+    }),
+    resultRefs: [{
+      kind: 'artifact',
+      id: input.diffArtifactId,
+      digest: input.diffDigest,
+      claim: `implementation diff with ${input.changedFiles.length} changed file(s)`,
+    }],
+    startedAt: now,
+    completedAt: now,
+    durationMs: 0,
+    error: null,
+    metadata: {
+      diffPath: input.diffPath,
+      changedFilesPath: input.changedFilesPath,
+      changedFileCount: input.changedFiles.length,
+      changedFiles: input.changedFiles,
+    },
+  };
+}
+
+function digestJson(value: unknown): string {
+  return createHash('sha256').update(JSON.stringify(value)).digest('hex');
+}
+
 // ---- step implementations (PRD R12: extracted from V1 inline blocks) -----
 // Each `executeXxx(c)` is a 1:1 lift of the matching V1 inline block.
 // `kind` / `skillId` from StageStep are NOT read here in W2-1=α; W2-3
@@ -161,6 +302,15 @@ export async function executeImplementation(
     .map((s) => s.trim())
     .filter(Boolean);
   c.inputs['diff'] = await Bun.file(diffOut.path).text();
+  await deps.api.toolInvocation(toolInvocationForDiffCapture({
+    workflowRunId: c.run.id,
+    stepRunId: stepId,
+    diffArtifactId: diffArtifact.id,
+    diffDigest: diffArtifact.sha256 ?? null,
+    diffPath: diffOut.path,
+    changedFilesPath: namesOut.path,
+    changedFiles,
+  }));
   await deps.finishAgentSuccess(
     agent,
     [diffArtifact.id],
@@ -224,7 +374,7 @@ export async function executeBuildTest(
   });
   const stepId = step.id;
   const logDir = join(WORKTREES_DIR, c.project.id, c.run.id, 'logs');
-  const compileCr = await deps.runWhitelistedCommand({
+  const compileCr = await runWhitelistedCommandWithToolInvocation(deps, {
     workflowRunId: c.run.id,
     stepRunId: stepId,
     cwd: c.workspace.path,
@@ -235,7 +385,6 @@ export async function executeBuildTest(
     logDir,
     extraAllow,
   });
-  await deps.api.commandRun(compileCr);
   console.log(`[runner] compile command ${compileCr.status} (exit=${compileCr.exitCode})`);
   if (compileCr.status !== 'passed') {
     c.ok.value = false;
@@ -243,7 +392,7 @@ export async function executeBuildTest(
     throw new Error('compile command failed');
   }
 
-  const cr = await deps.runWhitelistedCommand({
+  const cr = await runWhitelistedCommandWithToolInvocation(deps, {
     workflowRunId: c.run.id,
     stepRunId: stepId,
     cwd: c.workspace.path,
@@ -254,7 +403,6 @@ export async function executeBuildTest(
     logDir,
     extraAllow,
   });
-  await deps.api.commandRun(cr);
   console.log(`[runner] build_test command ${cr.status} (exit=${cr.exitCode})`);
 
   const reports = await deps.collectReports(

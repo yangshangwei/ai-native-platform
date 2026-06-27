@@ -20,6 +20,7 @@ import type {
   AgentStreamEvent,
   CoordinatorDecision,
   RequestMessage,
+  ToolInvocation,
 } from '@ainp/shared';
 import { errorMessage, isProjectAgentBackendKind, nowIso } from '@ainp/shared';
 import { appendFileSync, mkdirSync } from 'node:fs';
@@ -839,6 +840,87 @@ const knowledgeArtifacts = {
     db.prepare(
       'UPDATE knowledge_artifacts SET metadata_json = ?, updated_at = ? WHERE id = ?',
     ).run(JSON.stringify(metadata), updatedAt, id);
+  },
+};
+
+// ---- tool_invocations ------------------------------------------------------
+
+interface ToolInvocationRow {
+  id: string;
+  workflow_run_id: string;
+  step_run_id: string | null;
+  tool_id: string;
+  tool_name: string;
+  schema_version: string;
+  status: string;
+  side_effect: string;
+  permission_tier: string;
+  permission_decision: string;
+  arguments_digest: string;
+  result_refs_json: string;
+  started_at: string;
+  completed_at: string | null;
+  duration_ms: number | null;
+  error: string | null;
+  metadata_json: string;
+}
+
+function rowToToolInvocation(r: ToolInvocationRow): ToolInvocation {
+  return {
+    id: r.id,
+    workflowRunId: r.workflow_run_id,
+    stepRunId: r.step_run_id,
+    toolId: r.tool_id as ToolInvocation['toolId'],
+    toolName: r.tool_name,
+    schemaVersion: r.schema_version,
+    status: r.status as ToolInvocation['status'],
+    sideEffect: r.side_effect as ToolInvocation['sideEffect'],
+    permissionTier: r.permission_tier as ToolInvocation['permissionTier'],
+    permissionDecision: r.permission_decision as ToolInvocation['permissionDecision'],
+    argumentsDigest: r.arguments_digest,
+    resultRefs: JSON.parse(r.result_refs_json),
+    startedAt: r.started_at,
+    completedAt: r.completed_at,
+    durationMs: r.duration_ms,
+    error: r.error,
+    metadata: JSON.parse(r.metadata_json) as Record<string, unknown>,
+  };
+}
+
+const toolInvocationsTable = defineTable<ToolInvocationRow, ToolInvocation>({
+  table: 'tool_invocations',
+  fromRow: rowToToolInvocation,
+  toRow: (t) => ({
+    id: t.id,
+    workflow_run_id: t.workflowRunId,
+    step_run_id: t.stepRunId,
+    tool_id: t.toolId,
+    tool_name: t.toolName,
+    schema_version: t.schemaVersion,
+    status: t.status,
+    side_effect: t.sideEffect,
+    permission_tier: t.permissionTier,
+    permission_decision: t.permissionDecision,
+    arguments_digest: t.argumentsDigest,
+    result_refs_json: JSON.stringify(t.resultRefs),
+    started_at: t.startedAt,
+    completed_at: t.completedAt,
+    duration_ms: t.durationMs,
+    error: t.error,
+    metadata_json: JSON.stringify(t.metadata),
+  }),
+});
+
+const toolInvocations = {
+  insert: (t: ToolInvocation): void => toolInvocationsTable.insert(t),
+  get: (id: string): ToolInvocation | undefined => toolInvocationsTable.byId(id),
+  byWorkflow: (workflowRunId: string): ToolInvocation[] =>
+    toolInvocationsTable.all(
+      'SELECT * FROM tool_invocations WHERE workflow_run_id = ? ORDER BY started_at ASC',
+      workflowRunId,
+    ),
+  get size(): number {
+    return toolInvocationsTable.count();
   },
 };
 
@@ -1896,6 +1978,7 @@ export const store = {
   agentTasks,
   agentResults,
   agentSessions,
+  toolInvocations,
   agentEvents,
   workflowActions,
   approvals,

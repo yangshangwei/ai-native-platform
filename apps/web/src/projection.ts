@@ -10,6 +10,7 @@ import {
   type RuleResult,
   type StepRun,
   type TestRun,
+  type ToolInvocation,
   type WorkflowRequestStatus,
   type WorkflowRun,
   type WorkflowRunStatus,
@@ -246,6 +247,9 @@ export type CommandRunDto = Weaken<
   'stage'
 >;
 
+/** Derived from the shared {@link ToolInvocation}; the API returns the full entity. */
+export type ToolInvocationDto = ToolInvocation;
+
 /**
  * Derived from the shared {@link GateRun}. `ruleResults` rows are trimmed to
  * the render fields ({@link RuleResult} minus `evidenceRefs`, which the SPA
@@ -356,6 +360,7 @@ export interface RunDetail {
   run: WorkflowRunDto;
   steps: StepRunDto[];
   commands: CommandRunDto[];
+  toolInvocations: ToolInvocationDto[];
   gates: GateRunDto[];
   artifacts: ArtifactDto[];
   builds: BuildRunDto[];

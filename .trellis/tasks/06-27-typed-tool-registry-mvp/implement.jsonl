@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/shared/backend/evidence-verifier-protocol.md", "reason": "Digest-backed evidence and gate authority boundaries for ToolInvocation links."}
+{"file": ".trellis/spec/shared/backend/agent-backend-contract.md", "reason": "Agent Runtime lineage and audit boundaries adjacent to ToolInvocation."}
+{"file": ".trellis/spec/runner/backend/database-guidelines.md", "reason": "Runner API-only persistence contract for new ToolInvocation events."}
+{"file": ".trellis/spec/runner/backend/error-handling.md", "reason": "Command-runner failure recording and no-swallowing rules."}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "Runner side-effect and subprocess conventions."}
+{"file": ".trellis/spec/api/backend/database.md", "reason": "Migration discipline for adding ToolInvocation persistence."}
+{"file": ".trellis/spec/api/backend/build-commands.md", "reason": "Command whitelist extraAllow and custom build/test command contract."}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "Web DTO derivation rules for exposing ToolInvocation in run detail."}
+{"file": ".trellis/tasks/06-27-typed-tool-registry-mvp/research/tool-registry-slice.md", "reason": "Task-specific Epic B scope and red/green behavior."}
