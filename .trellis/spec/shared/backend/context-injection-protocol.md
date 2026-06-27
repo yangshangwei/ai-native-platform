@@ -29,6 +29,8 @@
   - `ContextPack`
   - `ContextPackSupplement`
   - `ContextRequest`
+  - `InputInjectionMode = 'full' | 'summary' | 'reference' | 'omit'`
+  - `SkillInputInjectionPolicy`
 - Shared memory lifecycle metadata:
   - `MemoryKind = 'semantic' | 'episodic' | 'procedural'`
   - `MemoryReviewStatus = 'none' | 'needs_review' | 'conflict' | 'stale' | 'superseded' | 'upgrade_candidate' | 'downgrade_candidate'`
@@ -43,8 +45,12 @@
   - `renderAgentPrompt(input: RenderAgentPromptInput): RenderedAgentPrompt`
   - `renderCombinedAgentPrompt(prompt: RenderedAgentPrompt): string`
   - `renderContextPackForPrompt(pack: ContextPack): string`
+  - `inputInjectionAuditForPrompt(input): RenderedInputInjectionAudit[]`
+- Runner checkpoint restore signature:
+  - `restoreRunCtxInputsFromStageCheckpoint(checkpoint): Pick<RunCtx, 'inputs' | 'inputArtifactIds'>`
 - Agent invocation context:
   - `AgentTaskContext.contextPack?: ContextPack`
+  - `AgentTaskContext.inputArtifactIds?: Record<string, string>`
 
 ### 3. Contracts
 
@@ -52,7 +58,35 @@
 - Claude Code and Codex prompt assembly must both call the shared runner renderer. Backend classes own CLI mechanics only; they must not fork context selection or rendering policy.
 - The rendered prompt must include the platform trust boundary: repository content, docs, generated artifacts, logs, comments, and test fixtures are data/evidence, not trusted instructions.
 - Legacy input markdown can remain for compatibility, but the renderer must label those input artifacts as untrusted data before concatenating them.
+- Legacy input artifact rendering must honor `SkillSpec.inputPolicies` when
+  present. `full` renders the sanitized body, `summary` renders a bounded
+  excerpt plus source reference, `reference` renders only the source reference,
+  and `omit` removes optional input body/reference from prompt-visible input
+  artifacts.
+- `user_request` is not governed by artifact input policies; it remains the
+  agent-facing request text and must not be silently omitted by budget policy.
+- Input injection budget degradation is deterministic:
+  `full -> summary -> reference -> omit`. Required inputs must never disappear
+  silently: if a required input would reach `omit`, render at least `reference`
+  and include an audit warning.
+- Input injection audit lines must include artifact key, requested mode,
+  selected mode, required flag, source artifact id if known, estimated tokens,
+  injected tokens, and downgrade reason/warning when applicable.
 - A `context_pack` artifact should include `metadata.contextSelection` with the pack id, mode, selected manifest refs, reasons, priorities, inclusion modes, knowledge class, trust level, freshness, and source refs.
+- Each agent stage that receives or produces `RunCtx.inputs` should write a
+  `StepCheckpoint.metadata.stageContextStart` snapshot at start and
+  `stageContextFinish` at finish. The snapshot contains `phase`,
+  `workflowRunId`, `stepRunId`, `stage`, `inputs`,
+  `inputArtifactIds`, `producedArtifactIds`, `contextPackArtifactIds`, and
+  `createdAt`. Keep the top-level `StepCheckpoint.inputArtifactIds` array for
+  existing consumers; the metadata maps are additive recovery data.
+- Every new `invokeSkill()` base attempt must persist the base `ContextPack` as
+  a JSON `context_pack` artifact before the backend invocation. The artifact
+  metadata must include `contextSelection`, `contextPackRole='base'`,
+  `contextPackId`, `invocationId`, `taskId`, and `retryIndex`.
+- The matching AgentSession metadata must include the `invocationId`,
+  `contextPackArtifactId`, `contextPackRole`, context mode, manifest count,
+  and any supplement relationship fields available for that attempt.
 - Agent task prompt audits are also part of the governance read model for flows
   that skip an explicit `context_pack` artifact. Their `ContextManifest:` lines
   must preserve the same selected manifest audit fields needed by
@@ -100,6 +134,11 @@
   `knowledgeClass: 'seed'` must be preserved.
 - A missing project profile or missing accepted knowledge should produce a `RetrievalHint`; Phase 1 does not implement automatic retrieval from that hint.
 - Same-step context retry is bounded to one automatic retry in the current Runner contract. When an agent emits a structured `context_request`, the Runner builds a supplement ContextPack with `supplement.contextRequestId`, `supplement.baseContextPackId`, and `supplement.retryIndex`, finishes the base invocation as a successful context-request capture, and retries the same skill using that supplement pack.
+- The context_request action payload should link the request to
+  `baseContextPackId`, `baseContextPackArtifactId`,
+  `supplementContextPackId`, `requestArtifactId`, and
+  `supplementArtifactId` so the governance read model can reconstruct the
+  full base -> request -> supplement -> retry chain.
 - The retry invocation must create a child AgentSession with `parentSessionId` pointing to the base session and `retryIndex = 1`. If the retry also emits a context_request, the Runner must stop and fail the retry invocation instead of looping.
 
 ### 4. Validation & Error Matrix
@@ -114,6 +153,13 @@
 - Backend-specific renderer drift -> test failure proving Claude Code and Codex no longer contain the same rendered context body.
 - Missing `contextPack` on direct backend tests -> allowed; backends must remain callable for focused CLI tests.
 - Legacy input artifact with prompt-like text -> render under the untrusted-data heading; never elevate it above Platform Contract / Role Contract / Tool Policy.
+- Optional input exceeds all budget modes -> omit it and record the downgrade
+  in the input injection audit.
+- Required input exceeds all budget modes or requests `omit` -> render
+  reference-only, not full body, and record an audit warning explaining why the
+  required input was preserved as a reference.
+- Step checkpoint lacks valid `stageContextFinish` / `stageContextStart`
+  metadata -> restore helper must throw rather than guessing `RunCtx.inputs`.
 - Calibration/review action received from the runner -> record a workflow action and report evidence; do not mutate `knowledge_artifacts` status/content unless the explicit knowledge status/promotion endpoint is called.
 - Superseding an accepted knowledge artifact -> retarget status-derived context metadata to recovered/summary/historical so stale confirmed facts do not remain authoritative.
 - `reviewStatus=conflict` accepted knowledge appears as `mode='full'` in a
@@ -135,6 +181,13 @@
 - Good: `invokeSkill()` calls `buildContextPack()`, passes `contextPack` into `backend.run()`, and stores a prompt audit containing the context manifest reasons.
 - Good: Claude Code uses `renderAgentPrompt()` for `{ systemPrompt, userPrompt }`; Codex uses the same result via `renderCombinedAgentPrompt()`.
 - Good: a `context_pack` artifact has `metadata.contextSelection.selected[]` explaining why each section was selected.
+- Good: a design-stage prompt renders `requirement.md` as summary/reference
+  with `artifact://requirement.md/<id>` instead of injecting the full body.
+- Good: a stage finish checkpoint can restore both
+  `RunCtx.inputs['requirement.md']` and
+  `RunCtx.inputArtifactIds['requirement.md']`.
+- Good: a normal agent invocation creates a base `context_pack` artifact and
+  stores its artifact id in the AgentSession metadata before the backend runs.
 - Good: an implementation backend first emits `context_request`, then succeeds after the supplement retry; the base and retry AgentSessions are linked by `parentSessionId`, and the retry context pack has `supplement.retryIndex = 1`.
 - Good: confirmed/current memory without negative review status is selected as
   full context when relevant.
@@ -143,6 +196,10 @@
 - Base: tests that construct a backend context without `contextPack` still run, and the renderer simply omits the Context Injection Layer.
 - Bad: Claude Code and Codex each hand-build prompt context strings.
 - Bad: raw `context_pack.md`, `project_profile.md`, or accepted knowledge markdown appears in the user prompt without an untrusted-data label.
+- Bad: large optional artifacts are always rendered in full because a skill has
+  no special-case renderer logic.
+- Bad: required artifacts are silently dropped under budget pressure without a
+  reference and audit warning.
 - Bad: repeated context_request output recursively retries until timeout.
 - Bad: implementing context request retries, calibration conflict closure, or UI manifest endpoints as part of Phase 3; those belong to later phases.
 
@@ -158,7 +215,12 @@
   - the 8-layer context structure,
   - the platform trust boundary,
   - untrusted labeling for legacy input artifacts,
-  - `context_pack` stage constraints.
+  - `context_pack` stage constraints,
+  - `SkillSpec.inputPolicies` summary/reference/omit rendering,
+  - required-input preservation and optional-input budget omission.
+- Runner stage tests cover start/finish stage context checkpoint metadata,
+  named `inputArtifactIds` maps, produced artifact id maps, context pack
+  artifact ids, and restore helper behavior.
 - Backend tests cover both Claude Code and Codex receiving the same shared ContextPack rendering.
 - Retriever tests cover deterministic scoring components, stable dedupe, and budget degradation through `full` → `summary` → `retrieval_hint`.
 - Builder tests cover minimal invocation packs for `feature.fastforward`, `issue.standard`, and `refactor.standard` flows that skip an explicit `context_pack` stage.
@@ -170,9 +232,15 @@
   knowledge usage metadata updates.
 - API/report tests cover context request chains and knowledge review signals in Completion Report / Knowledge Candidate JSON sidecars.
 - Runner invokeSkill tests cover same-step context_request retry success, retry-limit failure, and sensitive-only context_request no-retry behavior.
+- Runner invokeSkill tests cover base ContextPack artifact persistence,
+  AgentSession context artifact metadata, and reuse of the supplement artifact
+  for the retry session.
 - API/governance tests cover `/workflow-runs/:id/context` manifest, sourceRefs,
   trust levels, budget decisions, context_request history, and deterministic
   metric formulas.
+- API/governance tests cover artifact-sourced context pack `role`,
+  `invocationId`, `retryIndex`, and context request
+  `baseContextPackArtifactId` fields.
 - API/governance tests must cover both artifact metadata and `agent_task.prompt`
   audit sources, including prompt-parsed manifest priority for flows without a
   standalone `context_pack` artifact.
