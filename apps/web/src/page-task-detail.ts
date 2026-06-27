@@ -669,7 +669,7 @@ function renderContextGovernancePanel(detail: RunDetail): HTMLElement {
   });
 }
 
-function renderContextFlowPanel(detail: RunDetail): HTMLElement {
+export function renderContextFlowPanel(detail: RunDetail): HTMLElement {
   const contextGovernance = contextGovernanceByRun.get(detail.run.id) ?? null;
   const contextLoaded = contextGovernance !== null;
   const projection = buildContextFlowProjection(detail, contextGovernance);
