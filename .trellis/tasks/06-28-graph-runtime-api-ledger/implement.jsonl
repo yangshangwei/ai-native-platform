@@ -1,0 +1,3 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": "docs/2026-06-27-graph-runtime-requirements.md", "reason": "R1-R6/R10 acceptance signals being verified; R5 is the guard target"}
+{"file": ".trellis/spec/api/backend/database.md", "reason": "additive-migration discipline backing graph_* tables (v29)"}

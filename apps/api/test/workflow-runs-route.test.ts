@@ -737,6 +737,105 @@ test('graph resume rejects completed nodes and invalid resume cursors', async ()
   expect(cursorRes.status).toBe(400);
 });
 
+test('graph resume preserves Workflow Engine and Gate Engine authority (R5)', async () => {
+  const run = await createRun('graph-resume-authority-route', 'resume must not touch workflow status or gates');
+
+  // Snapshot the WorkflowRun status + gate verdicts BEFORE any graph resume.
+  // R5: Graph Runtime owns scheduling readiness only — it must never write
+  // WorkflowRun.status (Workflow Engine authority) or decide GateRun verdicts
+  // (Gate Engine authority).
+  const before = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}`);
+  const beforeBody = (await before.json()) as { run: WorkflowRun; gates: unknown[] };
+  const statusBefore = beforeBody.run.status;
+  expect(beforeBody.gates).toEqual([]);
+
+  const step: StepRun = {
+    id: 'step_graph_authority_failed',
+    workflowRunId: run.id,
+    stage: 'implementation',
+    name: 'Implementation',
+    status: 'failed',
+    startedAt: nowIso(),
+    completedAt: nowIso(),
+  };
+  const checkpoint: StepCheckpoint = {
+    id: 'scp_graph_authority_failed',
+    workflowRunId: run.id,
+    stepRunId: step.id,
+    stage: 'implementation',
+    status: 'failed',
+    inputArtifactIds: [],
+    outputArtifactIds: [],
+    contextPackId: null,
+    agentSessionIds: [],
+    toolInvocationIds: [],
+    gateRunIds: [],
+    retryIndex: 0,
+    resumeCursor: 'graph://resume/authority',
+    failureReason: 'agent failed',
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    metadata: {},
+  };
+  const graphDefinition = graphDefinitionForResume();
+  const graphRun: GraphRun = {
+    id: 'grun_authority',
+    workflowRunId: run.id,
+    graphDefinitionId: graphDefinition.id,
+    graphVersion: graphDefinition.version,
+    status: 'failed',
+    activeNodeIds: [],
+    interruptedReason: null,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    metadata: {},
+  };
+  const failedNodeRun: GraphNodeRun = {
+    id: 'gnr_authority_failed_1',
+    graphRunId: graphRun.id,
+    workflowRunId: run.id,
+    nodeId: graphDefinition.nodes[0]!.id,
+    attempt: 1,
+    status: 'failed',
+    stepRunId: step.id,
+    stepCheckpointId: checkpoint.id,
+    resumeCursor: checkpoint.resumeCursor,
+    idempotencyKey: `${graphRun.id}:${graphDefinition.nodes[0]!.id}:1`,
+    dependencyState: { upstreamNodeIds: [], satisfiedNodeIds: [], blockedNodeIds: [] },
+    startedAt: step.startedAt,
+    completedAt: step.completedAt,
+    metadata: {},
+  };
+  storeMod.store.stepRuns.set(step.id, step);
+  storeMod.store.stepCheckpoints.upsert(checkpoint);
+  storeMod.store.graphDefinitions.upsert(graphDefinition);
+  storeMod.store.graphRuns.upsert(graphRun);
+  storeMod.store.graphNodeRuns.upsert(failedNodeRun);
+
+  const res = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/graph/resume-node`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      nodeRunId: failedNodeRun.id,
+      graphVersion: graphDefinition.version,
+      resumeCursor: checkpoint.resumeCursor,
+      actor: 'test',
+    }),
+  });
+  expect(res.status).toBe(201);
+
+  // The resume created a new graph node attempt (graph-owned state)...
+  const graphRes = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/graph`);
+  const graphBody = (await graphRes.json()) as { nodeRuns: GraphNodeRun[] };
+  expect(graphBody.nodeRuns.some((n) => n.attempt === 2 && n.status === 'ready')).toBe(true);
+
+  // ...but Workflow Engine + Gate Engine authority is untouched.
+  const after = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}`);
+  const afterBody = (await after.json()) as { run: WorkflowRun; gates: unknown[] };
+  expect(afterBody.run.status).toBe(statusBefore);
+  expect(afterBody.gates).toEqual([]);
+});
+
 test('retry-step creates a graph resume attempt when graph metadata exists', async () => {
   const run = await createRun('graph-retry-facade-route', 'retry graph-backed stage');
   const graphDefinition = graphDefinitionForResume();
