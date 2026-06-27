@@ -26,7 +26,8 @@
         "finalStatus": "success",
         "errorObserved": false,
         "contextRequestCaptured": false,
-        "outputCount": 1
+        "outputCount": 1,
+        "backendCalls": 1
       }
     },
     {
@@ -41,7 +42,8 @@
         "finalStatus": "failed",
         "errorObserved": true,
         "contextRequestCaptured": false,
-        "outputCount": 0
+        "outputCount": 0,
+        "backendCalls": 1
       }
     },
     {
@@ -61,7 +63,8 @@
         "finalStatus": "success",
         "errorObserved": false,
         "contextRequestCaptured": true,
-        "outputCount": 1
+        "outputCount": 1,
+        "backendCalls": 2
       }
     }
   ]

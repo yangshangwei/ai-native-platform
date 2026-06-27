@@ -383,12 +383,14 @@ describe('ContextPack builder MVP', () => {
         createdAt: '2026-05-09T00:00:00.000Z',
       },
       baseContextPack: base,
+      retryIndex: 1,
       createdAt: '2026-05-09T00:00:00.000Z',
     });
 
     expect(supplement.supplement).toEqual({
       contextRequestId: 'ctxreq_test',
       baseContextPackId: base.id,
+      retryIndex: 1,
       createdAt: '2026-05-09T00:00:00.000Z',
     });
     expect(supplement.sections.map((section) => section.id)).toContain('input_context_request_ctxreq_test_json');
@@ -399,6 +401,7 @@ describe('ContextPack builder MVP', () => {
       supplement: {
         contextRequestId: 'ctxreq_test',
         baseContextPackId: base.id,
+        retryIndex: 1,
       },
     });
   });

@@ -135,6 +135,7 @@ test('ContextPack shape carries maturity, manifest, source refs, trust and fresh
     supplement: {
       contextRequestId: 'ctxreq_1',
       baseContextPackId: 'ctxpack_base',
+      retryIndex: 1,
       createdAt: '2026-05-09T00:00:00.000Z',
     },
     createdAt: '2026-05-09T00:00:00.000Z',
@@ -148,6 +149,7 @@ test('ContextPack shape carries maturity, manifest, source refs, trust and fresh
   expect(pack.calibrationSignals?.[0]?.kind).toBe('conflict');
   expect(pack.calibrationSignals?.[0]?.recommendedAction).toBe('open_knowledge_review');
   expect(pack.supplement?.contextRequestId).toBe('ctxreq_1');
+  expect(pack.supplement?.retryIndex).toBe(1);
 });
 
 test('knowledge metadata helper defaults accepted artifacts to confirmed and validates overrides', () => {

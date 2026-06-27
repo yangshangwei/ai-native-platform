@@ -104,6 +104,7 @@ export interface ContextRequestCapture {
   requestArtifactId: string;
   supplementArtifactId: string;
   supplementContextPackId: string;
+  supplementContextPack: ContextPack;
   baseContextPackId: string;
 }
 

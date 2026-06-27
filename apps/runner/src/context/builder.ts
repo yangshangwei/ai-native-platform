@@ -66,6 +66,7 @@ export interface BuildContextPackInputArtifact {
 export interface BuildIncrementalContextPackInput extends BuildContextPackInput {
   contextRequest: ContextRequest;
   baseContextPack?: ContextPack | null;
+  retryIndex?: number;
 }
 
 const DEFAULT_BUDGET = {
@@ -311,6 +312,7 @@ export function buildIncrementalContextPack(
     supplement: {
       contextRequestId: request.id,
       baseContextPackId: input.baseContextPack?.id ?? null,
+      retryIndex: input.retryIndex ?? 1,
       createdAt: input.createdAt ?? request.createdAt,
     },
   });

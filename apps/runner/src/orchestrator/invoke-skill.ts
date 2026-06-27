@@ -59,7 +59,7 @@ export async function invokeSkill(
 ): Promise<InvokedAgent> {
   const foundation = await ensureContextFoundation(c);
   const taskBrief = agentTaskBriefForContext(skillCtx.title, skillCtx.inputs);
-  const contextPack = buildContextPack({
+  const baseContextPack = buildContextPack({
     project: c.project,
     run: c.run,
     stage: skill.stage,
@@ -84,8 +84,55 @@ export async function invokeSkill(
     budget: c.contextPolicy.budget,
     sensitivePathPatterns: c.contextPolicy.sensitivePathPatterns,
   });
+  const baseAttempt = await invokeSkillAttempt(c, skill, skillCtx, {
+    contextPack: baseContextPack,
+    retryIndex: 0,
+    parentSessionId: null,
+    foundation,
+  }, deps);
+  if (!baseAttempt.contextRequest) return baseAttempt;
+
+  await finishContextRequestBaseInvocation(baseAttempt, deps);
+  const retryAttempt = await invokeSkillAttempt(c, skill, {
+    ...skillCtx,
+    inputs: c.inputs,
+  }, {
+    contextPack: baseAttempt.contextRequest.supplementContextPack,
+    retryIndex: 1,
+    parentSessionId: baseAttempt.sessionId,
+    foundation,
+  }, deps);
+  if (!retryAttempt.contextRequest) {
+    return {
+      ...retryAttempt,
+      contextRequest: baseAttempt.contextRequest,
+    };
+  }
+
+  const message = `context_request retry limit reached after ${retryAttempt.contextRequest.request.id}`;
+  await failInvocation(retryAttempt, message, deps, {
+    contextRequestId: retryAttempt.contextRequest.request.id,
+    supplementContextPackId: retryAttempt.contextRequest.supplementContextPackId,
+  });
+  throw new Error(message);
+}
+
+async function invokeSkillAttempt(
+  c: RunCtx,
+  skill: SkillSpec,
+  skillCtx: Parameters<AgentBackend['run']>[1],
+  attempt: {
+    contextPack: ContextPack;
+    retryIndex: number;
+    parentSessionId: string | null;
+    foundation: RunCtx['contextFoundation'];
+  },
+  deps: InvokeSkillDeps,
+): Promise<InvokedAgent> {
+  const contextPack = attempt.contextPack;
   const enrichedCtx = {
     ...skillCtx,
+    inputs: c.inputs,
     contextPack,
     sensitivePathPatterns: c.contextPolicy.sensitivePathPatterns,
   };
@@ -106,7 +153,8 @@ export async function invokeSkill(
     skillId: skill.id,
     skillVersion: skill.version,
     contextPackId: contextPack.id,
-    retryIndex: 0,
+    parentSessionId: attempt.parentSessionId,
+    retryIndex: attempt.retryIndex,
     metadata: {
       contextMode: contextPack.mode,
       manifestCount: contextPack.manifest.length,
@@ -120,9 +168,10 @@ export async function invokeSkill(
       skill,
       skillCtx,
       result,
-      foundation,
+      foundation: attempt.foundation,
       baseContextPack: contextPack,
       taskId: task.task.id,
+      retryIndex: attempt.retryIndex + 1,
     }, deps);
     return {
       taskId: task.task.id,
@@ -146,6 +195,61 @@ export async function invokeSkill(
     });
     throw err;
   }
+}
+
+async function finishContextRequestBaseInvocation(
+  agent: InvokedAgent,
+  deps: InvokeSkillDeps,
+): Promise<void> {
+  const contextRequest = agent.contextRequest;
+  if (!contextRequest) return;
+  const outputArtifactIds = [
+    contextRequest.requestArtifactId,
+    contextRequest.supplementArtifactId,
+  ];
+  const finished = await deps.agentTaskFinished({
+    taskId: agent.taskId,
+    status: 'success',
+    summary: `context_request ${contextRequest.request.id} captured; retrying same skill with supplement ${contextRequest.supplementContextPackId}`,
+    outputArtifactIds,
+  });
+  await deps.agentSessionFinished({
+    sessionId: agent.sessionId,
+    status: 'success',
+    agentResultId: finished.result.id,
+    metadata: {
+      contextRequestId: contextRequest.request.id,
+      supplementContextPackId: contextRequest.supplementContextPackId,
+      retryPlanned: true,
+    },
+  });
+}
+
+async function failInvocation(
+  agent: InvokedAgent,
+  message: string,
+  deps: InvokeSkillDeps,
+  metadata: Record<string, unknown> = {},
+): Promise<void> {
+  const contextRequest = agent.contextRequest;
+  const outputArtifactIds = contextRequest
+    ? [contextRequest.requestArtifactId, contextRequest.supplementArtifactId]
+    : [];
+  const finished = await deps.agentTaskFinished({
+    taskId: agent.taskId,
+    status: 'failed',
+    summary: message,
+    outputArtifactIds,
+  });
+  await deps.agentSessionFinished({
+    sessionId: agent.sessionId,
+    status: 'failed',
+    agentResultId: finished.result.id,
+    metadata: {
+      error: message,
+      ...metadata,
+    },
+  });
 }
 
 async function recordKnowledgeReviewSignals(
@@ -190,6 +294,7 @@ export async function captureContextRequest(
     foundation: RunCtx['contextFoundation'];
     baseContextPack: ContextPack;
     taskId: string;
+    retryIndex?: number;
   },
   deps: InvokeSkillDeps = DEFAULT_INVOKE_SKILL_DEPS,
 ): Promise<ContextRequestCapture | null> {
@@ -235,6 +340,7 @@ export async function captureContextRequest(
     sensitivePathPatterns: c.contextPolicy.sensitivePathPatterns,
     contextRequest: request,
     baseContextPack: input.baseContextPack,
+    retryIndex: input.retryIndex ?? 1,
   });
 
   const requestInputName = `context_request.${request.id}.json`;
@@ -305,6 +411,7 @@ export async function captureContextRequest(
     requestArtifactId: requestArtifact.id,
     supplementArtifactId: supplementArtifact.id,
     supplementContextPackId: supplementPack.id,
+    supplementContextPack: supplementPack,
     baseContextPackId: input.baseContextPack.id,
   };
   c.contextRequestChain.push(capture);

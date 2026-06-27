@@ -165,6 +165,7 @@ export type ContextRequestStatus = 'open' | 'fulfilled' | 'dismissed';
 export interface ContextPackSupplement {
   contextRequestId: string;
   baseContextPackId: string | null;
+  retryIndex: number;
   createdAt: Iso8601;
 }
 

@@ -136,6 +136,7 @@ if (!preflight.runnable) throw new Error(preflight.remediationHint);
 - Runner reports events through API ingress; Workflow Engine remains the only platform state writer.
 - Gate Engine remains the only pass/warn/fail authority. AgentSession status is invocation audit status, not gate verdict.
 - Retry or child invocations must preserve `parentSessionId` and `retryIndex` so later context retry, handoff, and replay features can reconstruct lineage.
+- Same-step context retry creates a second AgentSession for the retry invocation. The retry session must set `parentSessionId` to the base session id, `retryIndex = 1`, and `contextPackId` to the supplement ContextPack id.
 
 ### 4. Validation & Error Matrix
 
@@ -157,6 +158,7 @@ if (!preflight.runnable) throw new Error(preflight.remediationHint);
 - Base: legacy run predates AgentSession; `/workflow-runs/:id/agent-sessions` returns `{ items: [] }`.
 - Bad: Runner finishes a session with an AgentResult from another AgentTask; API rejects the envelope.
 - Bad: UI or API treats AgentSession success as a gate pass; Gate Engine verdicts are the only gate authority.
+- Bad: context_request retry reuses the base AgentSession instead of creating a child session; trajectory replay can no longer distinguish base vs supplement context.
 
 ### 6. Tests Required
 
@@ -165,6 +167,7 @@ if (!preflight.runnable) throw new Error(preflight.remediationHint);
 - API routes: assert legacy empty lists, start/finish ingress success, and validation errors for bad finish envelopes.
 - Runner: assert successful `invokeSkill()` returns `sessionId` and `finishAgentSuccess()` links the success AgentResult to the AgentSession.
 - Runner: assert failed `invokeSkill()` records a failed AgentResult and failed AgentSession instead of leaving the session running or absent.
+- Runner: assert context_request same-step retry starts a child AgentSession with `parentSessionId` and `retryIndex = 1`, and repeated requests fail the retry session instead of looping.
 
 ### 7. Wrong vs Correct
 

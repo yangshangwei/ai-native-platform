@@ -121,6 +121,7 @@ interface AgentBackendExpectations {
   errorObserved?: boolean;
   contextRequestCaptured?: boolean;
   outputCount?: number;
+  backendCalls?: number;
   externalCliUsed?: boolean;
 }
 
@@ -525,7 +526,7 @@ function fakeAgentBackend(
           contentType: 'text/markdown',
           size: Buffer.byteLength(`${outputContent}\n`, 'utf8'),
         }],
-        lastMessage: input.behavior === 'context_request'
+        lastMessage: input.behavior === 'context_request' && trace.backendCalls === 1
           ? contextRequestMessage(input)
           : `completed ${ctx.title}`,
       };
@@ -719,6 +720,9 @@ function checkAgentBackendOutput(
   }
   if (expectations.outputCount !== undefined) {
     checks.push(check('outputCount', expectations.outputCount, output.outputCount));
+  }
+  if (expectations.backendCalls !== undefined) {
+    checks.push(check('backendCalls', expectations.backendCalls, output.backendCalls));
   }
   if (expectations.externalCliUsed !== undefined) {
     checks.push(check('externalCliUsed', expectations.externalCliUsed, output.externalCliUsed));

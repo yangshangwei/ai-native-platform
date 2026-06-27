@@ -1,0 +1,9 @@
+{"file":"docs/2026-06-27-agent-runtime-development-tasks.md","reason":"Defines Epic C context request same-step retry requirements and red/green cases."}
+{"file":"docs/2026-06-27-agent-runtime-red-green-test-plan.md","reason":"Defines retry loop, sensitive path, and supplement success test expectations."}
+{"file":"docs/2026-06-27-agent-runtime-architecture-design.md","reason":"Describes Context Orchestrator retry flow and AgentSession parent linkage."}
+{"file":"docs/2026-06-27-context-management-architecture.md","reason":"Background on context_request and supplement ContextPack lifecycle."}
+{"file":".trellis/spec/runner/backend/index.md","reason":"Runner backend spec index and check routing."}
+{"file":".trellis/spec/runner/backend/agent-backend-runtime.md","reason":"Runner backend invocation constraints and fake/real backend boundaries."}
+{"file":".trellis/spec/runner/backend/eval-harness.md","reason":"Fake agent backend eval fixture contract that must be updated for retry."}
+{"file":".trellis/spec/shared/backend/agent-backend-contract.md","reason":"AgentSession ledger contract for parentSessionId and retryIndex."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"ContextPack, context_request, supplement, and sensitive filtering contract."}

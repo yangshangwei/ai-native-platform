@@ -23,6 +23,7 @@
   - `ContextSection`
   - `RetrievalHint`
   - `ContextPack`
+  - `ContextPackSupplement`
   - `ContextRequest`
 - Context run metadata must reuse existing workflow unions:
   - `ContextPackRunMetadata.flowId: FlowId`
@@ -82,6 +83,8 @@
   re-defaulted to accepted/confirmed values; explicit overrides such as
   `knowledgeClass: 'seed'` must be preserved.
 - A missing project profile or missing accepted knowledge should produce a `RetrievalHint`; Phase 1 does not implement automatic retrieval from that hint.
+- Same-step context retry is bounded to one automatic retry in the current Runner contract. When an agent emits a structured `context_request`, the Runner builds a supplement ContextPack with `supplement.contextRequestId`, `supplement.baseContextPackId`, and `supplement.retryIndex`, finishes the base invocation as a successful context-request capture, and retries the same skill using that supplement pack.
+- The retry invocation must create a child AgentSession with `parentSessionId` pointing to the base session and `retryIndex = 1`. If the retry also emits a context_request, the Runner must stop and fail the retry invocation instead of looping.
 
 ### 4. Validation & Error Matrix
 
@@ -101,15 +104,19 @@
   outlines.
 - Knowledge artifact whose `projectId` does not match the current run's project
   -> ignored; no cross-project sourceRefs should appear in the manifest.
+- A context_request whose requested refs/questions are fully removed by sensitive-path filtering -> do not retry; log/record the filtered request path as a non-retry condition.
+- A retry attempt that emits another context_request -> fail the retry AgentSession with a retry-limit error; do not start a third backend invocation.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: `invokeSkill()` calls `buildContextPack()`, passes `contextPack` into `backend.run()`, and stores a prompt audit containing the context manifest reasons.
 - Good: Claude Code uses `renderAgentPrompt()` for `{ systemPrompt, userPrompt }`; Codex uses the same result via `renderCombinedAgentPrompt()`.
 - Good: a `context_pack` artifact has `metadata.contextSelection.selected[]` explaining why each section was selected.
+- Good: an implementation backend first emits `context_request`, then succeeds after the supplement retry; the base and retry AgentSessions are linked by `parentSessionId`, and the retry context pack has `supplement.retryIndex = 1`.
 - Base: tests that construct a backend context without `contextPack` still run, and the renderer simply omits the Context Injection Layer.
 - Bad: Claude Code and Codex each hand-build prompt context strings.
 - Bad: raw `context_pack.md`, `project_profile.md`, or accepted knowledge markdown appears in the user prompt without an untrusted-data label.
+- Bad: repeated context_request output recursively retries until timeout.
 - Bad: implementing context request retries, calibration conflict closure, or UI manifest endpoints as part of Phase 3; those belong to later phases.
 
 ### 6. Tests Required
@@ -131,6 +138,7 @@
 - Renderer/audit tests cover source refs and degradation fields appearing in prompt-visible context and persisted audit metadata.
 - Calibration tests cover bounded deterministic review signals and code-fact-vs-confirmed-knowledge conflict signals.
 - API/report tests cover context request chains and knowledge review signals in Completion Report / Knowledge Candidate JSON sidecars.
+- Runner invokeSkill tests cover same-step context_request retry success, retry-limit failure, and sensitive-only context_request no-retry behavior.
 - API/governance tests cover `/workflow-runs/:id/context` manifest, sourceRefs,
   trust levels, budget decisions, context_request history, and deterministic
   metric formulas.

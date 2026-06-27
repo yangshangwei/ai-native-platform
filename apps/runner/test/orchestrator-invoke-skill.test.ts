@@ -16,10 +16,22 @@ import { backendFixture, runCtxFixture, skillFixture } from './helpers/orchestra
 
 function depsFixture() {
   let artifactSeq = 0;
+  let taskSeq = 0;
+  let resultSeq = 0;
+  let sessionSeq = 0;
   const deps = {
-    agentTaskStarted: vi.fn(async () => ({ task: { id: 'task_invoke' } })),
-    agentTaskFinished: vi.fn(async () => ({ result: { id: 'agr_invoke' } })),
-    agentSessionStarted: vi.fn(async () => ({ session: { id: 'ags_invoke' } })),
+    agentTaskStarted: vi.fn(async () => {
+      taskSeq += 1;
+      return { task: { id: taskSeq === 1 ? 'task_invoke' : `task_invoke_${taskSeq}` } };
+    }),
+    agentTaskFinished: vi.fn(async () => {
+      resultSeq += 1;
+      return { result: { id: resultSeq === 1 ? 'agr_invoke' : `agr_invoke_${resultSeq}` } };
+    }),
+    agentSessionStarted: vi.fn(async () => {
+      sessionSeq += 1;
+      return { session: { id: sessionSeq === 1 ? 'ags_invoke' : `ags_invoke_${sessionSeq}` } };
+    }),
     agentSessionFinished: vi.fn(async () => ({})),
     postArtifact: vi.fn(async (params: { kind: string }) => {
       artifactSeq += 1;
@@ -87,8 +99,9 @@ describe('invokeSkill (de-closured)', () => {
     expect(raw.recordContextRequest).not.toHaveBeenCalled();
   });
 
-  test('context_request in last message: captured, persisted and recorded on RunCtx', async () => {
+  test('context_request in last message: retries same skill with supplement context', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'invokeskill-ctxreq-'));
+    const outPath = join(dir, 'implementation.md');
     const { deps, raw } = depsFixture();
     const lastMessage = [
       'I need more context before continuing.',
@@ -102,8 +115,20 @@ describe('invokeSkill (de-closured)', () => {
       }),
       '```',
     ].join('\n');
+    const backendRun = vi.fn(async () => {
+      if (backendRun.mock.calls.length === 1) {
+        return { outputs: [], lastMessage };
+      }
+      await writeFile(outPath, '# implementation after supplement\n', 'utf8');
+      return {
+        outputs: [
+          { name: 'implementation.md', path: outPath, contentType: 'text/markdown', size: 34 },
+        ],
+        lastMessage: 'implemented after supplement',
+      };
+    });
     const c = runCtxFixture({
-      backend: backendFixture(async () => ({ outputs: [], lastMessage })),
+      backend: backendFixture(backendRun),
     });
     const skill = skillFixture('implementation');
 
@@ -117,13 +142,21 @@ describe('invokeSkill (de-closured)', () => {
       inputs: c.inputs,
     }, deps);
 
+    expect(backendRun).toHaveBeenCalledTimes(2);
+    expect(agent.taskId).toBe('task_invoke_2');
+    expect(agent.sessionId).toBe('ags_invoke_2');
     expect(agent.contextRequest).not.toBeNull();
     const capture = agent.contextRequest!;
     expect(capture.sourceName).toBe('last_message');
     expect(capture.request.requestedRefs).toEqual(['apps/api/src/gates.ts']);
     expect(capture.requestArtifactId).toBe('art_1_other');
     expect(capture.supplementArtifactId).toBe('art_2_context_pack');
-    expect(capture.baseContextPackId).toBe(agent.contextPack.id);
+    expect(capture.supplementContextPack.supplement).toMatchObject({
+      contextRequestId: capture.request.id,
+      baseContextPackId: capture.baseContextPackId,
+      retryIndex: 1,
+    });
+    expect(capture.supplementContextPackId).toBe(agent.contextPack.id);
 
     // RunCtx mutations: chain + inputs + artifact ids.
     expect(c.contextRequestChain).toEqual([capture]);
@@ -140,6 +173,106 @@ describe('invokeSkill (de-closured)', () => {
       requestArtifactId: 'art_1_other',
       supplementArtifactId: 'art_2_context_pack',
     }));
+    expect(raw.agentTaskFinished).toHaveBeenCalledWith({
+      taskId: 'task_invoke',
+      status: 'success',
+      summary: expect.stringContaining(`context_request ${capture.request.id} captured`),
+      outputArtifactIds: ['art_1_other', 'art_2_context_pack'],
+    });
+    expect(raw.agentSessionFinished).toHaveBeenCalledWith({
+      sessionId: 'ags_invoke',
+      status: 'success',
+      agentResultId: 'agr_invoke',
+      metadata: {
+        contextRequestId: capture.request.id,
+        supplementContextPackId: capture.supplementContextPackId,
+        retryPlanned: true,
+      },
+    });
+    expect(raw.agentSessionStarted).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      parentSessionId: 'ags_invoke',
+      retryIndex: 1,
+      contextPackId: capture.supplementContextPackId,
+    }));
+  });
+
+  test('repeated context_request after retry limit fails and finishes retry session', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'invokeskill-ctxreq-loop-'));
+    const { deps, raw } = depsFixture();
+    const repeated = [
+      'Still need context.',
+      '```json',
+      JSON.stringify({
+        type: 'context_request',
+        reason: 'need the same file again',
+        requestedRefs: ['apps/api/src/gates.ts'],
+        priority: 2,
+      }),
+      '```',
+    ].join('\n');
+    const c = runCtxFixture({
+      backend: backendFixture(async () => ({ outputs: [], lastMessage: repeated })),
+    });
+
+    await expect(invokeSkill(c, skillFixture('implementation'), {
+      workflowRunId: c.run.id,
+      stepRunId: 'step_impl',
+      workspacePath: c.workspace.path,
+      branch: c.workspace.branch,
+      title: c.opts.title,
+      artifactsDir: dir,
+      inputs: c.inputs,
+    }, deps)).rejects.toThrow('context_request retry limit reached');
+
+    expect(raw.agentSessionStarted).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      parentSessionId: 'ags_invoke',
+      retryIndex: 1,
+    }));
+    expect(raw.agentSessionFinished).toHaveBeenLastCalledWith(expect.objectContaining({
+      sessionId: 'ags_invoke_2',
+      status: 'failed',
+      agentResultId: 'agr_invoke_2',
+      metadata: expect.objectContaining({
+        error: expect.stringContaining('context_request retry limit reached'),
+      }),
+    }));
+  });
+
+  test('sensitive-only context_request is filtered and does not retry', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'invokeskill-sensitive-ctxreq-'));
+    const { deps, raw } = depsFixture();
+    const sensitiveRequest = [
+      'Need secrets.',
+      '```json',
+      JSON.stringify({
+        type: 'context_request',
+        reason: 'need .env and private key',
+        requestedRefs: ['.env', '.ssh/id_rsa'],
+        questions: ['Read .ssh/id_rsa?'],
+        priority: 1,
+      }),
+      '```',
+    ].join('\n');
+    const backendRun = vi.fn(async () => ({ outputs: [], lastMessage: sensitiveRequest }));
+    const c = runCtxFixture({
+      backend: backendFixture(backendRun),
+    });
+
+    const agent = await invokeSkill(c, skillFixture('implementation'), {
+      workflowRunId: c.run.id,
+      stepRunId: 'step_impl',
+      workspacePath: c.workspace.path,
+      branch: c.workspace.branch,
+      title: c.opts.title,
+      artifactsDir: dir,
+      inputs: c.inputs,
+    }, deps);
+
+    expect(agent.taskId).toBe('task_invoke');
+    expect(agent.contextRequest).toBeNull();
+    expect(backendRun).toHaveBeenCalledTimes(1);
+    expect(raw.agentSessionStarted).toHaveBeenCalledTimes(1);
+    expect(raw.agentTaskFinished).not.toHaveBeenCalled();
   });
 
   test('backend failure: finishes the agent task as failed and rethrows', async () => {
