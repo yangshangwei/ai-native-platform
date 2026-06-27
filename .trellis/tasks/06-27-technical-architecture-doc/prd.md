@@ -19,6 +19,7 @@
 - 记录当前技术栈、持久化方式、测试/验证命令、扩展点和剩余风险。
 - 更新 `docs/README.md`，让新文档可被发现。
 - 补充一份专门回答“上下文管理是如何设计的”的当前实现文档，覆盖 ContextPack / ContextRequest / Runner 构建注入 / API 治理 / Web 展示 / 安全边界 / 已知风险。
+- 补充一份当前 Agent 编排与 Harness 改进方案文档，覆盖当前实现、主流 Agent 设计对照、记忆管理、上下文流转、多智能体编排、工具调用、harness/eval 最佳实践、落地步骤和任务拆解。
 
 ## Acceptance Criteria
 
@@ -26,6 +27,7 @@
 - [x] `docs/README.md` 包含新文档入口。
 - [x] 文档能回答“当前系统由哪些模块组成、一次任务如何流转、哪些边界不能破坏、未来扩展从哪里切入”。
 - [x] 新增 `docs/2026-06-27-context-management-architecture.md`，能回答“上下文管理是如何设计的”。
+- [x] 新增 `docs/2026-06-27-agent-orchestration-and-harness-improvement-plan.md`，能回答“当前 agent 编排如何实现、主流方案如何借鉴、下一步如何落地”。
 - [x] 任务上下文文件 `implement.jsonl` / `check.jsonl` 从 seed 示例替换为真实上下文条目。
 - [x] 文档修改完成后至少做 Markdown 结构检查和相关文件 diff 审阅。
 
@@ -33,6 +35,7 @@
 
 - 文档写入并索引。
 - 上下文管理架构文档写入并索引。
+- Agent 编排与 Harness 改进方案文档写入并索引。
 - Trellis 任务文件完整。
 - 不产生业务代码改动。
 - 验证结果和剩余风险在最终回复中说明。
@@ -47,6 +50,7 @@
 - 关键子系统：Workflow/Gate/Flow/Context/AgentBackend/Knowledge/Web。
 - 数据模型与持久化。
 - 扩展点、测试命令、架构风险。
+- Agent 编排改进文档另以“当前实现地图 → 主流方案对照 → 差距 → 目标架构 → 路线图 → 任务拆解”的结构输出，重点覆盖 memory/context/tool/multi-agent/harness。
 
 ## Decision (ADR-lite)
 

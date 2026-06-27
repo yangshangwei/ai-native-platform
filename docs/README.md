@@ -23,6 +23,8 @@
   - **当前技术架构快照**。以 2026-06-27 代码事实为基准，覆盖 Bun/TypeScript monorepo、API/Runner/Web/Shared 四层、WorkflowRequest 到 WorkflowRun 的端到端流转、FLOW_REGISTRY、Context Injection、AgentBackend、Gate、Knowledge、Web 页面拆分、关键不变量、扩展点和剩余风险。建议作为理解当前实现的第一入口。
 - `2026-06-27-context-management-architecture.md`
   - **上下文管理架构说明**。以 2026-06-27 代码事实回答“上下文管理是如何设计的”，覆盖 ContextPack / ContextManifest / ContextRequest 核心对象、Runner 构建与注入流水线、增量补充、API 治理读模型、Web 可观测面、安全边界和当前限制。
+- `2026-06-27-agent-orchestration-and-harness-improvement-plan.md`
+  - **Agent 编排与 Harness 改进方案**。分析当前 Runner/AgentBackend/Context/Knowledge/Gate/Eval 实现，对照 OpenAI Agents SDK、LangGraph、SWE-agent/OpenHands/Codex harness、RAG memory 和 typed tool registry 等主流模式，提出 Trajectory Ledger、Typed Tool Registry、Durable Step Runtime、Memory Lifecycle、Context Retry Loop、Bounded Handoff、Eval Harness 扩展的落地路线和任务拆解。
 
 ## 0.4 2026-05-06 / 2026-05-09 平台核心梳理
 
