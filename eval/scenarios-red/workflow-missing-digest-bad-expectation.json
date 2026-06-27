@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "workflow-missing-digest-bad-expectation",
+  "title": "Workflow red fixture rejects missing command digests",
+  "description": "Intentionally expects missing command digests to pass; the real Evidence Gate should fail this variant.",
+  "kind": "workflow_fixture",
+  "input": {
+    "projectId": "proj_eval_workflow_red",
+    "title": "Reject workflow evidence without command digests",
+    "profile": "missing_command_digest"
+  },
+  "expectations": {
+    "evidenceGateStatus": "pass",
+    "ruleStatuses": {
+      "evidence.command_digests_present": "pass"
+    },
+    "commandDigestBacked": true,
+    "completionReportGenerated": true
+  }
+}

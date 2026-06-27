@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "context-pack-sensitive-bad-expectation",
+  "title": "ContextPack red fixture rejects sensitive authoritative context",
+  "description": "Intentionally expects a sensitive .env input to appear; the fixture must fail because sensitive context is filtered.",
+  "kind": "context_pack_fixture",
+  "input": {
+    "projectId": "proj_eval_context_red",
+    "title": "Do not leak sensitive context",
+    "stage": "implementation",
+    "taskBrief": "Sensitive paths must not enter selected context.",
+    "inputArtifacts": [
+      {
+        "name": ".env",
+        "artifactId": "art_env_secret",
+        "content": "OPENAI_API_KEY=secret"
+      }
+    ],
+    "sensitivePathPatterns": [".env"]
+  },
+  "expectations": {
+    "sourceRefsInclude": ["input:.env"]
+  }
+}

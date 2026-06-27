@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "Runner backend spec index and required eval/context/evidence guidelines for implementation."}
+{"file": ".trellis/spec/runner/backend/eval-harness.md", "reason": "Existing deterministic eval scenario contract to extend with context_pack_fixture and workflow_fixture."}
+{"file": ".trellis/spec/shared/backend/context-injection-protocol.md", "reason": "ContextPack manifest, sourceRefs, degradation, and context governance rules for context fixtures."}
+{"file": ".trellis/spec/shared/backend/evidence-verifier-protocol.md", "reason": "Evidence Gate, digest, completion report, and verifier evidence rules for workflow fixtures."}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API backend spec index for gate/report/evidence boundaries."}
+{"file": ".trellis/spec/api/backend/database.md", "reason": "SQLite/store migration discipline if workflow fixture needs API store helpers."}
+{"file": ".trellis/tasks/06-27-eval-harness-context-workflow-fixtures/research/agent-runtime-eval-fixtures.md", "reason": "Task-specific summary of F1/F3/F4 requirements from Agent Runtime docs."}

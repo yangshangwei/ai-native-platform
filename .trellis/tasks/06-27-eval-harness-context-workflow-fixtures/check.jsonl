@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/runner/backend/eval-harness.md", "reason": "Check scenario schema, report output, and deterministic red/green eval behavior."}
+{"file": ".trellis/spec/shared/backend/context-injection-protocol.md", "reason": "Check ContextPack fixture expectations against sourceRefs, trust, and degradation contracts."}
+{"file": ".trellis/spec/shared/backend/evidence-verifier-protocol.md", "reason": "Check workflow fixture evidence and digest assertions against gate/report requirements."}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "Check API/gate/report boundaries remain respected."}
+{"file": ".trellis/tasks/06-27-eval-harness-context-workflow-fixtures/research/agent-runtime-eval-fixtures.md", "reason": "Check implementation satisfies the documented F1/F3/F4 slice and red/green behavior."}

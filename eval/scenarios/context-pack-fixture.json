@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "context-pack-fixture",
+  "title": "ContextPack fixture covers manifest and degradation",
+  "description": "Builds deterministic ContextPacks without external CLIs and checks selected refs, authoritative refs, and budget degradation.",
+  "kind": "context_pack_fixture",
+  "input": {
+    "projectId": "proj_eval_context_pack",
+    "title": "Implement Agent Runtime eval fixtures",
+    "stage": "implementation",
+    "taskBrief": "Implement deterministic Agent Runtime eval fixtures for context pack and workflow evidence.",
+    "acceptedKnowledgeMarkdown": "Agent Runtime eval harness should prefer deterministic fake fixtures over external agent CLIs.",
+    "knowledgeArtifacts": [
+      {
+        "id": "kart_eval_confirmed",
+        "kind": "architecture",
+        "entityId": "DSN-EVAL-001",
+        "status": "accepted",
+        "metadata": {
+          "title": "Runtime eval architecture",
+          "text": "Agent Runtime eval fixtures must cover context packs, workflow evidence, and red-green checks.",
+          "knowledgeClass": "confirmed",
+          "trustLevel": "accepted_knowledge",
+          "freshness": "current",
+          "sourceRefs": ["doc:agent-runtime-development-tasks"],
+          "confidence": 0.95
+        }
+      }
+    ]
+  },
+  "expectations": {
+    "manifestRefsInclude": ["task_brief", "workflow_run"],
+    "sourceRefsInclude": ["doc:agent-runtime-development-tasks"],
+    "authoritativeSourceRefsExclude": ["doc:stale-runtime-note"],
+    "selectedCountMin": 3
+  },
+  "variants": [
+    {
+      "id": "accepted-current",
+      "label": "Accepted current knowledge is selected"
+    },
+    {
+      "id": "budget-degradation",
+      "label": "Budget pressure is observable",
+      "inputOverrides": {
+        "inputArtifacts": [
+          {
+            "name": "large-context.md",
+            "artifactId": "art_eval_large_context",
+            "content": "Agent runtime context fixture budget pressure evidence. Agent runtime context fixture budget pressure evidence. Agent runtime context fixture budget pressure evidence. Agent runtime context fixture budget pressure evidence. Agent runtime context fixture budget pressure evidence."
+          }
+        ],
+        "budget": {
+          "maxTokens": 90,
+          "reservedForReasoning": 0,
+          "reservedForOutput": 0
+        }
+      },
+      "expectations": {
+        "retrievalHintsMin": 1
+      }
+    }
+  ]
+}

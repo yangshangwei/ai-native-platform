@@ -1,0 +1,25 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "workflow-fixture",
+  "title": "Workflow fixture covers digest-backed evidence",
+  "description": "Replays deterministic workflow evidence and checks the real Evidence Gate plus report sidecars.",
+  "kind": "workflow_fixture",
+  "input": {
+    "projectId": "proj_eval_workflow",
+    "title": "Verify Agent Runtime workflow evidence",
+    "profile": "complete"
+  },
+  "expectations": {
+    "evidenceGateStatus": "pass",
+    "ruleStatuses": {
+      "evidence.command_digests_present": "pass",
+      "evidence.acceptance_has_execution_evidence": "pass"
+    },
+    "commandDigestBacked": true,
+    "completionReportGenerated": true,
+    "completionReportHasStatusAtGeneration": true,
+    "retroReportGenerated": true,
+    "retroFindingsMin": 0,
+    "reportArtifactCountMin": 4
+  }
+}
