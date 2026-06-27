@@ -1,0 +1,15 @@
+{"file":".trellis/spec/shared/backend/index.md","reason":"Shared graph runtime types, trust-boundary guards, and exported contracts will be extended for branch/join/human interrupt work."}
+{"file":".trellis/spec/runner/backend/index.md","reason":"Runner graph scheduler and dispatch sequencing are central to Post-MVP branch and join execution."}
+{"file":".trellis/spec/api/backend/index.md","reason":"API-owned graph actions, read models, and persistence must follow backend conventions."}
+{"file":".trellis/spec/web/frontend/index.md","reason":"Human interrupt/resume and graph diagnostics require web task-detail UI work."}
+{"file":".trellis/spec/runner/backend/flow-registry.md","reason":"Non-linear graph definitions must preserve current flow-registry compatibility and linear behavior."}
+{"file":".trellis/spec/api/backend/database.md","reason":"Any Post-MVP graph persistence must remain additive, versioned, and legacy-safe."}
+{"file":".trellis/spec/shared/backend/evidence-verifier-protocol.md","reason":"Branch and join evidence must not replace Gate Engine or Workflow Engine authority."}
+{"file":".trellis/spec/runner/backend/eval-harness.md","reason":"Branch, join, and human interrupt behavior must be covered by deterministic eval fixtures."}
+{"file":"docs/2026-06-27-graph-runtime-requirements.md","reason":"Baseline MVP requirements and MVP/Post-MVP boundary."}
+{"file":"docs/2026-06-27-graph-runtime-architecture-design.md","reason":"Baseline graph runtime architecture and existing authority boundaries."}
+{"file":"docs/2026-06-27-graph-runtime-development-tasks.md","reason":"Original A-F MVP and G-I Post-MVP epic traceability."}
+{"file":"docs/2026-06-28-graph-runtime-post-mvp-requirements.md","reason":"Primary Post-MVP requirements for branch, join, and human interrupt/resume."}
+{"file":"docs/2026-06-28-graph-runtime-post-mvp-architecture-design.md","reason":"Primary Post-MVP technical design for scheduler, join evaluator, blocked state, API, Web, and eval."}
+{"file":"docs/2026-06-28-graph-runtime-post-mvp-development-tasks.md","reason":"Primary implementation task breakdown and verification commands."}
+{"file":".trellis/tasks/archive/2026-06/06-28-graph-runtime-api-ledger/report.md","reason":"Verified MVP completion baseline that future Post-MVP work must preserve."}

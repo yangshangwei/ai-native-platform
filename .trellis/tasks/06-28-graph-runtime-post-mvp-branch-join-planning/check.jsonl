@@ -1,0 +1,12 @@
+{"file":".trellis/spec/shared/backend/index.md","reason":"Check shared graph type and guard changes for contract compatibility."}
+{"file":".trellis/spec/runner/backend/index.md","reason":"Check runner scheduler and dispatch behavior against backend conventions."}
+{"file":".trellis/spec/api/backend/index.md","reason":"Check API graph actions, routes, and read models against backend conventions."}
+{"file":".trellis/spec/web/frontend/index.md","reason":"Check web graph diagnostics and human actions against frontend conventions."}
+{"file":".trellis/spec/runner/backend/flow-registry.md","reason":"Verify branch/join additions do not regress linear flow-registry behavior."}
+{"file":".trellis/spec/api/backend/database.md","reason":"Verify additive migrations and legacy-safe persistence behavior."}
+{"file":".trellis/spec/shared/backend/evidence-verifier-protocol.md","reason":"Verify branch/join/human resume paths preserve Workflow and Gate authority boundaries."}
+{"file":".trellis/spec/runner/backend/eval-harness.md","reason":"Verify deterministic eval coverage and red fixture behavior."}
+{"file":"docs/2026-06-28-graph-runtime-post-mvp-requirements.md","reason":"Check implementation against Post-MVP requirements and acceptance signals."}
+{"file":"docs/2026-06-28-graph-runtime-post-mvp-architecture-design.md","reason":"Check implementation against the Post-MVP technical design."}
+{"file":"docs/2026-06-28-graph-runtime-post-mvp-development-tasks.md","reason":"Check task sequencing, scope boundaries, and verification expectations."}
+{"file":".trellis/tasks/archive/2026-06/06-28-graph-runtime-api-ledger/report.md","reason":"Check that completed MVP behavior and R5 guardrails remain preserved."}

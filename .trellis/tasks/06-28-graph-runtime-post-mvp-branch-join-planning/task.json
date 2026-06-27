@@ -1,0 +1,30 @@
+{
+  "id": "graph-runtime-post-mvp-branch-join-planning",
+  "name": "graph-runtime-post-mvp-branch-join-planning",
+  "title": "Graph Runtime Post-MVP Branch Join Human Interrupt Planning",
+  "description": "Prepare implementation-ready Post-MVP Graph Runtime planning docs for branch fan-out, join fan-in, and durable human interrupt/resume after the failure-resume-first MVP.",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "artisan",
+  "assignee": "artisan",
+  "createdAt": "2026-06-28",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "feat/context-injection-layer-mvp",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "docs/2026-06-28-graph-runtime-post-mvp-requirements.md",
+    "docs/2026-06-28-graph-runtime-post-mvp-architecture-design.md",
+    "docs/2026-06-28-graph-runtime-post-mvp-development-tasks.md"
+  ],
+  "notes": "",
+  "meta": {}
+}
