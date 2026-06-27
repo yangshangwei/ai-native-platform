@@ -21,6 +21,7 @@ import type {
   CoordinatorDecision,
   RequestMessage,
   ToolInvocation,
+  HandoffRecord,
 } from '@ainp/shared';
 import { errorMessage, isProjectAgentBackendKind, nowIso } from '@ainp/shared';
 import { appendFileSync, mkdirSync } from 'node:fs';
@@ -921,6 +922,91 @@ const toolInvocations = {
     ),
   get size(): number {
     return toolInvocationsTable.count();
+  },
+};
+
+// ---- handoffs --------------------------------------------------------------
+
+interface HandoffRow {
+  id: string;
+  workflow_run_id: string;
+  step_run_id: string | null;
+  parent_session_id: string | null;
+  child_session_id: string | null;
+  from_role: string;
+  to_role: string;
+  reason: string;
+  input_artifact_ids_json: string;
+  expected_output_json: string;
+  stop_condition: string;
+  status: string;
+  adoption_decision: string;
+  output_artifact_ids_json: string;
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+  metadata_json: string;
+}
+
+function rowToHandoff(r: HandoffRow): HandoffRecord {
+  return {
+    id: r.id,
+    workflowRunId: r.workflow_run_id,
+    stepRunId: r.step_run_id,
+    parentSessionId: r.parent_session_id,
+    childSessionId: r.child_session_id,
+    fromRole: r.from_role as HandoffRecord['fromRole'],
+    toRole: r.to_role as HandoffRecord['toRole'],
+    reason: r.reason,
+    inputArtifactIds: JSON.parse(r.input_artifact_ids_json),
+    expectedOutput: JSON.parse(r.expected_output_json),
+    stopCondition: r.stop_condition,
+    status: r.status as HandoffRecord['status'],
+    adoptionDecision: r.adoption_decision as HandoffRecord['adoptionDecision'],
+    outputArtifactIds: JSON.parse(r.output_artifact_ids_json),
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    completedAt: r.completed_at,
+    metadata: JSON.parse(r.metadata_json) as Record<string, unknown>,
+  };
+}
+
+const handoffsTable = defineTable<HandoffRow, HandoffRecord>({
+  table: 'handoffs',
+  fromRow: rowToHandoff,
+  toRow: (h) => ({
+    id: h.id,
+    workflow_run_id: h.workflowRunId,
+    step_run_id: h.stepRunId,
+    parent_session_id: h.parentSessionId,
+    child_session_id: h.childSessionId,
+    from_role: h.fromRole,
+    to_role: h.toRole,
+    reason: h.reason,
+    input_artifact_ids_json: JSON.stringify(h.inputArtifactIds),
+    expected_output_json: JSON.stringify(h.expectedOutput),
+    stop_condition: h.stopCondition,
+    status: h.status,
+    adoption_decision: h.adoptionDecision,
+    output_artifact_ids_json: JSON.stringify(h.outputArtifactIds),
+    created_at: h.createdAt,
+    updated_at: h.updatedAt,
+    completed_at: h.completedAt,
+    metadata_json: JSON.stringify(h.metadata),
+  }),
+});
+
+const handoffs = {
+  insert: (h: HandoffRecord): void => handoffsTable.insert(h),
+  upsert: (h: HandoffRecord): void => handoffsTable.upsert(h),
+  get: (id: string): HandoffRecord | undefined => handoffsTable.byId(id),
+  byWorkflow: (workflowRunId: string): HandoffRecord[] =>
+    handoffsTable.all(
+      'SELECT * FROM handoffs WHERE workflow_run_id = ? ORDER BY created_at ASC',
+      workflowRunId,
+    ),
+  get size(): number {
+    return handoffsTable.count();
   },
 };
 
@@ -1979,6 +2065,7 @@ export const store = {
   agentResults,
   agentSessions,
   toolInvocations,
+  handoffs,
   agentEvents,
   workflowActions,
   approvals,

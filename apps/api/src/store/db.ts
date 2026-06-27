@@ -423,6 +423,27 @@ const BASELINE_DDL: string[] = [
      metadata_json TEXT NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_tool_invocations_workflow ON tool_invocations(workflow_run_id, started_at)`,
+  `CREATE TABLE IF NOT EXISTS handoffs (
+     id TEXT PRIMARY KEY,
+     workflow_run_id TEXT NOT NULL,
+     step_run_id TEXT,
+     parent_session_id TEXT,
+     child_session_id TEXT,
+     from_role TEXT NOT NULL,
+     to_role TEXT NOT NULL,
+     reason TEXT NOT NULL,
+     input_artifact_ids_json TEXT NOT NULL,
+     expected_output_json TEXT NOT NULL,
+     stop_condition TEXT NOT NULL,
+     status TEXT NOT NULL,
+     adoption_decision TEXT NOT NULL,
+     output_artifact_ids_json TEXT NOT NULL,
+     created_at TEXT NOT NULL,
+     updated_at TEXT NOT NULL,
+     completed_at TEXT,
+     metadata_json TEXT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_handoffs_workflow ON handoffs(workflow_run_id, created_at)`,
 ];
 
 // ---------------------------------------------------------------------------
@@ -618,6 +639,34 @@ export const MIGRATIONS: Migration[] = [
          metadata_json TEXT NOT NULL
        )`);
       run(database, `CREATE INDEX IF NOT EXISTS idx_tool_invocations_workflow ON tool_invocations(workflow_run_id, started_at)`);
+    },
+  },
+  {
+    version: 27,
+    name: 'handoffs-create-table',
+    isApplied: (database) => hasTable(database, 'handoffs'),
+    up: (database) => {
+      run(database, `CREATE TABLE handoffs (
+         id TEXT PRIMARY KEY,
+         workflow_run_id TEXT NOT NULL,
+         step_run_id TEXT,
+         parent_session_id TEXT,
+         child_session_id TEXT,
+         from_role TEXT NOT NULL,
+         to_role TEXT NOT NULL,
+         reason TEXT NOT NULL,
+         input_artifact_ids_json TEXT NOT NULL,
+         expected_output_json TEXT NOT NULL,
+         stop_condition TEXT NOT NULL,
+         status TEXT NOT NULL,
+         adoption_decision TEXT NOT NULL,
+         output_artifact_ids_json TEXT NOT NULL,
+         created_at TEXT NOT NULL,
+         updated_at TEXT NOT NULL,
+         completed_at TEXT,
+         metadata_json TEXT NOT NULL
+       )`);
+      run(database, `CREATE INDEX IF NOT EXISTS idx_handoffs_workflow ON handoffs(workflow_run_id, created_at)`);
     },
   },
 ];

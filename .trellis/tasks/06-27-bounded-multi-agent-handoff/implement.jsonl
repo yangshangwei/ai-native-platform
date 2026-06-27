@@ -1,0 +1,17 @@
+{"file":"docs/2026-06-27-agent-runtime-requirements.md","reason":"R6 handoff requirements and R8 observability expectations."}
+{"file":"docs/2026-06-27-agent-runtime-architecture-design.md","reason":"Handoff runtime architecture, data flow, and API boundary guidance."}
+{"file":"docs/2026-06-27-agent-runtime-development-tasks.md","reason":"Epic E E1-E3 implementation checklist and red/green cases."}
+{"file":"docs/2026-06-27-agent-runtime-red-green-test-plan.md","reason":"Handoff red/yellow/green expectations."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Agent runtime/context governance boundary shared with handoff evidence."}
+{"file":".trellis/spec/shared/backend/evidence-verifier-protocol.md","reason":"Gate/report evidence authority that handoff output must not bypass."}
+{"file":"packages/shared/src/types/agent-session.ts","reason":"Existing parent/child AgentSession linkage surface."}
+{"file":"packages/shared/src/types/handoff.ts","reason":"Shared Handoff type, status, role, adoption, and validation guard surface."}
+{"file":"apps/api/src/store/store.ts","reason":"Persistence patterns for AgentSession/ToolInvocation and new handoff repository."}
+{"file":"apps/api/src/store/db.ts","reason":"Versioned SQLite migration for the handoffs ledger table."}
+{"file":"apps/api/src/workflow-engine.ts","reason":"Workflow Engine write facade for handoff lifecycle records."}
+{"file":"apps/api/src/routes/runner-events.ts","reason":"Runner event trust boundary for handoff lifecycle writes."}
+{"file":"apps/api/src/routes/workflow-runs.ts","reason":"Workflow-scoped read model for sessions/tools and new handoff endpoint/summary."}
+{"file":"apps/api/src/reports.ts","reason":"Completion/retro sidecar surfaces for handoff evidence and adoption decisions."}
+{"file":"apps/runner/src/orchestrator/invoke-skill.ts","reason":"AgentSession creation and parent session linkage patterns."}
+{"file":"apps/runner/src/orchestrator/steps.ts","reason":"Implementation/review/build-test runner evidence points where handoff signals integrate."}
+{"file":".trellis/tasks/06-27-bounded-multi-agent-handoff/research/handoff-slice.md","reason":"Task-specific current facts, gaps, and boundaries."}

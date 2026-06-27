@@ -88,6 +88,7 @@ export async function generateCompletionReport(
   const artifacts = store.artifacts.byWorkflow(workflowRunId);
   const builds = store.buildRuns.byWorkflow(workflowRunId);
   const approvals = store.approvals.byWorkflow(workflowRunId);
+  const handoffs = store.handoffs.byWorkflow(workflowRunId);
   const contextRequestActions = store.workflowActions
     .byWorkflow(workflowRunId)
     .filter((action) => action.kind === 'context_request');
@@ -151,6 +152,32 @@ export async function generateCompletionReport(
       ? '_no approvals_'
       : approvals
           .map((a) => `- ${a.gateId}: ${a.decision} by ${a.actor}${a.comment ? ` — ${a.comment}` : ''}`)
+          .join('\n');
+  const handoffSummaries = handoffs.map((handoff) => ({
+    id: handoff.id,
+    status: handoff.status,
+    adoptionDecision: handoff.adoptionDecision,
+    fromRole: handoff.fromRole,
+    toRole: handoff.toRole,
+    reason: handoff.reason,
+    inputArtifactIds: handoff.inputArtifactIds,
+    outputArtifactIds: handoff.outputArtifactIds,
+    parentSessionId: handoff.parentSessionId,
+    childSessionId: handoff.childSessionId,
+    expectedOutput: handoff.expectedOutput,
+  }));
+  const handoffsBody =
+    handoffSummaries.length === 0
+      ? '_no handoffs_'
+      : handoffSummaries
+          .map((handoff) => [
+            `- \`${handoff.id}\` ${handoff.fromRole} -> ${handoff.toRole} status=${handoff.status} adoption=${handoff.adoptionDecision}`,
+            `  - reason: ${handoff.reason}`,
+            `  - sessions: parent=${handoff.parentSessionId ?? '(none)'}, child=${handoff.childSessionId ?? '(none)'}`,
+            `  - input artifacts: ${handoff.inputArtifactIds.join(', ') || '(none)'}`,
+            `  - output artifacts: ${handoff.outputArtifactIds.join(', ') || '(none)'}`,
+            `  - expected: ${handoff.expectedOutput.schemaVersion} ${handoff.expectedOutput.artifactKind} — ${handoff.expectedOutput.description}`,
+          ].join('\n'))
           .join('\n');
   const contextRequests = contextRequestActions.map((action) => {
     const request = (action.payload.request ?? {}) as {
@@ -259,6 +286,10 @@ export async function generateCompletionReport(
     ``,
     approvalsBody,
     ``,
+    `## Handoffs (${handoffs.length})`,
+    ``,
+    handoffsBody,
+    ``,
     `## Context Requests (${contextRequests.length})`,
     ``,
     contextRequestsBody,
@@ -300,10 +331,12 @@ export async function generateCompletionReport(
       { title: `Commands (${commands.length})`, body: commandsBody },
       { title: `Artifacts (${artifacts.length})`, body: artifactsBody },
       { title: `Approvals (${approvals.length})`, body: approvalsBody },
+      { title: `Handoffs (${handoffs.length})`, body: handoffsBody },
       { title: `Context Requests (${contextRequests.length})`, body: contextRequestsBody },
       { title: `Knowledge Review Signals (${knowledgeReviewSignals.length})`, body: knowledgeReviewBody },
       { title: 'Context Governance Metrics', body: governanceMetricsBody },
     ],
+    handoffs: handoffSummaries,
     contextRequests,
     knowledgeReviewSignals,
     contextGovernanceMetrics: contextGovernance.metrics,

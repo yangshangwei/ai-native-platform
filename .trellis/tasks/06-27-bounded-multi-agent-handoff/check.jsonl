@@ -1,0 +1,9 @@
+{"file":"packages/shared/test/handoff.test.ts","reason":"Check shared Handoff guards and parent/child linkage shape."}
+{"file":"packages/shared/test/agent-session.test.ts","reason":"Check existing trajectory linkage remains compatible with handoff child sessions."}
+{"file":"apps/api/test/db-migrations.test.ts","reason":"Check the handoffs table migration stays contiguous and legacy-compatible."}
+{"file":"apps/api/test/workflow-runs-route.test.ts","reason":"Check workflow read models and handoff route behavior."}
+{"file":"apps/api/test/report-sidecars.test.ts","reason":"Check completion/retro sidecars include handoff evidence without bypassing gates."}
+{"file":"apps/runner/test/orchestrator-invoke-skill.test.ts","reason":"Check parent/child AgentSession behavior for bounded child invocations."}
+{"file":"apps/runner/test/orchestrator-build-test.test.ts","reason":"Check build/test failure handoff evidence does not bypass command/gate semantics."}
+{"file":"apps/runner/test/orchestrator-dispatch.test.ts","reason":"Check review/build dispatch ordering and handoff integration points."}
+{"file":".trellis/tasks/06-27-bounded-multi-agent-handoff/research/handoff-slice.md","reason":"Check E1-E3 scope and out-of-scope boundaries."}

@@ -12,3 +12,4 @@ export type TestRunId = string;
 export type AgentTaskId = string;
 export type AgentResultId = string;
 export type AgentSessionId = string;
+export type HandoffId = string;

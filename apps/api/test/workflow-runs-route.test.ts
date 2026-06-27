@@ -7,6 +7,8 @@ import {
   newId,
   nowIso,
   type KnowledgeArtifact,
+  type Artifact,
+  type HandoffRecord,
   type Project,
   type ToolInvocation,
   type WorkflowRun,
@@ -50,6 +52,77 @@ function registerProject(name: string): Project {
   };
   storeMod.store.projects.set(project.id, project);
   return project;
+}
+
+async function createRun(projectName: string, title: string): Promise<WorkflowRun> {
+  const project = registerProject(projectName);
+  const res = await app.request('/workflow-runs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      type: 'feature',
+      title,
+    }),
+  });
+  expect(res.status).toBe(201);
+  return (await res.json()) as WorkflowRun;
+}
+
+async function postArtifact(run: WorkflowRun, suffix: string): Promise<Artifact> {
+  const res = await app.request('/runner/events/artifact', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      stepRunId: null,
+      kind: 'other',
+      uri: `mem://${run.id}/${suffix}.md`,
+      size: 10,
+      contentType: 'text/markdown',
+      metadata: { source: suffix },
+    }),
+  });
+  expect(res.status).toBe(200);
+  return ((await res.json()) as { artifact: Artifact }).artifact;
+}
+
+async function postAgentSession(
+  run: WorkflowRun,
+  stage: string,
+  parentSessionId: string | null = null,
+): Promise<{ taskId: string; sessionId: string }> {
+  const taskRes = await app.request('/runner/events/agent-task-started', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      stepRunId: null,
+      kind: stage,
+      backend: 'codex',
+      prompt: `${stage} prompt`,
+      inputArtifactIds: [],
+    }),
+  });
+  expect(taskRes.status).toBe(201);
+  const taskBody = (await taskRes.json()) as { task: { id: string } };
+  const sessionRes = await app.request('/runner/events/agent-session-started', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      agentTaskId: taskBody.task.id,
+      stage,
+      skillId: `skill.${stage}`,
+      skillVersion: '1.0.0',
+      contextPackId: `ctx_${stage}`,
+      parentSessionId,
+      metadata: parentSessionId ? { linkKind: 'handoff_child' } : {},
+    }),
+  });
+  expect(sessionRes.status).toBe(201);
+  const sessionBody = (await sessionRes.json()) as { session: { id: string } };
+  return { taskId: taskBody.task.id, sessionId: sessionBody.session.id };
 }
 
 // ---------------------------------------------------------------------------
@@ -262,6 +335,102 @@ test('runner event ingress rejects invalid tool invocation trust-boundary fields
   const body = (await record.json()) as { error: string };
   expect(body.error).toContain('unknown tool invocation status');
   expect(storeMod.store.toolInvocations.get('tinv_invalid')).toBeUndefined();
+});
+
+test('runner event ingress records and exposes bounded handoffs by workflow run', async () => {
+  const run = await createRun('handoff-route', 'record bounded handoff evidence');
+  const input = await postArtifact(run, 'implementation-diff');
+  const output = await postArtifact(run, 'review-findings');
+  const parent = await postAgentSession(run, 'implementation');
+  const child = await postAgentSession(run, 'review', parent.sessionId);
+
+  const record = await app.request('/runner/events/handoff', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      parentSessionId: parent.sessionId,
+      childSessionId: child.sessionId,
+      fromRole: 'main',
+      toRole: 'reviewer',
+      reason: 'Independent implementation review.',
+      inputArtifactIds: [input.id],
+      expectedOutput: {
+        schemaVersion: 'ainp.handoff.review.v1',
+        artifactKind: 'other',
+        description: 'Review findings artifact.',
+      },
+      stopCondition: 'Stop after one review artifact.',
+      status: 'completed',
+      adoptionDecision: 'needs_review',
+      outputArtifactIds: [output.id],
+      metadata: { gateAuthority: 'gate_engine' },
+    }),
+  });
+  expect(record.status).toBe(201);
+  const recorded = (await record.json()) as { handoff: HandoffRecord };
+  expect(recorded.handoff).toMatchObject({
+    workflowRunId: run.id,
+    parentSessionId: parent.sessionId,
+    childSessionId: child.sessionId,
+    fromRole: 'main',
+    toRole: 'reviewer',
+    status: 'completed',
+    adoptionDecision: 'needs_review',
+    inputArtifactIds: [input.id],
+    outputArtifactIds: [output.id],
+  });
+
+  const handoffs = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/handoffs`);
+  expect(handoffs.status).toBe(200);
+  expect((await handoffs.json()) as { items: HandoffRecord[] }).toMatchObject({
+    items: [{ id: recorded.handoff.id, toRole: 'reviewer' }],
+  });
+
+  const summary = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}`);
+  const summaryBody = (await summary.json()) as { run: WorkflowRun; handoffs: HandoffRecord[] };
+  expect(summaryBody.run.status).not.toBe('passed');
+  expect(summaryBody.handoffs).toMatchObject([{ id: recorded.handoff.id }]);
+});
+
+test('runner event ingress rejects malformed handoffs without input refs or expected output schema', async () => {
+  const run = await createRun('handoff-invalid-route', 'reject malformed handoff');
+  const missingInputRefs = await app.request('/runner/events/handoff', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      fromRole: 'main',
+      toRole: 'reviewer',
+      reason: 'Review without refs should fail.',
+      inputArtifactIds: [],
+      expectedOutput: {
+        schemaVersion: 'ainp.handoff.review.v1',
+        artifactKind: 'other',
+        description: 'Review findings artifact.',
+      },
+      stopCondition: 'Stop after one review artifact.',
+    }),
+  });
+  expect(missingInputRefs.status).toBe(400);
+  expect(((await missingInputRefs.json()) as { error: string }).error).toContain('inputArtifactIds');
+
+  const input = await postArtifact(run, 'implementation-diff');
+  const missingSchema = await app.request('/runner/events/handoff', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      fromRole: 'main',
+      toRole: 'reviewer',
+      reason: 'Review without expected schema should fail.',
+      inputArtifactIds: [input.id],
+      expectedOutput: { artifactKind: 'other' },
+      stopCondition: 'Stop after one review artifact.',
+    }),
+  });
+  expect(missingSchema.status).toBe(400);
+  expect(((await missingSchema.json()) as { error: string }).error).toContain('expectedOutput');
 });
 
 test('runner event ingress validates agent session finish envelopes', async () => {

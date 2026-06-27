@@ -27,6 +27,11 @@ import {
   type ContextRequest,
   type FlowId,
   type GateRun,
+  type HandoffAdoptionDecision,
+  type HandoffExpectedOutput,
+  type HandoffRecord,
+  type HandoffRole,
+  type HandoffStatus,
   type KnowledgeArtifact,
   type KnowledgeArtifactKind,
   type KnowledgeArtifactStatus,
@@ -359,6 +364,141 @@ export function recordToolInvocation(toolInvocation: ToolInvocation): ToolInvoca
     resultRefs: toolInvocation.resultRefs,
   });
   return toolInvocation;
+}
+
+export interface RecordHandoffInput {
+  workflowRunId: WorkflowRunId;
+  stepRunId?: StepRunId | null;
+  parentSessionId?: string | null;
+  childSessionId?: string | null;
+  fromRole: HandoffRole;
+  toRole: HandoffRole;
+  reason: string;
+  inputArtifactIds: ArtifactId[];
+  expectedOutput: HandoffExpectedOutput;
+  stopCondition: string;
+  status?: HandoffStatus;
+  adoptionDecision?: HandoffAdoptionDecision;
+  outputArtifactIds?: ArtifactId[];
+  metadata?: Record<string, unknown>;
+}
+
+export function recordHandoff(input: RecordHandoffInput): HandoffRecord {
+  assertHandoffReferences(input.workflowRunId, {
+    stepRunId: input.stepRunId ?? null,
+    parentSessionId: input.parentSessionId ?? null,
+    childSessionId: input.childSessionId ?? null,
+    inputArtifactIds: input.inputArtifactIds,
+    outputArtifactIds: input.outputArtifactIds ?? [],
+  });
+  const ts = nowIso();
+  const handoff: HandoffRecord = {
+    id: newId('hnd'),
+    workflowRunId: input.workflowRunId,
+    stepRunId: input.stepRunId ?? null,
+    parentSessionId: input.parentSessionId ?? null,
+    childSessionId: input.childSessionId ?? null,
+    fromRole: input.fromRole,
+    toRole: input.toRole,
+    reason: input.reason,
+    inputArtifactIds: input.inputArtifactIds,
+    expectedOutput: input.expectedOutput,
+    stopCondition: input.stopCondition,
+    status: input.status ?? 'requested',
+    adoptionDecision: input.adoptionDecision ?? 'pending',
+    outputArtifactIds: input.outputArtifactIds ?? [],
+    createdAt: ts,
+    updatedAt: ts,
+    completedAt: null,
+    metadata: input.metadata ?? {},
+  };
+  store.handoffs.insert(handoff);
+  audit(input.workflowRunId, 'handoff.recorded', {
+    handoffId: handoff.id,
+    fromRole: handoff.fromRole,
+    toRole: handoff.toRole,
+    status: handoff.status,
+    adoptionDecision: handoff.adoptionDecision,
+    inputArtifactIds: handoff.inputArtifactIds,
+    outputArtifactIds: handoff.outputArtifactIds,
+  });
+  return handoff;
+}
+
+export function updateHandoff(input: {
+  handoffId: string;
+  status?: HandoffStatus;
+  adoptionDecision?: HandoffAdoptionDecision;
+  childSessionId?: string | null;
+  outputArtifactIds?: ArtifactId[];
+  metadata?: Record<string, unknown>;
+}): HandoffRecord {
+  const existing = store.handoffs.get(input.handoffId);
+  if (!existing) throw new Error(`handoff not found: ${input.handoffId}`);
+  assertHandoffReferences(existing.workflowRunId, {
+    stepRunId: existing.stepRunId,
+    parentSessionId: existing.parentSessionId,
+    childSessionId: input.childSessionId ?? existing.childSessionId,
+    inputArtifactIds: existing.inputArtifactIds,
+    outputArtifactIds: input.outputArtifactIds ?? existing.outputArtifactIds,
+  });
+  const status = input.status ?? existing.status;
+  const updated: HandoffRecord = {
+    ...existing,
+    status,
+    adoptionDecision: input.adoptionDecision ?? existing.adoptionDecision,
+    childSessionId: input.childSessionId ?? existing.childSessionId,
+    outputArtifactIds: input.outputArtifactIds ?? existing.outputArtifactIds,
+    updatedAt: nowIso(),
+    completedAt: status === 'completed' || status === 'failed' || status === 'cancelled'
+      ? nowIso()
+      : existing.completedAt,
+    metadata: {
+      ...existing.metadata,
+      ...(input.metadata ?? {}),
+    },
+  };
+  store.handoffs.upsert(updated);
+  audit(updated.workflowRunId, 'handoff.updated', {
+    handoffId: updated.id,
+    status: updated.status,
+    adoptionDecision: updated.adoptionDecision,
+    childSessionId: updated.childSessionId,
+    outputArtifactIds: updated.outputArtifactIds,
+  });
+  return updated;
+}
+
+function assertHandoffReferences(
+  workflowRunId: WorkflowRunId,
+  refs: {
+    stepRunId?: StepRunId | null;
+    parentSessionId?: string | null;
+    childSessionId?: string | null;
+    inputArtifactIds: ArtifactId[];
+    outputArtifactIds: ArtifactId[];
+  },
+): void {
+  if (!store.workflowRuns.get(workflowRunId)) throw new Error(`workflow run not found: ${workflowRunId}`);
+  if (refs.stepRunId) {
+    const step = store.stepRuns.get(refs.stepRunId);
+    if (!step) throw new Error(`step run not found: ${refs.stepRunId}`);
+    if (step.workflowRunId !== workflowRunId) throw new Error('stepRunId does not belong to workflowRunId');
+  }
+  for (const [label, sessionId] of [
+    ['parentSessionId', refs.parentSessionId],
+    ['childSessionId', refs.childSessionId],
+  ] as const) {
+    if (!sessionId) continue;
+    const session = store.agentSessions.get(sessionId);
+    if (!session) throw new Error(`agent session not found: ${sessionId}`);
+    if (session.workflowRunId !== workflowRunId) throw new Error(`${label} does not belong to workflowRunId`);
+  }
+  for (const artifactId of [...refs.inputArtifactIds, ...refs.outputArtifactIds]) {
+    const artifact = store.artifacts.get(artifactId);
+    if (!artifact) throw new Error(`artifact not found: ${artifactId}`);
+    if (artifact.workflowRunId !== workflowRunId) throw new Error(`artifact ${artifactId} does not belong to workflowRunId`);
+  }
 }
 
 export function completeWorkflowRun(workflowRunId: string, ok: boolean): WorkflowRun {

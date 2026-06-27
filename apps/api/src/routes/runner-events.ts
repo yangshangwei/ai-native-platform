@@ -10,11 +10,18 @@ import type {
   AgentSessionStatus,
   AgentTaskKind,
   ContextRequest,
+  HandoffAdoptionDecision,
+  HandoffExpectedOutput,
+  HandoffRole,
+  HandoffStatus,
 } from '@ainp/shared';
 import {
   errorMessage,
   isAgentSessionStatus,
   isContextRequestStatus,
+  isHandoffAdoptionDecision,
+  isHandoffRole,
+  isHandoffStatus,
   isPerRunArtifactKind,
   isRunnerToolId,
   isToolInvocationStatus,
@@ -41,6 +48,8 @@ import {
   recordAgentTask,
   recordAgentResult,
   recordContextRequestAction,
+  recordHandoff,
+  updateHandoff,
   type MavenBuildEvent,
 } from '../workflow-engine';
 import {
@@ -129,6 +138,71 @@ function validateToolInvocation(invocation: ToolInvocation | undefined): string 
     return 'toolInvocation metadata must be an object';
   }
   return null;
+}
+
+function validateHandoffCreate(body: {
+  workflowRunId?: string;
+  fromRole?: HandoffRole;
+  toRole?: HandoffRole;
+  reason?: string;
+  inputArtifactIds?: string[];
+  expectedOutput?: HandoffExpectedOutput;
+  stopCondition?: string;
+  status?: HandoffStatus;
+  adoptionDecision?: HandoffAdoptionDecision;
+  outputArtifactIds?: string[];
+  metadata?: Record<string, unknown>;
+}): string | null {
+  if (!body.workflowRunId) return 'workflowRunId required';
+  if (!store.workflowRuns.get(body.workflowRunId)) {
+    return `workflow run not found: ${body.workflowRunId}`;
+  }
+  if (!isHandoffRole(body.fromRole)) return `unknown handoff fromRole: ${String(body.fromRole)}`;
+  if (!isHandoffRole(body.toRole)) return `unknown handoff toRole: ${String(body.toRole)}`;
+  if (!body.reason?.trim()) return 'reason required';
+  if (!isNonEmptyStringArray(body.inputArtifactIds)) {
+    return 'inputArtifactIds must include at least one artifact id';
+  }
+  if (!isExpectedOutput(body.expectedOutput)) {
+    return 'expectedOutput requires schemaVersion, artifactKind, and description';
+  }
+  if (!body.stopCondition?.trim()) return 'stopCondition required';
+  if (body.status !== undefined && !isHandoffStatus(body.status)) {
+    return `unknown handoff status: ${String(body.status)}`;
+  }
+  if (
+    body.adoptionDecision !== undefined
+    && !isHandoffAdoptionDecision(body.adoptionDecision)
+  ) {
+    return `unknown handoff adoptionDecision: ${String(body.adoptionDecision)}`;
+  }
+  if (body.outputArtifactIds !== undefined && !isNonEmptyStringArray(body.outputArtifactIds)) {
+    return 'outputArtifactIds must be an array of non-empty strings';
+  }
+  if (body.metadata !== undefined && !isPlainObject(body.metadata)) {
+    return 'metadata must be an object';
+  }
+  return null;
+}
+
+function isExpectedOutput(value: unknown): value is HandoffExpectedOutput {
+  if (!isPlainObject(value)) return false;
+  return typeof value.schemaVersion === 'string'
+    && value.schemaVersion.trim().length > 0
+    && typeof value.artifactKind === 'string'
+    && value.artifactKind.trim().length > 0
+    && typeof value.description === 'string'
+    && value.description.trim().length > 0;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isNonEmptyStringArray(value: unknown): value is string[] {
+  return Array.isArray(value)
+    && value.length > 0
+    && value.every((item) => typeof item === 'string' && item.trim().length > 0);
 }
 
 runnerEvents.post('/stage-transition', async (c) => {
@@ -309,6 +383,86 @@ runnerEvents.post('/agent-session-finished', async (c) => {
     metadata: body.metadata ?? {},
   });
   return c.json({ ok: true, session }, 201);
+});
+
+runnerEvents.post('/handoff', async (c) => {
+  const body = (await c.req.json()) as {
+    workflowRunId?: string;
+    stepRunId?: string | null;
+    parentSessionId?: string | null;
+    childSessionId?: string | null;
+    fromRole?: HandoffRole;
+    toRole?: HandoffRole;
+    reason?: string;
+    inputArtifactIds?: string[];
+    expectedOutput?: HandoffExpectedOutput;
+    stopCondition?: string;
+    status?: HandoffStatus;
+    adoptionDecision?: HandoffAdoptionDecision;
+    outputArtifactIds?: string[];
+    metadata?: Record<string, unknown>;
+  };
+  const validationError = validateHandoffCreate(body);
+  if (validationError) return c.json({ error: validationError }, 400);
+  try {
+    const handoff = recordHandoff({
+      workflowRunId: body.workflowRunId!,
+      stepRunId: body.stepRunId ?? null,
+      parentSessionId: body.parentSessionId ?? null,
+      childSessionId: body.childSessionId ?? null,
+      fromRole: body.fromRole!,
+      toRole: body.toRole!,
+      reason: body.reason!.trim(),
+      inputArtifactIds: body.inputArtifactIds!,
+      expectedOutput: body.expectedOutput!,
+      stopCondition: body.stopCondition!.trim(),
+      status: body.status ?? 'requested',
+      adoptionDecision: body.adoptionDecision ?? 'pending',
+      outputArtifactIds: body.outputArtifactIds ?? [],
+      metadata: body.metadata ?? {},
+    });
+    return c.json({ ok: true, handoff }, 201);
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+});
+
+runnerEvents.post('/handoff/:id', async (c) => {
+  const body = (await c.req.json()) as {
+    status?: HandoffStatus;
+    adoptionDecision?: HandoffAdoptionDecision;
+    childSessionId?: string | null;
+    outputArtifactIds?: string[];
+    metadata?: Record<string, unknown>;
+  };
+  if (body.status !== undefined && !isHandoffStatus(body.status)) {
+    return c.json({ error: `unknown handoff status: ${String(body.status)}` }, 400);
+  }
+  if (
+    body.adoptionDecision !== undefined
+    && !isHandoffAdoptionDecision(body.adoptionDecision)
+  ) {
+    return c.json({ error: `unknown handoff adoptionDecision: ${String(body.adoptionDecision)}` }, 400);
+  }
+  if (body.outputArtifactIds !== undefined && !isNonEmptyStringArray(body.outputArtifactIds)) {
+    return c.json({ error: 'outputArtifactIds must be an array of non-empty strings' }, 400);
+  }
+  if (body.metadata !== undefined && !isPlainObject(body.metadata)) {
+    return c.json({ error: 'metadata must be an object' }, 400);
+  }
+  try {
+    const handoff = updateHandoff({
+      handoffId: c.req.param('id'),
+      status: body.status,
+      adoptionDecision: body.adoptionDecision,
+      childSessionId: body.childSessionId ?? undefined,
+      outputArtifactIds: body.outputArtifactIds,
+      metadata: body.metadata,
+    });
+    return c.json({ ok: true, handoff }, 200);
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
 });
 
 runnerEvents.post('/context-request', async (c) => {

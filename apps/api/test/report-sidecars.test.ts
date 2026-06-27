@@ -101,6 +101,42 @@ test('completion report route emits markdown plus structured JSON sidecar artifa
       evidenceRefs: ['artifact:art_ctxsupp'],
     },
   });
+  const handoffInput = workflow.createArtifact({
+    workflowRunId: run.id,
+    stepRunId: 'step_impl',
+    kind: 'diff',
+    uri: 'mem://handoff-diff',
+    size: 10,
+    contentType: 'text/markdown',
+    metadata: {},
+  });
+  const handoffOutput = workflow.createArtifact({
+    workflowRunId: run.id,
+    stepRunId: 'step_impl',
+    kind: 'other',
+    uri: 'mem://handoff-review',
+    size: 10,
+    contentType: 'text/markdown',
+    metadata: {},
+  });
+  workflow.recordHandoff({
+    workflowRunId: run.id,
+    stepRunId: null,
+    fromRole: 'main',
+    toRole: 'reviewer',
+    reason: 'Independent implementation review.',
+    inputArtifactIds: [handoffInput.id],
+    expectedOutput: {
+      schemaVersion: 'ainp.handoff.review.v1',
+      artifactKind: 'other',
+      description: 'Review findings artifact.',
+    },
+    stopCondition: 'Stop after producing one review artifact.',
+    status: 'completed',
+    adoptionDecision: 'needs_review',
+    outputArtifactIds: [handoffOutput.id],
+    metadata: { gateAuthority: 'gate_engine' },
+  });
   const res = await app.request(`/workflow-runs/${run.id}/completion-report`, { method: 'POST' });
 
   expect(res.status).toBe(201);
@@ -126,6 +162,7 @@ test('completion report route emits markdown plus structured JSON sidecar artifa
     summary: string[];
     sections: Array<{ title: string; body: string }>;
     contextRequests: Array<{ id: string; supplementContextPackId: string }>;
+    handoffs: Array<{ toRole: string; adoptionDecision: string; outputArtifactIds: string[] }>;
     knowledgeReviewSignals: Array<{ kind: string; recommendedAction: string }>;
   };
   expect(parsed.schemaVersion).toBe('ainp.completion_report.v1');
@@ -137,6 +174,17 @@ test('completion report route emits markdown plus structured JSON sidecar artifa
   ]);
   expect(parsed.sections.find((section) => section.title.startsWith('Context Requests'))?.body)
     .toContain('ctxreq_report');
+  expect(parsed.handoffs).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        toRole: 'reviewer',
+        adoptionDecision: 'needs_review',
+        outputArtifactIds: [handoffOutput.id],
+      }),
+    ]),
+  );
+  expect(parsed.sections.find((section) => section.title.startsWith('Handoffs'))?.body)
+    .toContain('Independent implementation review');
   expect(parsed.knowledgeReviewSignals).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ kind: 'mark_stale', recommendedAction: 'mark_stale' }),

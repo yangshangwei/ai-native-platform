@@ -21,7 +21,14 @@
   - Runner-owned MVP tool ids: `runner.command`, `runner.git_diff_capture`,
     `runner.artifact_read`, `runner.context_supplement`
   - Result refs may point at digest-backed `CommandRun` / `Artifact` evidence,
-    but the invocation row itself is only an audit index.
+  but the invocation row itself is only an audit index.
+- Handoff audit type: `HandoffRecord`
+  - Records bounded parent/child agent collaboration with `fromRole`,
+    `toRole`, `reason`, input artifact refs, expected output schema, stop
+    condition, lifecycle status, adoption decision, and parent/child
+    AgentSession ids.
+  - Handoff output is report/gate evidence only. It must never directly set
+    WorkflowRun or GateRun status.
 - Verifier metadata constants:
   - `VERIFIER_AC_MATRIX_SCHEMA_VERSION = 'ainp.verifier_ac_matrix.v1'`
   - `VERIFIER_MEDIA_SCHEMA_VERSION = 'ainp.verifier_media.v1'`
@@ -36,7 +43,7 @@
 - Completion report sidecar schema:
   - Markdown artifact: `kind='completion_report'`, `contentType='text/markdown'`
   - JSON artifact: `kind='completion_report'`, `contentType='application/json'`, `metadata.structured=true`, `metadata.schemaVersion='ainp.completion_report.v1'`
-  - JSON payload: `{ schemaVersion, title, workflowRunId, run, summary, sections, contextRequests, knowledgeReviewSignals, contextGovernanceMetrics, generatedAt }`
+  - JSON payload: `{ schemaVersion, title, workflowRunId, run, summary, sections, handoffs, contextRequests, knowledgeReviewSignals, contextGovernanceMetrics, generatedAt }`
 - API routes:
   - `POST /runner/events/artifact`
   - `POST /runner/events/run-gate` with `gateId: 'evidence_gate'`
@@ -59,6 +66,9 @@
 - `POST /workflow-runs/:id/completion-report` must run `evidence_gate` before report generation and return HTTP 409 if it fails.
 - Completion report generation must create both the markdown report and the structured JSON sidecar from the same stored run/evidence snapshot. UI code should prefer the JSON sidecar when available and use markdown parsing only as a fallback.
 - Completion report summaries must label run state as `Status at report generation` in markdown and JSON summary entries. Do not use a bare `Status` label because the artifact is a point-in-time snapshot, not a live workflow state contract.
+- Completion report generation must include persisted Handoff records and their
+  adoption decisions. Handoff evidence can explain review/debug findings, but
+  gate status still comes only from Gate Engine evaluation.
 - Runner review flow must run the verifier sub-stage for UI-titled tasks before human acceptance, then run `evidence_gate` before waiting for acceptance.
 - Verifier media artifacts must be explicitly tagged with verifier metadata. Plain `image/*` or `video/*` artifacts must not satisfy verifier evidence by content type alone.
 - Verifier artifacts currently use `kind='other'`, but they must not count as the generic acceptance review artifact.
@@ -86,6 +96,11 @@
   digest-bearing `CommandRun` evidence -> audit/read-model defect; fix the
   runner recording path and keep Evidence Gate rules anchored to the
   `CommandRun` / `Artifact` evidence graph.
+- Handoff creation without at least one input artifact id or without an
+  expected output schema -> HTTP 400 at runner ingress.
+- Child reviewer/debugger output attempts to directly set WorkflowRun/GateRun
+  status -> contract violation; record the output as handoff/report evidence
+  and let Gate Engine or human adoption decide.
 - Acceptance gate has only human/manual evidence -> `evidence.acceptance_has_execution_evidence` fail.
 - UI-titled run has no verifier matrix -> `evidence.ui_verifier_matrix_present` fail.
 - Verifier matrix row lacks video or before+after screenshots -> `evidence.ui_verifier_media_refs_present` fail.
@@ -106,6 +121,8 @@
 - Bad: a matrix cites two plain `image/png` artifacts with before/after roles but no verifier metadata; the UI verifier rule must fail.
 - Bad: completion report generation skips Evidence Gate because the runner already ran it earlier.
 - Bad: report markdown or JSON summary says `Status: passed`, implying the artifact is a live status field instead of a generation-time snapshot.
+- Bad: a child handoff result marks a run passed/failed without a GateRun or
+  human adoption path.
 
 ### 6. Tests Required
 
@@ -122,6 +139,10 @@
   - `/runner/events/run-gate` can run `evidence_gate`;
   - completion report route returns 409 before artifact creation when Evidence Gate fails.
   - completion report route emits both markdown and JSON artifacts, with JSON `metadata.structured=true`, `schemaVersion='ainp.completion_report.v1'`, and no bare `Status:` summary line.
+  - runner handoff ingress rejects missing input artifact refs or expected
+    output schema.
+  - workflow run handoff read model returns persisted handoffs.
+  - completion report sidecar includes handoff evidence and adoption decisions.
 - Content route tests:
   - command log tampering flips digest verification to false;
   - artifact file tampering flips digest verification to false.
