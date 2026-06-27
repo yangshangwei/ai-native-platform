@@ -25,6 +25,14 @@
   - **上下文管理架构说明**。以 2026-06-27 代码事实回答“上下文管理是如何设计的”，覆盖 ContextPack / ContextManifest / ContextRequest 核心对象、Runner 构建与注入流水线、增量补充、API 治理读模型、Web 可观测面、安全边界和当前限制。
 - `2026-06-27-agent-orchestration-and-harness-improvement-plan.md`
   - **Agent 编排与 Harness 改进方案**。分析当前 Runner/AgentBackend/Context/Knowledge/Gate/Eval 实现，对照 OpenAI Agents SDK、LangGraph、SWE-agent/OpenHands/Codex harness、RAG memory 和 typed tool registry 等主流模式，提出 Trajectory Ledger、Typed Tool Registry、Durable Step Runtime、Memory Lifecycle、Context Retry Loop、Bounded Handoff、Eval Harness 扩展的落地路线和任务拆解。
+- `2026-06-27-agent-runtime-requirements.md`
+  - **Agent Runtime 与 Harness 升级需求文档**。从用户价值、范围、需求、成功指标和风险角度，把 Agent 编排改进方案拆成可验收 PRD。
+- `2026-06-27-agent-runtime-architecture-design.md`
+  - **Agent Runtime 与 Harness 架构设计**。定义 Step Runtime、Agent Session、Tool Registry、Context Orchestrator、Memory Lifecycle、Handoff Runtime 和 Eval Runtime 的目标结构与迁移策略。
+- `2026-06-27-agent-runtime-development-tasks.md`
+  - **Agent Runtime 与 Harness 研发任务拆解**。按 Epic 拆分 AgentSession、ToolInvocation、Context Retry、Memory、Handoff、Eval Harness 的具体研发任务和验收标准。
+- `2026-06-27-agent-runtime-red-green-test-plan.md`
+  - **Agent Runtime 与 Harness 红黄绿测试计划**。定义必须失败的红灯负例、允许降级的黄灯路径和必须通过的绿灯正例，覆盖 trajectory、context retry、tool、memory、handoff、eval 和 evidence。
 
 ## 0.4 2026-05-06 / 2026-05-09 平台核心梳理
 
