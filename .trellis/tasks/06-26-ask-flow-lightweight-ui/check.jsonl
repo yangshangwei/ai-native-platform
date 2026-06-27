@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/06-26-ask-flow-lightweight-ui/prd.md", "reason": "Acceptance criteria to verify against"}
+{"file": ".trellis/tasks/06-26-ask-flow-lightweight-ui/research/task-progress-ui.md", "reason": "Verify stage-board is correctly bypassed for ask type"}
+{"file": ".trellis/tasks/06-26-ask-flow-lightweight-ui/research/coordinator-routing-logic.md", "reason": "Verify ask isolation is maintained end-to-end"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Check code style and convention compliance"}

@@ -229,3 +229,39 @@ Implemented R2 durable StepCheckpoint metadata/read model across shared, API, ru
 ### Next Steps
 
 - None - task complete
+
+
+## Session 59: Context management P2/P3 implementation
+
+**Date**: 2026-06-27
+**Task**: Context management P2/P3 implementation
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Implemented stage context checkpoints and restore support, added input artifact injection policies with prompt audit and deterministic downgrade, updated context management contracts and roadmap, and archived the completed P2/P3 task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0127ca0` | (see git log) |
+| `28d5cd6` | (see git log) |
+| `fa3a91f` | (see git log) |
+| `057a4d9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

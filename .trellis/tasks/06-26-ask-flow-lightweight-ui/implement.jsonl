@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/06-26-ask-flow-lightweight-ui/research/task-progress-ui.md", "reason": "Documents stage-board rendering pipeline: renderLifecycle, renderQueuedLifecycle, buildRunProjection, FLOW_REGISTRY"}
+{"file": ".trellis/tasks/06-26-ask-flow-lightweight-ui/research/coordinator-routing-logic.md", "reason": "Documents ask flow routing: kind='ask', status guards, run creation prevention, frontend filtering"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Web frontend conventions for page-task-detail.ts and projection.ts changes"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "Shared types (WorkflowRunType, FlowId) used in the ask detection logic"}
+{"file": ".trellis/tasks/06-26-ask-flow-lightweight-ui/prd.md", "reason": "Implementation plan and acceptance criteria"}
