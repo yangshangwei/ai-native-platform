@@ -4,6 +4,17 @@
 
 Design the next Agent Runtime architecture for full graph resume, branch, and join capability on top of the existing checkpoint ledger. The design must preserve the current Workflow Engine and Gate Engine authority while turning the current sequential stage dispatcher into a durable, resumable graph execution model over time.
 
+## Background & Pain Points (Why this exists)
+
+The platform runs each user task through a multi-stage agent pipeline (requirement → design → implement → build/test → review → report → knowledge). **Every stage is a real agent run**: it spends tokens and wall-clock time and produces **real side effects** (branches, file edits, test runs, commits). Today that pipeline is a single, non-resumable line, which causes four concrete pains:
+
+1. **A late-stage failure wastes all prior work.** When a run fails at, say, build/test, the platform cannot resume *precisely* from that checkpoint. `POST /workflow-runs/:id/retry-step` only re-enters orchestration at a stage — it is not checkpoint-accurate resume. The operator must either redo earlier stages (losing their tokens/time/artifacts) or risk re-running side-effecting steps. **→ This is the MVP target: "failure resume first".**
+2. **Independent work is forced to run in a single line.** Naturally parallel or conditional sub-work (e.g. implementation vs. docs vs. tests) cannot fan out, because the model is a strict stage N → N+1 chain. **→ Branch (post-MVP).**
+3. **There is no rule for recombining parallel work.** Once branches exist they must rejoin under an explicit, typed policy (all-of / any-of / first-success / quorum / manual-adopt), and that join must not usurp Gate Engine's pass/fail authority. **→ Join (post-MVP).**
+4. **Human intervention is not durable.** When a person must step in mid-flow, there is no persistent "paused at node X, reason Y, resume here" state — resume relies on Runner-local memory and is lost on process restart. **→ Human interrupt/resume (post-MVP).**
+
+**Why now:** the `StepCheckpoint` ledger already records per-step evidence, but it is currently only *queryable* (audit/UI), not *actionable* for resume. This phase upgrades that evidence ledger from "viewable history" into a "resumable execution engine" — reusing existing checkpoints, never silently re-executing side effects, and leaving Workflow Engine (`WorkflowRun.status`) and Gate Engine (pass/warn/fail) authority intact.
+
 ## What I Already Know
 
 - The existing `FLOW_REGISTRY` is an ordered list of `StageStep` entries. It can express alternate linear flows and start-stage slicing, but not graph dependencies, fan-out, or joins.
