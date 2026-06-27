@@ -1948,3 +1948,36 @@ Implemented the AgentSession trajectory ledger across shared types, API persiste
 ### Next Steps
 
 - None - task complete
+
+
+## Session 52: Agent backend fixture eval harness
+
+**Date**: 2026-06-27
+**Task**: Agent backend fixture eval harness
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Extended the deterministic eval harness with fake agent backend fixtures for invokeSkill, AgentSession success/failure, and context_request capture.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d529814` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
