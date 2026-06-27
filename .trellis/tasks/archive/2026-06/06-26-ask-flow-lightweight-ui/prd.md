@@ -71,12 +71,14 @@ Confirm that `processNextWorkflowRequest()` cannot pick up a `kind='ask'` reques
 
 ## Acceptance Criteria
 
-- [ ] Submitting an ask-type request shows NO stage-board (no 7 cards)
-- [ ] While the system is working (if/when ask answering is implemented), an activity label is visible
-- [ ] Once the answer is delivered, the activity indicator disappears
-- [ ] Dev/fix/refactor requests continue to show their normal stage-board unchanged
-- [ ] No regression in existing stage-board rendering for other flow types
-- [ ] If a WorkflowRun somehow gets created for an ask request, the frontend does not crash or show empty stage cards
+- [x] Submitting an ask-type request shows NO stage-board (no 7 cards)
+- [x] While the system is working (if/when ask answering is implemented), an activity label is visible
+- [x] Once the answer is delivered, the activity indicator disappears
+- [x] Dev/fix/refactor requests continue to show their normal stage-board unchanged
+- [x] No regression in existing stage-board rendering for other flow types
+- [x] If a WorkflowRun somehow gets created for an ask request, the frontend does not crash or show empty stage cards
+
+> 验收核验 2026-06-27：实现已提交于 `69ad9ac`（前端轻量 ask UI）+ `7316d81`（runner 隔离 ask 不建 run）。证据：web typecheck EXIT=0、web 测试 96 passed（含 projection.test.ts 17 项）；`isAskRouted()` 跳过 stage-board、`buildRunProjection()` 对 `run.type==='ask'` 返回空 stages、`watch.ts` `kind !== 'ask'` 过滤。验收 2/3 的实际「AI 正在回答」态依赖后续 ask 回答后端（本任务 Out of Scope）。后续加固点：补 watch.ts ask-skip 单测。
 
 ## Related Files
 
