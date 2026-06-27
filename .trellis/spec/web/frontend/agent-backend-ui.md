@@ -350,6 +350,87 @@ isAskRouted(request)
   : detail ? renderLifecycle(detail, projection!) : renderQueuedLifecycle(request);
 ```
 
+## Scenario: task detail Context Flow panel
+
+### 1. Scope / Trigger
+
+- Trigger: changes to `apps/web/src/projection.ts`, `apps/web/src/page-task-detail.ts`,
+  run-detail DTOs, or context-governance evidence rendering.
+- The panel is a reviewer aid for understanding how context and artifacts move
+  across stages. It must not become a second backend read model.
+
+### 2. Signatures
+
+- Existing run detail endpoint: `GET /workflow-runs/:id`.
+- Existing context read model endpoint: `GET /workflow-runs/:id/context`.
+- Projection helper:
+  `buildContextFlowProjection(detail: RunDetail, contextGovernance: ContextGovernanceDto | null)`.
+- Task detail renderer: `renderContextFlowPanel(detail: RunDetail)`.
+
+### 3. Contracts
+
+- Do not add a dedicated Context Flow endpoint while `RunDetail` plus
+  `ContextGovernanceDto` can represent the evidence.
+- Web DTOs that mirror shared entities stay derived from `@ainp/shared`:
+  `AgentTaskDto.inputArtifactIds`, `AgentResultDto.outputArtifactIds`, and
+  `RunDetail.handoffs`.
+- `ContextGovernanceDto` is hand-aligned with
+  `apps/api/src/context-governance.ts` until a shared type exists. It must
+  include `contextPacks`, `contextRequests.baseContextPackArtifactId`, and
+  `stageHandoffs`.
+- Context Flow state is derived inside `projection.ts`; do not cache it in
+  module-scope state.
+- The task-detail panel is collapsed by default and uses
+  `data-details-key="context-flow:<runId>"`.
+- Artifact chips reuse the existing artifact viewer state and loading helpers:
+  `openArtifactViewers`, `toggleArtifactViewer`, `ensureArtifactContent`,
+  `renderArtifactInlineViewer`, and `artifactViewerScrollKey`.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| Context governance still loading | Render RunDetail-derived flow evidence and explain that context governance evidence is still loading. |
+| No flow evidence exists | Show an empty state distinct from the loading state. |
+| Artifact id is missing from `detail.artifacts` | Keep rendering the flow, mark the chip as missing, and record a collapsed warning. |
+| Output artifact from one stage appears as a later stage input | Render an `artifact_reuse` relation. |
+| `stageHandoffs` or handoff metadata is available | Render a `stage_handoff` relation with readable stage labels. |
+| `context_request` evidence is available | Render base/request/supplement artifacts as one relation chain. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: requirement output `art_req` appears as design input and the panel shows
+  a `需求分析 -> 方案设计` reuse relation.
+- Base: a run has no context-governance payload yet, but agent task inputs and
+  result outputs still render.
+- Bad: the UI opens a new endpoint, stores projected flow in global state, or
+  creates separate artifact-preview state for Context Flow chips.
+
+### 6. Tests Required
+
+- Projection tests should cover input/output joins, artifact reuse,
+  stage-handoff relations, context-request chains, and missing-artifact
+  defensive behavior.
+- Web typecheck must pass after DTO changes.
+- Manual smoke should open a task detail page with context governance available
+  and confirm the Context Flow panel is collapsed by default, expandable, and
+  artifact chips open the existing inline viewer.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+state.contextFlowByRun.set(runId, await api(`/workflow-runs/${runId}/context-flow`));
+```
+
+#### Correct
+
+```ts
+const model = contextGovernanceByRun.get(detail.run.id) ?? null;
+const flow = buildContextFlowProjection(detail, model);
+```
+
 ## Scenario: report center status projection
 
 ### 1. Scope / Trigger
