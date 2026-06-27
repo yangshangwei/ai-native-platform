@@ -1,0 +1,7 @@
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Canonical context build/render/audit contract; P4 must extend it with stage handoff behavior."}
+{"file":".trellis/spec/shared/backend/evidence-verifier-protocol.md","reason":"Existing HandoffRecord evidence semantics; P4 must not let handoff own workflow/gate status."}
+{"file":".trellis/spec/runner/backend/index.md","reason":"Runner backend spec index for orchestrator stage changes and tests."}
+{"file":".trellis/spec/api/backend/database.md","reason":"API persistence discipline; P4 should avoid new schema unless justified."}
+{"file":"docs/2026-06-27-context-management-p4-stage-handoff-requirements.md","reason":"P4 functional requirements and acceptance criteria."}
+{"file":"docs/2026-06-27-context-management-p4-stage-handoff-design.md","reason":"P4 backend architecture and data-flow design."}
+{"file":"docs/2026-06-27-context-management-p4-stage-handoff-tasks.md","reason":"P4 implementation milestones and verification plan."}

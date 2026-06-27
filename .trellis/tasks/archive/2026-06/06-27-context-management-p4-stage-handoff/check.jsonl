@@ -1,0 +1,6 @@
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Check P4 implementation against context injection/stage handoff protocol."}
+{"file":".trellis/spec/shared/backend/evidence-verifier-protocol.md","reason":"Check HandoffRecord evidence semantics remain bounded and non-authoritative."}
+{"file":".trellis/spec/runner/backend/index.md","reason":"Check runner orchestrator behavior and tests."}
+{"file":".trellis/spec/api/backend/database.md","reason":"Check API persistence remains migration-safe."}
+{"file":"docs/2026-06-27-context-management-p4-stage-handoff-requirements.md","reason":"Check implementation against P4 requirements."}
+{"file":"docs/2026-06-27-context-management-p4-stage-handoff-design.md","reason":"Check implementation matches planned architecture."}
