@@ -22,6 +22,11 @@ import type {
   AgentTaskKind,
   ContextRequest,
   ToolInvocation,
+  HandoffAdoptionDecision,
+  HandoffExpectedOutput,
+  HandoffRecord,
+  HandoffRole,
+  HandoffStatus,
   CoordinatorDecision,
   RequestMessage,
 } from '@ainp/shared';
@@ -199,6 +204,44 @@ export const api = {
 
   toolInvocation: (toolInvocation: ToolInvocation) =>
     request('POST', '/runner/events/tool-invocation', { toolInvocation }),
+
+  recordHandoff: (params: {
+    workflowRunId: string;
+    stepRunId?: string | null;
+    parentSessionId?: string | null;
+    childSessionId?: string | null;
+    fromRole: HandoffRole;
+    toRole: HandoffRole;
+    reason: string;
+    inputArtifactIds: string[];
+    expectedOutput: HandoffExpectedOutput;
+    stopCondition: string;
+    status?: HandoffStatus;
+    adoptionDecision?: HandoffAdoptionDecision;
+    outputArtifactIds?: string[];
+    metadata?: Record<string, unknown>;
+  }) =>
+    request<{ ok: boolean; handoff: HandoffRecord }>(
+      'POST',
+      '/runner/events/handoff',
+      params,
+    ).then((r) => r.handoff),
+
+  updateHandoff: (params: {
+    handoffId: string;
+    status?: HandoffStatus;
+    adoptionDecision?: HandoffAdoptionDecision;
+    childSessionId?: string | null;
+    outputArtifactIds?: string[];
+    metadata?: Record<string, unknown>;
+  }) => {
+    const { handoffId, ...body } = params;
+    return request<{ ok: boolean; handoff: HandoffRecord }>(
+      'POST',
+      `/runner/events/handoff/${encodeURIComponent(handoffId)}`,
+      body,
+    ).then((r) => r.handoff);
+  },
 
   stageTransition: (params: {
     workflowRunId: string;

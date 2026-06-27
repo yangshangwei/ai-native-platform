@@ -12,6 +12,10 @@
 {"file":"apps/api/src/routes/runner-events.ts","reason":"Runner event trust boundary for handoff lifecycle writes."}
 {"file":"apps/api/src/routes/workflow-runs.ts","reason":"Workflow-scoped read model for sessions/tools and new handoff endpoint/summary."}
 {"file":"apps/api/src/reports.ts","reason":"Completion/retro sidecar surfaces for handoff evidence and adoption decisions."}
+{"file":"apps/runner/src/api-client.ts","reason":"Runner API wrapper for handoff lifecycle event ingress."}
+{"file":"apps/runner/src/agents/types.ts","reason":"AgentTaskContext carries optional parent AgentSession for handoff child invocations."}
+{"file":"apps/runner/src/orchestrator.ts","reason":"RunCtx initialization for handoff runtime bookkeeping."}
+{"file":"apps/runner/src/orchestrator/types.ts","reason":"RunCtx handoff runtime context and InvokedAgent linkage types."}
 {"file":"apps/runner/src/orchestrator/invoke-skill.ts","reason":"AgentSession creation and parent session linkage patterns."}
 {"file":"apps/runner/src/orchestrator/steps.ts","reason":"Implementation/review/build-test runner evidence points where handoff signals integrate."}
 {"file":".trellis/tasks/06-27-bounded-multi-agent-handoff/research/handoff-slice.md","reason":"Task-specific current facts, gaps, and boundaries."}

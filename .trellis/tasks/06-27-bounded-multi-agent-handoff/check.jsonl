@@ -4,6 +4,7 @@
 {"file":"apps/api/test/workflow-runs-route.test.ts","reason":"Check workflow read models and handoff route behavior."}
 {"file":"apps/api/test/report-sidecars.test.ts","reason":"Check completion/retro sidecars include handoff evidence without bypassing gates."}
 {"file":"apps/runner/test/orchestrator-invoke-skill.test.ts","reason":"Check parent/child AgentSession behavior for bounded child invocations."}
+{"file":"apps/runner/test/orchestrator-run-stage.test.ts","reason":"Check review stage records bounded reviewer handoff evidence."}
 {"file":"apps/runner/test/orchestrator-build-test.test.ts","reason":"Check build/test failure handoff evidence does not bypass command/gate semantics."}
 {"file":"apps/runner/test/orchestrator-dispatch.test.ts","reason":"Check review/build dispatch ordering and handoff integration points."}
 {"file":".trellis/tasks/06-27-bounded-multi-agent-handoff/research/handoff-slice.md","reason":"Check E1-E3 scope and out-of-scope boundaries."}

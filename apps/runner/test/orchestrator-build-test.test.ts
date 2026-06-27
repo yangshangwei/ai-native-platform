@@ -27,6 +27,12 @@ function buildTestDeps() {
       stepFinished: vi.fn(async () => ({})),
       commandRun: vi.fn(async () => ({})),
       toolInvocation: vi.fn(async () => ({})),
+      postArtifact: vi.fn(async (params: { metadata?: Record<string, unknown> }) => ({
+        id: params.metadata?.reportKind === 'handoff_debugger_input'
+          ? 'art_debugger_input'
+          : 'art_debugger_analysis',
+      })),
+      recordHandoff: vi.fn(async () => ({})),
       mavenBuild: vi.fn(async (params: Record<string, unknown>) => {
         mavenBuildCalls.push(params);
         return {
@@ -147,6 +153,52 @@ describe('executeBuildTest (T3.2 command source)', () => {
     for (const input of commandInputs) {
       expect(input.extraAllow).toEqual(['npm test']);
     }
+  });
+
+  test('test gate failure records debugger handoff evidence without applying a fix', async () => {
+    const { deps, raw } = buildTestDeps();
+    raw.api.mavenBuild.mockResolvedValueOnce({
+      buildRun: { status: 'failed' },
+      compileGate: { status: 'pass' },
+      testGate: { status: 'fail' },
+    });
+    const c = runCtxFixture({
+      runArtifactsDir: mkdtempSync(join(tmpdir(), 'ainp-bt-debugger-')),
+    });
+
+    await expect(executeBuildTest(c, deps)).rejects.toThrow('test_gate failed');
+
+    expect(raw.api.postArtifact).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'other',
+      contentType: 'application/json',
+      metadata: expect.objectContaining({
+        reportKind: 'handoff_debugger_input',
+        phase: 'test_gate',
+      }),
+    }));
+    expect(raw.api.postArtifact).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'other',
+      contentType: 'text/markdown',
+      metadata: expect.objectContaining({
+        reportKind: 'handoff_debugger_analysis',
+        noAutoFixApplied: true,
+      }),
+    }));
+    expect(raw.api.recordHandoff).toHaveBeenCalledWith(expect.objectContaining({
+      fromRole: 'main',
+      toRole: 'debugger',
+      status: 'completed',
+      adoptionDecision: 'needs_review',
+      inputArtifactIds: ['art_debugger_input'],
+      outputArtifactIds: ['art_debugger_analysis'],
+      metadata: expect.objectContaining({
+        noAutoFixApplied: true,
+        compileCommandRunId: 'cmd_compile',
+        testCommandRunId: 'cmd_test',
+      }),
+    }));
+    expect(c.ok.value).toBe(false);
+    expect(raw.api.stepFinished).toHaveBeenCalledWith({ stepRunId: 'step_bt', status: 'failed' });
   });
 
   test('denied command records a denied ToolInvocation without posting CommandRun', async () => {

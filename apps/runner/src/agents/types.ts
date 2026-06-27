@@ -23,6 +23,8 @@ export interface AgentTaskContext {
   contextPack?: ContextPack;
   /** Context policy sensitive path patterns used for prompt-visible legacy inputs. */
   sensitivePathPatterns?: readonly string[];
+  /** Optional parent AgentSession when this invocation is a bounded child handoff. */
+  parentSessionId?: string | null;
 }
 
 export interface AgentArtifactOutput {

@@ -29,8 +29,8 @@ Implement Epic E from the Agent Runtime docs: make multi-agent collaboration exp
 - [x] API route tests prove valid handoffs are persisted and returned by workflow run.
 - [x] API route tests prove missing input artifact refs or expected output schema are rejected.
 - [x] API route tests prove child reviewer handoff cannot directly mutate WorkflowRun status.
-- [ ] Runner tests prove independent review handoff creates a child AgentSession and review evidence artifact/report reference.
-- [ ] Runner tests prove build/test failure debugger handoff creates analysis evidence without applying a fix or changing Gate Engine authority.
+- [x] Runner tests prove independent review handoff creates a child AgentSession and review evidence artifact/report reference.
+- [x] Runner tests prove build/test failure debugger handoff creates analysis evidence without applying a fix or changing Gate Engine authority.
 - [x] Completion report tests prove handoff evidence and adoption decisions appear in structured sidecar output.
 - [x] `bun test packages/shared/test apps/api/test apps/runner/test` passes for touched surfaces.
 - [x] `bun run eval` still passes.

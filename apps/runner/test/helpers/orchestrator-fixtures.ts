@@ -106,6 +106,10 @@ export function runCtxFixture(overrides: Partial<RunCtx> = {}): RunCtx {
     },
     contextRequestChain: [],
     draftsToPromote: [],
+    handoffContext: {
+      implementationSessionId: null,
+      implementationArtifactIds: [],
+    },
     ok: { value: true },
     ...overrides,
   };

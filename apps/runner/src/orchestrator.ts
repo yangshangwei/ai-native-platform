@@ -174,6 +174,10 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       contextPolicy,
       contextRequestChain: [],
       draftsToPromote: [] as PromoteDraftInput[],
+      handoffContext: {
+        implementationSessionId: null,
+        implementationArtifactIds: [],
+      },
       ok,
     };
 

@@ -86,6 +86,7 @@ export interface RunCtx {
   contextPolicy: ContextPolicy;
   contextRequestChain: ContextRequestCapture[];
   draftsToPromote: PromoteDraftInput[];
+  handoffContext: HandoffRuntimeContext;
   ok: OkRef;
 }
 
@@ -106,6 +107,11 @@ export interface ContextRequestCapture {
   supplementContextPackId: string;
   supplementContextPack: ContextPack;
   baseContextPackId: string;
+}
+
+export interface HandoffRuntimeContext {
+  implementationSessionId: string | null;
+  implementationArtifactIds: string[];
 }
 
 export interface InvokedAgent {

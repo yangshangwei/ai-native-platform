@@ -67,6 +67,7 @@ type StepApi = Pick<
   | 'awaitHuman'
   | 'commandRun'
   | 'toolInvocation'
+  | 'recordHandoff'
   | 'mavenBuild'
   | 'stageTransition'
   | 'generateCompletionReport'
@@ -316,6 +317,8 @@ export async function executeImplementation(
     [diffArtifact.id],
     `implementation produced ${changedFiles.length} changed file(s)`,
   );
+  c.handoffContext.implementationSessionId = agent.sessionId;
+  c.handoffContext.implementationArtifactIds = [diffArtifact.id];
   console.log(
     `[runner] implementation diff artifact ${diffArtifact.id} (files=${changedFiles.length})`,
   );
@@ -387,6 +390,14 @@ export async function executeBuildTest(
   });
   console.log(`[runner] compile command ${compileCr.status} (exit=${compileCr.exitCode})`);
   if (compileCr.status !== 'passed') {
+    await recordBuildFailureDebuggerHandoff(c, stepId, {
+      phase: 'compile',
+      compileCommandRunId: compileCr.id,
+      testCommandRunId: null,
+      compileGateStatus: null,
+      testGateStatus: null,
+      reason: `compile command ${compileCr.status} exit=${compileCr.exitCode ?? 'null'}`,
+    }, deps);
     c.ok.value = false;
     await deps.api.stepFinished({ stepRunId: stepId, status: 'failed' });
     throw new Error('compile command failed');
@@ -424,9 +435,153 @@ export async function executeBuildTest(
   const testOk = result.compileGate?.status === 'pass' && result.testGate?.status === 'pass';
   await deps.api.stepFinished({ stepRunId: stepId, status: testOk ? 'passed' : 'failed' });
   if (!testOk) {
+    await recordBuildFailureDebuggerHandoff(c, stepId, {
+      phase: 'test_gate',
+      compileCommandRunId: compileCr.id,
+      testCommandRunId: cr.id,
+      compileGateStatus: result.compileGate?.status ?? null,
+      testGateStatus: result.testGate?.status ?? null,
+      reason: `compile_gate=${result.compileGate?.status ?? 'n/a'} test_gate=${result.testGate?.status ?? 'n/a'}`,
+    }, deps);
     c.ok.value = false;
     throw new Error('test_gate failed');
   }
+}
+
+async function recordReviewHandoff(
+  c: RunCtx,
+  stepRunId: string,
+  childSessionId: string,
+  outputArtifactIds: string[],
+  deps: StepDeps,
+): Promise<void> {
+  const parentSessionId = c.handoffContext.implementationSessionId;
+  const inputArtifactIds = c.handoffContext.implementationArtifactIds;
+  if (!parentSessionId || inputArtifactIds.length === 0 || outputArtifactIds.length === 0) return;
+  await deps.api.recordHandoff({
+    workflowRunId: c.run.id,
+    stepRunId,
+    parentSessionId,
+    childSessionId,
+    fromRole: 'executor',
+    toRole: 'reviewer',
+    reason: 'Independent reviewer handoff after implementation output.',
+    inputArtifactIds,
+    expectedOutput: {
+      schemaVersion: 'ainp.handoff.review.v1',
+      artifactKind: 'other',
+      description: 'Review findings artifact for gate/report evidence.',
+    },
+    stopCondition: 'Stop after producing bounded review findings; do not mutate workflow or gate status.',
+    status: 'completed',
+    adoptionDecision: 'needs_review',
+    outputArtifactIds,
+    metadata: {
+      stage: 'review',
+      authority: 'gate_engine',
+    },
+  });
+}
+
+async function recordBuildFailureDebuggerHandoff(
+  c: RunCtx,
+  stepRunId: string,
+  input: {
+    phase: 'compile' | 'test_gate';
+    compileCommandRunId: string | null;
+    testCommandRunId: string | null;
+    compileGateStatus: string | null;
+    testGateStatus: string | null;
+    reason: string;
+  },
+  deps: StepDeps,
+): Promise<void> {
+  const outDir = join(c.runArtifactsDir, 'build_test', 'handoff');
+  await mkdir(outDir, { recursive: true });
+  const evidence = {
+    schemaVersion: 'ainp.handoff.debugger_input.v1',
+    workflowRunId: c.run.id,
+    stepRunId,
+    phase: input.phase,
+    compileCommandRunId: input.compileCommandRunId,
+    testCommandRunId: input.testCommandRunId,
+    compileGateStatus: input.compileGateStatus,
+    testGateStatus: input.testGateStatus,
+    reason: input.reason,
+  };
+  const evidenceBody = `${JSON.stringify(evidence, null, 2)}\n`;
+  const evidencePath = join(outDir, 'debugger-input.json');
+  await writeFile(evidencePath, evidenceBody, 'utf8');
+  const evidenceArtifact = await deps.api.postArtifact({
+    workflowRunId: c.run.id,
+    stepRunId,
+    kind: 'other',
+    uri: pathToFileUri(evidencePath),
+    size: Buffer.byteLength(evidenceBody, 'utf8'),
+    contentType: 'application/json',
+    metadata: {
+      schemaVersion: 'ainp.handoff.debugger_input.v1',
+      reportKind: 'handoff_debugger_input',
+      phase: input.phase,
+    },
+  });
+
+  const analysisBody = [
+    '# Debugger Handoff Analysis',
+    '',
+    `- Workflow Run: \`${c.run.id}\``,
+    `- Step Run: \`${stepRunId}\``,
+    `- Phase: ${input.phase}`,
+    `- Reason: ${input.reason}`,
+    `- Compile CommandRun: ${input.compileCommandRunId ?? '(none)'}`,
+    `- Test CommandRun: ${input.testCommandRunId ?? '(none)'}`,
+    '',
+    '## Recommendation',
+    '',
+    'Inspect the referenced command and gate evidence before entering a repair step. This handoff does not apply code changes or override Gate Engine status.',
+    '',
+  ].join('\n');
+  const analysisPath = join(outDir, 'debugger-analysis.md');
+  await writeFile(analysisPath, analysisBody, 'utf8');
+  const analysisArtifact = await deps.api.postArtifact({
+    workflowRunId: c.run.id,
+    stepRunId,
+    kind: 'other',
+    uri: pathToFileUri(analysisPath),
+    size: Buffer.byteLength(analysisBody, 'utf8'),
+    contentType: 'text/markdown',
+    metadata: {
+      schemaVersion: 'ainp.handoff.debugger.v1',
+      reportKind: 'handoff_debugger_analysis',
+      phase: input.phase,
+      noAutoFixApplied: true,
+    },
+  });
+
+  await deps.api.recordHandoff({
+    workflowRunId: c.run.id,
+    stepRunId,
+    fromRole: 'main',
+    toRole: 'debugger',
+    reason: `Build/test failure requires debugger review: ${input.reason}`,
+    inputArtifactIds: [evidenceArtifact.id],
+    expectedOutput: {
+      schemaVersion: 'ainp.handoff.debugger.v1',
+      artifactKind: 'other',
+      description: 'Root-cause and fix recommendation artifact; no code changes are applied.',
+    },
+    stopCondition: 'Stop after producing analysis evidence; parent workflow decides any repair step.',
+    status: 'completed',
+    adoptionDecision: 'needs_review',
+    outputArtifactIds: [analysisArtifact.id],
+    metadata: {
+      stage: 'build_test',
+      phase: input.phase,
+      noAutoFixApplied: true,
+      compileCommandRunId: input.compileCommandRunId,
+      testCommandRunId: input.testCommandRunId,
+    },
+  });
 }
 
 export async function executeVerifier(
@@ -772,6 +927,9 @@ export async function runStage(
     title: c.opts.title,
     artifactsDir: stepArtifactsDir,
     inputs: c.inputs,
+    parentSessionId: stage === 'review'
+      ? c.handoffContext.implementationSessionId
+      : null,
   });
   const artifactIds: string[] = [];
   for (const out of agent.outputs) {
@@ -808,6 +966,9 @@ export async function runStage(
     artifactIds,
     `${stage} produced ${artifactIds.length} artifact(s)`,
   );
+  if (stage === 'review') {
+    await recordReviewHandoff(c, step.id, agent.sessionId, artifactIds, deps);
+  }
   await deps.api.stepFinished({ stepRunId: step.id, status: 'passed' });
 
   if (rulebasedGateId) {

@@ -87,7 +87,7 @@ export async function invokeSkill(
   const baseAttempt = await invokeSkillAttempt(c, skill, skillCtx, {
     contextPack: baseContextPack,
     retryIndex: 0,
-    parentSessionId: null,
+    parentSessionId: skillCtx.parentSessionId ?? null,
     foundation,
   }, deps);
   if (!baseAttempt.contextRequest) return baseAttempt;

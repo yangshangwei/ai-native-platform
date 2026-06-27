@@ -17,6 +17,7 @@ import { runCtxFixture, skillFixture } from './helpers/orchestrator-fixtures';
 function agentFixture(outputs: InvokedAgent['outputs'] = []): InvokedAgent {
   return {
     taskId: 'task_stage',
+    sessionId: 'ags_stage',
     outputs,
     contextPack: { id: 'cp_stage' } as InvokedAgent['contextPack'],
     contextRequest: null,
@@ -44,6 +45,7 @@ function baseDeps(overrides: {
         return {};
       }),
       postArtifact,
+      recordHandoff: vi.fn(async () => ({})),
       runGate: vi.fn(async (params: { gateId: string }) => {
         calls.push(`runGate:${params.gateId}`);
         return { gate: { status: overrides.gateStatus ?? 'pass' } };
@@ -145,5 +147,41 @@ describe('runStage (de-closured)', () => {
     expect(raw.api.awaitHuman).not.toHaveBeenCalled();
     expect(raw.awaitApproval).not.toHaveBeenCalled();
     expect(c.ok.value).toBe(true);
+  });
+
+  test('review stage records bounded reviewer handoff from implementation session', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'runstage-review-handoff-'));
+    const reviewPath = join(dir, 'review.md');
+    await writeFile(reviewPath, '# Review\n\nNeeds follow-up.\n', 'utf8');
+    const agent = agentFixture([
+      { name: 'review.md', path: reviewPath, contentType: 'text/markdown', size: 26 },
+    ]);
+    const { deps, raw } = baseDeps({ agent });
+    const c = runCtxFixture({
+      handoffContext: {
+        implementationSessionId: 'ags_impl',
+        implementationArtifactIds: ['art_diff'],
+      },
+    });
+
+    await runStage(c, 'review', 'other', null, deps);
+
+    expect(raw.invokeSkill).toHaveBeenCalledWith(
+      c,
+      expect.anything(),
+      expect.objectContaining({
+        parentSessionId: 'ags_impl',
+      }),
+    );
+    expect(raw.api.recordHandoff).toHaveBeenCalledWith(expect.objectContaining({
+      parentSessionId: 'ags_impl',
+      childSessionId: 'ags_stage',
+      fromRole: 'executor',
+      toRole: 'reviewer',
+      status: 'completed',
+      adoptionDecision: 'needs_review',
+      inputArtifactIds: ['art_diff'],
+      outputArtifactIds: ['art_other'],
+    }));
   });
 });
