@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "agent-backend-fixture",
+  "title": "Fake agent backend records AgentSession trajectory",
+  "description": "Covers deterministic Runner invokeSkill behavior without calling real Claude Code or Codex CLIs.",
+  "kind": "agent_backend_fixture",
+  "input": {
+    "projectId": "eval_agent",
+    "workflowRunId": "run_eval_agent",
+    "title": "evaluate fake backend invocation",
+    "stage": "implementation",
+    "behavior": "success"
+  },
+  "expectations": {
+    "sessionStarted": true,
+    "sessionFinished": true,
+    "resultLinked": true,
+    "externalCliUsed": false
+  },
+  "variants": [
+    {
+      "id": "success",
+      "label": "Successful fake backend invocation",
+      "backend": "fake",
+      "expectations": {
+        "finalStatus": "success",
+        "errorObserved": false,
+        "contextRequestCaptured": false,
+        "outputCount": 1
+      }
+    },
+    {
+      "id": "failure",
+      "label": "Failing fake backend records failed session",
+      "backend": "fake",
+      "inputOverrides": {
+        "behavior": "failure",
+        "errorMessage": "eval fixture forced failure"
+      },
+      "expectations": {
+        "finalStatus": "failed",
+        "errorObserved": true,
+        "contextRequestCaptured": false,
+        "outputCount": 0
+      }
+    },
+    {
+      "id": "context-request",
+      "label": "Fake backend context_request is captured",
+      "backend": "fake",
+      "inputOverrides": {
+        "behavior": "context_request",
+        "contextRequest": {
+          "reason": "Need invokeSkill source for the eval fixture.",
+          "requestedRefs": ["code:apps/runner/src/orchestrator/invoke-skill.ts"],
+          "questions": ["Which function records AgentSession completion?"],
+          "priority": 1
+        }
+      },
+      "expectations": {
+        "finalStatus": "success",
+        "errorObserved": false,
+        "contextRequestCaptured": true,
+        "outputCount": 1
+      }
+    }
+  ]
+}

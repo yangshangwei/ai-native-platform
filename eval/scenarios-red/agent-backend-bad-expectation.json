@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "agent-backend-bad-expectation",
+  "title": "Red fixture fails on incorrect AgentSession expectation",
+  "description": "This scenario is intentionally excluded from the default eval suite; running it directly must exit non-zero.",
+  "kind": "agent_backend_fixture",
+  "input": {
+    "projectId": "eval_agent_red",
+    "workflowRunId": "run_eval_agent_red",
+    "title": "evaluate red fake backend expectation",
+    "stage": "implementation",
+    "behavior": "failure",
+    "errorMessage": "red fixture forced failure"
+  },
+  "expectations": {
+    "sessionStarted": true,
+    "sessionFinished": true,
+    "finalStatus": "success",
+    "resultLinked": true,
+    "errorObserved": false,
+    "externalCliUsed": false
+  }
+}

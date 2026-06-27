@@ -21,6 +21,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [Agent Backend Runtime](./agent-backend-runtime.md) | Runner backend selection, preflight, and streaming execution | Current |
 | [Coordinator Clarification Policy](./coordinator-clarification.md) | Grill Me routing and max clarification round semantics | Current |
+| [Eval Harness](./eval-harness.md) | Deterministic eval scenario contracts, including fake agent backend fixtures | Current |
 | [Flow Registry](./flow-registry.md) | FLOW_REGISTRY semantics, runWorkflow dispatch, and W2-3+ extension contract | Current |
 | [Context Injection Protocol](../../shared/backend/context-injection-protocol.md) | Provider-neutral ContextPack build/render/audit contract used by runner backends | Current |
 | [Evidence and Verifier Protocol](../../shared/backend/evidence-verifier-protocol.md) | Digest-backed evidence gates, completion reports, and UI verifier artifacts | Current |
