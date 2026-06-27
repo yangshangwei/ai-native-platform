@@ -19,6 +19,7 @@ describe('web workflow run projection', () => {
       run: {
         id: 'run_1',
         title: 'Add export flow',
+        type: 'feature',
         status: 'awaiting_human',
         currentStage: 'design',
         flowId: 'feature.standard',
@@ -52,6 +53,7 @@ describe('web workflow run projection', () => {
       run: {
         id: 'run_2',
         title: 'Fix tests',
+        type: 'feature',
         status: 'passed',
         currentStage: 'completion',
         flowId: 'feature.standard',
@@ -93,6 +95,7 @@ describe('web workflow run projection', () => {
     const passedRun: WorkflowRunDto = {
       id: 'run_passed',
       title: 'Shipped task',
+      type: 'feature',
       status: 'passed',
       currentStage: 'completion',
       flowId: 'feature.standard',
@@ -126,6 +129,7 @@ describe('web workflow run projection', () => {
       run: {
         id: 'run_failed_waiting_requirement',
         title: 'Captcha switch',
+        type: 'feature',
         status: 'failed',
         currentStage: 'completion',
         flowId: 'feature.standard',
@@ -265,11 +269,46 @@ describe('flow-aware lifecycle stages', () => {
 });
 
 describe('buildRunProjection for non-feature flows', () => {
+  it('returns an empty lifecycle for leaked ask runs', () => {
+    const projection = buildRunProjection({
+      run: {
+        id: 'run_ask',
+        title: 'Where is routing configured?',
+        type: 'ask',
+        status: 'running',
+        currentStage: 'init',
+        flowId: 'feature.standard',
+        startStage: null,
+        sourceBranch: 'main',
+        branch: 'ai/run_ask-question',
+        workspacePath: '/tmp/worktree',
+        projectId: 'proj_1',
+        createdAt: '2026-05-01T00:00:00.000Z',
+      },
+      steps: [],
+      commands: [],
+      gates: [],
+      artifacts: [],
+      builds: [],
+      tests: [],
+      approvals: [],
+      actions: [],
+      agentTasks: [],
+      agentResults: [],
+      audit: [],
+    });
+
+    expect(projection.stages).toEqual([]);
+    expect(projection.visibleStages).toEqual([]);
+    expect(projection.pendingGate).toBeNull();
+  });
+
   it('projects a refactor run against its own stages, not the feature pipeline', () => {
     const projection = buildRunProjection({
       run: {
         id: 'run_refactor',
         title: 'Extract service layer',
+        type: 'refactor',
         status: 'running',
         currentStage: 'plan',
         flowId: 'refactor.standard',
@@ -317,6 +356,7 @@ describe('buildRunProjection for non-feature flows', () => {
       run: {
         id: 'run_issue',
         title: 'Fix null pointer',
+        type: 'bugfix',
         status: 'awaiting_human',
         currentStage: 'review',
         flowId: 'issue.standard',

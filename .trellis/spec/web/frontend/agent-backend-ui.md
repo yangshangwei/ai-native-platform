@@ -287,6 +287,69 @@ panelHeader('等待你确认', copy.subtitle);
 button(copy.approveLabel, 'button primary');
 ```
 
+## Scenario: ask-routed task detail UI
+
+### 1. Scope / Trigger
+
+- Trigger: changes to `apps/web/src/page-task-detail.ts`, `apps/web/src/projection.ts`, Coordinator chat rendering, or request/run stream switching for read-only Q&A.
+- Applies when `WorkflowRequest.kind === 'ask'` or the persisted Coordinator decision is `proceed/routeCase='ask'`.
+
+### 2. Signatures
+
+- `WorkflowRequestDto.kind: 'ask' | null` is the primary discriminator.
+- Coordinator chat state can also identify ask with `decision.action === 'proceed' && decision.routeCase === 'ask'`.
+- `WorkflowRunDto.type` is derived from shared `WorkflowRun.type`; `buildRunProjection(detail)` must return an empty lifecycle when `detail.run.type === 'ask'`.
+- Request-channel stream events are read via `buildAgentStreamView({ kind: 'request', id: request.id })`.
+
+### 3. Contracts
+
+- Ask detail pages are chat-first. They show the Coordinator/chat panel and may show request-channel activity, but must not show lifecycle cards, current-stage panels, stage backend details, evidence panels, Runner controls, or "start Runner" calls to action.
+- Ask hero metrics must describe Q&A status and read-only execution, not `当前阶段` or `任务进度`.
+- Activity copy may surface the latest request-channel stream line while the system is live; once the request is terminal (`completed` or `cancelled`), the activity indicator disappears.
+- If a legacy ask `WorkflowRun` leaks into the frontend, projection must return `stages=[]` and `visibleStages=[]` so no empty or fallback feature stage board renders.
+- Keep ask detection defensive: `kind='ask'` wins immediately; Coordinator decision routeCase is a fallback for legacy rows.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| `request.kind === 'ask'` and no run exists | Render chat/ask next action; no stage board and no Runner start panel. |
+| Coordinator decision later loads as `routeCase='ask'` | Re-render into ask UI even if `kind` was missing on an older row. |
+| Request-channel stream is live | Show a lightweight activity indicator sourced from request stream state. |
+| Ask request is `completed` or `cancelled` | Hide the activity indicator. |
+| Leaked `detail.run.type === 'ask'` | `buildRunProjection()` returns empty stage arrays. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: user asks "Where is routing configured?" and the detail page shows chat plus read-only Q&A state, with no seven-card lifecycle.
+- Base: feature/bugfix/refactor task detail pages keep the normal reviewer hierarchy, lifecycle, evidence, and Runner controls.
+- Bad: ask detail shows `启动 Runner`, `当前阶段`, `任务进度 0/7`, or `feature.standard` lifecycle fallback.
+- Bad: an ask run missing `flowId` falls back to `feature.standard` and renders seven waiting cards.
+
+### 6. Tests Required
+
+- `apps/web/test/projection.test.ts` should cover leaked ask runs returning empty `stages` and `visibleStages`.
+- Task-detail DOM tests or manual smoke should cover ask pages rendering no `.stage-board`, no Runner control panel, and no lifecycle/current-stage panels.
+- Regression checks for ordinary feature/refactor/bugfix projections must continue to pass after adding ask guards.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+detail ? renderLifecycle(detail, projection!) : renderQueuedLifecycle(request);
+```
+
+This renders the default feature lifecycle for ask requests when no run-specific flow exists.
+
+#### Correct
+
+```ts
+isAskRouted(request)
+  ? renderAskActivityIndicator(request)
+  : detail ? renderLifecycle(detail, projection!) : renderQueuedLifecycle(request);
+```
+
 ## Scenario: report center status projection
 
 ### 1. Scope / Trigger

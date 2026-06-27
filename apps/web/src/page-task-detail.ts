@@ -96,6 +96,7 @@ import {
 } from './data-loading';
 import { knowledgeSuggestionItems, renderKnowledgeSuggestion } from './page-knowledge';
 import {
+  buildAgentStreamView,
   buildAgentStreamViewForRun,
   expandedStreamRunId,
   openExpandedStream,
@@ -128,20 +129,17 @@ function isAskRouted(request: WorkflowRequestDto): boolean {
   return decision?.action === 'proceed' && decision.routeCase === 'ask';
 }
 
-function renderAskActivityIndicator(request: WorkflowRequestDto): HTMLElement {
+function renderAskActivityIndicator(request: WorkflowRequestDto): HTMLElement | null {
   const status = request.status;
-  let label: string;
-  let hint: string;
   if (status === 'completed' || status === 'cancelled') {
-    label = '问答已结束';
-    hint = '回答已生成，请查看上方对话。';
-  } else if (status === 'awaiting_clarification') {
-    label = 'AI 正在回答';
-    hint = '问答模式：不开分支、不改文件，只回答问题。';
-  } else {
-    label = '等待处理';
-    hint = '问答请求已提交，等待回答。';
+    return null;
   }
+  const streamView = buildAgentStreamView({ kind: 'request', id: request.id });
+  const latestLine = streamView.lines.at(-1);
+  const isActive = streamView.status.cls === 'live' || streamView.events.length > 0;
+  if (!isActive && status !== 'awaiting_clarification') return null;
+  const label = streamView.status.cls === 'live' ? 'AI 正在回答' : '问答模式';
+  const hint = latestLine?.text.trim() || '不开分支、不改文件，只回答问题。';
   return el('section', {
     class: 'panel ask-activity-panel',
     children: [
@@ -152,6 +150,21 @@ function renderAskActivityIndicator(request: WorkflowRequestDto): HTMLElement {
           el('strong', { text: label }),
           el('p', { class: 'muted', text: hint }),
         ],
+      }),
+    ],
+  });
+}
+
+function renderAskNextActionPanel(request: WorkflowRequestDto): HTMLElement {
+  const done = request.status === 'completed' || request.status === 'cancelled';
+  return el('section', {
+    class: 'panel side-panel',
+    children: [
+      panelHeader('下一步', done ? '问答已结束' : '等待回答'),
+      el('p', {
+        text: done
+          ? '问答请求已经结束；可在对话记录中查看已保存内容。'
+          : '问答模式不会启动 Runner、创建分支或进入阶段流程；回答会出现在对话区。',
       }),
     ],
   });
@@ -269,6 +282,11 @@ function taskFocusSummary(
   detail: RunDetail | null,
   projection: ReturnType<typeof buildRunProjection> | null,
 ): { label: string; hint: string; kind: StatusKind } {
+  if (isAskRouted(request)) {
+    if (request.status === 'completed') return { label: '问答已完成', hint: '回答已生成，可查看对话记录', kind: 'good' };
+    if (request.status === 'cancelled') return { label: '问答已取消', hint: '请求已结束', kind: 'muted' };
+    return { label: '问答模式', hint: '不开分支、不改文件，只回答问题', kind: 'info' };
+  }
   if (!detail || !projection) {
     if (request.status === 'awaiting_clarification') return { label: '等待补充', hint: '请先回答需求澄清问题', kind: 'warn' };
     if (request.status === 'pending') return { label: '等待开始', hint: 'Runner 会自动认领任务', kind: 'info' };
@@ -324,9 +342,10 @@ export function renderTaskDetailPage(): HTMLElement {
 
   const detail = request.workflowRunId && data.activeDetail?.run.id === request.workflowRunId ? data.activeDetail : null;
   const projection = detail ? buildRunProjection(detail) : null;
+  const askRouted = isAskRouted(request);
   if (detail) clearCoordinatorReplyComposerState(request.id);
   const coordinatorPanel = renderCoordinatorChatPanel(request);
-  const nextActionPanel = () => renderTaskNextActionPanel(request, detail, projection);
+  const nextActionPanel = () => askRouted ? renderAskNextActionPanel(request) : renderTaskNextActionPanel(request, detail, projection);
   return el('section', {
     class: 'task-detail-grid',
     children: [
@@ -336,21 +355,21 @@ export function renderTaskDetailPage(): HTMLElement {
           renderTaskHero(request, detail, projection),
           el('div', { class: 'mobile-next-action', children: [nextActionPanel()] }),
           coordinatorPanel,
-          isAskRouted(request)
+          askRouted
             ? renderAskActivityIndicator(request)
             : detail ? renderLifecycle(detail, projection!) : renderQueuedLifecycle(request),
-          isAskRouted(request) ? null : renderCurrentStagePanel(request, detail, projection),
-          detail ? renderContextGovernancePanel(detail) : null,
-          isAskRouted(request) ? null : (detail ? renderStageBackendDetails(detail, projection!) : renderQueuedBackendDetails(request)),
+          askRouted ? null : renderCurrentStagePanel(request, detail, projection),
+          askRouted ? null : detail ? renderContextGovernancePanel(detail) : null,
+          askRouted ? null : (detail ? renderStageBackendDetails(detail, projection!) : renderQueuedBackendDetails(request)),
         ],
       }),
       el('aside', {
         class: 'workspace-side',
         children: [
           el('div', { class: 'desktop-next-action', children: [nextActionPanel()] }),
-          detail ? renderEvidencePanel(detail) : renderRequestDebugPanel(request, 'side-panel'),
-          renderRunnerControlPanel(),
-          detail ? renderAgentStreamPanel() : null,
+          askRouted ? renderRequestDebugPanel(request, 'ask-side-panel') : (detail ? renderEvidencePanel(detail) : renderRequestDebugPanel(request, 'side-panel')),
+          askRouted ? null : renderRunnerControlPanel(),
+          askRouted ? null : detail ? renderAgentStreamPanel() : null,
         ],
       }),
     ],
@@ -363,9 +382,29 @@ function renderTaskHero(
   projection: ReturnType<typeof buildRunProjection> | null,
 ): HTMLElement {
   const status = detail?.run.status ?? request.status;
-  const current = detail && projection ? STAGE_LABELS[projection.currentStage] : request.status === 'pending' ? '等待本地 Runner 自动认领' : 'Runner 已认领，正在准备运行';
+  const askRouted = isAskRouted(request);
+  const current = askRouted
+    ? request.status === 'completed'
+      ? '回答已完成'
+      : request.status === 'cancelled'
+        ? '问答已取消'
+        : '等待回答'
+    : detail && projection ? STAGE_LABELS[projection.currentStage] : request.status === 'pending' ? '等待本地 Runner 自动认领' : 'Runner 已认领，正在准备运行';
   const focus = taskFocusSummary(request, detail, projection);
   const progress = taskProgressMetric(projection);
+  const metrics = askRouted
+    ? [
+        metric('当前关注', focus.label, focus.hint, focus.kind),
+        metric('问答状态', current, requestStatusLabel(request.status), statusKind(request.status)),
+        metric('执行方式', '只读回答', '不开分支、不创建 Workflow Run', 'info' as const),
+        metric('所属项目', projectName(request.projectId), requestTypeLabel(request.type), 'info' as const),
+      ]
+    : [
+        metric('当前关注', focus.label, focus.hint, focus.kind),
+        metric('当前阶段', current, projection ? STAGE_HELP[projection.currentStage] : '系统会自动进入主流程', detail ? statusKind(detail.run.status) : statusKind(request.status)),
+        metric('任务进度', progress.value, progress.hint, progress.kind),
+        metric('所属项目', projectName(request.projectId), requestTypeLabel(request.type), 'info'),
+      ];
   return el('section', {
     class: 'hero-card task-hero',
     children: [
@@ -382,7 +421,9 @@ function renderTaskHero(
           }),
           el('h2', { text: request.title }),
           el('p', {
-            text: detail
+            text: askRouted
+              ? `${focus.hint}。当前状态是 ${current}。`
+              : detail
               ? `${focus.hint}。当前阶段是 ${current}。`
               : `${focus.hint}。当前阶段是 ${current}。`,
           }),
@@ -391,12 +432,7 @@ function renderTaskHero(
       }),
       el('div', {
         class: 'metric-grid',
-        children: [
-          metric('当前关注', focus.label, focus.hint, focus.kind),
-          metric('当前阶段', current, projection ? STAGE_HELP[projection.currentStage] : '系统会自动进入主流程', detail ? statusKind(detail.run.status) : statusKind(request.status)),
-          metric('任务进度', progress.value, progress.hint, progress.kind),
-          metric('所属项目', projectName(request.projectId), requestTypeLabel(request.type), 'info'),
-        ],
+        children: metrics,
       }),
     ],
   });

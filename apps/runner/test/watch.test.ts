@@ -1,5 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import type { CoordinatorDecision } from '@ainp/shared';
+import type { CoordinatorDecision, WorkflowRequest } from '@ainp/shared';
+
+type TestWorkflowRequest = Pick<
+  WorkflowRequest,
+  'id' | 'projectId' | 'title' | 'branch' | 'flowId' | 'startStage' | 'kind'
+>;
+
+function testRequest(overrides: Partial<TestWorkflowRequest> = {}): TestWorkflowRequest {
+  return {
+    id: 'wreq_1',
+    projectId: 'proj_1',
+    title: 'build UI workbench',
+    branch: 'main',
+    flowId: null,
+    startStage: null,
+    kind: null,
+    ...overrides,
+  };
+}
 
 function fakeDecision(overrides: Partial<CoordinatorDecision> = {}): CoordinatorDecision {
   return {
@@ -49,7 +67,7 @@ describe('runner watch workflow request processing', () => {
     const result = await processNextWorkflowRequest({
       runnerId: 'runner@test',
       listPending: async () => [
-        { id: 'wreq_1', projectId: 'proj_1', title: 'build UI workbench', branch: 'develop' },
+        testRequest({ id: 'wreq_1', title: 'build UI workbench', branch: 'develop' }),
       ],
       triage: async (req) => {
         calls.push(`triage:${req.id}`);
@@ -57,7 +75,7 @@ describe('runner watch workflow request processing', () => {
       },
       claim: async (requestId, runnerId) => {
         calls.push(`claim:${requestId}:${runnerId}`);
-        return { id: requestId, projectId: 'proj_1', title: 'build UI workbench', branch: 'develop' };
+        return testRequest({ id: requestId, title: 'build UI workbench', branch: 'develop' });
       },
       orchestrate: async (request, runType) => {
         calls.push(`orchestrate:${request.projectId}:${request.title}:${request.branch}:${runType}`);
@@ -85,14 +103,11 @@ describe('runner watch workflow request processing', () => {
     const result = await processNextWorkflowRequest({
       runnerId: 'runner@test',
       listPending: async () => [
-        { id: 'wreq_chat', projectId: 'proj_1', title: 'Build import workflow', branch: 'main' },
+        testRequest({ id: 'wreq_chat', title: 'Build import workflow' }),
       ],
       triage: async () => ({ action: 'proceed', runType: 'feature', decision: fakeDecision() }),
       claim: async (requestId) => ({
-        id: requestId,
-        projectId: 'proj_1',
-        title: 'Build import workflow',
-        branch: 'main',
+        ...testRequest({ id: requestId, title: 'Build import workflow' }),
       }),
       buildAgentTaskBrief: async (request) => {
         calls.push(`brief:${request.id}:${request.title}`);
@@ -133,9 +148,9 @@ describe('runner watch workflow request processing', () => {
     await expect(
       processNextWorkflowRequest({
         runnerId: 'runner@test',
-        listPending: async () => [{ id: 'wreq_fail', projectId: 'proj_1', title: 'bad task', branch: 'main' }],
+        listPending: async () => [testRequest({ id: 'wreq_fail', title: 'bad task' })],
         triage: async () => ({ action: 'proceed', runType: 'feature', decision: fakeDecision() }),
-        claim: async (requestId) => ({ id: requestId, projectId: 'proj_1', title: 'bad task', branch: 'main' }),
+        claim: async (requestId) => testRequest({ id: requestId, title: 'bad task' }),
         orchestrate: async () => {
           throw new Error('boom');
         },
@@ -154,7 +169,7 @@ describe('runner watch workflow request processing', () => {
 
     const result = await processNextWorkflowRequest({
       runnerId: 'runner@test',
-      listPending: async () => [{ id: 'wreq_p', projectId: 'proj_1', title: '权限', branch: 'main' }],
+      listPending: async () => [testRequest({ id: 'wreq_p', title: '权限' })],
       triage: async () => ({
         action: 'paused',
         decision: fakeDecision({
@@ -184,7 +199,7 @@ describe('runner watch workflow request processing', () => {
 
     const result = await processNextWorkflowRequest({
       runnerId: 'runner@test',
-      listPending: async () => [{ id: 'wreq_a', projectId: 'proj_1', title: 'cancel', branch: 'main' }],
+      listPending: async () => [testRequest({ id: 'wreq_a', title: 'cancel' })],
       triage: async () => ({
         action: 'aborted',
         decision: fakeDecision({
@@ -208,6 +223,76 @@ describe('runner watch workflow request processing', () => {
     expect(calls).toEqual([]);
   });
 
+  it('skips ask pending requests without letting them block normal work', async () => {
+    const { processNextWorkflowRequest } = await import('../src/cmd/watch');
+    const calls: string[] = [];
+
+    const result = await processNextWorkflowRequest({
+      runnerId: 'runner@test',
+      listPending: async () => [
+        testRequest({ id: 'wreq_ask', title: 'Where is the router?', kind: 'ask' }),
+        testRequest({ id: 'wreq_normal', title: 'build normal task' }),
+      ],
+      triage: async (req) => {
+        calls.push(`triage:${req.id}`);
+        return { action: 'proceed', runType: 'feature', decision: fakeDecision() };
+      },
+      claim: async (requestId) => {
+        calls.push(`claim:${requestId}`);
+        return testRequest({ id: requestId, title: 'build normal task' });
+      },
+      orchestrate: async (request, runType) => {
+        calls.push(`orchestrate:${request.id}:${runType}`);
+        return { workflowRunId: 'run_normal', ok: true };
+      },
+      complete: async (requestId) => {
+        calls.push(`complete:${requestId}`);
+      },
+    });
+
+    expect(result).toBe('processed');
+    expect(calls).toEqual([
+      'triage:wreq_normal',
+      'claim:wreq_normal',
+      'orchestrate:wreq_normal:feature',
+      'complete:wreq_normal',
+    ]);
+  });
+
+  it('does not claim or orchestrate requests triaged as ask', async () => {
+    const { processNextWorkflowRequest } = await import('../src/cmd/watch');
+    const calls: string[] = [];
+
+    const result = await processNextWorkflowRequest({
+      runnerId: 'runner@test',
+      listPending: async () => [testRequest({ id: 'wreq_question', title: 'Where is routing configured?' })],
+      triage: async () => {
+        calls.push('triage');
+        return {
+          action: 'proceed',
+          runType: 'ask',
+          decision: fakeDecision({
+            decision: { action: 'proceed', routeCase: 'ask', runType: 'ask', reason: 'question' },
+          }),
+        };
+      },
+      claim: async () => {
+        calls.push('claim');
+        return null;
+      },
+      orchestrate: async () => {
+        calls.push('orchestrate');
+        return { workflowRunId: 'run_should_not_exist', ok: true };
+      },
+      complete: async () => {
+        calls.push('complete');
+      },
+    });
+
+    expect(result).toBe('paused');
+    expect(calls).toEqual(['triage']);
+  });
+
   // 05-08 new-task-form-flow-startstage-override (PRD Q1=A): explicit user
   // flowId in the request makes the runner skip the Coordinator round-trip
   // and derive runType from FLOW_REGISTRY[flowId].kind.
@@ -218,14 +303,11 @@ describe('runner watch workflow request processing', () => {
     const result = await processNextWorkflowRequest({
       runnerId: 'runner@test',
       listPending: async () => [
-        {
+        testRequest({
           id: 'wreq_pinned',
-          projectId: 'proj_1',
           title: 'refactor entity layer',
-          branch: 'main',
           flowId: 'refactor.standard',
-          startStage: null,
-        },
+        }),
       ],
       triage: async () => {
         calls.push('triage:should-not-run');
@@ -233,14 +315,11 @@ describe('runner watch workflow request processing', () => {
       },
       claim: async (requestId, runnerId) => {
         calls.push(`claim:${requestId}:${runnerId}`);
-        return {
+        return testRequest({
           id: requestId,
-          projectId: 'proj_1',
           title: 'refactor entity layer',
-          branch: 'main',
           flowId: 'refactor.standard',
-          startStage: null,
-        };
+        });
       },
       orchestrate: async (request, runType) => {
         calls.push(
@@ -268,21 +347,19 @@ describe('runner watch workflow request processing', () => {
     await processNextWorkflowRequest({
       runnerId: 'runner@test',
       listPending: async () => [
-        {
+        testRequest({
           id: 'wreq_resume',
-          projectId: 'proj_1',
           title: 'resume from review',
           branch: 'develop',
           flowId: 'feature.standard',
           startStage: 'review',
-        },
+        }),
       ],
       triage: async () => {
         throw new Error('triage should not run when flowId is pinned');
       },
-      claim: async (requestId) => ({
+      claim: async (requestId) => testRequest({
         id: requestId,
-        projectId: 'proj_1',
         title: 'resume from review',
         branch: 'develop',
         flowId: 'feature.standard',

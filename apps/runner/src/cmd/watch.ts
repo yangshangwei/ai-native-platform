@@ -14,11 +14,11 @@ import { getConfig } from '../config-client';
 
 type PendingRequest = Pick<
   WorkflowRequest,
-  'id' | 'projectId' | 'title' | 'branch' | 'flowId' | 'startStage'
+  'id' | 'projectId' | 'title' | 'branch' | 'flowId' | 'startStage' | 'kind'
 >;
 type ClaimedRequest = Pick<
   WorkflowRequest,
-  'id' | 'projectId' | 'title' | 'branch' | 'flowId' | 'startStage'
+  'id' | 'projectId' | 'title' | 'branch' | 'flowId' | 'startStage' | 'kind'
 >;
 
 export type TriageOutcome =
@@ -60,7 +60,7 @@ export interface WatchOpts {
 export async function processNextWorkflowRequest(
   deps: ProcessNextWorkflowRequestDeps,
 ): Promise<WatchProcessResult> {
-  const [next] = await deps.listPending();
+  const next = (await deps.listPending()).find((request) => request.kind !== 'ask');
   if (!next) return 'idle';
 
   // 05-08 new-task-form-flow-startstage-override (PRD Q1=A): when the user
@@ -79,6 +79,10 @@ export async function processNextWorkflowRequest(
     const triage = await deps.triage(next);
     if (triage.action === 'paused') return 'paused';
     if (triage.action === 'aborted') return 'aborted';
+    if (triage.runType === 'ask') {
+      console.log(`[runner] request ${next.id} routed as ask; skipping WorkflowRun creation`);
+      return 'paused';
+    }
     runType = triage.runType;
   }
 
@@ -182,6 +186,11 @@ export async function defaultTriage(req: PendingRequest): Promise<TriageOutcome>
   );
 
   if (decision.decision.action === 'proceed') {
+    if (decision.decision.runType === 'ask') {
+      await api.setRequestStatus({ requestId: req.id, status: 'awaiting_clarification' });
+      console.log(`[runner] request ${req.id} -> awaiting_clarification (ask route skips WorkflowRun)`);
+      return { action: 'paused', decision };
+    }
     return { action: 'proceed', runType: decision.decision.runType, decision };
   }
   if (decision.decision.action === 'pause_for_human') {
@@ -211,7 +220,7 @@ export async function cmdWatch(opts: WatchOpts = {}): Promise<void> {
   do {
     const result = await processNextWorkflowRequest({
       runnerId,
-      listPending: async () => (await api.listWorkflowRequests({ status: 'pending' })).items,
+      listPending: async () => (await api.listWorkflowRequests({ status: 'pending' })).items.filter((request) => request.kind !== 'ask'),
       triage: defaultTriage,
       claim: (requestId, id) => api.claimWorkflowRequest({ requestId, runnerId: id }),
       buildAgentTaskBrief: defaultAgentTaskBrief,

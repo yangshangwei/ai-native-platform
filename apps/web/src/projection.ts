@@ -199,6 +199,7 @@ export type WorkflowRunDto = Pick<
   WorkflowRun,
   | 'id'
   | 'projectId'
+  | 'type'
   | 'title'
   | 'status'
   | 'currentStage'
@@ -427,6 +428,25 @@ export function latestArtifactOfKind<T extends Pick<ArtifactDto, 'kind' | 'creat
 export function buildRunProjection(detail: RunDetail): RunProjection {
   const flowId = (detail.run.flowId ?? FALLBACK_FLOW_ID) as FlowId;
   const startStage = detail.run.startStage ?? null;
+  if (detail.run.type === 'ask') {
+    return {
+      currentStage: detail.run.currentStage,
+      flowId,
+      startStage,
+      pendingGate: null,
+      stages: [],
+      visibleStages: [],
+      summary: {
+        commands: detail.commands.length,
+        gatesPassed: detail.gates.filter((g) => g.status === 'pass').length,
+        gatesWarned: detail.gates.filter((g) => g.status === 'warn').length,
+        gatesFailed: detail.gates.filter((g) => g.status === 'fail').length,
+        testsTotal: detail.tests.reduce((sum, test) => sum + test.total, 0),
+        testsPassed: detail.tests.reduce((sum, test) => sum + test.passed, 0),
+        buildStatus: detail.builds.at(-1)?.status ?? 'not_started',
+      },
+    };
+  }
   const flowStages = stagesForRun(flowId, startStage);
   const effectiveCurrentStage = effectiveStageForProjection(detail);
   const currentIndex = flowStages.indexOf(effectiveCurrentStage);
