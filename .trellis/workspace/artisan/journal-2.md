@@ -104,3 +104,36 @@ Implemented the Runner-owned ToolInvocation ledger for command and diff capture 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 56: Memory Lifecycle MVP
+
+**Date**: 2026-06-27
+**Task**: Memory Lifecycle MVP
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Implemented memory lifecycle metadata normalization, review-status validation, evidence-only context/router behavior for stale or review-required memory, usage metadata coverage, and the shared context governance spec update.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `660c928` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
