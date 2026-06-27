@@ -1915,3 +1915,36 @@ Delivered current architecture, context management, agent orchestration, runtime
 ### Next Steps
 
 - None - task complete
+
+
+## Session 51: AgentSession trajectory ledger
+
+**Date**: 2026-06-27
+**Task**: AgentSession trajectory ledger
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Implemented the AgentSession trajectory ledger across shared types, API persistence/read models, runner event reporting, and verification tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7b8db66` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

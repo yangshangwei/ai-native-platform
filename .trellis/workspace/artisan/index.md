@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 50
+- **Total Sessions**: 51
 - **Last Active**: 2026-06-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1917 | Active |
+| `journal-1.md` | ~1950 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 51 | 2026-06-27 | AgentSession trajectory ledger | `7b8db66` | `feat/context-injection-layer-mvp` |
 | 50 | 2026-06-27 | Technical architecture documentation handoff | `758e8ef`, `8989873`, `4e1fb8f`, `9d4ae83` | `feat/context-injection-layer-mvp` |
 | 49 | 2026-06-26 | Extend Grill Me to ask routing | `e4af594` | `feat/context-injection-layer-mvp` |
 | 48 | 2026-06-26 | Fix Coordinator Grill Me routing | `3dfb230` | `feat/context-injection-layer-mvp` |
