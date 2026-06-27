@@ -21,6 +21,7 @@ import type {
   ProjectAgentBackendKind,
   ProjectSourceAuthKind,
   ProjectSourceKind,
+  StageProducedArtifactRef,
   WorkflowRequest,
 } from '@ainp/shared/browser';
 
@@ -165,6 +166,10 @@ export type DigestVerificationDto =
   | { algorithm: 'sha256'; expected: string; actual: string; verified: boolean }
   | { algorithm: 'sha256'; expected: null; actual: string; verified: null };
 
+/**
+ * Hand-aligned with the api-private read model in
+ * apps/api/src/context-governance.ts. No shared source exists for this DTO yet.
+ */
 export interface ContextGovernanceDto {
   schemaVersion: 'ainp.context_governance.v1';
   workflowRunId: string;
@@ -176,7 +181,17 @@ export interface ContextGovernanceDto {
     taskId: string | null;
     stage: string | null;
     mode: string | null;
+    role: string | null;
+    invocationId: string | null;
+    retryIndex: number | null;
+    contextRequestId: string | null;
+    baseContextPackId: string | null;
+    baseContextPackArtifactId: string | null;
+    supplement: unknown;
     manifest: ContextManifestDto[];
+    retrievalHints: unknown[];
+    calibrationSignals: unknown[];
+    contextPack: unknown | null;
   }>;
   manifest: ContextManifestDto[];
   sourceRefs: Array<{
@@ -206,11 +221,13 @@ export interface ContextGovernanceDto {
     sourceName: string | null;
     taskId: string | null;
     baseContextPackId: string | null;
+    baseContextPackArtifactId: string | null;
     supplementContextPackId: string | null;
     requestArtifactId: string | null;
     supplementArtifactId: string | null;
     createdAt: string;
   }>;
+  stageHandoffs: ContextStageHandoffDto[];
   metrics: {
     impactCoverage: RatioMetricDto;
     evidenceTraceability: RatioMetricDto;
@@ -224,6 +241,19 @@ export interface ContextGovernanceDto {
       explanation: string;
     };
   };
+}
+
+export interface ContextStageHandoffDto {
+  id: string;
+  artifactId: string | null;
+  fromStage: string;
+  toStage: string;
+  summary: string;
+  decisions: string[];
+  risks: string[];
+  openQuestions: string[];
+  producedArtifacts: StageProducedArtifactRef[];
+  createdAt: string;
 }
 
 export interface ContextManifestDto {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   USER_VISIBLE_STAGES,
   artifactViewerScrollKey,
+  buildContextFlowProjection,
   buildRunProjection,
   isReadableFileArtifact,
   latestArtifactOfKind,
@@ -212,6 +213,260 @@ describe('web workflow run projection', () => {
         'design_doc',
       )?.id,
     ).toBe('new');
+  });
+
+  it('builds context flow stages from agent task inputs and result outputs', () => {
+    const detail = {
+      run: {
+        id: 'run_flow',
+        title: 'Context flow',
+        type: 'feature',
+        status: 'running',
+        currentStage: 'design',
+        flowId: 'feature.standard',
+        startStage: null,
+        sourceBranch: 'main',
+        branch: 'ai/run_flow-context',
+        workspacePath: '/tmp/worktree',
+        projectId: 'proj_1',
+        createdAt: '2026-05-01T00:00:00.000Z',
+      },
+      steps: [
+        { id: 'step_req', stage: 'requirement', name: 'requirement', status: 'passed' },
+        { id: 'step_design', stage: 'design', name: 'design', status: 'running' },
+      ],
+      commands: [],
+      toolInvocations: [],
+      gates: [],
+      artifacts: [
+        { id: 'art_context', kind: 'context_pack', stepRunId: null, uri: 'file:///tmp/context-pack.json', createdAt: '2026-05-01T00:00:00.001Z', contentType: 'application/json', metadata: { output: 'context-pack.json' } },
+        { id: 'art_req', kind: 'requirement_draft', stepRunId: 'step_req', uri: 'file:///tmp/requirement.md', createdAt: '2026-05-01T00:00:00.002Z', contentType: 'text/markdown', metadata: { output: 'requirement.md' } },
+        { id: 'art_design', kind: 'design_doc', stepRunId: 'step_design', uri: 'file:///tmp/design.md', createdAt: '2026-05-01T00:00:00.003Z', contentType: 'text/markdown', metadata: { output: 'design.md' } },
+      ],
+      builds: [],
+      tests: [],
+      approvals: [],
+      actions: [],
+      agentTasks: [
+        { id: 'task_req', stepRunId: 'step_req', kind: 'requirement_draft', backend: 'codex', inputArtifactIds: ['art_context'], createdAt: '2026-05-01T00:00:00.004Z' },
+        { id: 'task_design', stepRunId: 'step_design', kind: 'design_draft', backend: 'codex', inputArtifactIds: ['art_req'], createdAt: '2026-05-01T00:00:00.005Z' },
+      ],
+      agentResults: [
+        { id: 'result_req', taskId: 'task_req', status: 'success', summary: 'requirement', outputArtifactIds: ['art_req'], completedAt: '2026-05-01T00:00:00.006Z' },
+        { id: 'result_design', taskId: 'task_design', status: 'success', summary: 'design', outputArtifactIds: ['art_design'], completedAt: '2026-05-01T00:00:00.007Z' },
+      ],
+      handoffs: [],
+      stepCheckpoints: [],
+      audit: [],
+    };
+
+    const flow = buildContextFlowProjection(detail, null);
+    const requirement = flow.stages.find((stage) => stage.id === 'requirement');
+    const design = flow.stages.find((stage) => stage.id === 'design');
+
+    expect(requirement?.inputs.map((artifact) => artifact.artifactId)).toEqual(['art_context']);
+    expect(requirement?.outputs.map((artifact) => artifact.artifactId)).toEqual(['art_req']);
+    expect(design?.inputs.map((artifact) => artifact.artifactId)).toEqual(['art_req']);
+    expect(design?.outputs.map((artifact) => artifact.artifactId)).toEqual(['art_design']);
+    expect(flow.relations).toContainEqual(expect.objectContaining({
+      kind: 'artifact_reuse',
+      artifactId: 'art_req',
+      fromStage: 'requirement',
+      toStage: 'design',
+    }));
+  });
+
+  it('adds context requests, checkpoints, context packs, and stage handoff relations', () => {
+    const detail = {
+      run: {
+        id: 'run_governance',
+        title: 'Governance flow',
+        type: 'feature',
+        status: 'running',
+        currentStage: 'design',
+        flowId: 'feature.standard',
+        startStage: null,
+        sourceBranch: 'main',
+        branch: 'ai/run_governance-context',
+        workspacePath: '/tmp/worktree',
+        projectId: 'proj_1',
+        createdAt: '2026-05-01T00:00:00.000Z',
+      },
+      steps: [
+        { id: 'step_req', stage: 'requirement', name: 'requirement', status: 'passed' },
+        { id: 'step_design', stage: 'design', name: 'design', status: 'running' },
+      ],
+      commands: [],
+      toolInvocations: [],
+      gates: [],
+      artifacts: [
+        { id: 'art_handoff', kind: 'other', stepRunId: 'step_req', uri: 'file:///tmp/stage_handoff.requirement.design.md', createdAt: '2026-05-01T00:00:00.001Z', contentType: 'text/markdown', metadata: { output: 'stage_handoff.requirement.design.md' } },
+        { id: 'art_base', kind: 'context_pack', stepRunId: null, uri: 'file:///tmp/base-context.json', createdAt: '2026-05-01T00:00:00.002Z', contentType: 'application/json', metadata: { output: 'base-context.json' } },
+        { id: 'art_request', kind: 'other', stepRunId: null, uri: 'file:///tmp/context-request.json', createdAt: '2026-05-01T00:00:00.003Z', contentType: 'application/json', metadata: { output: 'context-request.json' } },
+        { id: 'art_supplement', kind: 'context_pack', stepRunId: null, uri: 'file:///tmp/supplement-context.json', createdAt: '2026-05-01T00:00:00.004Z', contentType: 'application/json', metadata: { output: 'supplement-context.json' } },
+      ],
+      builds: [],
+      tests: [],
+      approvals: [],
+      actions: [],
+      agentTasks: [
+        { id: 'task_design', stepRunId: 'step_design', kind: 'design_draft', backend: 'codex', inputArtifactIds: ['art_base'], createdAt: '2026-05-01T00:00:00.005Z' },
+      ],
+      agentResults: [],
+      handoffs: [
+        {
+          id: 'handoff_run_detail',
+          fromRole: 'main',
+          toRole: 'executor',
+          reason: 'handoff requirement to design',
+          inputArtifactIds: ['art_handoff'],
+          status: 'completed',
+          adoptionDecision: 'adopted',
+          outputArtifactIds: ['art_handoff'],
+          createdAt: '2026-05-01T00:00:00.006Z',
+          metadata: {
+            stageHandoff: {
+              schemaVersion: 'ainp.stage_handoff.v1',
+              workflowRunId: 'run_governance',
+              fromStage: 'requirement',
+              toStage: 'design',
+              summary: 'Requirement evidence is ready for design.',
+              decisions: [],
+              risks: [],
+              openQuestions: [],
+              producedArtifacts: [{ key: 'handoff', artifactId: 'art_handoff', kind: 'other', injectionPreference: 'summary' }],
+              createdAt: '2026-05-01T00:00:00.006Z',
+            },
+          },
+        },
+      ],
+      stepCheckpoints: [
+        {
+          id: 'checkpoint_design',
+          workflowRunId: 'run_governance',
+          stepRunId: 'step_design',
+          stage: 'design',
+          status: 'started',
+          retryIndex: 0,
+          contextPackId: 'pack_design',
+          agentSessionIds: [],
+          toolInvocationIds: [],
+          inputArtifactIds: ['art_base'],
+          outputArtifactIds: [],
+          gateRunIds: [],
+          commandRunIds: [],
+          startedAt: '2026-05-01T00:00:00.007Z',
+          completedAt: null,
+          failureReason: null,
+        },
+      ],
+      audit: [],
+    };
+    const governance = {
+      schemaVersion: 'ainp.context_governance.v1',
+      workflowRunId: 'run_governance',
+      projectId: 'proj_1',
+      contextPacks: [
+        {
+          contextPackId: 'pack_design',
+          source: 'artifact.metadata',
+          artifactId: 'art_base',
+          taskId: 'task_design',
+          stage: 'design',
+          mode: 'full',
+          role: 'base',
+          invocationId: 'inv_1',
+          retryIndex: 0,
+          contextRequestId: 'ctx_req_1',
+          baseContextPackId: null,
+          baseContextPackArtifactId: null,
+          supplement: null,
+          manifest: [],
+          retrievalHints: [],
+          calibrationSignals: [],
+          contextPack: null,
+        },
+      ],
+      manifest: [],
+      sourceRefs: [],
+      trustLevels: {},
+      budgetDecisions: [],
+      contextRequests: [
+        {
+          id: 'ctx_req_1',
+          actionId: 'act_1',
+          status: 'completed',
+          priority: 1,
+          reason: 'Need design evidence',
+          requestedRefs: ['docs/design.md'],
+          questions: [],
+          sourceName: 'design',
+          taskId: 'task_design',
+          baseContextPackId: 'pack_base',
+          baseContextPackArtifactId: 'art_base',
+          supplementContextPackId: 'pack_supplement',
+          requestArtifactId: 'art_request',
+          supplementArtifactId: 'art_supplement',
+          createdAt: '2026-05-01T00:00:00.008Z',
+        },
+      ],
+      stageHandoffs: [
+        {
+          id: 'handoff_governance',
+          artifactId: 'art_handoff',
+          fromStage: 'requirement',
+          toStage: 'design',
+          summary: 'Requirement evidence is ready for design.',
+          decisions: [],
+          risks: [],
+          openQuestions: [],
+          producedArtifacts: [{ key: 'handoff', artifactId: 'art_handoff', kind: 'other', injectionPreference: 'summary' }],
+          createdAt: '2026-05-01T00:00:00.009Z',
+        },
+      ],
+      metrics: {
+        impactCoverage: { value: 1, numerator: 1, denominator: 1, explanation: '' },
+        evidenceTraceability: { value: 1, numerator: 1, denominator: 1, explanation: '' },
+        irrelevantContextRatio: { value: 0, numerator: 0, denominator: 1, explanation: '' },
+        contextRequestCount: { value: 1, explanation: '' },
+        downstreamReworkSignal: {
+          value: 0,
+          rejectedApprovals: 0,
+          failedGates: 0,
+          failedAgentResults: 0,
+          explanation: '',
+        },
+      },
+    };
+
+    const flow = buildContextFlowProjection(detail, governance);
+    const design = flow.stages.find((stage) => stage.id === 'design');
+
+    expect(design?.contextPacks.map((pack) => pack.contextPackId)).toEqual(['pack_design']);
+    expect(design?.checkpoints.map((checkpoint) => checkpoint.contextPackId)).toEqual(['pack_design']);
+    expect(flow.relations).toContainEqual(expect.objectContaining({
+      kind: 'stage_handoff',
+      handoffId: 'handoff_governance',
+      fromStage: 'requirement',
+      toStage: 'design',
+    }));
+    expect(flow.relations).toContainEqual(expect.objectContaining({
+      kind: 'stage_handoff',
+      handoffId: 'handoff_run_detail',
+      fromStage: 'requirement',
+      toStage: 'design',
+    }));
+    const contextRequest = flow.relations.find((relation) => relation.kind === 'context_request');
+    expect(contextRequest).toMatchObject({
+      kind: 'context_request',
+      requestId: 'ctx_req_1',
+      status: 'completed',
+    });
+    expect(contextRequest?.kind === 'context_request' ? contextRequest.artifacts.map((item) => item.role) : []).toEqual([
+      'base',
+      'request',
+      'supplement',
+    ]);
   });
 });
 

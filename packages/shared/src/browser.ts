@@ -15,6 +15,7 @@ export * from './types/build';
 export * from './types/agent';
 export * from './types/agent-session';
 export * from './types/tool-invocation';
+export * from './types/handoff';
 export * from './types/step-checkpoint';
 export * from './types/graph-runtime';
 export * from './types/agent-event';

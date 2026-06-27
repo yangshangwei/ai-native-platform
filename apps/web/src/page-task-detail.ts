@@ -28,6 +28,7 @@ import {
   visibleStagesForRun,
   artifactViewerScrollKey,
   buildAcceptanceChecklist,
+  buildContextFlowProjection,
   buildRunProjection,
   changedFilesFromDiff,
   isReadableFileArtifact,
@@ -36,6 +37,9 @@ import {
   parseDesignArtifact,
   parseRequirementArtifact,
   type ArtifactDto,
+  type ContextFlowArtifactRef,
+  type ContextFlowRelation,
+  type ContextFlowStage,
   type DesignDoc,
   type GateRunDto,
   type ReportableStatus,
@@ -360,6 +364,7 @@ export function renderTaskDetailPage(): HTMLElement {
             : detail ? renderLifecycle(detail, projection!) : renderQueuedLifecycle(request),
           askRouted ? null : renderCurrentStagePanel(request, detail, projection),
           askRouted ? null : detail ? renderContextGovernancePanel(detail) : null,
+          askRouted ? null : detail ? renderContextFlowPanel(detail) : null,
           askRouted ? null : (detail ? renderStageBackendDetails(detail, projection!) : renderQueuedBackendDetails(request)),
         ],
       }),
@@ -662,6 +667,284 @@ function renderContextGovernancePanel(detail: RunDetail): HTMLElement {
       }),
     ],
   });
+}
+
+function renderContextFlowPanel(detail: RunDetail): HTMLElement {
+  const contextGovernance = contextGovernanceByRun.get(detail.run.id) ?? null;
+  const contextLoaded = contextGovernance !== null;
+  const projection = buildContextFlowProjection(detail, contextGovernance);
+  const stageEvidenceCount = projection.stages.reduce(
+    (sum, stage) => sum + stage.inputs.length + stage.outputs.length + stage.contextPacks.length + stage.checkpoints.length,
+    0,
+  );
+  const evidenceCount = stageEvidenceCount + projection.relations.length;
+  return el('section', {
+    class: 'panel doc-panel structured-panel diagnostic-panel context-flow-panel',
+    children: [
+      panelHeader('Context Flow', '查看上下文、产物和阶段交接如何流转。'),
+      el('details', {
+        class: 'raw-details diagnostic-shell context-flow-shell',
+        attrs: { 'data-details-key': `context-flow:${detail.run.id}` },
+        children: [
+          el('summary', {
+            children: [
+              el('span', { text: '查看上下文流转' }),
+              el('span', {
+                class: 'chip-row',
+                children: [
+                  pill(`${projection.stages.length} 阶段`, 'muted'),
+                  pill(`${projection.relations.length} 关系`, projection.relations.length ? 'info' : 'muted'),
+                ],
+              }),
+            ],
+          }),
+          !contextLoaded
+            ? el('p', {
+                class: 'muted compact',
+                text: '上下文治理资料仍在加载；当前先展示 RunDetail 中已返回的任务、产物和交接记录。',
+              })
+            : null,
+          evidenceCount === 0
+            ? el('p', {
+                class: 'muted compact',
+                text: contextLoaded ? '暂无上下文或产物流转证据。' : '等待上下文治理资料后会补充 context_request、context pack 和 stage handoff 关系。',
+              })
+            : null,
+          projection.stages.length
+            ? el('div', {
+                class: 'context-flow-stage-list',
+                children: projection.stages.map((stage) => renderContextFlowStage(stage)),
+              })
+            : el('p', { class: 'muted compact', text: '该运行没有可展示的阶段流转。' }),
+          projection.relations.length
+            ? el('div', {
+                class: 'context-flow-relations',
+                children: [
+                  el('strong', { class: 'context-flow-section-title', text: '显式关系' }),
+                  ...projection.relations.map(renderContextFlowRelation),
+                ],
+              })
+            : null,
+          projection.warnings.length
+            ? el('details', {
+                class: 'raw-details',
+                attrs: { 'data-details-key': `context-flow-warnings:${detail.run.id}` },
+                children: [
+                  el('summary', { text: `查看缺失引用 (${projection.warnings.length})` }),
+                  el('div', {
+                    class: 'stack',
+                    children: projection.warnings.map((warning) => el('code', { text: warning })),
+                  }),
+                ],
+              })
+            : null,
+        ],
+      }),
+    ],
+  });
+}
+
+function renderContextFlowStage(stage: ContextFlowStage): HTMLElement {
+  const hasEvidence = stage.inputs.length || stage.outputs.length || stage.contextPacks.length || stage.checkpoints.length;
+  return el('article', {
+    class: `context-flow-stage ${stage.state}`,
+    children: [
+      el('div', {
+        class: 'context-flow-stage-head',
+        children: [
+          el('strong', { text: stage.label }),
+          pill(stageStateLabel(stage.state), stage.state === 'done' ? 'good' : stage.state === 'failed' ? 'bad' : stage.state === 'blocked' ? 'warn' : stage.state === 'active' ? 'info' : 'muted'),
+        ],
+      }),
+      hasEvidence
+        ? el('div', {
+            class: 'context-flow-stage-grid',
+            children: [
+              renderContextFlowArtifactSection('输入', stage.inputs, `context-flow:${stage.id}:input`),
+              renderContextFlowArtifactSection('输出', stage.outputs, `context-flow:${stage.id}:output`),
+              renderContextPackSection(stage.contextPacks, stage.id),
+              renderCheckpointSection(stage.checkpoints),
+            ],
+          })
+        : el('p', { class: 'muted compact', text: '这个阶段暂时没有上下文或产物流转证据。' }),
+    ],
+  });
+}
+
+function renderContextFlowArtifactSection(
+  title: string,
+  artifacts: ContextFlowArtifactRef[],
+  viewerScope: string,
+): HTMLElement {
+  return el('div', {
+    class: 'context-flow-section',
+    children: [
+      el('span', { class: 'context-flow-section-title', text: `${title} (${artifacts.length})` }),
+      artifacts.length
+        ? el('div', {
+            class: 'context-flow-artifacts',
+            children: artifacts.map((artifact) => renderContextFlowArtifact(artifact, viewerScope)),
+          })
+        : el('p', { class: 'muted compact', text: '暂无' }),
+    ],
+  });
+}
+
+function renderContextPackSection(packs: ContextFlowStage['contextPacks'], stage: Stage): HTMLElement {
+  return el('div', {
+    class: 'context-flow-section',
+    children: [
+      el('span', { class: 'context-flow-section-title', text: `Context Packs (${packs.length})` }),
+      packs.length
+        ? el('div', {
+            class: 'context-flow-pack-list',
+            children: packs.map((pack) =>
+              el('div', {
+                class: 'context-flow-mini-row',
+                children: [
+                  el('span', {
+                    children: [
+                      pill(pack.mode ?? 'mode n/a', pack.mode ? 'info' : 'muted'),
+                      document.createTextNode(` ${shortId(pack.contextPackId)}`),
+                    ],
+                  }),
+                  pack.role ? el('small', { text: `role=${pack.role}` }) : null,
+                  pack.retryIndex !== null ? el('small', { text: `retry=${pack.retryIndex}` }) : null,
+                  pack.contextRequestId ? el('small', { text: `request=${shortId(pack.contextRequestId)}` }) : null,
+                  pack.artifact ? renderContextFlowArtifact(pack.artifact, `context-flow:${stage}:context-pack`) : null,
+                  pack.baseContextPackArtifactId ? el('small', { text: `base artifact ${shortId(pack.baseContextPackArtifactId)}` }) : null,
+                ],
+              }),
+            ),
+          })
+        : el('p', { class: 'muted compact', text: '暂无' }),
+    ],
+  });
+}
+
+function renderCheckpointSection(checkpoints: ContextFlowStage['checkpoints']): HTMLElement {
+  return el('div', {
+    class: 'context-flow-section',
+    children: [
+      el('span', { class: 'context-flow-section-title', text: `Checkpoints (${checkpoints.length})` }),
+      checkpoints.length
+        ? el('div', {
+            class: 'context-flow-pack-list',
+            children: checkpoints.map((checkpoint) =>
+              el('div', {
+                class: 'context-flow-mini-row',
+                children: [
+                  el('span', { children: [pill(checkpoint.status, statusKind(checkpoint.status)), document.createTextNode(` retry ${checkpoint.retryIndex}`)] }),
+                  checkpoint.contextPackId ? el('small', { text: `context ${shortId(checkpoint.contextPackId)}` }) : el('small', { text: 'no context pack ref' }),
+                ],
+              }),
+            ),
+          })
+        : el('p', { class: 'muted compact', text: '暂无' }),
+    ],
+  });
+}
+
+function renderContextFlowRelation(relation: ContextFlowRelation): HTMLElement {
+  if (relation.kind === 'artifact_reuse') {
+    return el('div', {
+      class: 'context-flow-relation',
+      children: [
+        el('span', { children: [pill('产物复用', 'info'), document.createTextNode(` ${stageFlowLabel(relation.fromStage)} → ${stageFlowLabel(relation.toStage)}`)] }),
+        renderContextFlowArtifact(relation.artifact, 'context-flow:relation:reuse'),
+      ],
+    });
+  }
+  if (relation.kind === 'stage_handoff') {
+    return el('div', {
+      class: 'context-flow-relation',
+      children: [
+        el('span', { children: [pill('阶段交接', 'good'), document.createTextNode(` ${stageFlowLabel(relation.fromStage)} → ${stageFlowLabel(relation.toStage)}`)] }),
+        relation.summary ? el('small', { text: relation.summary }) : null,
+        relation.artifact ? renderContextFlowArtifact(relation.artifact, 'context-flow:relation:handoff') : null,
+        relation.producedArtifacts.length
+          ? el('div', {
+              class: 'context-flow-artifacts',
+              children: relation.producedArtifacts.map((artifact) => renderContextFlowArtifact(artifact, 'context-flow:relation:handoff-produced')),
+            })
+          : null,
+        el('small', { text: `handoff ${shortId(relation.handoffId)}${relation.createdAt ? ` · ${fmtTime(relation.createdAt)}` : ''}` }),
+      ],
+    });
+  }
+  return el('div', {
+    class: 'context-flow-relation',
+    children: [
+      el('span', { children: [pill(relation.status, statusKind(relation.status)), document.createTextNode(` 补充上下文请求 ${shortId(relation.requestId)}`)] }),
+      relation.reason ? el('small', { text: relation.reason }) : null,
+      relation.requestedRefs.length ? el('small', { text: `refs: ${relation.requestedRefs.join(' · ')}` }) : null,
+      el('div', {
+        class: 'context-flow-artifacts',
+        children: relation.artifacts.map((item) =>
+          el('span', {
+            class: 'context-flow-request-artifact',
+            children: [
+              pill(contextRequestArtifactRoleLabel(item.role), 'muted'),
+              renderContextFlowArtifact(item.artifact, `context-flow:relation:context-request:${item.role}`),
+            ],
+          }),
+        ),
+      }),
+      relation.baseContextPackId || relation.supplementContextPackId
+        ? el('small', {
+            text: `context pack ${relation.baseContextPackId ? shortId(relation.baseContextPackId) : '(none)'} → ${relation.supplementContextPackId ? shortId(relation.supplementContextPackId) : '(none)'}`,
+          })
+        : null,
+    ],
+  });
+}
+
+function renderContextFlowArtifact(artifactRef: ContextFlowArtifactRef, viewerScope: string): HTMLElement {
+  if (artifactRef.missing || !artifactRef.artifact) {
+    return el('span', {
+      class: 'context-flow-artifact-chip missing',
+      children: [pill('missing', 'warn'), el('code', { text: shortId(artifactRef.artifactId) })],
+    });
+  }
+  const artifact = artifactRef.artifact;
+  const canReadInline = isReadableFileArtifact(artifact);
+  const isOpen = openArtifactViewers.has(artifact.id);
+  const chipChildren = [
+    pill(artifactRef.kind, 'muted'),
+    el('span', { class: 'context-flow-artifact-label', text: artifactRef.label }),
+    el('code', { text: shortId(artifactRef.artifactId) }),
+  ];
+  const chip = canReadInline
+    ? el('button', {
+        class: `context-flow-artifact-chip clickable ${isOpen ? 'open' : ''}`,
+        attrs: { type: 'button' },
+        children: chipChildren,
+      })
+    : el('span', {
+        class: 'context-flow-artifact-chip',
+        children: chipChildren,
+      });
+  if (canReadInline) {
+    chip.onclick = () => toggleArtifactViewer(artifact);
+  }
+  return el('span', {
+    class: 'context-flow-artifact-wrap',
+    children: [
+      chip,
+      isOpen ? renderArtifactInlineViewer(artifact, viewerScope) : null,
+    ],
+  });
+}
+
+function stageFlowLabel(stage: string | null): string {
+  if (stage && stage in STAGE_LABELS) return STAGE_LABELS[stage as Stage];
+  return stage ?? '未知阶段';
+}
+
+function contextRequestArtifactRoleLabel(role: 'base' | 'request' | 'supplement'): string {
+  if (role === 'base') return 'base';
+  if (role === 'request') return 'request';
+  return 'supplement';
 }
 
 function formatPercent(value: number): string {

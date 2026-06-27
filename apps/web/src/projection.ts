@@ -7,8 +7,11 @@ import {
   type CommandRun,
   type FlowId,
   type GateRun,
+  type HandoffRecord,
   type RuleResult,
+  stageHandoffFromMetadata,
   type StepCheckpoint,
+  type StageHandoffMetadata,
   type StepRun,
   type TestRun,
   type ToolInvocation,
@@ -17,7 +20,7 @@ import {
   type WorkflowRunStatus,
   type WorkflowStage,
 } from '@ainp/shared/browser';
-import type { WorkflowRequestDto } from './types';
+import type { ContextGovernanceDto, WorkflowRequestDto } from './types';
 
 export type { FlowId };
 
@@ -328,10 +331,11 @@ export type StepRunDto = Optionalize<
 
 /**
  * Derived from the shared {@link AgentTask}. `createdAt` is Optionalized for
- * legacy fixtures; `prompt` / `inputArtifactIds` are not consumed by the SPA.
+ * legacy fixtures; `prompt` is still omitted because the SPA only needs the
+ * already-resolved input artifact ids for context-flow projection.
  */
 export type AgentTaskDto = Optionalize<
-  Pick<AgentTask, 'id' | 'stepRunId' | 'kind' | 'backend' | 'createdAt'>,
+  Pick<AgentTask, 'id' | 'stepRunId' | 'kind' | 'backend' | 'inputArtifactIds' | 'createdAt'>,
   'createdAt'
 >;
 
@@ -340,11 +344,30 @@ export type AgentTaskDto = Optionalize<
  * Optionalized: legacy fixtures omit them and src renders them defensively.
  */
 export type AgentResultDto = Optionalize<
-  Pick<AgentResult, 'id' | 'taskId' | 'status' | 'summary' | 'completedAt'>,
+  Pick<AgentResult, 'id' | 'taskId' | 'status' | 'summary' | 'outputArtifactIds' | 'completedAt'>,
   'summary' | 'completedAt'
 >;
 
 export type StepCheckpointDto = StepCheckpoint;
+
+/**
+ * Derived from the shared {@link HandoffRecord}; the API returns the full
+ * entity, but the SPA only needs the audit fields that can reveal stage
+ * handoffs and their artifact inputs/outputs.
+ */
+export type HandoffRecordDto = Pick<
+  HandoffRecord,
+  | 'id'
+  | 'fromRole'
+  | 'toRole'
+  | 'reason'
+  | 'inputArtifactIds'
+  | 'status'
+  | 'adoptionDecision'
+  | 'outputArtifactIds'
+  | 'createdAt'
+  | 'metadata'
+>;
 
 /**
  * Shadow of the api-private `AuditEntry` (apps/api/src/store/store.ts) — no
@@ -372,6 +395,7 @@ export interface RunDetail {
   actions: WorkflowActionDto[];
   agentTasks: AgentTaskDto[];
   agentResults: AgentResultDto[];
+  handoffs: HandoffRecordDto[];
   stepCheckpoints: StepCheckpointDto[];
   audit: AuditEntryDto[];
 }
@@ -414,6 +438,88 @@ export interface RunProjection {
   };
 }
 
+export interface ContextFlowArtifactRef {
+  artifactId: string;
+  artifact: ArtifactDto | null;
+  kind: string;
+  label: string;
+  stage: Stage | null;
+  missing: boolean;
+}
+
+export interface ContextFlowCheckpointRef {
+  id: string;
+  stage: Stage;
+  status: string;
+  stepRunId: string;
+  retryIndex: number;
+  contextPackId: string | null;
+}
+
+export interface ContextFlowContextPackRef {
+  contextPackId: string;
+  source: string;
+  artifact: ContextFlowArtifactRef | null;
+  taskId: string | null;
+  stage: Stage | null;
+  mode: string | null;
+  role: string | null;
+  invocationId: string | null;
+  retryIndex: number | null;
+  contextRequestId: string | null;
+  baseContextPackId: string | null;
+  baseContextPackArtifactId: string | null;
+}
+
+export interface ContextFlowStage {
+  id: Stage;
+  label: string;
+  state: StageProjection['state'];
+  inputs: ContextFlowArtifactRef[];
+  outputs: ContextFlowArtifactRef[];
+  contextPacks: ContextFlowContextPackRef[];
+  checkpoints: ContextFlowCheckpointRef[];
+}
+
+export type ContextFlowRelation =
+  | {
+      kind: 'artifact_reuse';
+      artifactId: string;
+      artifact: ContextFlowArtifactRef;
+      fromStage: Stage | null;
+      toStage: Stage | null;
+    }
+  | {
+      kind: 'stage_handoff';
+      handoffId: string;
+      fromStage: string;
+      toStage: string;
+      artifact: ContextFlowArtifactRef | null;
+      summary: string;
+      producedArtifacts: ContextFlowArtifactRef[];
+      createdAt: string | null;
+    }
+  | {
+      kind: 'context_request';
+      requestId: string;
+      status: string;
+      reason: string;
+      requestedRefs: string[];
+      baseContextPackId: string | null;
+      supplementContextPackId: string | null;
+      artifacts: Array<{
+        role: 'base' | 'request' | 'supplement';
+        artifact: ContextFlowArtifactRef;
+      }>;
+      createdAt: string;
+    };
+
+export interface ContextFlowProjection {
+  stages: ContextFlowStage[];
+  relations: ContextFlowRelation[];
+  warnings: string[];
+}
+
 export function isReadableFileArtifact(artifact: Pick<ArtifactDto, 'uri'>): boolean {
   return artifact.uri.startsWith('file://');
 }
@@ -432,6 +538,122 @@ export function latestArtifactOfKind<T extends Pick<ArtifactDto, 'kind' | 'creat
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
       .at(-1) ?? null
   );
+}
+
+export function buildContextFlowProjection(
+  detail: RunDetail,
+  contextGovernance: ContextGovernanceDto | null,
+): ContextFlowProjection {
+  const runProjection = buildRunProjection(detail);
+  const artifactById = new Map(detail.artifacts.map((artifact) => [artifact.id, artifact]));
+  const stepById = new Map(detail.steps.map((step) => [step.id, step]));
+  const taskById = new Map(detail.agentTasks.map((task) => [task.id, task]));
+  const stageById = new Map<Stage, ContextFlowStage>(
+    runProjection.visibleStages.map((stage) => [
+      stage.id,
+      {
+        id: stage.id,
+        label: stage.label,
+        state: stage.state,
+        inputs: [],
+        outputs: [],
+        contextPacks: [],
+        checkpoints: [],
+      },
+    ]),
+  );
+  const warnings: string[] = [];
+  const inputStagesByArtifact = new Map<string, Set<Stage>>();
+  const outputStagesByArtifact = new Map<string, Set<Stage>>();
+
+  const artifactRef = (artifactId: string, stage: Stage | null): ContextFlowArtifactRef => {
+    const artifact = artifactById.get(artifactId) ?? null;
+    if (!artifact) warnings.push(`missing artifact ${artifactId}`);
+    return {
+      artifactId,
+      artifact,
+      kind: artifact?.kind ?? 'unknown',
+      label: artifact ? artifactDisplayLabel(artifact) : artifactId,
+      stage,
+      missing: !artifact,
+    };
+  };
+
+  for (const task of detail.agentTasks) {
+    const stage = stageForAgentTask(task, stepById);
+    if (!stage || !stageById.has(stage)) continue;
+    const target = stageById.get(stage);
+    if (!target) continue;
+    for (const artifactId of task.inputArtifactIds) {
+      appendUniqueArtifact(target.inputs, artifactRef(artifactId, stage));
+      addStageRef(inputStagesByArtifact, artifactId, stage);
+    }
+  }
+
+  for (const result of detail.agentResults) {
+    const task = taskById.get(result.taskId);
+    if (!task) {
+      warnings.push(`agent result ${result.id} references missing task ${result.taskId}`);
+      continue;
+    }
+    const stage = stageForAgentTask(task, stepById);
+    if (!stage || !stageById.has(stage)) continue;
+    const target = stageById.get(stage);
+    if (!target) continue;
+    for (const artifactId of result.outputArtifactIds) {
+      appendUniqueArtifact(target.outputs, artifactRef(artifactId, stage));
+      addStageRef(outputStagesByArtifact, artifactId, stage);
+    }
+  }
+
+  for (const checkpoint of detail.stepCheckpoints) {
+    if (!stageById.has(checkpoint.stage)) continue;
+    const target = stageById.get(checkpoint.stage);
+    if (!target) continue;
+    target.checkpoints.push({
+      id: checkpoint.id,
+      stage: checkpoint.stage,
+      status: checkpoint.status,
+      stepRunId: checkpoint.stepRunId,
+      retryIndex: checkpoint.retryIndex,
+      contextPackId: checkpoint.contextPackId,
+    });
+  }
+
+  if (contextGovernance) {
+    for (const pack of contextGovernance.contextPacks) {
+      const stage = stageFromContextPack(pack, taskById, stepById);
+      if (!stage || !stageById.has(stage)) continue;
+      const target = stageById.get(stage);
+      if (!target) continue;
+      target.contextPacks.push({
+        contextPackId: pack.contextPackId,
+        source: pack.source,
+        artifact: pack.artifactId ? artifactRef(pack.artifactId, stage) : null,
+        taskId: pack.taskId,
+        stage,
+        mode: pack.mode,
+        role: pack.role,
+        invocationId: pack.invocationId,
+        retryIndex: pack.retryIndex,
+        contextRequestId: pack.contextRequestId,
+        baseContextPackId: pack.baseContextPackId,
+        baseContextPackArtifactId: pack.baseContextPackArtifactId,
+      });
+    }
+  }
+
+  const relations: ContextFlowRelation[] = [
+    ...artifactReuseRelations(inputStagesByArtifact, outputStagesByArtifact, artifactRef),
+    ...stageHandoffRelations(detail, contextGovernance, artifactRef),
+    ...contextRequestRelations(contextGovernance, artifactRef),
+  ];
+
+  return {
+    stages: [...stageById.values()],
+    relations,
+    warnings: unique(warnings),
+  };
 }
 
 export function buildRunProjection(detail: RunDetail): RunProjection {
@@ -508,6 +730,178 @@ export function buildRunProjection(detail: RunDetail): RunProjection {
       buildStatus: detail.builds.at(-1)?.status ?? 'not_started',
     },
   };
+}
+
+function appendUniqueArtifact(target: ContextFlowArtifactRef[], artifact: ContextFlowArtifactRef): void {
+  if (target.some((current) => current.artifactId === artifact.artifactId)) return;
+  target.push(artifact);
+}
+
+function addStageRef(map: Map<string, Set<Stage>>, artifactId: string, stage: Stage): void {
+  const stages = map.get(artifactId) ?? new Set<Stage>();
+  stages.add(stage);
+  map.set(artifactId, stages);
+}
+
+function artifactReuseRelations(
+  inputStagesByArtifact: Map<string, Set<Stage>>,
+  outputStagesByArtifact: Map<string, Set<Stage>>,
+  artifactRef: (artifactId: string, stage: Stage | null) => ContextFlowArtifactRef,
+): ContextFlowRelation[] {
+  const out: ContextFlowRelation[] = [];
+  for (const [artifactId, outputStages] of outputStagesByArtifact) {
+    const inputStages = inputStagesByArtifact.get(artifactId);
+    if (!inputStages) continue;
+    for (const fromStage of outputStages) {
+      for (const toStage of inputStages) {
+        if (fromStage === toStage) continue;
+        out.push({
+          kind: 'artifact_reuse',
+          artifactId,
+          artifact: artifactRef(artifactId, fromStage),
+          fromStage,
+          toStage,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+function stageHandoffRelations(
+  detail: RunDetail,
+  contextGovernance: ContextGovernanceDto | null,
+  artifactRef: (artifactId: string, stage: Stage | null) => ContextFlowArtifactRef,
+): ContextFlowRelation[] {
+  const byId = new Map<string, ContextFlowRelation>();
+  for (const handoff of contextGovernance?.stageHandoffs ?? []) {
+    byId.set(handoff.id, {
+      kind: 'stage_handoff',
+      handoffId: handoff.id,
+      fromStage: handoff.fromStage,
+      toStage: handoff.toStage,
+      artifact: handoff.artifactId ? artifactRef(handoff.artifactId, stageOrNull(handoff.toStage)) : null,
+      summary: handoff.summary,
+      producedArtifacts: handoff.producedArtifacts.map((item) => artifactRef(item.artifactId, stageOrNull(handoff.toStage))),
+      createdAt: handoff.createdAt,
+    });
+  }
+
+  for (const handoff of detail.handoffs) {
+    const stageHandoff = stageHandoffFromMetadata(handoff.metadata);
+    if (!stageHandoff || byId.has(handoff.id)) continue;
+    byId.set(handoff.id, relationFromRunHandoff(handoff.id, stageHandoff, handoff.outputArtifactIds, artifactRef));
+  }
+  return [...byId.values()];
+}
+
+function relationFromRunHandoff(
+  handoffId: string,
+  stageHandoff: StageHandoffMetadata,
+  outputArtifactIds: string[],
+  artifactRef: (artifactId: string, stage: Stage | null) => ContextFlowArtifactRef,
+): ContextFlowRelation {
+  const toStage = stageHandoff.toStage;
+  const primaryArtifactId = outputArtifactIds[0] ?? stageHandoff.producedArtifacts[0]?.artifactId ?? null;
+  return {
+    kind: 'stage_handoff',
+    handoffId,
+    fromStage: stageHandoff.fromStage,
+    toStage,
+    artifact: primaryArtifactId ? artifactRef(primaryArtifactId, toStage) : null,
+    summary: stageHandoff.summary,
+    producedArtifacts: stageHandoff.producedArtifacts.map((item) => artifactRef(item.artifactId, toStage)),
+    createdAt: stageHandoff.createdAt,
+  };
+}
+
+function contextRequestRelations(
+  contextGovernance: ContextGovernanceDto | null,
+  artifactRef: (artifactId: string, stage: Stage | null) => ContextFlowArtifactRef,
+): ContextFlowRelation[] {
+  return (contextGovernance?.contextRequests ?? []).map((request) => {
+    const artifacts: Array<{ role: 'base' | 'request' | 'supplement'; artifact: ContextFlowArtifactRef }> = [];
+    if (request.baseContextPackArtifactId) {
+      artifacts.push({ role: 'base', artifact: artifactRef(request.baseContextPackArtifactId, null) });
+    }
+    if (request.requestArtifactId) {
+      artifacts.push({ role: 'request', artifact: artifactRef(request.requestArtifactId, null) });
+    }
+    if (request.supplementArtifactId) {
+      artifacts.push({ role: 'supplement', artifact: artifactRef(request.supplementArtifactId, null) });
+    }
+    return {
+      kind: 'context_request',
+      requestId: request.id,
+      status: request.status,
+      reason: request.reason,
+      requestedRefs: request.requestedRefs,
+      baseContextPackId: request.baseContextPackId,
+      supplementContextPackId: request.supplementContextPackId,
+      artifacts,
+      createdAt: request.createdAt,
+    };
+  });
+}
+
+function stageFromContextPack(
+  pack: ContextGovernanceDto['contextPacks'][number],
+  taskById: Map<string, AgentTaskDto>,
+  stepById: Map<string, StepRunDto>,
+): Stage | null {
+  const explicitStage = stageOrNull(pack.stage);
+  if (explicitStage) return explicitStage;
+  const task = pack.taskId ? taskById.get(pack.taskId) : null;
+  return task ? stageForAgentTask(task, stepById) : null;
+}
+
+function stageForAgentTask(task: AgentTaskDto, stepById: Map<string, StepRunDto>): Stage | null {
+  if (task.stepRunId) {
+    const step = stepById.get(task.stepRunId);
+    if (step) return step.stage;
+  }
+  const map: Partial<Record<AgentTask['kind'], Stage>> = {
+    context_pack: 'context_pack',
+    requirement_draft: 'requirement',
+    design_draft: 'design',
+    implementation: 'implementation',
+    review: 'review',
+    report: 'report',
+    analyze: 'analyze',
+    scan: 'scan',
+    plan: 'plan',
+  };
+  return map[task.kind] ?? null;
+}
+
+function stageOrNull(value: string | null | undefined): Stage | null {
+  return isStage(value) ? value : null;
+}
+
+function artifactDisplayLabel(artifact: ArtifactDto): string {
+  const metadata = artifact.metadata ?? {};
+  const metadataLabel =
+    stringField(metadata, 'label') ??
+    stringField(metadata, 'title') ??
+    stringField(metadata, 'output') ??
+    stringField(metadata, 'path');
+  const label = metadataLabel ? basename(metadataLabel) : basename(artifact.uri);
+  return label || artifact.id;
+}
+
+function basename(value: string): string {
+  const normalized = value.split('?')[0]?.split('#')[0] ?? value;
+  const parts = normalized.split(/[\\/]/).filter(Boolean);
+  return parts.at(-1) ?? normalized;
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
 function effectiveStageForProjection(detail: RunDetail): Stage {
