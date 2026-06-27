@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Web frontend package guideline index for Context Flow panel implementation."}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Task detail page hierarchy, evidence panels, user-facing labels, and polling-safe diagnostics conventions."}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Disclosure state and derived-state conventions for a polling-rendered DOM app."}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "DTO derivation and runtime-boundary rules for expanding RunDetail and context governance types."}

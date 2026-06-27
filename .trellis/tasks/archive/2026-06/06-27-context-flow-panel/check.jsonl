@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Web frontend package guideline index for Context Flow panel checks."}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Check task detail hierarchy, diagnostics, stream/evidence conventions, and user-facing copy."}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Check polling-safe disclosure state and derived projection usage."}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "Check DTO derivation, shared type use, and trust-boundary rules."}
