@@ -25,16 +25,26 @@ import type {
   GateStatus,
   FlowId,
   GateRun,
+  GraphDefinition,
+  GraphNodeRun,
+  GraphNodeStatus,
   KnowledgeArtifact,
   KnowledgeArtifactKind,
   Project,
   RuleStatus,
   RouterInput,
   SkillSpec,
+  StepCheckpoint,
+  StepRun,
   WorkflowRun,
   WorkflowRunType,
   WorkflowStage,
 } from '@ainp/shared';
+import { FLOW_REGISTRY } from '../packages/shared/src/flows/registry';
+import {
+  flowToGraphDefinition,
+  graphStageOrder,
+} from '../packages/shared/src/flows/graph-adapter';
 import type { AgentBackend, AgentRunResult } from '../apps/runner/src/agents/types';
 import type { InvokeSkillDeps } from '../apps/runner/src/orchestrator/invoke-skill';
 import type { RunCtx } from '../apps/runner/src/orchestrator/types';
@@ -44,13 +54,15 @@ type ScenarioKind =
   | 'router_recommendation'
   | 'agent_backend_fixture'
   | 'context_pack_fixture'
-  | 'workflow_fixture';
+  | 'workflow_fixture'
+  | 'graph_runtime_fixture';
 
 type EvalScenario =
   | RouterEvalScenario
   | AgentBackendEvalScenario
   | ContextPackEvalScenario
-  | WorkflowEvalScenario;
+  | WorkflowEvalScenario
+  | GraphRuntimeEvalScenario;
 
 interface BaseEvalScenario {
   schemaVersion: 'ainp.eval.scenario.v1';
@@ -88,6 +100,13 @@ interface WorkflowEvalScenario extends BaseEvalScenario {
   variants?: WorkflowEvalVariant[];
 }
 
+interface GraphRuntimeEvalScenario extends BaseEvalScenario {
+  kind: 'graph_runtime_fixture';
+  input: GraphRuntimeEvalInput;
+  expectations?: GraphRuntimeExpectations;
+  variants?: GraphRuntimeEvalVariant[];
+}
+
 interface EvalVariant<Input, Expectations> {
   id: string;
   label?: string;
@@ -102,6 +121,7 @@ type RouterEvalVariant = EvalVariant<RouterEvalInput, RouterExpectations>;
 type AgentBackendEvalVariant = EvalVariant<AgentBackendEvalInput, AgentBackendExpectations>;
 type ContextPackEvalVariant = EvalVariant<ContextPackEvalInput, ContextPackExpectations>;
 type WorkflowEvalVariant = EvalVariant<WorkflowEvalInput, WorkflowExpectations>;
+type GraphRuntimeEvalVariant = EvalVariant<GraphRuntimeEvalInput, GraphRuntimeExpectations>;
 
 interface RouterEvalInput {
   projectId: string;
@@ -201,6 +221,19 @@ interface WorkflowEvalInput {
   profile: WorkflowFixtureProfile;
 }
 
+type GraphRuntimeFixtureProfile = 'linear_equivalence' | 'failed_resume' | 'completed_resume';
+
+interface GraphRuntimeEvalInput {
+  projectId?: string;
+  workflowRunId?: string;
+  title: string;
+  flowId: FlowId;
+  profile: GraphRuntimeFixtureProfile;
+  stage?: WorkflowStage;
+  graphVersion?: string;
+  resumeCursor?: string | null;
+}
+
 interface WorkflowExpectations {
   evidenceGateStatus?: GateStatus;
   ruleStatuses?: Record<string, RuleStatus>;
@@ -210,6 +243,19 @@ interface WorkflowExpectations {
   retroReportGenerated?: boolean;
   retroFindingsMin?: number;
   reportArtifactCountMin?: number;
+}
+
+interface GraphRuntimeExpectations {
+  stageOrderMatchesFlow?: boolean;
+  stageOrder?: WorkflowStage[];
+  runnableStages?: WorkflowStage[];
+  resumeCreated?: boolean;
+  resumeRejected?: boolean;
+  resumeAttempt?: number;
+  resumeStatus?: GraphNodeStatus;
+  resumeErrorIncludes?: string;
+  sourceCheckpointLinked?: boolean;
+  graphEventTypesInclude?: string[];
 }
 
 interface EvalReport {
@@ -319,6 +365,9 @@ async function runScenario(scenario: EvalScenario): Promise<EvalScenarioResult> 
   if (scenario.kind === 'workflow_fixture') {
     return runWorkflowScenario(scenario);
   }
+  if (scenario.kind === 'graph_runtime_fixture') {
+    return runGraphRuntimeScenario(scenario);
+  }
   return runRouterScenario(scenario);
 }
 
@@ -385,6 +434,24 @@ async function runWorkflowScenario(scenario: WorkflowEvalScenario): Promise<Eval
     const input = mergeInput(scenario.input, variant.inputOverrides);
     const expectations = { ...(scenario.expectations ?? {}), ...(variant.expectations ?? {}) };
     variantResults.push(await runWorkflowVariant(scenario, variant, input, expectations));
+  }
+  return {
+    scenarioId: scenario.id,
+    title: scenario.title,
+    kind: scenario.kind,
+    variants: variantResults,
+  };
+}
+
+async function runGraphRuntimeScenario(scenario: GraphRuntimeEvalScenario): Promise<EvalScenarioResult> {
+  const variants = scenario.variants?.length
+    ? scenario.variants
+    : [{ id: 'default', label: 'Default' } satisfies GraphRuntimeEvalVariant];
+  const variantResults: EvalVariantResult[] = [];
+  for (const variant of variants) {
+    const input = mergeInput(scenario.input, variant.inputOverrides);
+    const expectations = { ...(scenario.expectations ?? {}), ...(variant.expectations ?? {}) };
+    variantResults.push(await runGraphRuntimeVariant(scenario, variant, input, expectations));
   }
   return {
     scenarioId: scenario.id,
@@ -611,6 +678,24 @@ interface WorkflowFixtureOutput {
   reportArtifactCount: number;
 }
 
+interface GraphRuntimeFixtureOutput {
+  profile: GraphRuntimeFixtureProfile;
+  flowId: FlowId;
+  graphDefinitionId: string;
+  graphVersion: string;
+  stageOrder: WorkflowStage[];
+  flowStageOrder: WorkflowStage[];
+  runnableStages: WorkflowStage[];
+  resumeCreated: boolean;
+  resumeRejected: boolean;
+  resumeError: string | null;
+  previousAttempt: number | null;
+  resumeAttempt: number | null;
+  resumeStatus: GraphNodeStatus | null;
+  sourceCheckpointId: string | null;
+  graphEventTypes: string[];
+}
+
 async function runWorkflowVariant(
   scenario: WorkflowEvalScenario,
   variant: WorkflowEvalVariant,
@@ -678,6 +763,204 @@ async function runWorkflowVariant(
     status: checks.every((check) => check.status === 'pass') ? 'pass' : 'fail',
     checks,
     output,
+  };
+}
+
+async function runGraphRuntimeVariant(
+  scenario: GraphRuntimeEvalScenario,
+  variant: GraphRuntimeEvalVariant,
+  input: GraphRuntimeEvalInput,
+  expectations: GraphRuntimeExpectations,
+): Promise<EvalVariantResult> {
+  const flow = FLOW_REGISTRY[input.flowId];
+  if (!flow) throw new Error(`unknown flowId in graph runtime fixture: ${input.flowId}`);
+  const graph = flowToGraphDefinition(flow, {
+    version: input.graphVersion ?? '1',
+    createdAt: '2026-06-27T00:00:00.000Z',
+  });
+  const flowStageOrder = flow.stages.map((step) => step.stage);
+  const stageOrder = graphStageOrder(graph);
+
+  let output: GraphRuntimeFixtureOutput;
+  if (input.profile === 'linear_equivalence') {
+    const { computeRunnableGraphNodes } = await import('../apps/runner/src/orchestrator/graph-scheduler');
+    output = {
+      profile: input.profile,
+      flowId: input.flowId,
+      graphDefinitionId: graph.id,
+      graphVersion: graph.version,
+      stageOrder,
+      flowStageOrder,
+      runnableStages: computeRunnableGraphNodes({ graph, nodeRuns: [] }).map((node) => node.stage),
+      resumeCreated: false,
+      resumeRejected: false,
+      resumeError: null,
+      previousAttempt: null,
+      resumeAttempt: null,
+      resumeStatus: null,
+      sourceCheckpointId: null,
+      graphEventTypes: [],
+    };
+  } else {
+    output = await runGraphRuntimeResumeFixture(scenario, variant, input, graph, stageOrder, flowStageOrder);
+  }
+
+  const checks = checkGraphRuntimeOutput(output, expectations);
+  return {
+    variantId: variant.id,
+    label: variant.label ?? variant.id,
+    backend: variant.backend ?? 'fixture',
+    skillVariant: variant.skillVariant ?? null,
+    knowledgeVariant: variant.knowledgeVariant ?? null,
+    status: checks.every((check) => check.status === 'pass') ? 'pass' : 'fail',
+    checks,
+    output,
+  };
+}
+
+async function runGraphRuntimeResumeFixture(
+  scenario: GraphRuntimeEvalScenario,
+  variant: GraphRuntimeEvalVariant,
+  input: GraphRuntimeEvalInput,
+  graph: GraphDefinition,
+  stageOrder: WorkflowStage[],
+  flowStageOrder: WorkflowStage[],
+): Promise<GraphRuntimeFixtureOutput> {
+  const { store } = await import('../apps/api/src/store/store');
+  const { resumeGraphNode } = await import('../apps/api/src/graph-runtime');
+  const { computeRunnableGraphNodes } = await import('../apps/runner/src/orchestrator/graph-scheduler');
+  const now = new Date().toISOString();
+  const workspacePath = mkdtempSync(join(tmpdir(), `ainp-eval-graph-${safeId(scenario.id)}-${safeId(variant.id)}-`));
+  const projectId = input.projectId ?? `proj_${safeId(scenario.id)}`;
+  const workflowRunId = input.workflowRunId ?? `run_${safeId(scenario.id)}_${safeId(variant.id)}`;
+  const targetStage = input.stage ?? graph.nodes[0]?.stage;
+  if (!targetStage) throw new Error(`${scenario.id}/${variant.id}: graph has no nodes`);
+  const targetNode = graph.nodes.find((node) => node.stage === targetStage);
+  if (!targetNode) throw new Error(`${scenario.id}/${variant.id}: stage ${targetStage} not found in ${input.flowId}`);
+
+  const graphRunId = `grun_${safeId(scenario.id)}_${safeId(variant.id)}`;
+  const stepRunId = `step_${safeId(scenario.id)}_${safeId(variant.id)}`;
+  const checkpointId = `scp_${safeId(scenario.id)}_${safeId(variant.id)}`;
+  const previousNodeRunId = `gnr_${safeId(scenario.id)}_${safeId(variant.id)}_1`;
+  const nodeStatus: GraphNodeStatus = input.profile === 'completed_resume' ? 'passed' : 'failed';
+  const resumeCursor = input.resumeCursor === undefined ? `graph://resume/${targetStage}` : input.resumeCursor;
+
+  store.projects.set(projectId, projectFixture(projectId, workspacePath, now));
+  store.workflowRuns.set(workflowRunId, workflowRunFixture({
+    id: workflowRunId,
+    projectId,
+    title: input.title,
+    workspacePath,
+    now,
+    status: nodeStatus === 'passed' ? 'passed' : 'failed',
+  }));
+  const step: StepRun = {
+    id: stepRunId,
+    workflowRunId,
+    stage: targetStage,
+    name: targetStage,
+    status: nodeStatus,
+    startedAt: now,
+    completedAt: now,
+  };
+  store.stepRuns.set(step.id, step);
+  const checkpoint: StepCheckpoint = {
+    id: checkpointId,
+    workflowRunId,
+    stepRunId: step.id,
+    stage: targetStage,
+    status: nodeStatus === 'passed' ? 'passed' : 'failed',
+    inputArtifactIds: [],
+    outputArtifactIds: [],
+    contextPackId: null,
+    agentSessionIds: [],
+    toolInvocationIds: [],
+    gateRunIds: [],
+    retryIndex: 0,
+    resumeCursor,
+    failureReason: nodeStatus === 'passed' ? null : 'eval fixture failed node',
+    createdAt: now,
+    updatedAt: now,
+    metadata: {},
+  };
+  store.stepCheckpoints.upsert(checkpoint);
+  store.graphDefinitions.upsert(graph);
+  store.graphRuns.upsert({
+    id: graphRunId,
+    workflowRunId,
+    graphDefinitionId: graph.id,
+    graphVersion: graph.version,
+    status: nodeStatus === 'passed' ? 'passed' : 'failed',
+    activeNodeIds: [],
+    interruptedReason: null,
+    createdAt: now,
+    updatedAt: now,
+    metadata: {},
+  });
+  const previousNodeRun: GraphNodeRun = {
+    id: previousNodeRunId,
+    graphRunId,
+    workflowRunId,
+    nodeId: targetNode.id,
+    attempt: 1,
+    status: nodeStatus,
+    stepRunId: step.id,
+    stepCheckpointId: checkpoint.id,
+    resumeCursor,
+    idempotencyKey: `${graphRunId}:${targetNode.id}:1`,
+    dependencyState: {
+      upstreamNodeIds: [],
+      satisfiedNodeIds: [],
+      blockedNodeIds: [],
+    },
+    startedAt: now,
+    completedAt: now,
+    metadata: {},
+  };
+  store.graphNodeRuns.upsert(previousNodeRun);
+
+  let resumedNodeRun: GraphNodeRun | null = null;
+  let resumeError: string | null = null;
+  try {
+    const resumed = resumeGraphNode({
+      workflowRunId,
+      nodeRunId: previousNodeRun.id,
+      graphVersion: graph.version,
+      resumeCursor,
+      actor: 'eval',
+    });
+    resumedNodeRun = resumed.nodeRun;
+  } catch (err) {
+    resumeError = err instanceof Error ? err.message : String(err);
+  }
+
+  const nodeRuns = store.graphNodeRuns.byGraphRun(graphRunId);
+  const graphRun = store.graphRuns.get(graphRunId);
+  const runnableStages = computeRunnableGraphNodes({
+    graph,
+    graphRun,
+    nodeRuns,
+  }).map((node) => node.stage);
+  const graphEventTypes = store.graphEvents.byGraphRun(graphRunId).map((event) => event.type);
+
+  return {
+    profile: input.profile,
+    flowId: input.flowId,
+    graphDefinitionId: graph.id,
+    graphVersion: graph.version,
+    stageOrder,
+    flowStageOrder,
+    runnableStages,
+    resumeCreated: resumedNodeRun !== null,
+    resumeRejected: resumedNodeRun === null,
+    resumeError,
+    previousAttempt: previousNodeRun.attempt,
+    resumeAttempt: resumedNodeRun?.attempt ?? null,
+    resumeStatus: resumedNodeRun?.status ?? null,
+    sourceCheckpointId: typeof resumedNodeRun?.metadata.sourceCheckpointId === 'string'
+      ? resumedNodeRun.metadata.sourceCheckpointId
+      : null,
+    graphEventTypes,
   };
 }
 
@@ -1385,6 +1668,67 @@ function checkWorkflowOutput(
   return checks;
 }
 
+function checkGraphRuntimeOutput(
+  output: GraphRuntimeFixtureOutput,
+  expectations: GraphRuntimeExpectations,
+): EvalCheck[] {
+  const checks: EvalCheck[] = [];
+  if (expectations.stageOrderMatchesFlow !== undefined) {
+    checks.push(check(
+      'stageOrderMatchesFlow',
+      expectations.stageOrderMatchesFlow,
+      arraysEqual(output.stageOrder, output.flowStageOrder),
+    ));
+  }
+  if (expectations.stageOrder !== undefined) {
+    checks.push({
+      name: 'stageOrder',
+      expected: expectations.stageOrder,
+      actual: output.stageOrder,
+      status: arraysEqual(expectations.stageOrder, output.stageOrder) ? 'pass' : 'fail',
+    });
+  }
+  if (expectations.runnableStages !== undefined) {
+    checks.push({
+      name: 'runnableStages',
+      expected: expectations.runnableStages,
+      actual: output.runnableStages,
+      status: arraysEqual(expectations.runnableStages, output.runnableStages) ? 'pass' : 'fail',
+    });
+  }
+  if (expectations.resumeCreated !== undefined) {
+    checks.push(check('resumeCreated', expectations.resumeCreated, output.resumeCreated));
+  }
+  if (expectations.resumeRejected !== undefined) {
+    checks.push(check('resumeRejected', expectations.resumeRejected, output.resumeRejected));
+  }
+  if (expectations.resumeAttempt !== undefined) {
+    checks.push(check('resumeAttempt', expectations.resumeAttempt, output.resumeAttempt));
+  }
+  if (expectations.resumeStatus !== undefined) {
+    checks.push(check('resumeStatus', expectations.resumeStatus, output.resumeStatus));
+  }
+  if (expectations.resumeErrorIncludes !== undefined) {
+    checks.push({
+      name: 'resumeErrorIncludes',
+      expected: expectations.resumeErrorIncludes,
+      actual: output.resumeError,
+      status: output.resumeError?.includes(expectations.resumeErrorIncludes) ? 'pass' : 'fail',
+    });
+  }
+  if (expectations.sourceCheckpointLinked !== undefined) {
+    checks.push(check(
+      'sourceCheckpointLinked',
+      expectations.sourceCheckpointLinked,
+      output.sourceCheckpointId !== null,
+    ));
+  }
+  for (const eventType of expectations.graphEventTypesInclude ?? []) {
+    checks.push(includesCheck(`graphEventTypesInclude:${eventType}`, output.graphEventTypes, eventType, true));
+  }
+  return checks;
+}
+
 function check(name: string, expected: unknown, actual: unknown): EvalCheck {
   return {
     name,
@@ -1426,7 +1770,7 @@ function knowledgeArtifactFixture(
   };
 }
 
-function mergeInput<Input extends RouterEvalInput | AgentBackendEvalInput | ContextPackEvalInput | WorkflowEvalInput>(
+function mergeInput<Input extends object>(
   base: Input,
   overrides: Partial<Input> = {},
 ): Input {
@@ -1452,6 +1796,7 @@ function validateScenario(scenario: EvalScenario, source: string): void {
     && scenario.kind !== 'agent_backend_fixture'
     && scenario.kind !== 'context_pack_fixture'
     && scenario.kind !== 'workflow_fixture'
+    && scenario.kind !== 'graph_runtime_fixture'
   ) {
     throw new Error(`${source}: unsupported kind ${String(scenario.kind)}`);
   }
@@ -1466,6 +1811,9 @@ function validateScenario(scenario: EvalScenario, source: string): void {
   }
   if (scenario.kind === 'workflow_fixture' && (!scenario.input?.title || !scenario.input.profile)) {
     throw new Error(`${source}: input.title and input.profile are required`);
+  }
+  if (scenario.kind === 'graph_runtime_fixture' && (!scenario.input?.title || !scenario.input.flowId || !scenario.input.profile)) {
+    throw new Error(`${source}: input.title, input.flowId, and input.profile are required`);
   }
 }
 
@@ -1491,6 +1839,10 @@ function safeId(value: string): string {
 
 function uniqueStrings(values: readonly string[]): string[] {
   return [...new Set(values.filter((value) => value.length > 0))];
+}
+
+function arraysEqual(left: readonly unknown[], right: readonly unknown[]): boolean {
+  return left.length === right.length && left.every((value, index) => Object.is(value, right[index]));
 }
 
 function sha256Text(content: string | Buffer): string {

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "graph-runtime-bad-expectation",
+  "title": "Graph runtime red fixture rejects missing resume attempt expectations",
+  "description": "Intentionally expects a failed-node resume to be rejected; the real graph runtime should create a new ready attempt instead.",
+  "kind": "graph_runtime_fixture",
+  "input": {
+    "projectId": "proj_eval_graph_runtime_red",
+    "title": "Reject graph runtime bad resume expectation",
+    "flowId": "feature.fastforward",
+    "profile": "failed_resume",
+    "stage": "implementation"
+  },
+  "expectations": {
+    "stageOrderMatchesFlow": true,
+    "resumeCreated": false,
+    "resumeRejected": true,
+    "resumeAttempt": 1,
+    "resumeStatus": "failed"
+  }
+}

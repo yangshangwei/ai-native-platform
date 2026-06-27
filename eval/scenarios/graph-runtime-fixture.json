@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "graph-runtime-fixture",
+  "title": "Graph runtime fixture covers linear equivalence and resume guards",
+  "description": "Uses deterministic graph runtime fixtures to compare FLOW_REGISTRY order, create a failed-node resume attempt, and reject completed-node reruns.",
+  "kind": "graph_runtime_fixture",
+  "input": {
+    "projectId": "proj_eval_graph_runtime",
+    "title": "Verify Graph Runtime MVP",
+    "flowId": "feature.fastforward",
+    "profile": "linear_equivalence"
+  },
+  "variants": [
+    {
+      "id": "linear-equivalence",
+      "label": "Linear graph order matches flow order",
+      "expectations": {
+        "stageOrderMatchesFlow": true,
+        "stageOrder": ["implementation", "build_test", "review", "completion"],
+        "runnableStages": ["implementation"]
+      }
+    },
+    {
+      "id": "failed-resume",
+      "label": "Failed node resumes as a new ready attempt",
+      "inputOverrides": {
+        "profile": "failed_resume",
+        "stage": "implementation"
+      },
+      "expectations": {
+        "stageOrderMatchesFlow": true,
+        "resumeCreated": true,
+        "resumeRejected": false,
+        "resumeAttempt": 2,
+        "resumeStatus": "ready",
+        "sourceCheckpointLinked": true,
+        "runnableStages": ["implementation"],
+        "graphEventTypesInclude": ["resume_requested"]
+      }
+    },
+    {
+      "id": "completed-resume-rejected",
+      "label": "Completed node cannot be silently resumed",
+      "inputOverrides": {
+        "profile": "completed_resume",
+        "stage": "implementation"
+      },
+      "expectations": {
+        "stageOrderMatchesFlow": true,
+        "resumeCreated": false,
+        "resumeRejected": true,
+        "resumeErrorIncludes": "cannot resume completed graph node"
+      }
+    }
+  ]
+}

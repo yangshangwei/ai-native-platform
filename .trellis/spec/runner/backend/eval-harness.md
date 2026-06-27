@@ -17,6 +17,7 @@
   - `agent_backend_fixture`
   - `context_pack_fixture`
   - `workflow_fixture`
+  - `graph_runtime_fixture`
 - `agent_backend_fixture.input.behavior`:
   - `success`
   - `failure`
@@ -25,6 +26,8 @@
 - `context_pack_fixture.expectations` supports checks for mode, manifest refs, source refs, authoritative source-ref exclusion, section inclusion modes, retrieval hint count, calibration signal count, and selected item count.
 - `workflow_fixture.input.profile` supports `complete`, `missing_command_digest`, and `artifact_only_compile`.
 - `workflow_fixture.expectations` supports checks for Evidence Gate status, rule statuses, digest-backed commands, completion report generation, retro report generation, retro finding count, and report artifact count.
+- `graph_runtime_fixture.input.profile` supports `linear_equivalence`, `failed_resume`, and `completed_resume`.
+- `graph_runtime_fixture.expectations` supports checks for FLOW_REGISTRY stage-order equivalence, scheduler runnable stages, failed-node resume attempt creation, completed-node resume rejection, source-checkpoint linkage, and graph event emission.
 - Report schema: `ainp.eval.result.v1`; JSON and HTML reports include scenario kind, variant, checks, output, and pass/fail status.
 
 ### 3. Contracts
@@ -38,6 +41,7 @@
 - Context-request fake invocations in the default suite must model the bounded retry path: first backend call emits `context_request`, second backend call succeeds, and expectations assert `backendCalls: 2`.
 - `context_pack_fixture` must call the real Runner context builder and expose structured manifest/source-ref/degradation output for expectations. It must not snapshot the whole ContextPack.
 - `workflow_fixture` must seed deterministic workflow evidence into the eval SQLite store, call the real Evidence Gate, and use report generators for completion/retro sidecar checks. It must not run a live API server.
+- `graph_runtime_fixture` must use the real shared flow-to-graph adapter, API graph resume helper, graph ledger store, and Runner graph scheduler. It must not hand-implement alternate graph traversal or resume rules.
 
 ### 4. Validation & Error Matrix
 
@@ -47,6 +51,7 @@
 - `agent_backend_fixture` missing `input.title` or `input.behavior` -> reject scenario.
 - `context_pack_fixture` missing `input.title` -> reject scenario.
 - `workflow_fixture` missing `input.title` or `input.profile` -> reject scenario.
+- `graph_runtime_fixture` missing `input.title`, `input.flowId`, or `input.profile` -> reject scenario.
 - Any failed expectation -> variant status `fail`; if any variant fails, the eval command exits 1.
 - A default scenario that depends on real Claude Code/Codex CLI -> contract violation; replace with fake backend coverage.
 
@@ -56,17 +61,19 @@
 - Good: the context_request variant checks `contextRequestCaptured: true`, `finalStatus: 'success'`, and `backendCalls: 2`.
 - Good: default suite includes `context_pack_fixture` variants for selected accepted/current knowledge and observable budget degradation.
 - Good: default suite includes `workflow_fixture` with digest-backed compile/test/acceptance evidence, passing Evidence Gate, and generated completion/retro report sidecars.
+- Good: default suite includes `graph_runtime_fixture` variants for linear graph equivalence, failed-node resume creating a new ready attempt, and completed-node resume rejection.
 - Good: `bun run eval -- --scenario-dir eval/scenarios-red` exits 1 for an intentionally bad AgentSession expectation.
-- Good: red suite includes context/workflow bad expectations for sensitive context and missing command digests.
+- Good: red suite includes context/workflow/graph bad expectations for sensitive context, missing command digests, and invalid graph resume expectations.
 - Base: router-only scenarios continue to run unchanged and report `kind: 'router_recommendation'`.
 - Bad: a fixture calls `selectAgentBackend()` and fails on a developer machine without Codex or Claude Code installed.
 - Bad: a red scenario is placed under `eval/scenarios/`, causing the default eval suite to fail.
 - Bad: `context_pack_fixture` uses whole-pack snapshots that churn on harmless score/id/timestamp changes.
 - Bad: `workflow_fixture` hand-implements an alternate Evidence Gate instead of calling the real gate.
+- Bad: `graph_runtime_fixture` hand-implements a fake scheduler/resume policy instead of calling the real Graph Runtime helpers.
 
 ### 6. Tests Required
 
-- Default eval command passes with router, context, workflow, and agent fixture scenarios.
+- Default eval command passes with router, context, workflow, graph, and agent fixture scenarios.
 - Red fixture command exits non-zero when run against `eval/scenarios-red`.
 - Runner tests remain green because the fixture reuses Runner invocation contracts instead of forking behavior.
 - Typecheck remains green for packages covered by project `tsconfig` files.
