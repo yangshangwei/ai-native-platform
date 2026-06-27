@@ -3,14 +3,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, expect, test } from 'vitest';
 import {
+  GRAPH_RUNTIME_SCHEMA_VERSION,
   RUNNER_TOOL_SPECS,
   newId,
   nowIso,
+  type GraphDefinition,
+  type GraphEvent,
+  type GraphNodeRun,
+  type GraphRun,
   type KnowledgeArtifact,
   type Artifact,
   type HandoffRecord,
   type Project,
   type StepCheckpoint,
+  type StepRun,
   type ToolInvocation,
   type WorkflowRun,
 } from '@ainp/shared';
@@ -68,6 +74,34 @@ async function createRun(projectName: string, title: string): Promise<WorkflowRu
   });
   expect(res.status).toBe(201);
   return (await res.json()) as WorkflowRun;
+}
+
+function graphDefinitionForResume(): GraphDefinition {
+  return {
+    id: 'gdef_resume_v1',
+    schemaVersion: GRAPH_RUNTIME_SCHEMA_VERSION,
+    version: '1',
+    sourceFlowId: 'feature.fastforward',
+    description: 'Fastforward resume graph',
+    nodes: [{
+      id: 'node:feature.fastforward:0:implementation',
+      stage: 'implementation',
+      kind: 'agent',
+      skillId: 'cs-feat-impl',
+      label: 'implementation',
+      inputSelectors: [],
+      outputNames: [],
+      retryPolicy: { maxAttempts: 2, backoff: 'none' },
+      resumePolicy: 'new_attempt',
+      failurePolicy: 'fail_fast',
+      joinPolicy: 'none',
+      metadata: {},
+    }],
+    edges: [],
+    entryNodeIds: ['node:feature.fastforward:0:implementation'],
+    createdAt: nowIso(),
+    metadata: { generatedFrom: 'test' },
+  };
 }
 
 async function postArtifact(run: WorkflowRun, suffix: string): Promise<Artifact> {
@@ -174,6 +208,611 @@ test('GET /workflow-runs/:id/step-checkpoints returns empty list for legacy runs
   const res = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/step-checkpoints`);
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ items: [] });
+});
+
+test('GET /workflow-runs/:id/graph returns empty graph metadata for legacy runs', async () => {
+  const run = await createRun('graph-empty-route', 'legacy run has no graph rows yet');
+
+  const res = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/graph`);
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({
+    graphDefinition: null,
+    graphRun: null,
+    nodeRuns: [],
+    events: [],
+  });
+});
+
+test('graph ledger persists and exposes graph run, node run, checkpoint link, and events', async () => {
+  const run = await createRun('graph-ledger-route', 'record graph ledger rows');
+  const step = {
+    id: 'step_graph_impl',
+    workflowRunId: run.id,
+    stage: 'implementation',
+    name: 'Implementation',
+    status: 'passed',
+    startedAt: nowIso(),
+    completedAt: nowIso(),
+  } satisfies StepRun;
+  storeMod.store.stepRuns.set(step.id, step);
+  const checkpoint: StepCheckpoint = {
+    id: 'scp_graph_impl',
+    workflowRunId: run.id,
+    stepRunId: step.id,
+    stage: 'implementation',
+    status: 'passed',
+    inputArtifactIds: [],
+    outputArtifactIds: [],
+    contextPackId: null,
+    agentSessionIds: [],
+    toolInvocationIds: [],
+    gateRunIds: [],
+    retryIndex: 0,
+    resumeCursor: 'graph://feature.standard/implementation',
+    failureReason: null,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    metadata: {},
+  };
+  storeMod.store.stepCheckpoints.upsert(checkpoint);
+
+  const graphDefinition: GraphDefinition = {
+    id: 'gdef_feature_standard_v1',
+    schemaVersion: GRAPH_RUNTIME_SCHEMA_VERSION,
+    version: '1',
+    sourceFlowId: 'feature.standard',
+    description: 'Feature standard linear graph',
+    nodes: [{
+      id: 'feature.standard:3:implementation',
+      stage: 'implementation',
+      kind: 'agent',
+      skillId: 'cs-feat-impl',
+      label: 'Implementation',
+      inputSelectors: [],
+      outputNames: [],
+      retryPolicy: { maxAttempts: 2, backoff: 'none' },
+      resumePolicy: 'new_attempt',
+      failurePolicy: 'fail_fast',
+      joinPolicy: 'none',
+      metadata: {},
+    }],
+    edges: [],
+    entryNodeIds: ['feature.standard:3:implementation'],
+    createdAt: nowIso(),
+    metadata: { source: 'test' },
+  };
+  const graphRun: GraphRun = {
+    id: 'grun_feature_standard_1',
+    workflowRunId: run.id,
+    graphDefinitionId: graphDefinition.id,
+    graphVersion: graphDefinition.version,
+    status: 'running',
+    activeNodeIds: ['feature.standard:3:implementation'],
+    interruptedReason: null,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    metadata: {},
+  };
+  const nodeRun: GraphNodeRun = {
+    id: 'gnr_feature_standard_impl_1',
+    graphRunId: graphRun.id,
+    workflowRunId: run.id,
+    nodeId: 'feature.standard:3:implementation',
+    attempt: 1,
+    status: 'passed',
+    stepRunId: step.id,
+    stepCheckpointId: checkpoint.id,
+    resumeCursor: checkpoint.resumeCursor,
+    idempotencyKey: `${graphRun.id}:feature.standard:3:implementation:1`,
+    dependencyState: {
+      upstreamNodeIds: [],
+      satisfiedNodeIds: [],
+      blockedNodeIds: [],
+    },
+    startedAt: step.startedAt,
+    completedAt: step.completedAt,
+    metadata: { evidenceRefs: [checkpoint.id] },
+  };
+  const event: GraphEvent = {
+    id: 'gevt_feature_standard_impl_1',
+    graphRunId: graphRun.id,
+    workflowRunId: run.id,
+    nodeId: nodeRun.nodeId,
+    type: 'node_finished',
+    createdAt: nowIso(),
+    payload: { nodeRunId: nodeRun.id },
+  };
+
+  storeMod.store.graphDefinitions.upsert(graphDefinition);
+  storeMod.store.graphRuns.upsert(graphRun);
+  storeMod.store.graphNodeRuns.upsert(nodeRun);
+  storeMod.store.graphEvents.insert(event);
+
+  const res = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/graph`);
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as {
+    graphDefinition: GraphDefinition | null;
+    graphRun: GraphRun | null;
+    nodeRuns: GraphNodeRun[];
+    events: GraphEvent[];
+  };
+  expect(body.graphDefinition?.id).toBe(graphDefinition.id);
+  expect(body.graphRun).toMatchObject({ id: graphRun.id, workflowRunId: run.id });
+  expect(body.nodeRuns).toMatchObject([{
+    id: nodeRun.id,
+    stepRunId: step.id,
+    stepCheckpointId: checkpoint.id,
+    dependencyState: {
+      upstreamNodeIds: [],
+      satisfiedNodeIds: [],
+      blockedNodeIds: [],
+    },
+  }]);
+  expect(body.events).toMatchObject([{ id: event.id, type: 'node_finished' }]);
+
+  const full = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}`);
+  expect(full.status).toBe(200);
+  expect(((await full.json()) as { graph: unknown }).graph).toMatchObject({
+    graphRun: { id: graphRun.id },
+    nodeRuns: [{ id: nodeRun.id }],
+  });
+});
+
+test('runner graph events persist graph and node state into the read model', async () => {
+  const run = await createRun('graph-runner-events-route', 'record graph runner events');
+  const graphDefinition: GraphDefinition = {
+    id: 'gdef_runner_events_v1',
+    schemaVersion: GRAPH_RUNTIME_SCHEMA_VERSION,
+    version: '1',
+    sourceFlowId: 'feature.fastforward',
+    description: 'Fastforward linear graph',
+    nodes: [{
+      id: 'node:feature.fastforward:0:implementation',
+      stage: 'implementation',
+      kind: 'agent',
+      skillId: 'cs-feat-impl',
+      label: 'implementation',
+      inputSelectors: [],
+      outputNames: [],
+      retryPolicy: { maxAttempts: 1, backoff: 'none' },
+      resumePolicy: 'new_attempt',
+      failurePolicy: 'fail_fast',
+      joinPolicy: 'none',
+      metadata: {},
+    }],
+    edges: [],
+    entryNodeIds: ['node:feature.fastforward:0:implementation'],
+    createdAt: nowIso(),
+    metadata: { generatedFrom: 'test' },
+  };
+
+  const graphRunRes = await app.request('/runner/events/graph-run-started', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      graphDefinition,
+    }),
+  });
+  expect(graphRunRes.status).toBe(201);
+  const graphRun = ((await graphRunRes.json()) as { graphRun: GraphRun }).graphRun;
+
+  const nodeRunRes = await app.request('/runner/events/graph-node-started', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      graphRunId: graphRun.id,
+      nodeId: graphDefinition.nodes[0]!.id,
+      dependencyState: {
+        upstreamNodeIds: [],
+        satisfiedNodeIds: [],
+        blockedNodeIds: [],
+      },
+      idempotencyKey: `${graphRun.id}:${graphDefinition.nodes[0]!.id}:1`,
+    }),
+  });
+  expect(nodeRunRes.status).toBe(201);
+  const nodeRun = ((await nodeRunRes.json()) as { nodeRun: GraphNodeRun }).nodeRun;
+
+  const step = {
+    id: 'step_graph_runner_event_impl',
+    workflowRunId: run.id,
+    stage: 'implementation',
+    name: 'Implementation',
+    status: 'passed',
+    startedAt: nowIso(),
+    completedAt: nowIso(),
+  } satisfies StepRun;
+  storeMod.store.stepRuns.set(step.id, step);
+  const checkpoint: StepCheckpoint = {
+    id: 'scp_graph_runner_event_impl',
+    workflowRunId: run.id,
+    stepRunId: step.id,
+    stage: 'implementation',
+    status: 'passed',
+    inputArtifactIds: [],
+    outputArtifactIds: [],
+    contextPackId: null,
+    agentSessionIds: [],
+    toolInvocationIds: [],
+    gateRunIds: [],
+    retryIndex: 0,
+    resumeCursor: null,
+    failureReason: null,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    metadata: {},
+  };
+  storeMod.store.stepCheckpoints.upsert(checkpoint);
+
+  const nodeFinishRes = await app.request('/runner/events/graph-node-finished', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      nodeRunId: nodeRun.id,
+      status: 'passed',
+      stepRunId: step.id,
+      stepCheckpointId: checkpoint.id,
+    }),
+  });
+  expect(nodeFinishRes.status).toBe(200);
+
+  const graphRes = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/graph`);
+  expect(graphRes.status).toBe(200);
+  const graphBody = (await graphRes.json()) as {
+    graphRun: GraphRun | null;
+    nodeRuns: GraphNodeRun[];
+    events: GraphEvent[];
+  };
+  expect(graphBody.graphRun).toMatchObject({ id: graphRun.id, status: 'running' });
+  expect(graphBody.nodeRuns).toMatchObject([{
+    id: nodeRun.id,
+    status: 'passed',
+    stepRunId: step.id,
+    stepCheckpointId: checkpoint.id,
+  }]);
+  expect(graphBody.events.map((event) => event.type)).toEqual([
+    'graph_planned',
+    'node_started',
+    'node_finished',
+  ]);
+});
+
+test('graph node run rejects a step run from another workflow', async () => {
+  const run = await createRun('graph-cross-link-a', 'graph owner run');
+  const other = await createRun('graph-cross-link-b', 'other workflow run');
+  storeMod.store.graphRuns.upsert({
+    id: 'grun_cross_link',
+    workflowRunId: run.id,
+    graphDefinitionId: 'gdef_cross_link',
+    graphVersion: '1',
+    status: 'running',
+    activeNodeIds: ['node_a'],
+    interruptedReason: null,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    metadata: {},
+  });
+  storeMod.store.stepRuns.set('step_cross_other', {
+    id: 'step_cross_other',
+    workflowRunId: other.id,
+    stage: 'implementation',
+    name: 'Implementation',
+    status: 'passed',
+    startedAt: nowIso(),
+    completedAt: nowIso(),
+  });
+
+  expect(() =>
+    storeMod.store.graphNodeRuns.upsert({
+      id: 'gnr_cross_invalid',
+      graphRunId: 'grun_cross_link',
+      workflowRunId: run.id,
+      nodeId: 'node_a',
+      attempt: 1,
+      status: 'passed',
+      stepRunId: 'step_cross_other',
+      stepCheckpointId: null,
+      resumeCursor: null,
+      idempotencyKey: 'grun_cross_link:node_a:1',
+      dependencyState: {
+        upstreamNodeIds: [],
+        satisfiedNodeIds: [],
+        blockedNodeIds: [],
+      },
+      startedAt: nowIso(),
+      completedAt: nowIso(),
+      metadata: {},
+    }),
+  ).toThrow(/stepRunId does not belong to workflowRunId/);
+});
+
+test('graph resume creates a ready node attempt from a failed checkpointed node', async () => {
+  const run = await createRun('graph-resume-route', 'resume failed graph node');
+  const step = {
+    id: 'step_graph_resume_failed',
+    workflowRunId: run.id,
+    stage: 'implementation',
+    name: 'Implementation',
+    status: 'failed',
+    startedAt: nowIso(),
+    completedAt: nowIso(),
+  } satisfies StepRun;
+  storeMod.store.stepRuns.set(step.id, step);
+  const checkpoint: StepCheckpoint = {
+    id: 'scp_graph_resume_failed',
+    workflowRunId: run.id,
+    stepRunId: step.id,
+    stage: 'implementation',
+    status: 'failed',
+    inputArtifactIds: [],
+    outputArtifactIds: [],
+    contextPackId: null,
+    agentSessionIds: [],
+    toolInvocationIds: [],
+    gateRunIds: [],
+    retryIndex: 0,
+    resumeCursor: 'graph://resume/implementation',
+    failureReason: 'agent failed',
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    metadata: {},
+  };
+  storeMod.store.stepCheckpoints.upsert(checkpoint);
+  const graphDefinition = graphDefinitionForResume();
+  const graphRun: GraphRun = {
+    id: 'grun_resume',
+    workflowRunId: run.id,
+    graphDefinitionId: graphDefinition.id,
+    graphVersion: graphDefinition.version,
+    status: 'failed',
+    activeNodeIds: [],
+    interruptedReason: null,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    metadata: {},
+  };
+  const failedNodeRun: GraphNodeRun = {
+    id: 'gnr_resume_failed_1',
+    graphRunId: graphRun.id,
+    workflowRunId: run.id,
+    nodeId: graphDefinition.nodes[0]!.id,
+    attempt: 1,
+    status: 'failed',
+    stepRunId: step.id,
+    stepCheckpointId: checkpoint.id,
+    resumeCursor: checkpoint.resumeCursor,
+    idempotencyKey: `${graphRun.id}:${graphDefinition.nodes[0]!.id}:1`,
+    dependencyState: {
+      upstreamNodeIds: [],
+      satisfiedNodeIds: [],
+      blockedNodeIds: [],
+    },
+    startedAt: step.startedAt,
+    completedAt: step.completedAt,
+    metadata: {},
+  };
+  storeMod.store.graphDefinitions.upsert(graphDefinition);
+  storeMod.store.graphRuns.upsert(graphRun);
+  storeMod.store.graphNodeRuns.upsert(failedNodeRun);
+
+  const res = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/graph/resume-node`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      nodeRunId: failedNodeRun.id,
+      graphVersion: graphDefinition.version,
+      resumeCursor: checkpoint.resumeCursor,
+      actor: 'test',
+    }),
+  });
+  expect(res.status).toBe(201);
+  const body = (await res.json()) as { nodeRun: GraphNodeRun };
+  expect(body.nodeRun).toMatchObject({
+    graphRunId: graphRun.id,
+    workflowRunId: run.id,
+    nodeId: failedNodeRun.nodeId,
+    attempt: 2,
+    status: 'ready',
+    stepRunId: null,
+    stepCheckpointId: null,
+    resumeCursor: checkpoint.resumeCursor,
+    metadata: {
+      resumeOfNodeRunId: failedNodeRun.id,
+      sourceCheckpointId: checkpoint.id,
+      actor: 'test',
+    },
+  });
+
+  const startReady = await app.request('/runner/events/graph-node-started', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      graphRunId: graphRun.id,
+      nodeRunId: body.nodeRun.id,
+      nodeId: body.nodeRun.nodeId,
+      dependencyState: body.nodeRun.dependencyState,
+      idempotencyKey: body.nodeRun.idempotencyKey,
+    }),
+  });
+  expect(startReady.status).toBe(201);
+  expect(((await startReady.json()) as { nodeRun: GraphNodeRun }).nodeRun).toMatchObject({
+    id: body.nodeRun.id,
+    attempt: 2,
+    status: 'running',
+  });
+
+  const graphRes = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/graph`);
+  const graphBody = (await graphRes.json()) as { events: GraphEvent[] };
+  expect(graphBody.events.map((event) => event.type)).toContain('resume_requested');
+});
+
+test('graph resume rejects completed nodes and invalid resume cursors', async () => {
+  const run = await createRun('graph-resume-reject-route', 'reject invalid graph resume');
+  const graphDefinition = graphDefinitionForResume();
+  const graphRun: GraphRun = {
+    id: 'grun_resume_reject',
+    workflowRunId: run.id,
+    graphDefinitionId: graphDefinition.id,
+    graphVersion: graphDefinition.version,
+    status: 'running',
+    activeNodeIds: [],
+    interruptedReason: null,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    metadata: {},
+  };
+  const step: StepRun = {
+    id: 'step_graph_resume_passed',
+    workflowRunId: run.id,
+    stage: 'implementation',
+    name: 'Implementation',
+    status: 'passed',
+    startedAt: nowIso(),
+    completedAt: nowIso(),
+  };
+  const checkpoint: StepCheckpoint = {
+    id: 'scp_graph_resume_passed',
+    workflowRunId: run.id,
+    stepRunId: step.id,
+    stage: 'implementation',
+    status: 'passed',
+    inputArtifactIds: [],
+    outputArtifactIds: [],
+    contextPackId: null,
+    agentSessionIds: [],
+    toolInvocationIds: [],
+    gateRunIds: [],
+    retryIndex: 0,
+    resumeCursor: 'graph://resume/passed',
+    failureReason: null,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    metadata: {},
+  };
+  storeMod.store.stepRuns.set(step.id, step);
+  storeMod.store.stepCheckpoints.upsert(checkpoint);
+  storeMod.store.graphDefinitions.upsert(graphDefinition);
+  storeMod.store.graphRuns.upsert(graphRun);
+  storeMod.store.graphNodeRuns.upsert({
+    id: 'gnr_resume_passed_1',
+    graphRunId: graphRun.id,
+    workflowRunId: run.id,
+    nodeId: graphDefinition.nodes[0]!.id,
+    attempt: 1,
+    status: 'passed',
+    stepRunId: step.id,
+    stepCheckpointId: checkpoint.id,
+    resumeCursor: checkpoint.resumeCursor,
+    idempotencyKey: `${graphRun.id}:${graphDefinition.nodes[0]!.id}:1`,
+    dependencyState: { upstreamNodeIds: [], satisfiedNodeIds: [], blockedNodeIds: [] },
+    startedAt: step.startedAt,
+    completedAt: step.completedAt,
+    metadata: {},
+  });
+
+  const passedRes = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/graph/resume-node`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      nodeRunId: 'gnr_resume_passed_1',
+      graphVersion: graphDefinition.version,
+      resumeCursor: checkpoint.resumeCursor,
+    }),
+  });
+  expect(passedRes.status).toBe(400);
+  expect(await passedRes.json()).toMatchObject({ error: expect.stringContaining('cannot resume completed') });
+
+  const cursorRes = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/graph/resume-node`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      nodeRunId: 'gnr_resume_passed_1',
+      graphVersion: graphDefinition.version,
+      resumeCursor: 'wrong-cursor',
+    }),
+  });
+  expect(cursorRes.status).toBe(400);
+});
+
+test('retry-step creates a graph resume attempt when graph metadata exists', async () => {
+  const run = await createRun('graph-retry-facade-route', 'retry graph-backed stage');
+  const graphDefinition = graphDefinitionForResume();
+  const graphRun: GraphRun = {
+    id: 'grun_retry_facade',
+    workflowRunId: run.id,
+    graphDefinitionId: graphDefinition.id,
+    graphVersion: graphDefinition.version,
+    status: 'failed',
+    activeNodeIds: [],
+    interruptedReason: null,
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    metadata: {},
+  };
+  const step: StepRun = {
+    id: 'step_retry_facade_failed',
+    workflowRunId: run.id,
+    stage: 'implementation',
+    name: 'Implementation',
+    status: 'failed',
+    startedAt: nowIso(),
+    completedAt: nowIso(),
+  };
+  const checkpoint: StepCheckpoint = {
+    id: 'scp_retry_facade_failed',
+    workflowRunId: run.id,
+    stepRunId: step.id,
+    stage: 'implementation',
+    status: 'failed',
+    inputArtifactIds: [],
+    outputArtifactIds: [],
+    contextPackId: null,
+    agentSessionIds: [],
+    toolInvocationIds: [],
+    gateRunIds: [],
+    retryIndex: 0,
+    resumeCursor: 'graph://retry/implementation',
+    failureReason: 'failed',
+    createdAt: nowIso(),
+    updatedAt: nowIso(),
+    metadata: {},
+  };
+  storeMod.store.stepRuns.set(step.id, step);
+  storeMod.store.stepCheckpoints.upsert(checkpoint);
+  storeMod.store.graphDefinitions.upsert(graphDefinition);
+  storeMod.store.graphRuns.upsert(graphRun);
+  storeMod.store.graphNodeRuns.upsert({
+    id: 'gnr_retry_facade_failed_1',
+    graphRunId: graphRun.id,
+    workflowRunId: run.id,
+    nodeId: graphDefinition.nodes[0]!.id,
+    attempt: 1,
+    status: 'failed',
+    stepRunId: step.id,
+    stepCheckpointId: checkpoint.id,
+    resumeCursor: checkpoint.resumeCursor,
+    idempotencyKey: `${graphRun.id}:${graphDefinition.nodes[0]!.id}:1`,
+    dependencyState: { upstreamNodeIds: [], satisfiedNodeIds: [], blockedNodeIds: [] },
+    startedAt: step.startedAt,
+    completedAt: step.completedAt,
+    metadata: {},
+  });
+
+  const res = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/retry-step`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ stage: 'implementation', actor: 'test' }),
+  });
+  expect(res.status).toBe(200);
+  const graph = storeMod.store.graphRuntime.byWorkflow(run.id);
+  expect(graph.nodeRuns.at(-1)).toMatchObject({
+    nodeId: graphDefinition.nodes[0]!.id,
+    attempt: 2,
+    status: 'ready',
+  });
 });
 
 test('runner events merge agent, tool, gate and failure refs into a step checkpoint', async () => {

@@ -1,7 +1,8 @@
 import { join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import type { FlowId, StageStep, WorkflowRun } from '@ainp/shared';
+import type { FlowId, GraphDefinition, GraphNodeDefinition, GraphNodeRun, StageStep, WorkflowRun, WorkflowStage } from '@ainp/shared';
+import { flowToGraphDefinition } from '@ainp/shared';
 import { api } from './api-client';
 import { TrustedLocalWorktreeEnvironment } from './worktree';
 import { getConfig } from './config-client';
@@ -27,6 +28,10 @@ import {
   runContextPack,
   runStage,
 } from './orchestrator/steps';
+import {
+  latestNodeRunsByNode,
+  nextRunnableGraphNode,
+} from './orchestrator/graph-scheduler';
 
 // ---------------------------------------------------------------------------
 // T3.1 de-closure (06-12): this file now holds only the run lifecycle
@@ -100,10 +105,11 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
   const project = await api.getProject(opts.project);
   const backend = await selectAgentBackend(project);
   let run: WorkflowRun;
+  let existingRunDetail: Awaited<ReturnType<typeof api.getWorkflowRun>> | null = null;
   if (opts.workflowRunId) {
     // Resume an existing run (retry-step flow).
-    const detail = await api.getWorkflowRun(opts.workflowRunId);
-    run = detail.run;
+    existingRunDetail = await api.getWorkflowRun(opts.workflowRunId);
+    run = existingRunDetail.run;
     console.log(`[runner] resuming workflow-run ${run.id} at stage ${opts.startStage ?? run.currentStage} (flow=${run.flowId})`);
   } else {
     // 06-25 ask-flow: 'ask' requests never reach orchestrator (they have
@@ -188,16 +194,93 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       );
     }
 
+    const dispatchStartStage = opts.workflowRunId
+      ? (opts.startStage ?? run.startStage ?? (run.currentStage === 'init' ? null : run.currentStage))
+      : run.startStage;
+
     const stagesToRun = sliceStagesFromStartStage({
       flowId: run.flowId,
       runId: run.id,
       stages: flow.stages,
-      startStage: run.startStage,
+      startStage: dispatchStartStage,
       log: (m) => console.log(m),
     });
 
-    for (const step of stagesToRun) {
-      await dispatchStep(step, ctx);
+    const graph = flowToGraphDefinition(flow);
+    const existingGraph = existingRunDetail?.graph;
+    const graphRun = existingGraph?.graphRun
+      && existingGraph.graphDefinition?.id === graph.id
+      && existingGraph.graphRun.graphVersion === graph.version
+      ? existingGraph.graphRun
+      : await api.graphRunStarted({
+          workflowRunId: run.id,
+          graphDefinition: graph,
+        });
+    let graphNodeRuns: GraphNodeRun[] = graphRun === existingGraph?.graphRun
+      ? [...(existingGraph?.nodeRuns ?? [])]
+      : [];
+    const allowedNodeIds = graphNodeIdsForStages(graph, stagesToRun);
+
+    while (completedGraphNodesInSlice(graphNodeRuns, allowedNodeIds) < allowedNodeIds.length) {
+      const node = nextRunnableGraphNode({
+        graph,
+        graphRun,
+        nodeRuns: graphNodeRuns,
+        allowedNodeIds,
+        ignoreExternalIncoming: true,
+      });
+      if (!node) {
+        throw new Error(`graph scheduler found no runnable node (run=${run.id}, flow=${run.flowId})`);
+      }
+      const step = stageStepForGraphNode(stagesToRun, node);
+      const latestNodeRun = latestNodeRunsByNode(graphNodeRuns).get(node.id);
+      const attempt = latestNodeRun?.status === 'ready'
+        ? latestNodeRun.attempt
+        : (latestNodeRun?.attempt ?? 0) + 1;
+      const startedNodeRun = await api.graphNodeStarted({
+        workflowRunId: run.id,
+        graphRunId: graphRun.id,
+        nodeRunId: latestNodeRun?.status === 'ready' ? latestNodeRun.id : undefined,
+        nodeId: node.id,
+        dependencyState: dependencyStateForNode(graph, node.id, graphNodeRuns),
+        idempotencyKey: latestNodeRun?.status === 'ready'
+          ? latestNodeRun.idempotencyKey
+          : `${graphRun.id}:${node.id}:${attempt}`,
+        metadata: {
+          stage: node.stage,
+          sourceFlowId: graph.sourceFlowId,
+        },
+      });
+      graphNodeRuns = upsertLocalGraphNodeRun(graphNodeRuns, startedNodeRun);
+      try {
+        await dispatchStep(step, ctx);
+        const evidence = await latestStepEvidenceForStage(run.id, node.stage);
+        const finishedNodeRun = await api.graphNodeFinished({
+          nodeRunId: startedNodeRun.id,
+          status: ctx.ok.value ? 'passed' : 'failed',
+          stepRunId: evidence.stepRunId,
+          stepCheckpointId: evidence.stepCheckpointId,
+          resumeCursor: evidence.resumeCursor,
+        });
+        graphNodeRuns = upsertLocalGraphNodeRun(graphNodeRuns, finishedNodeRun);
+        if (!ctx.ok.value) break;
+      } catch (err) {
+        const evidence = await latestStepEvidenceForStage(run.id, node.stage).catch(() => ({
+          stepRunId: null,
+          stepCheckpointId: null,
+          resumeCursor: null,
+        }));
+        const finishedNodeRun = await api.graphNodeFinished({
+          nodeRunId: startedNodeRun.id,
+          status: 'failed',
+          stepRunId: evidence.stepRunId,
+          stepCheckpointId: evidence.stepCheckpointId,
+          resumeCursor: evidence.resumeCursor,
+          metadata: { error: err instanceof Error ? err.message : String(err) },
+        });
+        graphNodeRuns = upsertLocalGraphNodeRun(graphNodeRuns, finishedNodeRun);
+        throw err;
+      }
     }
   } catch (err) {
     ok.value = false;
@@ -316,6 +399,89 @@ export function agentUserRequestForOrchestrate(
 ): string {
   const clarified = opts.userRequest?.trim();
   return clarified && clarified.length > 0 ? clarified : opts.title;
+}
+
+function graphNodeIdsForStages(
+  graph: GraphDefinition,
+  stages: readonly StageStep[],
+): string[] {
+  const nodes = [...graph.nodes];
+  return stages.map((step) => {
+    const idx = nodes.findIndex((node) => node.stage === step.stage);
+    if (idx === -1) {
+      throw new Error(`graph has no node for stage ${step.stage}`);
+    }
+    const [node] = nodes.splice(idx, 1);
+    return node!.id;
+  });
+}
+
+function stageStepForGraphNode(
+  stages: readonly StageStep[],
+  node: GraphNodeDefinition,
+): StageStep {
+  const step = stages.find((candidate) => candidate.stage === node.stage);
+  if (!step) throw new Error(`no dispatch step for graph node ${node.id}`);
+  return step;
+}
+
+function dependencyStateForNode(
+  graph: GraphDefinition,
+  nodeId: string,
+  nodeRuns: readonly GraphNodeRun[],
+): GraphNodeRun['dependencyState'] {
+  const latest = latestNodeRunsByNode(nodeRuns);
+  const upstreamNodeIds = graph.edges
+    .filter((edge) => edge.toNodeId === nodeId)
+    .map((edge) => edge.fromNodeId);
+  return {
+    upstreamNodeIds,
+    satisfiedNodeIds: upstreamNodeIds.filter((id) => latest.get(id)?.status === 'passed'),
+    blockedNodeIds: upstreamNodeIds.filter((id) => {
+      const status = latest.get(id)?.status;
+      return status === 'failed'
+        || status === 'blocked'
+        || status === 'cancelled'
+        || status === 'skipped';
+    }),
+  };
+}
+
+async function latestStepEvidenceForStage(
+  workflowRunId: string,
+  stage: WorkflowStage,
+): Promise<{
+  stepRunId: string | null;
+  stepCheckpointId: string | null;
+  resumeCursor: string | null;
+}> {
+  const detail = await api.getWorkflowRun(workflowRunId);
+  const step = detail.steps.filter((candidate) => candidate.stage === stage).at(-1) ?? null;
+  if (!step) {
+    return { stepRunId: null, stepCheckpointId: null, resumeCursor: null };
+  }
+  const checkpoint = detail.stepCheckpoints.find((candidate) => candidate.stepRunId === step.id) ?? null;
+  return {
+    stepRunId: step.id,
+    stepCheckpointId: checkpoint?.id ?? null,
+    resumeCursor: checkpoint?.resumeCursor ?? null,
+  };
+}
+
+function upsertLocalGraphNodeRun(
+  nodeRuns: GraphNodeRun[],
+  next: GraphNodeRun,
+): GraphNodeRun[] {
+  const without = nodeRuns.filter((run) => run.id !== next.id);
+  return [...without, next];
+}
+
+function completedGraphNodesInSlice(
+  nodeRuns: readonly GraphNodeRun[],
+  allowedNodeIds: readonly string[],
+): number {
+  const latest = latestNodeRunsByNode(nodeRuns);
+  return allowedNodeIds.filter((id) => latest.get(id)?.status === 'passed').length;
 }
 
 // ---------------------------------------------------------------------------

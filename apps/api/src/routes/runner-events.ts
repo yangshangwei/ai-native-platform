@@ -14,9 +14,13 @@ import type {
   HandoffExpectedOutput,
   HandoffRole,
   HandoffStatus,
+  GraphDefinition,
+  GraphNodeDependencyState,
 } from '@ainp/shared';
 import {
   errorMessage,
+  isGraphNodeStatus,
+  isGraphRuntimeSchemaVersion,
   isAgentSessionStatus,
   isContextRequestStatus,
   isHandoffAdoptionDecision,
@@ -29,6 +33,8 @@ import {
   isToolPermissionTier,
   isToolSideEffectLevel,
   isWorkflowStage,
+  newId,
+  nowIso,
 } from '@ainp/shared';
 import {
   finishStep,
@@ -95,6 +101,208 @@ runnerEvents.post('/step-finished', async (c) => {
   return c.json({ ok: true, step });
 });
 
+runnerEvents.post('/graph-run-started', async (c) => {
+  const body = (await c.req.json()) as {
+    workflowRunId?: string;
+    graphDefinition?: GraphDefinition;
+  };
+  if (!body.workflowRunId || !body.graphDefinition) {
+    return c.json({ error: 'workflowRunId and graphDefinition required' }, 400);
+  }
+  if (!store.workflowRuns.get(body.workflowRunId)) {
+    return c.json({ error: `workflow run not found: ${body.workflowRunId}` }, 404);
+  }
+  const graphError = validateGraphDefinition(body.graphDefinition);
+  if (graphError) return c.json({ error: graphError }, 400);
+
+  const ts = nowIso();
+  const graphRun = {
+    id: newId('grun'),
+    workflowRunId: body.workflowRunId,
+    graphDefinitionId: body.graphDefinition.id,
+    graphVersion: body.graphDefinition.version,
+    status: 'running' as const,
+    activeNodeIds: [],
+    interruptedReason: null,
+    createdAt: ts,
+    updatedAt: ts,
+    metadata: {},
+  };
+  try {
+    store.graphDefinitions.upsert(body.graphDefinition);
+    store.graphRuns.upsert(graphRun);
+    store.graphEvents.insert({
+      id: newId('gevt'),
+      graphRunId: graphRun.id,
+      workflowRunId: graphRun.workflowRunId,
+      nodeId: null,
+      type: 'graph_planned',
+      createdAt: ts,
+      payload: {
+        graphDefinitionId: graphRun.graphDefinitionId,
+        graphVersion: graphRun.graphVersion,
+      },
+    });
+    return c.json({ ok: true, graphRun }, 201);
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+});
+
+runnerEvents.post('/graph-node-started', async (c) => {
+  const body = (await c.req.json()) as {
+    workflowRunId?: string;
+    graphRunId?: string;
+    nodeRunId?: string;
+    nodeId?: string;
+    dependencyState?: GraphNodeDependencyState;
+    idempotencyKey?: string;
+    metadata?: Record<string, unknown>;
+  };
+  if (!body.workflowRunId || !body.graphRunId || !body.nodeId || !body.idempotencyKey) {
+    return c.json({ error: 'workflowRunId, graphRunId, nodeId, idempotencyKey required' }, 400);
+  }
+  const dependencyError = validateDependencyState(body.dependencyState);
+  if (dependencyError) return c.json({ error: dependencyError }, 400);
+  if (body.metadata !== undefined && !isPlainObject(body.metadata)) {
+    return c.json({ error: 'metadata must be an object' }, 400);
+  }
+  const graphRun = store.graphRuns.get(body.graphRunId);
+  if (!graphRun) return c.json({ error: `graph run not found: ${body.graphRunId}` }, 404);
+  if (graphRun.workflowRunId !== body.workflowRunId) {
+    return c.json({ error: 'graphRunId does not belong to workflowRunId' }, 400);
+  }
+  const graphDefinition = store.graphDefinitions.get(graphRun.graphDefinitionId);
+  if (!graphDefinition) {
+    return c.json({ error: `graph definition not found: ${graphRun.graphDefinitionId}` }, 404);
+  }
+  if (!graphDefinition.nodes.some((node) => node.id === body.nodeId)) {
+    return c.json({ error: `nodeId does not belong to graphDefinition: ${body.nodeId}` }, 400);
+  }
+  const ts = nowIso();
+  const readyNodeRun = body.nodeRunId ? store.graphNodeRuns.get(body.nodeRunId) : undefined;
+  if (body.nodeRunId && !readyNodeRun) {
+    return c.json({ error: `graph node run not found: ${body.nodeRunId}` }, 404);
+  }
+  if (readyNodeRun) {
+    if (readyNodeRun.graphRunId !== graphRun.id || readyNodeRun.workflowRunId !== graphRun.workflowRunId) {
+      return c.json({ error: 'nodeRunId does not belong to graphRunId' }, 400);
+    }
+    if (readyNodeRun.nodeId !== body.nodeId) {
+      return c.json({ error: 'nodeRunId does not belong to nodeId' }, 400);
+    }
+    if (readyNodeRun.status !== 'ready') {
+      return c.json({ error: `graph node run is not ready: ${readyNodeRun.status}` }, 400);
+    }
+  }
+  const attempt = readyNodeRun?.attempt ?? store.graphNodeRuns.byNode(graphRun.id, body.nodeId).length + 1;
+  const nodeRun = {
+    id: readyNodeRun?.id ?? newId('gnr'),
+    graphRunId: graphRun.id,
+    workflowRunId: graphRun.workflowRunId,
+    nodeId: body.nodeId,
+    attempt,
+    status: 'running' as const,
+    stepRunId: readyNodeRun?.stepRunId ?? null,
+    stepCheckpointId: readyNodeRun?.stepCheckpointId ?? null,
+    resumeCursor: readyNodeRun?.resumeCursor ?? null,
+    idempotencyKey: readyNodeRun?.idempotencyKey ?? body.idempotencyKey,
+    dependencyState: readyNodeRun?.dependencyState ?? body.dependencyState!,
+    startedAt: ts,
+    completedAt: null,
+    metadata: {
+      ...(readyNodeRun?.metadata ?? {}),
+      ...(body.metadata ?? {}),
+    },
+  };
+  try {
+    store.graphNodeRuns.upsert(nodeRun);
+    store.graphRuns.upsert({
+      ...graphRun,
+      activeNodeIds: [...new Set([...graphRun.activeNodeIds, body.nodeId])],
+      updatedAt: ts,
+    });
+    store.graphEvents.insert({
+      id: newId('gevt'),
+      graphRunId: graphRun.id,
+      workflowRunId: graphRun.workflowRunId,
+      nodeId: body.nodeId,
+      type: 'node_started',
+      createdAt: ts,
+      payload: { nodeRunId: nodeRun.id, attempt },
+    });
+    return c.json({ ok: true, nodeRun }, 201);
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+});
+
+runnerEvents.post('/graph-node-finished', async (c) => {
+  const body = (await c.req.json()) as {
+    nodeRunId?: string;
+    status?: string;
+    stepRunId?: string | null;
+    stepCheckpointId?: string | null;
+    resumeCursor?: string | null;
+    metadata?: Record<string, unknown>;
+  };
+  if (!body.nodeRunId || !body.status) {
+    return c.json({ error: 'nodeRunId and status required' }, 400);
+  }
+  if (!isGraphNodeStatus(body.status)) {
+    return c.json({ error: `unknown graph node status: ${String(body.status)}` }, 400);
+  }
+  if (body.status === 'pending' || body.status === 'ready' || body.status === 'running') {
+    return c.json({ error: `finished graph node status cannot be ${body.status}` }, 400);
+  }
+  if (body.metadata !== undefined && !isPlainObject(body.metadata)) {
+    return c.json({ error: 'metadata must be an object' }, 400);
+  }
+  const existing = store.graphNodeRuns.get(body.nodeRunId);
+  if (!existing) return c.json({ error: `graph node run not found: ${body.nodeRunId}` }, 404);
+  const graphRun = store.graphRuns.get(existing.graphRunId);
+  if (!graphRun) return c.json({ error: `graph run not found: ${existing.graphRunId}` }, 404);
+  const ts = nowIso();
+  const nodeRun = {
+    ...existing,
+    status: body.status,
+    stepRunId: body.stepRunId ?? existing.stepRunId,
+    stepCheckpointId: body.stepCheckpointId ?? existing.stepCheckpointId,
+    resumeCursor: body.resumeCursor ?? existing.resumeCursor,
+    completedAt: ts,
+    metadata: {
+      ...existing.metadata,
+      ...(body.metadata ?? {}),
+    },
+  };
+  try {
+    store.graphNodeRuns.upsert(nodeRun);
+    store.graphRuns.upsert({
+      ...graphRun,
+      activeNodeIds: graphRun.activeNodeIds.filter((id) => id !== existing.nodeId),
+      status: body.status === 'failed' ? 'failed' : graphRun.status,
+      updatedAt: ts,
+    });
+    store.graphEvents.insert({
+      id: newId('gevt'),
+      graphRunId: existing.graphRunId,
+      workflowRunId: existing.workflowRunId,
+      nodeId: existing.nodeId,
+      type: 'node_finished',
+      createdAt: ts,
+      payload: {
+        nodeRunId: existing.id,
+        status: body.status,
+        stepRunId: nodeRun.stepRunId,
+        stepCheckpointId: nodeRun.stepCheckpointId,
+      },
+    });
+    return c.json({ ok: true, nodeRun }, 200);
+  } catch (err) {
+    return c.json({ error: errorMessage(err) }, 400);
+  }
+});
+
 runnerEvents.post('/command-run', async (c) => {
   const body = (await c.req.json()) as { commandRun: CommandRun };
   const cr = recordCommandRun(body.commandRun);
@@ -137,6 +345,50 @@ function validateToolInvocation(invocation: ToolInvocation | undefined): string 
   }
   if (!invocation.metadata || typeof invocation.metadata !== 'object' || Array.isArray(invocation.metadata)) {
     return 'toolInvocation metadata must be an object';
+  }
+  return null;
+}
+
+function validateGraphDefinition(graph: GraphDefinition): string | null {
+  if (!graph.id || !graph.version) return 'graphDefinition id and version required';
+  if (!isGraphRuntimeSchemaVersion(graph.schemaVersion)) {
+    return `unknown graph schemaVersion: ${String(graph.schemaVersion)}`;
+  }
+  if (!Array.isArray(graph.nodes) || graph.nodes.length === 0) {
+    return 'graphDefinition nodes must be a non-empty array';
+  }
+  if (!Array.isArray(graph.edges)) return 'graphDefinition edges must be an array';
+  if (!isStringArray(graph.entryNodeIds)) {
+    return 'graphDefinition entryNodeIds must be an array of strings';
+  }
+  const nodeIds = new Set<string>();
+  for (const node of graph.nodes) {
+    if (!node.id || !isWorkflowStage(node.stage)) {
+      return `invalid graph node: ${String(node.id)}`;
+    }
+    nodeIds.add(node.id);
+  }
+  for (const id of graph.entryNodeIds) {
+    if (!nodeIds.has(id)) return `entry node not found: ${id}`;
+  }
+  for (const edge of graph.edges) {
+    if (!nodeIds.has(edge.fromNodeId) || !nodeIds.has(edge.toNodeId)) {
+      return `graph edge references unknown node: ${edge.id}`;
+    }
+  }
+  return null;
+}
+
+function validateDependencyState(value: unknown): string | null {
+  if (!isPlainObject(value)) return 'dependencyState required';
+  if (!isStringArray(value.upstreamNodeIds)) {
+    return 'dependencyState.upstreamNodeIds must be an array of strings';
+  }
+  if (!isStringArray(value.satisfiedNodeIds)) {
+    return 'dependencyState.satisfiedNodeIds must be an array of strings';
+  }
+  if (!isStringArray(value.blockedNodeIds)) {
+    return 'dependencyState.blockedNodeIds must be an array of strings';
   }
   return null;
 }
@@ -203,6 +455,11 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function isNonEmptyStringArray(value: unknown): value is string[] {
   return Array.isArray(value)
     && value.length > 0
+    && value.every((item) => typeof item === 'string' && item.trim().length > 0);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value)
     && value.every((item) => typeof item === 'string' && item.trim().length > 0);
 }
 

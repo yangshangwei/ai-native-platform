@@ -716,6 +716,72 @@ export const MIGRATIONS: Migration[] = [
       run(database, `CREATE INDEX IF NOT EXISTS idx_step_checkpoints_workflow ON step_checkpoints(workflow_run_id, created_at)`);
     },
   },
+  {
+    version: 29,
+    name: 'graph_runtime-create-ledger-tables',
+    isApplied: (database) =>
+      hasTable(database, 'graph_definitions')
+      && hasTable(database, 'graph_runs')
+      && hasTable(database, 'graph_node_runs')
+      && hasTable(database, 'graph_events'),
+    up: (database) => {
+      run(database, `CREATE TABLE graph_definitions (
+         id TEXT PRIMARY KEY,
+         schema_version TEXT NOT NULL,
+         version TEXT NOT NULL,
+         source_flow_id TEXT,
+         description TEXT NOT NULL,
+         nodes_json TEXT NOT NULL,
+         edges_json TEXT NOT NULL,
+         entry_node_ids_json TEXT NOT NULL,
+         created_at TEXT NOT NULL,
+         metadata_json TEXT NOT NULL
+       )`);
+      run(database, `CREATE INDEX IF NOT EXISTS idx_graph_definitions_source_flow ON graph_definitions(source_flow_id, version)`);
+      run(database, `CREATE TABLE graph_runs (
+         id TEXT PRIMARY KEY,
+         workflow_run_id TEXT NOT NULL,
+         graph_definition_id TEXT NOT NULL,
+         graph_version TEXT NOT NULL,
+         status TEXT NOT NULL,
+         active_node_ids_json TEXT NOT NULL,
+         interrupted_reason TEXT,
+         created_at TEXT NOT NULL,
+         updated_at TEXT NOT NULL,
+         metadata_json TEXT NOT NULL
+       )`);
+      run(database, `CREATE INDEX IF NOT EXISTS idx_graph_runs_workflow ON graph_runs(workflow_run_id, created_at)`);
+      run(database, `CREATE TABLE graph_node_runs (
+         id TEXT PRIMARY KEY,
+         graph_run_id TEXT NOT NULL,
+         workflow_run_id TEXT NOT NULL,
+         node_id TEXT NOT NULL,
+         attempt INTEGER NOT NULL,
+         status TEXT NOT NULL,
+         step_run_id TEXT,
+         step_checkpoint_id TEXT,
+         resume_cursor TEXT,
+         idempotency_key TEXT NOT NULL,
+         dependency_state_json TEXT NOT NULL,
+         started_at TEXT,
+         completed_at TEXT,
+         metadata_json TEXT NOT NULL
+       )`);
+      run(database, `CREATE UNIQUE INDEX IF NOT EXISTS idx_graph_node_runs_attempt ON graph_node_runs(graph_run_id, node_id, attempt)`);
+      run(database, `CREATE INDEX IF NOT EXISTS idx_graph_node_runs_workflow ON graph_node_runs(workflow_run_id, node_id)`);
+      run(database, `CREATE TABLE graph_events (
+         id TEXT PRIMARY KEY,
+         graph_run_id TEXT NOT NULL,
+         workflow_run_id TEXT NOT NULL,
+         node_id TEXT,
+         type TEXT NOT NULL,
+         created_at TEXT NOT NULL,
+         payload_json TEXT NOT NULL
+       )`);
+      run(database, `CREATE INDEX IF NOT EXISTS idx_graph_events_graph_run ON graph_events(graph_run_id, created_at)`);
+      run(database, `CREATE INDEX IF NOT EXISTS idx_graph_events_workflow ON graph_events(workflow_run_id, created_at)`);
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------

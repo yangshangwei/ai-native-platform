@@ -12,6 +12,7 @@ import {
   retryStage,
   reEvaluateGate,
 } from '../workflow-engine';
+import { resumeGraphNode, resumeGraphStage } from '../graph-runtime';
 import {
   generateCompletionReport,
   generateKnowledgeCandidate,
@@ -63,6 +64,13 @@ workflowRuns.get('/:id/step-checkpoints', (c) => {
   const missing = requireWorkflowRun(c, id);
   if (missing) return missing;
   return c.json({ items: store.stepCheckpoints.byWorkflow(id) });
+});
+
+workflowRuns.get('/:id/graph', (c) => {
+  const id = c.req.param('id');
+  const missing = requireWorkflowRun(c, id);
+  if (missing) return missing;
+  return c.json(store.graphRuntime.byWorkflow(id));
 });
 
 workflowRuns.post('/', async (c) => {
@@ -160,6 +168,7 @@ workflowRuns.get('/:id', (c) => {
   const toolInvocations = store.toolInvocations.byWorkflow(id);
   const handoffs = store.handoffs.byWorkflow(id);
   const stepCheckpoints = store.stepCheckpoints.byWorkflow(id);
+  const graph = store.graphRuntime.byWorkflow(id);
   const audit = store.auditLog.byWorkflow(id);
   return c.json({
     run,
@@ -177,6 +186,7 @@ workflowRuns.get('/:id', (c) => {
     toolInvocations,
     handoffs,
     stepCheckpoints,
+    graph,
     audit,
   });
 });
@@ -254,6 +264,31 @@ workflowRuns.post('/:id/knowledge-actions', async (c) => {
   return c.json({ ok: true, action }, 201);
 });
 
+workflowRuns.post('/:id/graph/resume-node', async (c) => {
+  const id = c.req.param('id');
+  const missing = requireWorkflowRun(c, id);
+  if (missing) return missing;
+  const body = (await c.req.json()) as {
+    nodeRunId?: string;
+    graphVersion?: string;
+    resumeCursor?: string | null;
+    actor?: string;
+  };
+  if (!body.nodeRunId) return jsonError(c, 'nodeRunId required', 400);
+  try {
+    const result = resumeGraphNode({
+      workflowRunId: id,
+      nodeRunId: body.nodeRunId,
+      graphVersion: body.graphVersion,
+      resumeCursor: body.resumeCursor,
+      actor: body.actor ?? 'web',
+    });
+    return c.json({ ok: true, ...result }, 201);
+  } catch (err) {
+    return jsonError(c, errorMessage(err), 400);
+  }
+});
+
 workflowRuns.post('/:id/completion-report', async (c) => {
   const id = c.req.param('id');
   const missing = requireWorkflowRun(c, id);
@@ -276,12 +311,17 @@ workflowRuns.post('/:id/retry-step', async (c) => {
     return jsonError(c, `unknown stage: ${body.stage}`, 400);
   }
   try {
+    const graphResume = resumeGraphStage({
+      workflowRunId: id,
+      stage: body.stage,
+      actor: body.actor ?? 'web',
+    });
     const result = retryStage({
       workflowRunId: id,
       stage: body.stage,
       actor: body.actor ?? 'web',
     });
-    return c.json({ ok: true, run: result.run, step: result.step }, 200);
+    return c.json({ ok: true, run: result.run, step: result.step, graphResume }, 200);
   } catch (err) {
     return jsonError(c, (err as Error).message, 400);
   }

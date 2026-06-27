@@ -23,6 +23,10 @@ import type {
   ToolInvocation,
   HandoffRecord,
   StepCheckpoint,
+  GraphDefinition,
+  GraphRun,
+  GraphNodeRun,
+  GraphEvent,
 } from '@ainp/shared';
 import { errorMessage, isProjectAgentBackendKind, nowIso } from '@ainp/shared';
 import { appendFileSync, mkdirSync } from 'node:fs';
@@ -1097,6 +1101,326 @@ const stepCheckpoints = {
   },
 };
 
+// ---- graph runtime ledger --------------------------------------------------
+
+interface GraphDefinitionRow {
+  id: string;
+  schema_version: string;
+  version: string;
+  source_flow_id: string | null;
+  description: string;
+  nodes_json: string;
+  edges_json: string;
+  entry_node_ids_json: string;
+  created_at: string;
+  metadata_json: string;
+}
+
+function rowToGraphDefinition(r: GraphDefinitionRow): GraphDefinition {
+  return {
+    id: r.id,
+    schemaVersion: r.schema_version as GraphDefinition['schemaVersion'],
+    version: r.version,
+    sourceFlowId: r.source_flow_id as GraphDefinition['sourceFlowId'],
+    description: r.description,
+    nodes: JSON.parse(r.nodes_json),
+    edges: JSON.parse(r.edges_json),
+    entryNodeIds: JSON.parse(r.entry_node_ids_json),
+    createdAt: r.created_at,
+    metadata: JSON.parse(r.metadata_json) as Record<string, unknown>,
+  };
+}
+
+const graphDefinitionsTable = defineTable<GraphDefinitionRow, GraphDefinition>({
+  table: 'graph_definitions',
+  fromRow: rowToGraphDefinition,
+  toRow: (g) => ({
+    id: g.id,
+    schema_version: g.schemaVersion,
+    version: g.version,
+    source_flow_id: g.sourceFlowId,
+    description: g.description,
+    nodes_json: JSON.stringify(g.nodes),
+    edges_json: JSON.stringify(g.edges),
+    entry_node_ids_json: JSON.stringify(g.entryNodeIds),
+    created_at: g.createdAt,
+    metadata_json: JSON.stringify(g.metadata),
+  }),
+});
+
+const graphDefinitions = {
+  upsert: (g: GraphDefinition): void => graphDefinitionsTable.upsert(g),
+  get: (id: string): GraphDefinition | undefined => graphDefinitionsTable.byId(id),
+  bySourceFlow: (sourceFlowId: string): GraphDefinition[] =>
+    graphDefinitionsTable.all(
+      'SELECT * FROM graph_definitions WHERE source_flow_id = ? ORDER BY created_at DESC',
+      sourceFlowId,
+    ),
+  get size(): number {
+    return graphDefinitionsTable.count();
+  },
+};
+
+interface GraphRunRow {
+  id: string;
+  workflow_run_id: string;
+  graph_definition_id: string;
+  graph_version: string;
+  status: string;
+  active_node_ids_json: string;
+  interrupted_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  metadata_json: string;
+}
+
+function rowToGraphRun(r: GraphRunRow): GraphRun {
+  return {
+    id: r.id,
+    workflowRunId: r.workflow_run_id,
+    graphDefinitionId: r.graph_definition_id,
+    graphVersion: r.graph_version,
+    status: r.status as GraphRun['status'],
+    activeNodeIds: JSON.parse(r.active_node_ids_json),
+    interruptedReason: r.interrupted_reason,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    metadata: JSON.parse(r.metadata_json) as Record<string, unknown>,
+  };
+}
+
+const graphRunsTable = defineTable<GraphRunRow, GraphRun>({
+  table: 'graph_runs',
+  fromRow: rowToGraphRun,
+  toRow: (g) => ({
+    id: g.id,
+    workflow_run_id: g.workflowRunId,
+    graph_definition_id: g.graphDefinitionId,
+    graph_version: g.graphVersion,
+    status: g.status,
+    active_node_ids_json: JSON.stringify(g.activeNodeIds),
+    interrupted_reason: g.interruptedReason,
+    created_at: g.createdAt,
+    updated_at: g.updatedAt,
+    metadata_json: JSON.stringify(g.metadata),
+  }),
+});
+
+const graphRuns = {
+  upsert: (g: GraphRun): void => graphRunsTable.upsert(g),
+  get: (id: string): GraphRun | undefined => graphRunsTable.byId(id),
+  byWorkflow: (workflowRunId: string): GraphRun[] =>
+    graphRunsTable.all(
+      'SELECT * FROM graph_runs WHERE workflow_run_id = ? ORDER BY created_at DESC',
+      workflowRunId,
+    ),
+  currentByWorkflow: (workflowRunId: string): GraphRun | null =>
+    graphRunsTable.one(
+      'SELECT * FROM graph_runs WHERE workflow_run_id = ? ORDER BY created_at DESC LIMIT 1',
+      workflowRunId,
+    ) ?? null,
+  get size(): number {
+    return graphRunsTable.count();
+  },
+};
+
+interface GraphNodeRunRow {
+  id: string;
+  graph_run_id: string;
+  workflow_run_id: string;
+  node_id: string;
+  attempt: number;
+  status: string;
+  step_run_id: string | null;
+  step_checkpoint_id: string | null;
+  resume_cursor: string | null;
+  idempotency_key: string;
+  dependency_state_json: string;
+  started_at: string | null;
+  completed_at: string | null;
+  metadata_json: string;
+}
+
+function rowToGraphNodeRun(r: GraphNodeRunRow): GraphNodeRun {
+  return {
+    id: r.id,
+    graphRunId: r.graph_run_id,
+    workflowRunId: r.workflow_run_id,
+    nodeId: r.node_id,
+    attempt: r.attempt,
+    status: r.status as GraphNodeRun['status'],
+    stepRunId: r.step_run_id,
+    stepCheckpointId: r.step_checkpoint_id,
+    resumeCursor: r.resume_cursor,
+    idempotencyKey: r.idempotency_key,
+    dependencyState: JSON.parse(r.dependency_state_json) as GraphNodeRun['dependencyState'],
+    startedAt: r.started_at,
+    completedAt: r.completed_at,
+    metadata: JSON.parse(r.metadata_json) as Record<string, unknown>,
+  };
+}
+
+const graphNodeRunsTable = defineTable<GraphNodeRunRow, GraphNodeRun>({
+  table: 'graph_node_runs',
+  fromRow: rowToGraphNodeRun,
+  toRow: (g) => ({
+    id: g.id,
+    graph_run_id: g.graphRunId,
+    workflow_run_id: g.workflowRunId,
+    node_id: g.nodeId,
+    attempt: g.attempt,
+    status: g.status,
+    step_run_id: g.stepRunId,
+    step_checkpoint_id: g.stepCheckpointId,
+    resume_cursor: g.resumeCursor,
+    idempotency_key: g.idempotencyKey,
+    dependency_state_json: JSON.stringify(g.dependencyState),
+    started_at: g.startedAt,
+    completed_at: g.completedAt,
+    metadata_json: JSON.stringify(g.metadata),
+  }),
+});
+
+function validateGraphNodeRunLinks(g: GraphNodeRun): void {
+  const graphRun = graphRunsTable.byId(g.graphRunId);
+  if (!graphRun) throw new Error('graphRunId does not exist');
+  if (graphRun.workflowRunId !== g.workflowRunId) {
+    throw new Error('graphRunId does not belong to workflowRunId');
+  }
+  const step = g.stepRunId ? stepRunsTable.byId(g.stepRunId) : undefined;
+  if (g.stepRunId && !step) throw new Error('stepRunId does not exist');
+  if (step && step.workflowRunId !== g.workflowRunId) {
+    throw new Error('stepRunId does not belong to workflowRunId');
+  }
+  const checkpoint = g.stepCheckpointId
+    ? stepCheckpointsTable.byId(g.stepCheckpointId)
+    : undefined;
+  if (g.stepCheckpointId && !checkpoint) throw new Error('stepCheckpointId does not exist');
+  if (checkpoint && checkpoint.workflowRunId !== g.workflowRunId) {
+    throw new Error('stepCheckpointId does not belong to workflowRunId');
+  }
+  if (checkpoint && step && checkpoint.stepRunId !== step.id) {
+    throw new Error('stepCheckpointId does not belong to stepRunId');
+  }
+}
+
+const graphNodeRuns = {
+  upsert(g: GraphNodeRun): void {
+    validateGraphNodeRunLinks(g);
+    graphNodeRunsTable.upsert(g);
+  },
+  get: (id: string): GraphNodeRun | undefined => graphNodeRunsTable.byId(id),
+  byGraphRun: (graphRunId: string): GraphNodeRun[] =>
+    graphNodeRunsTable.all(
+      'SELECT * FROM graph_node_runs WHERE graph_run_id = ? ORDER BY attempt ASC, id ASC',
+      graphRunId,
+    ),
+  byWorkflow: (workflowRunId: string): GraphNodeRun[] =>
+    graphNodeRunsTable.all(
+      'SELECT * FROM graph_node_runs WHERE workflow_run_id = ? ORDER BY node_id ASC, attempt ASC',
+      workflowRunId,
+    ),
+  byNode: (graphRunId: string, nodeId: string): GraphNodeRun[] =>
+    graphNodeRunsTable.all(
+      'SELECT * FROM graph_node_runs WHERE graph_run_id = ? AND node_id = ? ORDER BY attempt ASC',
+      graphRunId,
+      nodeId,
+    ),
+  get size(): number {
+    return graphNodeRunsTable.count();
+  },
+};
+
+interface GraphEventRow {
+  id: string;
+  graph_run_id: string;
+  workflow_run_id: string;
+  node_id: string | null;
+  type: string;
+  created_at: string;
+  payload_json: string;
+}
+
+function rowToGraphEvent(r: GraphEventRow): GraphEvent {
+  return {
+    id: r.id,
+    graphRunId: r.graph_run_id,
+    workflowRunId: r.workflow_run_id,
+    nodeId: r.node_id,
+    type: r.type as GraphEvent['type'],
+    createdAt: r.created_at,
+    payload: JSON.parse(r.payload_json) as Record<string, unknown>,
+  };
+}
+
+const graphEventsTable = defineTable<GraphEventRow, GraphEvent>({
+  table: 'graph_events',
+  fromRow: rowToGraphEvent,
+  toRow: (e) => ({
+    id: e.id,
+    graph_run_id: e.graphRunId,
+    workflow_run_id: e.workflowRunId,
+    node_id: e.nodeId,
+    type: e.type,
+    created_at: e.createdAt,
+    payload_json: JSON.stringify(e.payload),
+  }),
+});
+
+function validateGraphEventLinks(e: GraphEvent): void {
+  const graphRun = graphRunsTable.byId(e.graphRunId);
+  if (!graphRun) throw new Error('graphRunId does not exist');
+  if (graphRun.workflowRunId !== e.workflowRunId) {
+    throw new Error('graphRunId does not belong to workflowRunId');
+  }
+}
+
+const graphEvents = {
+  insert(e: GraphEvent): void {
+    validateGraphEventLinks(e);
+    graphEventsTable.insert(e);
+  },
+  get: (id: string): GraphEvent | undefined => graphEventsTable.byId(id),
+  byGraphRun: (graphRunId: string): GraphEvent[] =>
+    graphEventsTable.all(
+      'SELECT * FROM graph_events WHERE graph_run_id = ? ORDER BY created_at ASC',
+      graphRunId,
+    ),
+  byWorkflow: (workflowRunId: string): GraphEvent[] =>
+    graphEventsTable.all(
+      'SELECT * FROM graph_events WHERE workflow_run_id = ? ORDER BY created_at ASC',
+      workflowRunId,
+    ),
+  get size(): number {
+    return graphEventsTable.count();
+  },
+};
+
+const emptyGraphRuntime = {
+  graphDefinition: null,
+  graphRun: null,
+  nodeRuns: [],
+  events: [],
+};
+
+const graphRuntime = {
+  byWorkflow(workflowRunId: string): {
+    graphDefinition: GraphDefinition | null;
+    graphRun: GraphRun | null;
+    nodeRuns: GraphNodeRun[];
+    events: GraphEvent[];
+  } {
+    const graphRun = graphRuns.currentByWorkflow(workflowRunId);
+    if (!graphRun) return emptyGraphRuntime;
+    return {
+      graphDefinition: graphDefinitions.get(graphRun.graphDefinitionId) ?? null,
+      graphRun,
+      nodeRuns: graphNodeRuns.byGraphRun(graphRun.id),
+      events: graphEvents.byGraphRun(graphRun.id),
+    };
+  },
+};
+
 // ---- requirements / designs entity tables (V2 P0-2) ----------------------
 // Head-pointer model. Each row points at the *current* accepted version of
 // a REQ-### / DSN-### in `knowledge_artifacts`; historical versions stay in
@@ -2154,6 +2478,11 @@ export const store = {
   toolInvocations,
   handoffs,
   stepCheckpoints,
+  graphDefinitions,
+  graphRuns,
+  graphNodeRuns,
+  graphEvents,
+  graphRuntime,
   agentEvents,
   workflowActions,
   approvals,

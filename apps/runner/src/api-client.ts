@@ -29,6 +29,12 @@ import type {
   HandoffStatus,
   CoordinatorDecision,
   RequestMessage,
+  StepCheckpoint,
+  StepRun,
+  GraphDefinition,
+  GraphNodeDependencyState,
+  GraphNodeRun,
+  GraphRun,
 } from '@ainp/shared';
 import { API_BASE } from './config';
 
@@ -141,8 +147,15 @@ export const api = {
   getWorkflowRun: (id: string) =>
     request<{
       run: WorkflowRun;
-      steps: unknown[];
+      steps: StepRun[];
       commands: CommandRun[];
+      stepCheckpoints: StepCheckpoint[];
+      graph: {
+        graphDefinition: GraphDefinition | null;
+        graphRun: GraphRun | null;
+        nodeRuns: GraphNodeRun[];
+        events: unknown[];
+      };
       actions: Array<{
         id: string;
         workflowRunId: string;
@@ -199,6 +212,42 @@ export const api = {
     status: 'passed' | 'failed' | 'cancelled' | 'skipped';
     failureReason?: string | null;
   }) => request('POST', '/runner/events/step-finished', params),
+
+  graphRunStarted: (params: { workflowRunId: string; graphDefinition: GraphDefinition }) =>
+    request<{ ok: boolean; graphRun: GraphRun }>(
+      'POST',
+      '/runner/events/graph-run-started',
+      params,
+    ).then((r) => r.graphRun),
+
+  graphNodeStarted: (params: {
+    workflowRunId: string;
+    graphRunId: string;
+    nodeRunId?: string;
+    nodeId: string;
+    dependencyState: GraphNodeDependencyState;
+    idempotencyKey: string;
+    metadata?: Record<string, unknown>;
+  }) =>
+    request<{ ok: boolean; nodeRun: GraphNodeRun }>(
+      'POST',
+      '/runner/events/graph-node-started',
+      params,
+    ).then((r) => r.nodeRun),
+
+  graphNodeFinished: (params: {
+    nodeRunId: string;
+    status: 'passed' | 'failed' | 'blocked' | 'skipped' | 'cancelled';
+    stepRunId?: string | null;
+    stepCheckpointId?: string | null;
+    resumeCursor?: string | null;
+    metadata?: Record<string, unknown>;
+  }) =>
+    request<{ ok: boolean; nodeRun: GraphNodeRun }>(
+      'POST',
+      '/runner/events/graph-node-finished',
+      params,
+    ).then((r) => r.nodeRun),
 
   commandRun: (commandRun: CommandRun) =>
     request('POST', '/runner/events/command-run', { commandRun }),
