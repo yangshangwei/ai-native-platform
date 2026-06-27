@@ -298,3 +298,36 @@ Implemented deterministic requirement-to-design stage handoff metadata/artifact 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 61: Real runner E2E stage handoff validation
+
+**Date**: 2026-06-28
+**Task**: Real runner E2E stage handoff validation
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Validated P4 requirement-to-design stage handoff with real Codex and Claude Code runner E2E runs. Codex passed; Claude exposed a design_gate Markdown heading false negative, fixed matchGateSection to tolerate real-agent heading decoration without fuzzy title matching, added regression coverage and spec guidance, then reran Claude successfully. Verification: target gate test, typecheck, full bun test, and P4 context/handoff evidence checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cba915e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
