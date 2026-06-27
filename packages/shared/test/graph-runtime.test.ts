@@ -1,4 +1,4 @@
-import { expect, test } from 'bun:test';
+import { expect, test } from 'vitest';
 import {
   GRAPH_RUNTIME_SCHEMA_VERSION,
   GRAPH_JOIN_POLICIES,
