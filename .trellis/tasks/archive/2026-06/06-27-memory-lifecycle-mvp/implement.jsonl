@@ -9,4 +9,4 @@
 {"file":"apps/api/src/routes/knowledge-artifacts.ts","reason":"Knowledge metadata API trust boundary and usage updates."}
 {"file":"apps/api/src/routes/workflow-runs.ts","reason":"Retro/review knowledge action behavior."}
 {"file":"apps/api/src/router.ts","reason":"Router planning must not use stale or review-required accepted knowledge as authoritative skip/recommendation input."}
-{"file":".trellis/tasks/06-27-memory-lifecycle-mvp/research/memory-lifecycle-slice.md","reason":"Task-specific current facts and gaps."}
+{"file":".trellis/tasks/archive/2026-06/06-27-memory-lifecycle-mvp/research/memory-lifecycle-slice.md","reason":"Task-specific current facts and gaps."}

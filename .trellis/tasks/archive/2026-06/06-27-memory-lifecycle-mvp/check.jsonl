@@ -4,4 +4,4 @@
 {"file":"apps/api/test/knowledge-artifacts-route.test.ts","reason":"Check API trust-boundary validation and usage updates."}
 {"file":"apps/api/test/router.test.ts","reason":"Check router planning ignores stale or review-required accepted knowledge."}
 {"file":"apps/api/test/report-sidecars.test.ts","reason":"Check review signals stay report/actions only."}
-{"file":".trellis/tasks/06-27-memory-lifecycle-mvp/research/memory-lifecycle-slice.md","reason":"Check D1-D3 scope and out-of-scope boundaries."}
+{"file":".trellis/tasks/archive/2026-06/06-27-memory-lifecycle-mvp/research/memory-lifecycle-slice.md","reason":"Check D1-D3 scope and out-of-scope boundaries."}
