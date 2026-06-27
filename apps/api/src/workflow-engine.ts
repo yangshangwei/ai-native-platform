@@ -712,6 +712,7 @@ export function recordContextRequestAction(input: {
   sourceName: string;
   taskId: string;
   baseContextPackId: string;
+  baseContextPackArtifactId?: ArtifactId | null;
   supplementContextPackId: string;
   requestArtifactId: ArtifactId;
   supplementArtifactId: ArtifactId;
@@ -727,6 +728,7 @@ export function recordContextRequestAction(input: {
       sourceName: input.sourceName,
       taskId: input.taskId,
       baseContextPackId: input.baseContextPackId,
+      baseContextPackArtifactId: input.baseContextPackArtifactId ?? null,
       supplementContextPackId: input.supplementContextPackId,
       requestArtifactId: input.requestArtifactId,
       supplementArtifactId: input.supplementArtifactId,

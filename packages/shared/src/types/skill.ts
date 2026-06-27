@@ -1,6 +1,7 @@
 import type { WorkflowStage } from './workflow';
 import type { GateId } from './gate';
 import type { AgentBackendKind } from './agent';
+import type { SkillInputInjectionPolicy } from './context';
 
 /**
  * Canonical SkillSpec — owned by the platform. Backend-agnostic.
@@ -12,6 +13,7 @@ export interface SkillSpec {
   stage: WorkflowStage;
   instructions: string;
   inputs: SkillIO[];
+  inputPolicies?: SkillInputInjectionPolicy[];
   outputs: SkillIO[];
   toolPolicy: ToolPolicy;
   requiredGates: GateId[];

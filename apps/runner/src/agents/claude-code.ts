@@ -366,6 +366,7 @@ function buildPrompts(
     branch: ctx.branch,
     title: ctx.title,
     inputs: ctx.inputs,
+    inputArtifactIds: ctx.inputArtifactIds,
     mode: args.mode,
     targetPath: args.targetPath,
     outputName: args.outputName,

@@ -79,6 +79,115 @@ describe('provider-neutral context renderer', () => {
     expect(rendered.userPrompt).toContain('--- context_pack.md ---');
   });
 
+  test('applies input injection policy with summary and artifact reference audit', () => {
+    const requirement = [
+      'REQ summary line.',
+      'Important constraint: keep old workflow compatible.',
+      'FULL_BODY_SENTINEL_SHOULD_NOT_RENDER',
+      'x'.repeat(2_000),
+    ].join('\n');
+    const rendered = renderAgentPrompt({
+      skill: {
+        ...implementationSkill(),
+        stage: 'design',
+        inputPolicies: [
+          { artifactKey: 'requirement.md', mode: 'summary', maxTokens: 40, required: true },
+        ],
+      },
+      workflowRunId: 'run_ctx',
+      workspacePath: '/tmp/workspace',
+      artifactsDir: '/tmp/artifacts',
+      branch: 'ai/run',
+      title: 'Draft design',
+      inputs: {
+        user_request: 'Draft design',
+        'requirement.md': requirement,
+      },
+      inputArtifactIds: { 'requirement.md': 'art_req' },
+      mode: 'produce_file',
+      targetPath: '/tmp/artifacts/design.md',
+      outputName: 'design.md',
+    });
+
+    expect(rendered.userPrompt).toContain('--- requirement.md (summary) ---');
+    expect(rendered.userPrompt).toContain('Source reference: artifact://requirement.md/art_req');
+    expect(rendered.userPrompt).toContain('REQ summary line.');
+    expect(rendered.userPrompt).not.toContain('FULL_BODY_SENTINEL_SHOULD_NOT_RENDER');
+    expect(rendered.userPrompt).toContain('INPUT INJECTION AUDIT:');
+    expect(rendered.userPrompt).toContain('- requirement.md: mode=summary; requested=summary');
+    expect(rendered.userPrompt).toContain('sourceArtifactId=art_req');
+  });
+
+  test('downgrades optional over-budget references to omit but preserves required references', () => {
+    const rendered = renderAgentPrompt({
+      skill: {
+        ...implementationSkill(),
+        inputPolicies: [
+          { artifactKey: 'optional.log', mode: 'reference', maxTokens: 0, required: false },
+          { artifactKey: 'required.md', mode: 'omit', maxTokens: 0, required: true },
+        ],
+      },
+      workflowRunId: 'run_ctx',
+      workspacePath: '/tmp/workspace',
+      artifactsDir: '/tmp/artifacts',
+      branch: 'ai/run',
+      title: 'Implement change',
+      inputs: {
+        user_request: 'Implement change',
+        'optional.log': 'OPTIONAL_LOG_BODY',
+        'required.md': 'REQUIRED_BODY_SHOULD_NOT_RENDER',
+      },
+      inputArtifactIds: {
+        'optional.log': 'art_log',
+        'required.md': 'art_required',
+      },
+      mode: 'implementation',
+    });
+
+    expect(rendered.userPrompt).not.toContain('OPTIONAL_LOG_BODY');
+    expect(rendered.userPrompt).not.toContain('artifact://optional.log/art_log');
+    expect(rendered.userPrompt).toContain('mode=omit; requested=reference');
+    expect(rendered.userPrompt).toContain('--- required.md (reference only) ---');
+    expect(rendered.userPrompt).toContain('artifact://required.md/art_required');
+    expect(rendered.userPrompt).not.toContain('REQUIRED_BODY_SHOULD_NOT_RENDER');
+    expect(rendered.userPrompt).toContain('warning=required input requested omit; preserved source reference');
+  });
+
+  test('continues deterministic budget downgrade after summary when rendered content is still over budget', () => {
+    const rendered = renderAgentPrompt({
+      skill: {
+        ...implementationSkill(),
+        inputPolicies: [
+          { artifactKey: 'large-optional.md', mode: 'full', maxTokens: 0, required: false },
+          { artifactKey: 'large-required.md', mode: 'full', maxTokens: 0, required: true },
+        ],
+      },
+      workflowRunId: 'run_ctx',
+      workspacePath: '/tmp/workspace',
+      artifactsDir: '/tmp/artifacts',
+      branch: 'ai/run',
+      title: 'Implement change',
+      inputs: {
+        user_request: 'Implement change',
+        'large-optional.md': 'OPTIONAL_BODY_SHOULD_NOT_RENDER',
+        'large-required.md': 'REQUIRED_BODY_SHOULD_NOT_RENDER',
+      },
+      inputArtifactIds: {
+        'large-optional.md': 'art_optional',
+        'large-required.md': 'art_required',
+      },
+      mode: 'implementation',
+    });
+
+    expect(rendered.userPrompt).not.toContain('OPTIONAL_BODY_SHOULD_NOT_RENDER');
+    expect(rendered.userPrompt).not.toContain('artifact://large-optional.md/art_optional');
+    expect(rendered.userPrompt).toContain('- large-optional.md: mode=omit; requested=full');
+    expect(rendered.userPrompt).not.toContain('REQUIRED_BODY_SHOULD_NOT_RENDER');
+    expect(rendered.userPrompt).toContain('--- large-required.md (reference only) ---');
+    expect(rendered.userPrompt).toContain('artifact://large-required.md/art_required');
+    expect(rendered.userPrompt).toContain('warning=required input exceeded budget; preserved source reference');
+  });
+
   test('uses inputs.user_request as the agent-facing request while preserving title metadata', () => {
     const rendered = renderAgentPrompt({
       skill: implementationSkill(),

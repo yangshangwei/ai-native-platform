@@ -19,6 +19,8 @@ export interface AgentTaskContext {
   artifactsDir: string;
   /** Previously-produced artifact text by skill input name. */
   inputs: Record<string, string>;
+  /** Previously-produced artifact ids by skill input name, when known. */
+  inputArtifactIds?: Record<string, string>;
   /** Provider-neutral context selected by the platform for this invocation. */
   contextPack?: ContextPack;
   /** Context policy sensitive path patterns used for prompt-visible legacy inputs. */

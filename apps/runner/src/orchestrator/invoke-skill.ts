@@ -1,7 +1,14 @@
 import { join } from 'node:path';
 import { mkdir, writeFile } from 'node:fs/promises';
-import type { AgentTaskKind, ContextPack, SkillSpec } from '@ainp/shared';
-import { errorMessage } from '@ainp/shared';
+import {
+  errorMessage,
+  newId,
+  type AgentTaskKind,
+  type ContextPack,
+  type ContextPackArtifactEnvelope,
+  type ContextPackArtifactRole,
+  type SkillSpec,
+} from '@ainp/shared';
 import { api } from '../api-client';
 import type { AgentBackend } from '../agents/types';
 import { generateProjectProfile } from '../profile';
@@ -17,7 +24,10 @@ import {
   parseContextRequestFromAgentOutput,
   type ParsedContextRequest,
 } from '../context/request';
+import { inputInjectionAuditForPrompt } from '../context/renderer';
 import type { ContextRequestCapture, InvokedAgent, RunCtx } from './types';
+
+const CONTEXT_PACK_ARTIFACT_SCHEMA_VERSION = 'ainp.context_pack_artifact.v1' as const;
 
 // ---------------------------------------------------------------------------
 // T3.1 de-closure (06-12): `invokeSkill` / `captureContextRequest` /
@@ -86,6 +96,8 @@ export async function invokeSkill(
   });
   const baseAttempt = await invokeSkillAttempt(c, skill, skillCtx, {
     contextPack: baseContextPack,
+    contextPackArtifactRole: 'base',
+    invocationId: newId('ctxinv'),
     retryIndex: 0,
     parentSessionId: skillCtx.parentSessionId ?? null,
     foundation,
@@ -98,6 +110,9 @@ export async function invokeSkill(
     inputs: c.inputs,
   }, {
     contextPack: baseAttempt.contextRequest.supplementContextPack,
+    contextPackArtifactId: baseAttempt.contextRequest.supplementArtifactId,
+    contextPackArtifactRole: 'supplement',
+    invocationId: baseAttempt.contextRequest.supplementInvocationId,
     retryIndex: 1,
     parentSessionId: baseAttempt.sessionId,
     foundation,
@@ -123,6 +138,9 @@ async function invokeSkillAttempt(
   skillCtx: Parameters<AgentBackend['run']>[1],
   attempt: {
     contextPack: ContextPack;
+    contextPackArtifactId?: string | null;
+    contextPackArtifactRole: ContextPackArtifactRole;
+    invocationId: string;
     retryIndex: number;
     parentSessionId: string | null;
     foundation: RunCtx['contextFoundation'];
@@ -133,6 +151,7 @@ async function invokeSkillAttempt(
   const enrichedCtx = {
     ...skillCtx,
     inputs: c.inputs,
+    inputArtifactIds: c.inputArtifactIds,
     contextPack,
     sensitivePathPatterns: c.contextPolicy.sensitivePathPatterns,
   };
@@ -141,11 +160,27 @@ async function invokeSkillAttempt(
     stepRunId: skillCtx.stepRunId ?? null,
     kind: taskKindForSkill(skill),
     backend: c.backend.kind,
-    prompt: renderAgentPromptAudit(skill, enrichedCtx.inputs, contextPack),
+    prompt: renderAgentPromptAudit(
+      skill,
+      enrichedCtx.inputs,
+      c.inputArtifactIds,
+      c.contextPolicy.sensitivePathPatterns,
+      contextPack,
+    ),
     inputArtifactIds: skill.inputs
       .map((i) => c.inputArtifactIds[i.name])
       .filter((id): id is string => Boolean(id)),
   });
+  const contextPackArtifactId = attempt.contextPackArtifactId
+    ?? await persistContextPackArtifact(skill, skillCtx, {
+      contextPack,
+      taskId: task.task.id,
+      invocationId: attempt.invocationId,
+      role: attempt.contextPackArtifactRole,
+      retryIndex: attempt.retryIndex,
+      parentInvocationId: null,
+      baseContextPackArtifactId: null,
+    }, deps);
   const session = await deps.agentSessionStarted({
     workflowRunId: skillCtx.workflowRunId,
     agentTaskId: task.task.id,
@@ -156,8 +191,13 @@ async function invokeSkillAttempt(
     parentSessionId: attempt.parentSessionId,
     retryIndex: attempt.retryIndex,
     metadata: {
+      invocationId: attempt.invocationId,
+      contextPackArtifactId,
+      contextPackRole: attempt.contextPackArtifactRole,
       contextMode: contextPack.mode,
       manifestCount: contextPack.manifest.length,
+      contextRequestId: contextPack.supplement?.contextRequestId ?? null,
+      baseContextPackId: contextPack.supplement?.baseContextPackId ?? null,
     },
   });
   await recordSelectedKnowledgeUsage(contextPack, task.task.id, deps);
@@ -171,11 +211,15 @@ async function invokeSkillAttempt(
       foundation: attempt.foundation,
       baseContextPack: contextPack,
       taskId: task.task.id,
+      invocationId: attempt.invocationId,
+      baseContextPackArtifactId: contextPackArtifactId,
       retryIndex: attempt.retryIndex + 1,
     }, deps);
     return {
       taskId: task.task.id,
       sessionId: session.session.id,
+      invocationId: attempt.invocationId,
+      contextPackArtifactId,
       outputs: result.outputs,
       contextPack,
       contextRequest,
@@ -191,10 +235,85 @@ async function invokeSkillAttempt(
       sessionId: session.session.id,
       status: 'failed',
       agentResultId: finished.result.id,
-      metadata: { error: errorMessage(err) },
+      metadata: {
+        error: errorMessage(err),
+        invocationId: attempt.invocationId,
+        contextPackArtifactId,
+      },
     });
     throw err;
   }
+}
+
+async function persistContextPackArtifact(
+  skill: SkillSpec,
+  skillCtx: Parameters<AgentBackend['run']>[1],
+  input: {
+    contextPack: ContextPack;
+    taskId: string;
+    invocationId: string;
+    role: ContextPackArtifactRole;
+    retryIndex: number;
+    parentInvocationId: string | null;
+    baseContextPackArtifactId: string | null;
+  },
+  deps: InvokeSkillDeps,
+): Promise<string> {
+  const contextPackDir = join(skillCtx.artifactsDir, 'context-packs');
+  await mkdir(contextPackDir, { recursive: true });
+  const outputName = `context_pack.${input.role}.${safeFileSegment(input.contextPack.id)}.json`;
+  const outputPath = join(contextPackDir, outputName);
+  const envelope: ContextPackArtifactEnvelope = {
+    schemaVersion: CONTEXT_PACK_ARTIFACT_SCHEMA_VERSION,
+    snapshot: {
+      invocationId: input.invocationId,
+      workflowRunId: skillCtx.workflowRunId,
+      stepRunId: skillCtx.stepRunId ?? null,
+      stage: skill.stage,
+      skillId: skill.id,
+      skillVersion: skill.version,
+      contextPackId: input.contextPack.id,
+      contextPackArtifactId: null,
+      contextPackRole: input.role,
+      retryIndex: input.retryIndex,
+      parentInvocationId: input.parentInvocationId,
+      contextRequestId: input.contextPack.supplement?.contextRequestId ?? null,
+      baseContextPackId: input.contextPack.supplement?.baseContextPackId ?? null,
+      createdAt: input.contextPack.createdAt,
+    },
+    contextPack: input.contextPack,
+  };
+  const body = `${JSON.stringify(envelope, null, 2)}\n`;
+  await writeFile(outputPath, body, 'utf8');
+  const artifact = await deps.postArtifact({
+    workflowRunId: skillCtx.workflowRunId,
+    stepRunId: skillCtx.stepRunId ?? null,
+    kind: 'context_pack',
+    uri: `file://${outputPath}`,
+    size: Buffer.byteLength(body, 'utf8'),
+    contentType: 'application/json',
+    metadata: {
+      schemaVersion: CONTEXT_PACK_ARTIFACT_SCHEMA_VERSION,
+      output: outputName,
+      stage: skill.stage,
+      skill: skill.id,
+      skillVersion: skill.version,
+      invocationId: input.invocationId,
+      taskId: input.taskId,
+      retryIndex: input.retryIndex,
+      contextPackId: input.contextPack.id,
+      contextPackRole: input.role,
+      contextRequestId: input.contextPack.supplement?.contextRequestId ?? null,
+      baseContextPackId: input.contextPack.supplement?.baseContextPackId ?? null,
+      baseContextPackArtifactId: input.baseContextPackArtifactId,
+      contextSelection: contextSelectionAudit(input.contextPack),
+    },
+  });
+  return artifact.id;
+}
+
+function safeFileSegment(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_.-]+/g, '_') || 'context_pack';
 }
 
 async function finishContextRequestBaseInvocation(
@@ -218,8 +337,14 @@ async function finishContextRequestBaseInvocation(
     status: 'success',
     agentResultId: finished.result.id,
     metadata: {
+      invocationId: agent.invocationId,
+      contextPackArtifactId: agent.contextPackArtifactId,
       contextRequestId: contextRequest.request.id,
+      baseInvocationId: contextRequest.baseInvocationId,
+      supplementInvocationId: contextRequest.supplementInvocationId,
+      baseContextPackArtifactId: contextRequest.baseContextPackArtifactId,
       supplementContextPackId: contextRequest.supplementContextPackId,
+      supplementContextPackArtifactId: contextRequest.supplementArtifactId,
       retryPlanned: true,
     },
   });
@@ -247,6 +372,8 @@ async function failInvocation(
     agentResultId: finished.result.id,
     metadata: {
       error: message,
+      invocationId: agent.invocationId,
+      contextPackArtifactId: agent.contextPackArtifactId,
       ...metadata,
     },
   });
@@ -294,6 +421,8 @@ export async function captureContextRequest(
     foundation: RunCtx['contextFoundation'];
     baseContextPack: ContextPack;
     taskId: string;
+    invocationId: string;
+    baseContextPackArtifactId: string;
     retryIndex?: number;
   },
   deps: InvokeSkillDeps = DEFAULT_INVOKE_SKILL_DEPS,
@@ -345,17 +474,22 @@ export async function captureContextRequest(
 
   const requestInputName = `context_request.${request.id}.json`;
   const supplementInputName = `context_supplement.${request.id}.json`;
+  const supplementInvocationId = newId('ctxinv');
   const requestBody = `${JSON.stringify({
     schemaVersion: CONTEXT_REQUEST_SCHEMA_VERSION,
     sourceName: parsed.sourceName,
     taskId: input.taskId,
+    invocationId: input.invocationId,
     baseContextPackId: input.baseContextPack.id,
+    baseContextPackArtifactId: input.baseContextPackArtifactId,
     request,
   }, null, 2)}\n`;
   const supplementBody = `${JSON.stringify({
     schemaVersion: 'ainp.context_supplement.v1',
+    invocationId: supplementInvocationId,
     contextRequestId: request.id,
     baseContextPackId: input.baseContextPack.id,
+    baseContextPackArtifactId: input.baseContextPackArtifactId,
     contextPack: supplementPack,
   }, null, 2)}\n`;
 
@@ -379,6 +513,8 @@ export async function captureContextRequest(
       stage: input.skill.stage,
       contextRequestId: request.id,
       baseContextPackId: input.baseContextPack.id,
+      baseContextPackArtifactId: input.baseContextPackArtifactId,
+      invocationId: input.invocationId,
       sourceName: parsed.sourceName,
     },
   });
@@ -395,6 +531,11 @@ export async function captureContextRequest(
       stage: input.skill.stage,
       contextRequestId: request.id,
       baseContextPackId: input.baseContextPack.id,
+      baseContextPackArtifactId: input.baseContextPackArtifactId,
+      invocationId: supplementInvocationId,
+      retryIndex: input.retryIndex ?? 1,
+      contextPackId: supplementPack.id,
+      contextPackRole: 'supplement',
       contextSelection: contextSelectionAudit(supplementPack),
     },
   });
@@ -413,6 +554,9 @@ export async function captureContextRequest(
     supplementContextPackId: supplementPack.id,
     supplementContextPack: supplementPack,
     baseContextPackId: input.baseContextPack.id,
+    baseContextPackArtifactId: input.baseContextPackArtifactId,
+    baseInvocationId: input.invocationId,
+    supplementInvocationId,
   };
   c.contextRequestChain.push(capture);
   await deps.recordContextRequest({
@@ -421,6 +565,7 @@ export async function captureContextRequest(
     sourceName: parsed.sourceName,
     taskId: input.taskId,
     baseContextPackId: input.baseContextPack.id,
+    baseContextPackArtifactId: input.baseContextPackArtifactId,
     supplementContextPackId: supplementPack.id,
     requestArtifactId: requestArtifact.id,
     supplementArtifactId: supplementArtifact.id,
@@ -558,8 +703,11 @@ export async function finishAgentSuccess(
     agentResultId: finished.result.id,
     metadata: {
       outputArtifactIds: [...outputArtifactIds, ...supplementIds],
+      invocationId: agent.invocationId,
+      contextPackArtifactId: agent.contextPackArtifactId,
       contextRequestId: agent.contextRequest?.request.id ?? null,
       supplementContextPackId: agent.contextRequest?.supplementContextPackId ?? null,
+      supplementContextPackArtifactId: agent.contextRequest?.supplementArtifactId ?? null,
     },
   });
 }
@@ -600,6 +748,8 @@ function taskKindForSkill(skill: SkillSpec): AgentTaskKind {
 function renderAgentPromptAudit(
   skill: SkillSpec,
   inputs: Record<string, string>,
+  inputArtifactIds: Record<string, string>,
+  sensitivePathPatterns: readonly string[],
   contextPack?: ContextPack,
 ): string {
   const inputNames = Object.keys(inputs).sort();
@@ -629,6 +779,20 @@ function renderAgentPromptAudit(
         )),
       );
     }
+  }
+  const inputAudit = inputInjectionAuditForPrompt({
+    skill,
+    inputs,
+    inputArtifactIds,
+    sensitivePathPatterns,
+  });
+  if (inputAudit.length > 0) {
+    lines.push(
+      'InputInjectionAudit:',
+      ...inputAudit.map((item) => (
+        `- ${item.artifactKey}: mode=${item.mode}; requested=${item.requestedMode}; required=${item.required}; sourceArtifactId=${item.sourceArtifactId ?? 'n/a'}; estimatedTokens=${item.estimatedTokens}; injectedTokens=${item.injectedTokens}${item.degradedFrom ? `; degradedFrom=${item.degradedFrom}; reason=${item.degradationReason ?? 'n/a'}` : ''}${item.warning ? `; warning=${item.warning}` : ''}`
+      )),
+    );
   }
   return lines.join('\n');
 }

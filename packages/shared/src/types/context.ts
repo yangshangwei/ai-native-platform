@@ -39,6 +39,15 @@ export type ContextInclusionMode =
   | 'metadata_only'
   | 'retrieval_hint';
 
+export type InputInjectionMode = 'full' | 'summary' | 'reference' | 'omit';
+
+export interface SkillInputInjectionPolicy {
+  artifactKey: string;
+  mode: InputInjectionMode;
+  maxTokens?: number;
+  required?: boolean;
+}
+
 export type ContextTrustRequirement = 'source' | 'accepted_knowledge' | 'inference_ok';
 
 export type ContextSourceType =
@@ -158,6 +167,31 @@ export interface ContextPack {
    */
   supplement?: ContextPackSupplement;
   createdAt: Iso8601;
+}
+
+export type ContextPackArtifactRole = 'base' | 'supplement';
+
+export interface ContextInvocationSnapshot {
+  invocationId: string;
+  workflowRunId: WorkflowRunId;
+  stepRunId: StepRunId | null;
+  stage: WorkflowStage;
+  skillId: string;
+  skillVersion: string;
+  contextPackId: string;
+  contextPackArtifactId: string | null;
+  contextPackRole: ContextPackArtifactRole;
+  retryIndex: number;
+  parentInvocationId?: string | null;
+  contextRequestId?: string | null;
+  baseContextPackId?: string | null;
+  createdAt: Iso8601;
+}
+
+export interface ContextPackArtifactEnvelope {
+  schemaVersion: 'ainp.context_pack_artifact.v1';
+  snapshot: ContextInvocationSnapshot;
+  contextPack: ContextPack;
 }
 
 export type ContextRequestStatus = 'open' | 'fulfilled' | 'dismissed';

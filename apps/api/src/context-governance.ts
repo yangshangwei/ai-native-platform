@@ -22,6 +22,12 @@ export interface ContextPackSummary {
   taskId: string | null;
   stage: string | null;
   mode: string | null;
+  role: string | null;
+  invocationId: string | null;
+  retryIndex: number | null;
+  contextRequestId: string | null;
+  baseContextPackId: string | null;
+  baseContextPackArtifactId: string | null;
   supplement: unknown;
   manifest: ContextManifestSummaryItem[];
   retrievalHints: unknown[];
@@ -74,6 +80,7 @@ export interface ContextRequestSummary {
   sourceName: string | null;
   taskId: string | null;
   baseContextPackId: string | null;
+  baseContextPackArtifactId: string | null;
   supplementContextPackId: string | null;
   requestArtifactId: string | null;
   supplementArtifactId: string | null;
@@ -173,6 +180,12 @@ function contextPackSummariesFromArtifacts(artifacts: Artifact[]): ContextPackSu
         taskId: null,
         stage: stringField(selection, 'stage') ?? stringField(artifact.metadata, 'stage'),
         mode: stringField(selection, 'mode'),
+        role: stringField(artifact.metadata, 'contextPackRole'),
+        invocationId: stringField(artifact.metadata, 'invocationId'),
+        retryIndex: numberField(artifact.metadata, 'retryIndex'),
+        contextRequestId: stringField(artifact.metadata, 'contextRequestId'),
+        baseContextPackId: stringField(artifact.metadata, 'baseContextPackId'),
+        baseContextPackArtifactId: stringField(artifact.metadata, 'baseContextPackArtifactId'),
         supplement: selection.supplement ?? null,
         manifest,
         retrievalHints: arrayField(selection, 'retrievalHints'),
@@ -198,6 +211,12 @@ function contextPackSummariesFromAgentPrompts(
         taskId: task.id,
         stage: null,
         mode,
+        role: null,
+        invocationId: null,
+        retryIndex: null,
+        contextRequestId: null,
+        baseContextPackId: null,
+        baseContextPackArtifactId: null,
         supplement: null,
         manifest: manifestItemsFromPrompt(task.prompt, contextPackId),
         retrievalHints: [],
@@ -316,6 +335,7 @@ function contextRequestsFromActions(actions: WorkflowAction[]): ContextRequestSu
         sourceName: stringField(action.payload, 'sourceName'),
         taskId: stringField(action.payload, 'taskId'),
         baseContextPackId: stringField(action.payload, 'baseContextPackId'),
+        baseContextPackArtifactId: stringField(action.payload, 'baseContextPackArtifactId'),
         supplementContextPackId: stringField(action.payload, 'supplementContextPackId'),
         requestArtifactId: stringField(action.payload, 'requestArtifactId'),
         supplementArtifactId: stringField(action.payload, 'supplementArtifactId'),

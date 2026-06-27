@@ -76,6 +76,9 @@ test('GET /workflow-runs/:id/context exposes manifest, refs, budget, context req
     size: 100,
     contentType: 'text/markdown',
     metadata: {
+      contextPackRole: 'base',
+      invocationId: 'ctxinv_artifact',
+      retryIndex: 0,
       contextSelection: {
         contextPackId: 'ctxpack_artifact',
         mode: 'task_execution',
@@ -119,6 +122,7 @@ test('GET /workflow-runs/:id/context exposes manifest, refs, budget, context req
     workflowRunId: run.id,
     taskId: taskWithContext.id,
     baseContextPackId: 'ctxpack_artifact',
+    baseContextPackArtifactId: contextArtifact.id,
     supplementContextPackId: 'ctxpack_supplement',
     requestArtifactId: contextArtifact.id,
     supplementArtifactId: contextArtifact.id,
@@ -148,11 +152,15 @@ test('GET /workflow-runs/:id/context exposes manifest, refs, budget, context req
   expect(res.status).toBe(200);
   const body = (await res.json()) as {
     schemaVersion: string;
-    contextPacks: Array<{ contextPackId: string }>;
+    contextPacks: Array<{ contextPackId: string; role: string | null; invocationId: string | null }>;
     manifest: Array<{ ref: string; priority: number | null; trustLevel: string | null; sourceRefs: string[] }>;
     sourceRefs: Array<{ sourceRef: string; trustLevels: string[] }>;
     budgetDecisions: Array<{ ref: string; degradedFrom: string | null }>;
-    contextRequests: Array<{ id: string; supplementContextPackId: string | null }>;
+    contextRequests: Array<{
+      id: string;
+      baseContextPackArtifactId: string | null;
+      supplementContextPackId: string | null;
+    }>;
     metrics: {
       impactCoverage: { numerator: number; denominator: number; value: number };
       evidenceTraceability: { numerator: number; denominator: number };
@@ -164,6 +172,15 @@ test('GET /workflow-runs/:id/context exposes manifest, refs, budget, context req
   expect(body.schemaVersion).toBe('ainp.context_governance.v1');
   expect(body.contextPacks.map((pack) => pack.contextPackId)).toEqual(
     expect.arrayContaining(['ctxpack_artifact', 'ctxpack_agent']),
+  );
+  expect(body.contextPacks).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        contextPackId: 'ctxpack_artifact',
+        role: 'base',
+        invocationId: 'ctxinv_artifact',
+      }),
+    ]),
   );
   expect(body.manifest).toEqual(
     expect.arrayContaining([
@@ -193,7 +210,11 @@ test('GET /workflow-runs/:id/context exposes manifest, refs, budget, context req
     ]),
   );
   expect(body.contextRequests).toEqual([
-    expect.objectContaining({ id: 'ctxreq_api', supplementContextPackId: 'ctxpack_supplement' }),
+    expect.objectContaining({
+      id: 'ctxreq_api',
+      baseContextPackArtifactId: contextArtifact.id,
+      supplementContextPackId: 'ctxpack_supplement',
+    }),
   ]);
   expect(body.metrics.impactCoverage).toMatchObject({ numerator: 1, denominator: 2, value: 0.5 });
   expect(body.metrics.evidenceTraceability.numerator).toBe(body.metrics.evidenceTraceability.denominator);

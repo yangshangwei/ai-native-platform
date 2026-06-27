@@ -75,6 +75,8 @@ describe('invokeSkill (de-closured)', () => {
     expect(agent.contextRequest).toBeNull();
     expect(agent.contextPack.stage).toBe('requirement');
     expect(agent.contextPack.taskBrief).toBe('Orchestrator de-closure test run');
+    expect(agent.contextPackArtifactId).toBe('art_1_context_pack');
+    expect(agent.invocationId).toMatch(/^ctxinv_/);
     expect(raw.agentTaskStarted).toHaveBeenCalledWith(expect.objectContaining({
       workflowRunId: 'run_orch',
       stepRunId: 'step_req',
@@ -89,7 +91,24 @@ describe('invokeSkill (de-closured)', () => {
       skillId: 'skill.requirement',
       skillVersion: '1.0.0',
       contextPackId: agent.contextPack.id,
+      metadata: expect.objectContaining({
+        invocationId: agent.invocationId,
+        contextPackArtifactId: 'art_1_context_pack',
+        contextPackRole: 'base',
+      }),
     }));
+    expect(raw.postArtifact).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'context_pack',
+      contentType: 'application/json',
+      metadata: expect.objectContaining({
+        schemaVersion: 'ainp.context_pack_artifact.v1',
+        contextPackId: agent.contextPack.id,
+        contextPackRole: 'base',
+        invocationId: agent.invocationId,
+        retryIndex: 0,
+      }),
+    }));
+    await expect(readdir(join(dir, 'context-packs'))).resolves.toHaveLength(1);
     // The backend received the platform-built context pack.
     expect(backendRun).toHaveBeenCalledWith(skill, expect.objectContaining({
       contextPack: expect.objectContaining({ stage: 'requirement' }),
@@ -149,50 +168,66 @@ describe('invokeSkill (de-closured)', () => {
     const capture = agent.contextRequest!;
     expect(capture.sourceName).toBe('last_message');
     expect(capture.request.requestedRefs).toEqual(['apps/api/src/gates.ts']);
-    expect(capture.requestArtifactId).toBe('art_1_other');
-    expect(capture.supplementArtifactId).toBe('art_2_context_pack');
+    expect(capture.requestArtifactId).toBe('art_2_other');
+    expect(capture.supplementArtifactId).toBe('art_3_context_pack');
+    expect(capture.baseContextPackArtifactId).toBe('art_1_context_pack');
+    expect(capture.baseInvocationId).toMatch(/^ctxinv_/);
+    expect(capture.supplementInvocationId).toMatch(/^ctxinv_/);
     expect(capture.supplementContextPack.supplement).toMatchObject({
       contextRequestId: capture.request.id,
       baseContextPackId: capture.baseContextPackId,
       retryIndex: 1,
     });
     expect(capture.supplementContextPackId).toBe(agent.contextPack.id);
+    expect(agent.contextPackArtifactId).toBe('art_3_context_pack');
+    expect(agent.invocationId).toBe(capture.supplementInvocationId);
 
     // RunCtx mutations: chain + inputs + artifact ids.
     expect(c.contextRequestChain).toEqual([capture]);
     expect(c.inputs[`context_request.${capture.request.id}.json`]).toContain('need the gate engine source');
     expect(c.inputArtifactIds[`context_supplement.${capture.request.id}.json`])
-      .toBe('art_2_context_pack');
+      .toBe('art_3_context_pack');
 
     // Request + supplement were persisted to disk and recorded via the API.
     const persisted = await readdir(join(dir, 'context-requests'));
     expect(persisted).toHaveLength(2);
+    await expect(readdir(join(dir, 'context-packs'))).resolves.toHaveLength(1);
     expect(raw.recordContextRequest).toHaveBeenCalledWith(expect.objectContaining({
       workflowRunId: 'run_orch',
+      baseContextPackArtifactId: 'art_1_context_pack',
       supplementContextPackId: capture.supplementContextPackId,
-      requestArtifactId: 'art_1_other',
-      supplementArtifactId: 'art_2_context_pack',
+      requestArtifactId: 'art_2_other',
+      supplementArtifactId: 'art_3_context_pack',
     }));
     expect(raw.agentTaskFinished).toHaveBeenCalledWith({
       taskId: 'task_invoke',
       status: 'success',
       summary: expect.stringContaining(`context_request ${capture.request.id} captured`),
-      outputArtifactIds: ['art_1_other', 'art_2_context_pack'],
+      outputArtifactIds: ['art_2_other', 'art_3_context_pack'],
     });
     expect(raw.agentSessionFinished).toHaveBeenCalledWith({
       sessionId: 'ags_invoke',
       status: 'success',
       agentResultId: 'agr_invoke',
-      metadata: {
+      metadata: expect.objectContaining({
         contextRequestId: capture.request.id,
         supplementContextPackId: capture.supplementContextPackId,
+        supplementContextPackArtifactId: 'art_3_context_pack',
+        baseContextPackArtifactId: 'art_1_context_pack',
         retryPlanned: true,
-      },
+      }),
     });
     expect(raw.agentSessionStarted).toHaveBeenNthCalledWith(2, expect.objectContaining({
       parentSessionId: 'ags_invoke',
       retryIndex: 1,
       contextPackId: capture.supplementContextPackId,
+      metadata: expect.objectContaining({
+        invocationId: capture.supplementInvocationId,
+        contextPackArtifactId: 'art_3_context_pack',
+        contextPackRole: 'supplement',
+        contextRequestId: capture.request.id,
+        baseContextPackId: capture.baseContextPackId,
+      }),
     }));
   });
 
@@ -303,7 +338,11 @@ describe('invokeSkill (de-closured)', () => {
       sessionId: 'ags_invoke',
       status: 'failed',
       agentResultId: 'agr_invoke',
-      metadata: { error: 'backend exploded' },
+      metadata: expect.objectContaining({
+        error: 'backend exploded',
+        contextPackArtifactId: 'art_1_context_pack',
+        invocationId: expect.stringMatching(/^ctxinv_/),
+      }),
     });
   });
 
@@ -315,6 +354,8 @@ describe('invokeSkill (de-closured)', () => {
       {
         taskId: 'task_success',
         sessionId: 'ags_success',
+        invocationId: 'ctxinv_success',
+        contextPackArtifactId: 'art_context_pack_success',
         outputs: [],
         contextPack: {} as never,
         contextRequest: null,
@@ -337,8 +378,11 @@ describe('invokeSkill (de-closured)', () => {
       agentResultId: 'agr_success',
       metadata: {
         outputArtifactIds: ['art_output'],
+        invocationId: 'ctxinv_success',
+        contextPackArtifactId: 'art_context_pack_success',
         contextRequestId: null,
         supplementContextPackId: null,
+        supplementContextPackArtifactId: null,
       },
     });
   });

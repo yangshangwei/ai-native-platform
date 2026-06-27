@@ -204,6 +204,10 @@ The goal is to help later stages know where to look, not decide how to change th
         description: 'context pack',
       },
     ],
+    inputPolicies: [
+      { artifactKey: 'requirement.md', mode: 'summary', maxTokens: 900, required: true },
+      { artifactKey: 'context_pack.md', mode: 'summary', maxTokens: 700, required: false },
+    ],
     outputs: [
       { name: 'design.md', kind: 'artifact', required: true, description: 'design markdown' },
       {
@@ -237,6 +241,13 @@ The goal is to help later stages know where to look, not decide how to change th
         required: false,
         description: 'context pack',
       },
+    ],
+    inputPolicies: [
+      { artifactKey: 'design.md', mode: 'summary', maxTokens: 1_200, required: false },
+      { artifactKey: 'analysis_doc.md', mode: 'summary', maxTokens: 1_000, required: false },
+      { artifactKey: 'report.md', mode: 'summary', maxTokens: 800, required: false },
+      { artifactKey: 'refactor_plan.md', mode: 'summary', maxTokens: 1_000, required: false },
+      { artifactKey: 'context_pack.md', mode: 'summary', maxTokens: 700, required: false },
     ],
     outputs: [
       { name: 'diff', kind: 'artifact', required: true, description: 'git diff of changes' },
