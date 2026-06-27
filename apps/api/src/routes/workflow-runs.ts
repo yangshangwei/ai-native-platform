@@ -58,6 +58,13 @@ workflowRuns.get('/:id/handoffs', (c) => {
   return c.json({ items: store.handoffs.byWorkflow(id) });
 });
 
+workflowRuns.get('/:id/step-checkpoints', (c) => {
+  const id = c.req.param('id');
+  const missing = requireWorkflowRun(c, id);
+  if (missing) return missing;
+  return c.json({ items: store.stepCheckpoints.byWorkflow(id) });
+});
+
 workflowRuns.post('/', async (c) => {
   const body = (await c.req.json()) as {
     projectId?: string;
@@ -152,6 +159,7 @@ workflowRuns.get('/:id', (c) => {
   const agentSessions = store.agentSessions.byWorkflow(id);
   const toolInvocations = store.toolInvocations.byWorkflow(id);
   const handoffs = store.handoffs.byWorkflow(id);
+  const stepCheckpoints = store.stepCheckpoints.byWorkflow(id);
   const audit = store.auditLog.byWorkflow(id);
   return c.json({
     run,
@@ -168,6 +176,7 @@ workflowRuns.get('/:id', (c) => {
     agentSessions,
     toolInvocations,
     handoffs,
+    stepCheckpoints,
     audit,
   });
 });

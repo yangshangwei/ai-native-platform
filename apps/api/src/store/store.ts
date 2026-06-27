@@ -22,6 +22,7 @@ import type {
   RequestMessage,
   ToolInvocation,
   HandoffRecord,
+  StepCheckpoint,
 } from '@ainp/shared';
 import { errorMessage, isProjectAgentBackendKind, nowIso } from '@ainp/shared';
 import { appendFileSync, mkdirSync } from 'node:fs';
@@ -1007,6 +1008,92 @@ const handoffs = {
     ),
   get size(): number {
     return handoffsTable.count();
+  },
+};
+
+// ---- step_checkpoints ------------------------------------------------------
+
+interface StepCheckpointRow {
+  id: string;
+  workflow_run_id: string;
+  step_run_id: string;
+  stage: string;
+  status: string;
+  input_artifact_ids_json: string;
+  output_artifact_ids_json: string;
+  context_pack_id: string | null;
+  agent_session_ids_json: string;
+  tool_invocation_ids_json: string;
+  gate_run_ids_json: string;
+  retry_index: number;
+  resume_cursor: string | null;
+  failure_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  metadata_json: string;
+}
+
+function rowToStepCheckpoint(r: StepCheckpointRow): StepCheckpoint {
+  return {
+    id: r.id,
+    workflowRunId: r.workflow_run_id,
+    stepRunId: r.step_run_id,
+    stage: r.stage as StepCheckpoint['stage'],
+    status: r.status as StepCheckpoint['status'],
+    inputArtifactIds: JSON.parse(r.input_artifact_ids_json),
+    outputArtifactIds: JSON.parse(r.output_artifact_ids_json),
+    contextPackId: r.context_pack_id,
+    agentSessionIds: JSON.parse(r.agent_session_ids_json),
+    toolInvocationIds: JSON.parse(r.tool_invocation_ids_json),
+    gateRunIds: JSON.parse(r.gate_run_ids_json),
+    retryIndex: r.retry_index,
+    resumeCursor: r.resume_cursor,
+    failureReason: r.failure_reason,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    metadata: JSON.parse(r.metadata_json) as Record<string, unknown>,
+  };
+}
+
+const stepCheckpointsTable = defineTable<StepCheckpointRow, StepCheckpoint>({
+  table: 'step_checkpoints',
+  fromRow: rowToStepCheckpoint,
+  toRow: (s) => ({
+    id: s.id,
+    workflow_run_id: s.workflowRunId,
+    step_run_id: s.stepRunId,
+    stage: s.stage,
+    status: s.status,
+    input_artifact_ids_json: JSON.stringify(s.inputArtifactIds),
+    output_artifact_ids_json: JSON.stringify(s.outputArtifactIds),
+    context_pack_id: s.contextPackId,
+    agent_session_ids_json: JSON.stringify(s.agentSessionIds),
+    tool_invocation_ids_json: JSON.stringify(s.toolInvocationIds),
+    gate_run_ids_json: JSON.stringify(s.gateRunIds),
+    retry_index: s.retryIndex,
+    resume_cursor: s.resumeCursor,
+    failure_reason: s.failureReason,
+    created_at: s.createdAt,
+    updated_at: s.updatedAt,
+    metadata_json: JSON.stringify(s.metadata),
+  }),
+});
+
+const stepCheckpoints = {
+  upsert: (s: StepCheckpoint): void => stepCheckpointsTable.upsert(s),
+  get: (id: string): StepCheckpoint | undefined => stepCheckpointsTable.byId(id),
+  byStep: (stepRunId: string): StepCheckpoint | undefined =>
+    stepCheckpointsTable.one(
+      'SELECT * FROM step_checkpoints WHERE step_run_id = ?',
+      stepRunId,
+    ),
+  byWorkflow: (workflowRunId: string): StepCheckpoint[] =>
+    stepCheckpointsTable.all(
+      'SELECT * FROM step_checkpoints WHERE workflow_run_id = ? ORDER BY created_at ASC',
+      workflowRunId,
+    ),
+  get size(): number {
+    return stepCheckpointsTable.count();
   },
 };
 
@@ -2066,6 +2153,7 @@ export const store = {
   agentSessions,
   toolInvocations,
   handoffs,
+  stepCheckpoints,
   agentEvents,
   workflowActions,
   approvals,

@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "Check shared type and guard consistency."}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "Check API route/store boundary consistency."}
+{"file": ".trellis/spec/api/backend/database.md", "reason": "Check migration discipline and legacy DB compatibility."}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "Check runner backend/orchestrator contract consistency."}
+{"file": ".trellis/spec/runner/backend/flow-registry.md", "reason": "Check flow dispatch behavior remains unchanged."}
+{"file": ".trellis/spec/shared/backend/context-injection-protocol.md", "reason": "Check context and retry checkpoint linkage."}
+{"file": ".trellis/spec/shared/backend/evidence-verifier-protocol.md", "reason": "Check gate/evidence authority is preserved."}
+{"file": ".trellis/tasks/06-27-agent-step-checkpoint-metadata/research/checkpoint-gap-audit.md", "reason": "Check implementation matches the documented gap and scope."}

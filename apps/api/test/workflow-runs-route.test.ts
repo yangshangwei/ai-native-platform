@@ -10,6 +10,7 @@ import {
   type Artifact,
   type HandoffRecord,
   type Project,
+  type StepCheckpoint,
   type ToolInvocation,
   type WorkflowRun,
 } from '@ainp/shared';
@@ -165,6 +166,152 @@ test('GET /workflow-runs/:id/agent-sessions returns empty list for legacy runs',
   const res = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/agent-sessions`);
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ items: [] });
+});
+
+test('GET /workflow-runs/:id/step-checkpoints returns empty list for legacy runs', async () => {
+  const run = await createRun('step-checkpoints-empty-route', 'legacy run has no checkpoints yet');
+
+  const res = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/step-checkpoints`);
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ items: [] });
+});
+
+test('runner events merge agent, tool, gate and failure refs into a step checkpoint', async () => {
+  const run = await createRun('step-checkpoints-route', 'record step checkpoint evidence');
+  const input = await postArtifact(run, 'design-input');
+  const output = await postArtifact(run, 'implementation-output');
+  const stepStarted = await app.request('/runner/events/step-started', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      stage: 'implementation',
+      name: 'skill.implementation',
+    }),
+  });
+  expect(stepStarted.status).toBe(200);
+  const step = ((await stepStarted.json()) as { step: { id: string } }).step;
+
+  const taskRes = await app.request('/runner/events/agent-task-started', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      stepRunId: step.id,
+      kind: 'implementation',
+      backend: 'codex',
+      prompt: 'ContextPack: ctx_checkpoint',
+      inputArtifactIds: [input.id],
+    }),
+  });
+  expect(taskRes.status).toBe(201);
+  const task = ((await taskRes.json()) as { task: { id: string } }).task;
+  const sessionRes = await app.request('/runner/events/agent-session-started', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      agentTaskId: task.id,
+      stage: 'implementation',
+      skillId: 'skill.implementation',
+      skillVersion: '1.0.0',
+      contextPackId: 'ctx_checkpoint',
+      retryIndex: 1,
+    }),
+  });
+  expect(sessionRes.status).toBe(201);
+  const session = ((await sessionRes.json()) as { session: { id: string } }).session;
+  const resultRes = await app.request('/runner/events/agent-task-finished', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      taskId: task.id,
+      status: 'success',
+      summary: 'implementation produced diff',
+      outputArtifactIds: [output.id],
+    }),
+  });
+  expect(resultRes.status).toBe(201);
+  const result = ((await resultRes.json()) as { result: { id: string } }).result;
+  const finishedSession = await app.request('/runner/events/agent-session-finished', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: session.id,
+      status: 'success',
+      agentResultId: result.id,
+    }),
+  });
+  expect(finishedSession.status).toBe(201);
+
+  const spec = RUNNER_TOOL_SPECS['runner.git_diff_capture'];
+  const toolInvocation: ToolInvocation = {
+    id: 'tinv_checkpoint_diff',
+    workflowRunId: run.id,
+    stepRunId: step.id,
+    toolId: spec.id,
+    toolName: spec.name,
+    schemaVersion: spec.schemaVersion,
+    status: 'success',
+    sideEffect: spec.sideEffect,
+    permissionTier: spec.permissionTier,
+    permissionDecision: 'not_required',
+    argumentsDigest: 'digest_args_checkpoint',
+    resultRefs: [{ kind: 'artifact', id: output.id }],
+    startedAt: nowIso(),
+    completedAt: nowIso(),
+    durationMs: 3,
+    error: null,
+    metadata: { changedFiles: ['src/App.java'] },
+  };
+  const toolRecord = await app.request('/runner/events/tool-invocation', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ toolInvocation }),
+  });
+  expect(toolRecord.status).toBe(200);
+
+  const gateRes = await app.request('/runner/events/run-gate', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      stepRunId: step.id,
+      gateId: 'diff_scope_gate',
+      params: { changedFiles: ['docs/notes.md'], allowedPrefixes: ['src/'] },
+    }),
+  });
+  expect(gateRes.status).toBe(200);
+  const gate = ((await gateRes.json()) as { gate: { id: string; status: string } }).gate;
+  expect(gate.status).toBe('fail');
+
+  const stepFinished = await app.request('/runner/events/step-finished', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      stepRunId: step.id,
+      status: 'failed',
+      failureReason: 'diff_scope_gate failed; aborting',
+    }),
+  });
+  expect(stepFinished.status).toBe(200);
+
+  const res = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/step-checkpoints`);
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { items: StepCheckpoint[] };
+  expect(body.items).toMatchObject([{
+    stepRunId: step.id,
+    stage: 'implementation',
+    status: 'failed',
+    inputArtifactIds: [input.id],
+    outputArtifactIds: [output.id],
+    contextPackId: 'ctx_checkpoint',
+    agentSessionIds: [session.id],
+    toolInvocationIds: ['tinv_checkpoint_diff'],
+    gateRunIds: [gate.id],
+    retryIndex: 1,
+    failureReason: 'diff_scope_gate failed; aborting',
+  }]);
 });
 
 test('runner event ingress records and exposes agent sessions by workflow run', async () => {

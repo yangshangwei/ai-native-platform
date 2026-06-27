@@ -444,6 +444,26 @@ const BASELINE_DDL: string[] = [
      metadata_json TEXT NOT NULL
    )`,
   `CREATE INDEX IF NOT EXISTS idx_handoffs_workflow ON handoffs(workflow_run_id, created_at)`,
+  `CREATE TABLE IF NOT EXISTS step_checkpoints (
+     id TEXT PRIMARY KEY,
+     workflow_run_id TEXT NOT NULL,
+     step_run_id TEXT NOT NULL UNIQUE,
+     stage TEXT NOT NULL,
+     status TEXT NOT NULL,
+     input_artifact_ids_json TEXT NOT NULL,
+     output_artifact_ids_json TEXT NOT NULL,
+     context_pack_id TEXT,
+     agent_session_ids_json TEXT NOT NULL,
+     tool_invocation_ids_json TEXT NOT NULL,
+     gate_run_ids_json TEXT NOT NULL,
+     retry_index INTEGER NOT NULL DEFAULT 0,
+     resume_cursor TEXT,
+     failure_reason TEXT,
+     created_at TEXT NOT NULL,
+     updated_at TEXT NOT NULL,
+     metadata_json TEXT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_step_checkpoints_workflow ON step_checkpoints(workflow_run_id, created_at)`,
 ];
 
 // ---------------------------------------------------------------------------
@@ -667,6 +687,33 @@ export const MIGRATIONS: Migration[] = [
          metadata_json TEXT NOT NULL
        )`);
       run(database, `CREATE INDEX IF NOT EXISTS idx_handoffs_workflow ON handoffs(workflow_run_id, created_at)`);
+    },
+  },
+  {
+    version: 28,
+    name: 'step_checkpoints-create-table',
+    isApplied: (database) => hasTable(database, 'step_checkpoints'),
+    up: (database) => {
+      run(database, `CREATE TABLE step_checkpoints (
+         id TEXT PRIMARY KEY,
+         workflow_run_id TEXT NOT NULL,
+         step_run_id TEXT NOT NULL UNIQUE,
+         stage TEXT NOT NULL,
+         status TEXT NOT NULL,
+         input_artifact_ids_json TEXT NOT NULL,
+         output_artifact_ids_json TEXT NOT NULL,
+         context_pack_id TEXT,
+         agent_session_ids_json TEXT NOT NULL,
+         tool_invocation_ids_json TEXT NOT NULL,
+         gate_run_ids_json TEXT NOT NULL,
+         retry_index INTEGER NOT NULL DEFAULT 0,
+         resume_cursor TEXT,
+         failure_reason TEXT,
+         created_at TEXT NOT NULL,
+         updated_at TEXT NOT NULL,
+         metadata_json TEXT NOT NULL
+       )`);
+      run(database, `CREATE INDEX IF NOT EXISTS idx_step_checkpoints_workflow ON step_checkpoints(workflow_run_id, created_at)`);
     },
   },
 ];

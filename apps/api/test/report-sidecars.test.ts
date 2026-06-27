@@ -69,6 +69,11 @@ test('completion report route blocks when Evidence Gate fails', async () => {
 
 test('completion report route emits markdown plus structured JSON sidecar artifacts', async () => {
   const run = seedRun();
+  const step = workflow.startStep({
+    workflowRunId: run.id,
+    stage: 'implementation',
+    name: 'skill.implementation',
+  });
   workflow.recordContextRequestAction({
     workflowRunId: run.id,
     request: {
@@ -112,13 +117,40 @@ test('completion report route emits markdown plus structured JSON sidecar artifa
   });
   const handoffOutput = workflow.createArtifact({
     workflowRunId: run.id,
-    stepRunId: 'step_impl',
+    stepRunId: step.id,
     kind: 'other',
     uri: 'mem://handoff-review',
     size: 10,
     contentType: 'text/markdown',
     metadata: {},
   });
+  const checkpointTask = workflow.recordAgentTask({
+    workflowRunId: run.id,
+    stepRunId: step.id,
+    kind: 'implementation',
+    backend: 'codex',
+    prompt: 'ContextPack: ctxpack_report_checkpoint',
+    inputArtifactIds: [handoffInput.id],
+  });
+  const checkpointSession = workflow.recordAgentSessionStarted({
+    agentTaskId: checkpointTask.id,
+    stage: 'implementation',
+    skillId: 'skill.implementation',
+    skillVersion: '1.0.0',
+    contextPackId: 'ctxpack_report_checkpoint',
+  });
+  const checkpointResult = workflow.recordAgentResult({
+    taskId: checkpointTask.id,
+    status: 'success',
+    summary: 'implementation evidence recorded',
+    outputArtifactIds: [handoffOutput.id],
+  });
+  workflow.recordAgentSessionFinished({
+    sessionId: checkpointSession.id,
+    status: 'success',
+    agentResultId: checkpointResult.id,
+  });
+  workflow.finishStep(step.id, 'passed');
   workflow.recordHandoff({
     workflowRunId: run.id,
     stepRunId: null,
@@ -163,6 +195,7 @@ test('completion report route emits markdown plus structured JSON sidecar artifa
     sections: Array<{ title: string; body: string }>;
     contextRequests: Array<{ id: string; supplementContextPackId: string }>;
     handoffs: Array<{ toRole: string; adoptionDecision: string; outputArtifactIds: string[] }>;
+    stepCheckpoints: Array<{ stepRunId: string; contextPackId: string; agentSessionIds: string[] }>;
     knowledgeReviewSignals: Array<{ kind: string; recommendedAction: string }>;
   };
   expect(parsed.schemaVersion).toBe('ainp.completion_report.v1');
@@ -185,6 +218,17 @@ test('completion report route emits markdown plus structured JSON sidecar artifa
   );
   expect(parsed.sections.find((section) => section.title.startsWith('Handoffs'))?.body)
     .toContain('Independent implementation review');
+  expect(parsed.stepCheckpoints).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        stepRunId: step.id,
+        contextPackId: 'ctxpack_report_checkpoint',
+        agentSessionIds: [checkpointSession.id],
+      }),
+    ]),
+  );
+  expect(parsed.sections.find((section) => section.title.startsWith('Step Checkpoints'))?.body)
+    .toContain(step.id);
   expect(parsed.knowledgeReviewSignals).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ kind: 'mark_stale', recommendedAction: 'mark_stale' }),

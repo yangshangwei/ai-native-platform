@@ -339,7 +339,11 @@ export async function executeImplementation(
   console.log(`[runner]   sensitive_change_gate -> ${sensGate.gate.status}`);
   if (diffGate.gate.status === 'fail') {
     c.ok.value = false;
-    await deps.api.stepFinished({ stepRunId: stepId, status: 'failed' });
+    await deps.api.stepFinished({
+      stepRunId: stepId,
+      status: 'failed',
+      failureReason: 'diff_scope_gate failed; aborting',
+    });
     throw new Error('diff_scope_gate failed; aborting');
   }
   await deps.enforceSensitiveChangeCheckpoint({
@@ -399,7 +403,11 @@ export async function executeBuildTest(
       reason: `compile command ${compileCr.status} exit=${compileCr.exitCode ?? 'null'}`,
     }, deps);
     c.ok.value = false;
-    await deps.api.stepFinished({ stepRunId: stepId, status: 'failed' });
+    await deps.api.stepFinished({
+      stepRunId: stepId,
+      status: 'failed',
+      failureReason: `compile command ${compileCr.status} exit=${compileCr.exitCode ?? 'null'}`,
+    });
     throw new Error('compile command failed');
   }
 
@@ -433,7 +441,15 @@ export async function executeBuildTest(
     `[runner]   build=${result.buildRun.status} compile_gate=${result.compileGate?.status ?? 'n/a'} test_gate=${result.testGate?.status ?? 'n/a'}`,
   );
   const testOk = result.compileGate?.status === 'pass' && result.testGate?.status === 'pass';
-  await deps.api.stepFinished({ stepRunId: stepId, status: testOk ? 'passed' : 'failed' });
+  if (testOk) {
+    await deps.api.stepFinished({ stepRunId: stepId, status: 'passed' });
+  } else {
+    await deps.api.stepFinished({
+      stepRunId: stepId,
+      status: 'failed',
+      failureReason: `compile_gate=${result.compileGate?.status ?? 'n/a'} test_gate=${result.testGate?.status ?? 'n/a'}`,
+    });
+  }
   if (!testOk) {
     await recordBuildFailureDebuggerHandoff(c, stepId, {
       phase: 'test_gate',

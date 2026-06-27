@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "Shared backend spec index for Agent Runtime type additions."}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API backend spec index for route/store/database work."}
+{"file": ".trellis/spec/api/backend/database.md", "reason": "Checkpoint persistence requires a numbered additive SQLite migration."}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "Runner backend spec index for orchestrator changes."}
+{"file": ".trellis/spec/runner/backend/flow-registry.md", "reason": "Checkpoint writes must preserve sequential flow dispatch and RunCtx invariants."}
+{"file": ".trellis/spec/runner/backend/eval-harness.md", "reason": "Eval must remain deterministic and fixture-backed after runtime metadata changes."}
+{"file": ".trellis/spec/shared/backend/context-injection-protocol.md", "reason": "Checkpoint contextPackId and retry metadata must align with ContextPack/context_request contracts."}
+{"file": ".trellis/spec/shared/backend/evidence-verifier-protocol.md", "reason": "Checkpoint diagnostics must not replace gate/evidence authority."}
+{"file": ".trellis/tasks/06-27-agent-step-checkpoint-metadata/research/checkpoint-gap-audit.md", "reason": "Audit explaining the R2 gap and intended MVP scope."}

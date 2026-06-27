@@ -197,6 +197,7 @@ export const api = {
   stepFinished: (params: {
     stepRunId: string;
     status: 'passed' | 'failed' | 'cancelled' | 'skipped';
+    failureReason?: string | null;
   }) => request('POST', '/runner/events/step-finished', params),
 
   commandRun: (commandRun: CommandRun) =>

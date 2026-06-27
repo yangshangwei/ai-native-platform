@@ -21,6 +21,7 @@ import {
 import { store } from './store/store';
 import { readFileUriText } from './artifact-content';
 import { audit } from './audit';
+import { checkpointGateRun } from './step-checkpoints';
 
 /**
  * Gate Engine — the only thing that decides Gate pass/warn/fail.
@@ -59,6 +60,7 @@ function record(
     agentNote,
   };
   store.gateRuns.insert(gate);
+  checkpointGateRun(gate);
   audit(workflowRunId, 'gate.recorded', { gateId, status: gate.status });
   return gate;
 }

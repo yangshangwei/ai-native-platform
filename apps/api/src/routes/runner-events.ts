@@ -89,8 +89,9 @@ runnerEvents.post('/step-finished', async (c) => {
   const body = (await c.req.json()) as {
     stepRunId: string;
     status: 'passed' | 'failed' | 'cancelled' | 'skipped';
+    failureReason?: string | null;
   };
-  const step = finishStep(body.stepRunId, body.status);
+  const step = finishStep(body.stepRunId, body.status, body.failureReason ?? null);
   return c.json({ ok: true, step });
 });
 

@@ -1799,6 +1799,7 @@ function renderEvidencePanel(detail: RunDetail): HTMLElement {
         attrs: { 'data-details-key': `evidence-panel:${detail.run.id}` },
         children: [
           el('summary', { text: '查看 Gate、命令、产物和 Agent 记录' }),
+          renderDetails('Step Checkpoints', detail.stepCheckpoints.map(renderStepCheckpointRow), `evidence-step-checkpoints:${detail.run.id}`),
           renderDetails('Gate Runs', detail.gates.map(renderGateRow), `evidence-gates:${detail.run.id}`),
           renderDetails('Tool Invocations', detail.toolInvocations.map(renderToolInvocationRow), `evidence-tools:${detail.run.id}`),
           renderDetails('Command Runs', detail.commands.map(renderCommandRow), `evidence-commands:${detail.run.id}`),
@@ -1806,6 +1807,27 @@ function renderEvidencePanel(detail: RunDetail): HTMLElement {
           renderDetails('Agent Audit', detail.agentTasks.map((task) => renderAgentTaskRow(task, detail)), `evidence-agent-audit:${detail.run.id}`),
         ],
       }),
+    ],
+  });
+}
+
+function renderStepCheckpointRow(checkpoint: RunDetail['stepCheckpoints'][number]): HTMLElement {
+  return el('div', {
+    class: 'evidence-row',
+    children: [
+      el('span', { children: [pill(checkpoint.status), document.createTextNode(` ${checkpoint.stage}`)] }),
+      el('small', { text: `step ${shortId(checkpoint.stepRunId)} · retry ${checkpoint.retryIndex}` }),
+      checkpoint.contextPackId ? el('small', { text: `context ${shortId(checkpoint.contextPackId)}` }) : null,
+      checkpoint.agentSessionIds.length
+        ? el('small', { text: `sessions ${checkpoint.agentSessionIds.map(shortId).join(' · ')}` })
+        : el('small', { text: 'no agent session refs' }),
+      checkpoint.toolInvocationIds.length
+        ? el('small', { text: `tools ${checkpoint.toolInvocationIds.map(shortId).join(' · ')}` })
+        : null,
+      checkpoint.gateRunIds.length
+        ? el('small', { text: `gates ${checkpoint.gateRunIds.map(shortId).join(' · ')}` })
+        : null,
+      checkpoint.failureReason ? el('small', { text: checkpoint.failureReason }) : null,
     ],
   });
 }

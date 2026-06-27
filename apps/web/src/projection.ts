@@ -8,6 +8,7 @@ import {
   type FlowId,
   type GateRun,
   type RuleResult,
+  type StepCheckpoint,
   type StepRun,
   type TestRun,
   type ToolInvocation,
@@ -343,6 +344,8 @@ export type AgentResultDto = Optionalize<
   'summary' | 'completedAt'
 >;
 
+export type StepCheckpointDto = StepCheckpoint;
+
 /**
  * Shadow of the api-private `AuditEntry` (apps/api/src/store/store.ts) — no
  * shared source exists, so this stays hand-aligned. Registered in task
@@ -369,6 +372,7 @@ export interface RunDetail {
   actions: WorkflowActionDto[];
   agentTasks: AgentTaskDto[];
   agentResults: AgentResultDto[];
+  stepCheckpoints: StepCheckpointDto[];
   audit: AuditEntryDto[];
 }
 

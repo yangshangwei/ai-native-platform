@@ -198,7 +198,11 @@ describe('executeBuildTest (T3.2 command source)', () => {
       }),
     }));
     expect(c.ok.value).toBe(false);
-    expect(raw.api.stepFinished).toHaveBeenCalledWith({ stepRunId: 'step_bt', status: 'failed' });
+    expect(raw.api.stepFinished).toHaveBeenCalledWith({
+      stepRunId: 'step_bt',
+      status: 'failed',
+      failureReason: 'compile_gate=pass test_gate=fail',
+    });
   });
 
   test('denied command records a denied ToolInvocation without posting CommandRun', async () => {

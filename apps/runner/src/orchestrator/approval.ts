@@ -85,6 +85,7 @@ export interface SensitiveChangeCheckpointDeps {
   stepFinished(params: {
     stepRunId: string;
     status: 'passed' | 'failed' | 'cancelled' | 'skipped';
+    failureReason?: string | null;
   }): Promise<unknown>;
   awaitApproval(
     workflowRunId: string,
@@ -135,7 +136,11 @@ export async function enforceSensitiveChangeCheckpoint(params: {
         comment,
       });
     }
-    await params.deps.stepFinished({ stepRunId: params.stepRunId, status: 'failed' });
+    await params.deps.stepFinished({
+      stepRunId: params.stepRunId,
+      status: 'failed',
+      failureReason: comment ? `sensitive_change_gate rejected: ${comment}` : 'sensitive_change_gate rejected',
+    });
     throw new Error('sensitive_change_gate rejected');
   }
 }

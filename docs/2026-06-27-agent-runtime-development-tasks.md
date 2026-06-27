@@ -30,6 +30,29 @@
 - requirement/design/implementation 任一 agent step 产生可查询 AgentSession。
 - retry session 能通过 parentSessionId 指回 base session。
 
+## 1.5 Epic A+ - Durable Step Checkpoint
+
+`docs/2026-06-27-agent-runtime-requirements.md` 的 R2 需要在 AgentSession
+账本之外补一个 step-level checkpoint envelope。该任务最初没有单独列在研发拆解中，
+实现时按薄读模型补齐，不改变现有顺序 flow 或 Gate Engine 权威边界。
+
+| ID | 任务 | 主要文件 | 验收 |
+|---|---|---|---|
+| A+1 | 定义 `StepCheckpoint` 类型，表达 step 输入、ContextPack、AgentSession、ToolInvocation、GateRun、retry、resume 和失败原因。 | `packages/shared/src/types/step-checkpoint.ts`、shared tests | 类型能表达 legacy-safe nullable 字段；状态 guard 拒绝未知值。 |
+| A+2 | 新增 API 持久化和读模型，按 workflowRunId 查询 checkpoint 列表。 | `apps/api/src/store/db.ts`、`apps/api/src/store/store.ts`、workflow-runs route | 旧 run 返回空列表；新 step 可查询 checkpoint。 |
+| A+3 | 从既有 runner/API 事件合并 checkpoint：step start/finish、AgentSession、ToolInvocation、GateRun。 | `apps/api/src/workflow-engine.ts`、`apps/api/src/gate-engine.ts`、runner step finish payload | 每个 agent step 可追到 contextPackId、session ids、tool ids、gate ids、failureReason。 |
+| A+4 | Completion Report / Web 诊断区展示 checkpoint metadata。 | `apps/api/src/reports.ts`、`apps/web/src/page-task-detail.ts` | 报告 sidecar 和任务详情技术证据区能展示 checkpoint，不把它作为 pass/fail 权威。 |
+
+红灯测试：
+
+- 失败 step 缺 failureReason 或 gate/tool/session 引用，checkpoint 完整性测试失败。
+- checkpoint 被用来直接决定 GateRun/WorkflowRun 状态，测试失败。
+
+绿灯测试：
+
+- Agent step 产生 checkpoint，可查询 input/output artifacts、contextPackId、AgentSession、ToolInvocation、GateRun。
+- 旧 run 没有 checkpoint row 时返回空列表。
+
 ## 2. Epic B - Typed Tool Registry MVP
 
 | ID | 任务 | 主要文件 | 验收 |

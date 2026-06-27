@@ -67,6 +67,14 @@ import {
 import { publish as publishAgentEvent } from './agent-stream-bus';
 import { recommend } from './router';
 import { audit } from './audit';
+import {
+  checkpointAgentResult,
+  checkpointAgentSession,
+  checkpointAgentTask,
+  checkpointToolInvocation,
+  initializeStepCheckpoint,
+  mergeStepCheckpoint,
+} from './step-checkpoints';
 
 export { audit };
 
@@ -325,6 +333,7 @@ export function startStep(params: {
     completedAt: null,
   };
   store.stepRuns.set(id, step);
+  initializeStepCheckpoint(step);
   transitionStage(params.workflowRunId, params.stage, 'running');
   audit(params.workflowRunId, 'step.started', {
     stepId: id,
@@ -334,12 +343,23 @@ export function startStep(params: {
   return step;
 }
 
-export function finishStep(stepRunId: string, status: StepRun['status']): StepRun {
+export function finishStep(
+  stepRunId: string,
+  status: StepRun['status'],
+  failureReason: string | null = null,
+): StepRun {
   const step = store.stepRuns.get(stepRunId);
   if (!step) throw new Error(`step run not found: ${stepRunId}`);
   step.status = status;
   step.completedAt = nowIso();
   store.stepRuns.set(step.id, step);
+  mergeStepCheckpoint({
+    workflowRunId: step.workflowRunId,
+    stepRunId: step.id,
+    stage: step.stage,
+    status,
+    failureReason: status === 'failed' ? failureReason : null,
+  });
   audit(step.workflowRunId, 'step.finished', { stepId: step.id, status });
   return step;
 }
@@ -357,6 +377,7 @@ export function recordCommandRun(commandRun: CommandRun): CommandRun {
 
 export function recordToolInvocation(toolInvocation: ToolInvocation): ToolInvocation {
   store.toolInvocations.insert(toolInvocation);
+  checkpointToolInvocation(toolInvocation);
   audit(toolInvocation.workflowRunId, 'tool_invocation.recorded', {
     toolInvocationId: toolInvocation.id,
     toolId: toolInvocation.toolId,
@@ -1229,6 +1250,7 @@ export function recordAgentTask(input: {
     createdAt: nowIso(),
   };
   store.agentTasks.insert(task);
+  checkpointAgentTask(task);
   audit(input.workflowRunId, 'agent_task.recorded', {
     taskId: task.id,
     kind: task.kind,
@@ -1256,6 +1278,12 @@ export function recordAgentResult(input: {
     completedAt: nowIso(),
   };
   store.agentResults.insert(result);
+  checkpointAgentResult(
+    task.workflowRunId,
+    task.stepRunId,
+    result.outputArtifactIds,
+    result.status === 'failed' ? result.summary : null,
+  );
   audit(task.workflowRunId, 'agent_result.recorded', {
     taskId: task.id,
     resultId: result.id,
@@ -1296,6 +1324,7 @@ export function recordAgentSessionStarted(input: {
     metadata: input.metadata ?? {},
   };
   store.agentSessions.insert(session);
+  checkpointAgentSession(session);
   audit(task.workflowRunId, 'agent_session.started', {
     sessionId: session.id,
     taskId: task.id,
@@ -1334,6 +1363,7 @@ export function recordAgentSessionFinished(input: {
     },
   };
   store.agentSessions.upsert(finished);
+  checkpointAgentSession(finished);
   audit(finished.workflowRunId, 'agent_session.finished', {
     sessionId: finished.id,
     taskId: finished.agentTaskId,

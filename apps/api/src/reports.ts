@@ -89,6 +89,7 @@ export async function generateCompletionReport(
   const builds = store.buildRuns.byWorkflow(workflowRunId);
   const approvals = store.approvals.byWorkflow(workflowRunId);
   const handoffs = store.handoffs.byWorkflow(workflowRunId);
+  const stepCheckpoints = store.stepCheckpoints.byWorkflow(workflowRunId);
   const contextRequestActions = store.workflowActions
     .byWorkflow(workflowRunId)
     .filter((action) => action.kind === 'context_request');
@@ -177,6 +178,34 @@ export async function generateCompletionReport(
             `  - input artifacts: ${handoff.inputArtifactIds.join(', ') || '(none)'}`,
             `  - output artifacts: ${handoff.outputArtifactIds.join(', ') || '(none)'}`,
             `  - expected: ${handoff.expectedOutput.schemaVersion} ${handoff.expectedOutput.artifactKind} — ${handoff.expectedOutput.description}`,
+          ].join('\n'))
+          .join('\n');
+  const stepCheckpointSummaries = stepCheckpoints.map((checkpoint) => ({
+    id: checkpoint.id,
+    stepRunId: checkpoint.stepRunId,
+    stage: checkpoint.stage,
+    status: checkpoint.status,
+    inputArtifactIds: checkpoint.inputArtifactIds,
+    outputArtifactIds: checkpoint.outputArtifactIds,
+    contextPackId: checkpoint.contextPackId,
+    agentSessionIds: checkpoint.agentSessionIds,
+    toolInvocationIds: checkpoint.toolInvocationIds,
+    gateRunIds: checkpoint.gateRunIds,
+    retryIndex: checkpoint.retryIndex,
+    resumeCursor: checkpoint.resumeCursor,
+    failureReason: checkpoint.failureReason,
+  }));
+  const stepCheckpointsBody =
+    stepCheckpointSummaries.length === 0
+      ? '_no step checkpoints_'
+      : stepCheckpointSummaries
+          .map((checkpoint) => [
+            `- \`${checkpoint.stepRunId}\` ${checkpoint.stage} status=${checkpoint.status} retry=${checkpoint.retryIndex}`,
+            `  - contextPack: ${checkpoint.contextPackId ?? '(none)'}`,
+            `  - sessions: ${checkpoint.agentSessionIds.join(', ') || '(none)'}`,
+            `  - tools: ${checkpoint.toolInvocationIds.join(', ') || '(none)'}`,
+            `  - gates: ${checkpoint.gateRunIds.join(', ') || '(none)'}`,
+            `  - failure: ${checkpoint.failureReason ?? '(none)'}`,
           ].join('\n'))
           .join('\n');
   const contextRequests = contextRequestActions.map((action) => {
@@ -332,11 +361,13 @@ export async function generateCompletionReport(
       { title: `Artifacts (${artifacts.length})`, body: artifactsBody },
       { title: `Approvals (${approvals.length})`, body: approvalsBody },
       { title: `Handoffs (${handoffs.length})`, body: handoffsBody },
+      { title: `Step Checkpoints (${stepCheckpoints.length})`, body: stepCheckpointsBody },
       { title: `Context Requests (${contextRequests.length})`, body: contextRequestsBody },
       { title: `Knowledge Review Signals (${knowledgeReviewSignals.length})`, body: knowledgeReviewBody },
       { title: 'Context Governance Metrics', body: governanceMetricsBody },
     ],
     handoffs: handoffSummaries,
+    stepCheckpoints: stepCheckpointSummaries,
     contextRequests,
     knowledgeReviewSignals,
     contextGovernanceMetrics: contextGovernance.metrics,
