@@ -1,0 +1,4 @@
+{"file":".trellis/spec/runner/backend/agent-backend-runtime.md","reason":"Check backend availability/auth and real CLI execution path."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Check persisted stage handoff, design consumption, and governance exposure."}
+{"file":"scripts/e2e.ts","reason":"Check full lifecycle E2E assertions and backend selection."}
+{"file":"apps/api/src/context-governance.ts","reason":"Inspect read model shape after live run."}

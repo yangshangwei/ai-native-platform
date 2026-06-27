@@ -1,0 +1,6 @@
+{"file":".trellis/spec/runner/backend/agent-backend-runtime.md","reason":"Real Claude Code/Codex backend runtime and preflight contract."}
+{"file":".trellis/spec/runner/backend/flow-registry.md","reason":"feature.standard flow and runner orchestration expectations."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"P4 stage handoff contract and context governance requirements."}
+{"file":".trellis/spec/shared/backend/evidence-verifier-protocol.md","reason":"Handoff evidence must not own gate/workflow status."}
+{"file":"scripts/e2e.ts","reason":"Existing full real-runner E2E harness."}
+{"file":"README.md","reason":"Documented commands for API, runner, and E2E backend selection."}
