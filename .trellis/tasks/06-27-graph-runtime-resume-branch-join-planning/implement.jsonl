@@ -1,0 +1,12 @@
+{"file":".trellis/spec/shared/backend/index.md","reason":"Shared backend type contracts and exported runtime types will be touched by graph runtime shared definitions."}
+{"file":".trellis/spec/runner/backend/index.md","reason":"Runner orchestration, flow registry, checkpoint resume, and eval-harness guidance are central to graph runtime implementation."}
+{"file":".trellis/spec/api/backend/index.md","reason":"API-owned graph run ledger will require additive SQLite migrations, store/read models, and route discipline."}
+{"file":".trellis/spec/runner/backend/flow-registry.md","reason":"Existing FLOW_REGISTRY semantics and stage dispatch invariants must be preserved while adapting flows to graphs."}
+{"file":".trellis/spec/api/backend/database.md","reason":"Graph runtime persistence must follow versioned SQLite migration rules."}
+{"file":".trellis/spec/shared/backend/evidence-verifier-protocol.md","reason":"Graph joins and resumes must preserve evidence/gate authority boundaries."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Resume and retry must keep ContextPack/context_request lineage intact."}
+{"file":".trellis/spec/runner/backend/eval-harness.md","reason":"Graph runtime should be protected by deterministic eval fixtures before behavior changes."}
+{"file":".trellis/tasks/06-27-graph-runtime-resume-branch-join-planning/research/graph-runtime-patterns.md","reason":"Planning research records graph-runtime patterns and local architecture constraints for implementation agents."}
+{"file":"docs/2026-06-27-graph-runtime-requirements.md","reason":"Formal requirements baseline for graph runtime resume, branch, and join work."}
+{"file":"docs/2026-06-27-graph-runtime-architecture-design.md","reason":"Architecture design for graph definitions, node runs, resume semantics, and authority boundaries."}
+{"file":"docs/2026-06-27-graph-runtime-development-tasks.md","reason":"Implementation task breakdown and verification expectations for graph runtime MVP work."}

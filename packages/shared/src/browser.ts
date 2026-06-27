@@ -16,6 +16,7 @@ export * from './types/agent';
 export * from './types/agent-session';
 export * from './types/tool-invocation';
 export * from './types/step-checkpoint';
+export * from './types/graph-runtime';
 export * from './types/agent-event';
 export * from './types/context';
 export * from './types/execution-environment';
@@ -25,6 +26,7 @@ export * from './types/request-message';
 export * from './types/router';
 
 export * from './flows/registry';
+export * from './flows/graph-adapter';
 
 export * from './coordinator';
 

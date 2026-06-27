@@ -14,3 +14,7 @@ export type AgentResultId = string;
 export type AgentSessionId = string;
 export type HandoffId = string;
 export type StepCheckpointId = string;
+export type GraphDefinitionId = string;
+export type GraphRunId = string;
+export type GraphNodeRunId = string;
+export type GraphEventId = string;

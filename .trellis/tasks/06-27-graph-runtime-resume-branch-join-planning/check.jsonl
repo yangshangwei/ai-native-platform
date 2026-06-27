@@ -1,0 +1,11 @@
+{"file":".trellis/spec/shared/backend/index.md","reason":"Check shared graph/runtime type contracts and trust-boundary guards."}
+{"file":".trellis/spec/runner/backend/index.md","reason":"Check Runner orchestration, flow-registry, and eval behavior against backend guidance."}
+{"file":".trellis/spec/api/backend/index.md","reason":"Check API routes, migrations, and read models against backend guidance."}
+{"file":".trellis/spec/runner/backend/flow-registry.md","reason":"Verify existing flow order and dispatch invariants are not regressed by graph adaptation."}
+{"file":".trellis/spec/api/backend/database.md","reason":"Verify migrations are additive, explicit, and legacy-safe."}
+{"file":".trellis/spec/shared/backend/evidence-verifier-protocol.md","reason":"Verify graph runtime does not usurp Gate Engine/evidence authority."}
+{"file":".trellis/spec/runner/backend/eval-harness.md","reason":"Verify deterministic graph fixtures cover resume, branch, join, and idempotency cases."}
+{"file":".trellis/tasks/06-27-graph-runtime-resume-branch-join-planning/research/graph-runtime-patterns.md","reason":"Check implementation choices against the recorded research constraints and recommended direction."}
+{"file":"docs/2026-06-27-graph-runtime-requirements.md","reason":"Check delivered behavior against formal graph runtime requirements."}
+{"file":"docs/2026-06-27-graph-runtime-architecture-design.md","reason":"Check architecture boundaries, graph type semantics, and resume design compliance."}
+{"file":"docs/2026-06-27-graph-runtime-development-tasks.md","reason":"Check task sequencing and verification coverage for MVP implementation."}
