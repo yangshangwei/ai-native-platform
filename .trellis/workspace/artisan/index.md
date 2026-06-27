@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 57
+- **Total Sessions**: 58
 - **Last Active**: 2026-06-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~173 | Active |
+| `journal-2.md` | ~214 | Active |
 | `journal-1.md` | ~1983 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 58 | 2026-06-27 | Agent step checkpoint metadata | `b1692c6` | `feat/context-injection-layer-mvp` |
 | 57 | 2026-06-27 | Bounded multi-agent handoff MVP | `1b789ba`, `0134f5f` | `feat/context-injection-layer-mvp` |
 | 56 | 2026-06-27 | Memory Lifecycle MVP | `660c928` | `feat/context-injection-layer-mvp` |
 | 55 | 2026-06-27 | Typed Tool Registry MVP | `840f058` | `feat/context-injection-layer-mvp` |
