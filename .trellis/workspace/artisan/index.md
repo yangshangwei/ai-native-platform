@@ -7,8 +7,8 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-1.md`
-- **Total Sessions**: 52
+- **Active File**: `journal-2.md`
+- **Total Sessions**: 53
 - **Last Active**: 2026-06-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1983 | Active |
+| `journal-2.md` | ~40 | Active |
+| `journal-1.md` | ~1983 | Archived |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 53 | 2026-06-27 | Context request same-step retry | `08fdd82` | `feat/context-injection-layer-mvp` |
 | 52 | 2026-06-27 | Agent backend fixture eval harness | `d529814` | `feat/context-injection-layer-mvp` |
 | 51 | 2026-06-27 | AgentSession trajectory ledger | `7b8db66` | `feat/context-injection-layer-mvp` |
 | 50 | 2026-06-27 | Technical architecture documentation handoff | `758e8ef`, `8989873`, `4e1fb8f`, `9d4ae83` | `feat/context-injection-layer-mvp` |
