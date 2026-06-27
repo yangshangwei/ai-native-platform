@@ -19,6 +19,7 @@ function depsFixture(agent: InvokedAgent) {
     api: {
       stepStarted: vi.fn(async () => ({ step: { id: 'step_md' } as unknown as StepRun })),
       stepFinished: vi.fn(async () => ({})),
+      stepCheckpoint: vi.fn(async () => ({ checkpoint: { id: 'scp_md' } })),
       postArtifact: vi.fn(async () => ({ id: 'art_md_1' } as unknown as Artifact)),
     },
     mustSkill: vi.fn(async (stage: string) => skillFixture(stage as 'report')),
@@ -35,6 +36,9 @@ describe('executeAgentMarkdownStage (de-closured four-in-one)', () => {
     await writeFile(reportPath, '# Bug report\n\nNPE in gate engine.\n', 'utf8');
     const agent: InvokedAgent = {
       taskId: 'task_md',
+      sessionId: 'ags_md',
+      invocationId: 'ctxinv_md',
+      contextPackArtifactId: 'art_context_pack_md',
       outputs: [
         { name: 'report.md', path: reportPath, contentType: 'text/markdown', size: 33 },
       ],
@@ -76,6 +80,9 @@ describe('executeAgentMarkdownStage (de-closured four-in-one)', () => {
   test('scan: invokeSkill receives the run-scoped context from RunCtx', async () => {
     const agent: InvokedAgent = {
       taskId: 'task_scan',
+      sessionId: 'ags_scan',
+      invocationId: 'ctxinv_scan',
+      contextPackArtifactId: 'art_context_pack_scan',
       outputs: [],
       contextPack: { id: 'cp_scan' } as InvokedAgent['contextPack'],
       contextRequest: null,

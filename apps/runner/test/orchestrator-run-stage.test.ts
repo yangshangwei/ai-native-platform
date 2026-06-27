@@ -3,7 +3,11 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Artifact, StepRun } from '@ainp/shared';
-import { runStage, type StepDeps } from '../src/orchestrator/steps';
+import {
+  restoreRunCtxInputsFromStageCheckpoint,
+  runStage,
+  type StepDeps,
+} from '../src/orchestrator/steps';
 import type { InvokedAgent } from '../src/orchestrator/types';
 import { runCtxFixture, skillFixture } from './helpers/orchestrator-fixtures';
 
@@ -18,6 +22,8 @@ function agentFixture(outputs: InvokedAgent['outputs'] = []): InvokedAgent {
   return {
     taskId: 'task_stage',
     sessionId: 'ags_stage',
+    invocationId: 'ctxinv_stage',
+    contextPackArtifactId: 'art_context_pack_stage',
     outputs,
     contextPack: { id: 'cp_stage' } as InvokedAgent['contextPack'],
     contextRequest: null,
@@ -44,6 +50,12 @@ function baseDeps(overrides: {
         calls.push(`stepFinished:${params.status}`);
         return {};
       }),
+      stepCheckpoint: vi.fn(async (params: { metadata?: Record<string, unknown> }) => ({
+        checkpoint: {
+          id: 'scp_stage',
+          metadata: params.metadata ?? {},
+        },
+      })),
       postArtifact,
       recordHandoff: vi.fn(async () => ({})),
       runGate: vi.fn(async (params: { gateId: string }) => {
@@ -85,6 +97,42 @@ describe('runStage (de-closured)', () => {
     expect(c.ok.value).toBe(true);
     expect(c.inputs['requirement.md']).toBe('# REQ-001\n');
     expect(c.inputArtifactIds['requirement.md']).toBe('art_requirement_draft');
+    expect(raw.api.stepCheckpoint).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      stage: 'requirement',
+      status: 'running',
+      metadata: expect.objectContaining({
+        stageContextPhase: 'start',
+        stageContextStart: expect.objectContaining({
+          phase: 'start',
+          inputs: expect.objectContaining({
+            user_request: 'Orchestrator de-closure test run',
+          }),
+        }),
+      }),
+    }));
+    expect(raw.api.stepCheckpoint).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      stage: 'requirement',
+      status: 'passed',
+      outputArtifactIds: ['art_requirement_draft'],
+      metadata: expect.objectContaining({
+        stageContextPhase: 'finish',
+        stageContextFinish: expect.objectContaining({
+          phase: 'finish',
+          inputArtifactIds: expect.objectContaining({
+            'requirement.md': 'art_requirement_draft',
+          }),
+          producedArtifactIds: {
+            'requirement.md': 'art_requirement_draft',
+          },
+          contextPackArtifactIds: expect.arrayContaining(['art_context_pack_stage']),
+        }),
+      }),
+    }));
+    const finishMetadata = raw.api.stepCheckpoint.mock.calls[1][0].metadata;
+    expect(restoreRunCtxInputsFromStageCheckpoint({ metadata: finishMetadata })).toEqual({
+      inputs: expect.objectContaining({ 'requirement.md': '# REQ-001\n' }),
+      inputArtifactIds: expect.objectContaining({ 'requirement.md': 'art_requirement_draft' }),
+    });
     expect(c.draftsToPromote).toHaveLength(1);
     expect(c.draftsToPromote[0]).toMatchObject({
       kind: 'requirement_draft',

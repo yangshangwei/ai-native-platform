@@ -107,6 +107,9 @@ export interface ContextRequestCapture {
   supplementContextPackId: string;
   supplementContextPack: ContextPack;
   baseContextPackId: string;
+  baseContextPackArtifactId: string;
+  baseInvocationId: string;
+  supplementInvocationId: string;
 }
 
 export interface HandoffRuntimeContext {
@@ -117,6 +120,8 @@ export interface HandoffRuntimeContext {
 export interface InvokedAgent {
   taskId: string;
   sessionId: string;
+  invocationId: string;
+  contextPackArtifactId: string;
   outputs: Awaited<ReturnType<AgentBackend['run']>>['outputs'];
   contextPack: ContextPack;
   contextRequest: ContextRequestCapture | null;

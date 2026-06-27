@@ -7,14 +7,17 @@ import type {
   CommandRun,
   GateRun,
   SkillSpec,
+  StepCheckpoint,
   ToolInvocation,
   VerifierAcMatrix,
   VerifierStatus,
+  WorkflowStage,
 } from '@ainp/shared';
 import {
   RUNNER_TOOL_SPECS,
   VERIFIER_AC_MATRIX_SCHEMA_VERSION,
   errorMessage,
+  isWorkflowStage,
   newId,
   nowIso,
   pathToFileUri,
@@ -63,6 +66,7 @@ type StepApi = Pick<
   | 'stepStarted'
   | 'stepFinished'
   | 'postArtifact'
+  | 'stepCheckpoint'
   | 'runGate'
   | 'awaitHuman'
   | 'commandRun'
@@ -274,6 +278,11 @@ export async function executeImplementation(
     name: skill.id,
   });
   const stepId = step.id;
+  await checkpointStageContext(c, deps, {
+    stepRunId: stepId,
+    stage: 'implementation',
+    phase: 'start',
+  });
   const stepArtifactsDir = join(c.runArtifactsDir, 'implementation');
   const agent = await deps.invokeSkill(c, skill, {
     workflowRunId: c.run.id,
@@ -356,6 +365,13 @@ export async function executeImplementation(
       awaitApproval: deps.awaitApproval,
       postRejectionFeedback: deps.postRejectionFeedback,
     },
+  });
+  await checkpointStageContext(c, deps, {
+    stepRunId: stepId,
+    stage: 'implementation',
+    phase: 'finish',
+    producedArtifactIds: { [diffOut.name]: diffArtifact.id },
+    agent,
   });
   await deps.api.stepFinished({ stepRunId: stepId, status: 'passed' });
 }
@@ -741,6 +757,11 @@ export async function executeAgentMarkdownStage(
     name: skill.id,
   });
   const stepId = step.id;
+  await checkpointStageContext(c, deps, {
+    stepRunId: stepId,
+    stage,
+    phase: 'start',
+  });
   const stepArtifactsDir = join(c.runArtifactsDir, stage);
   const agent = await deps.invokeSkill(c, skill, {
     workflowRunId: c.run.id,
@@ -752,6 +773,7 @@ export async function executeAgentMarkdownStage(
     inputs: c.inputs,
   });
   const artifactIds: string[] = [];
+  const producedArtifactIds: Record<string, string> = {};
   for (const out of agent.outputs) {
     const a = await deps.api.postArtifact({
       workflowRunId: c.run.id,
@@ -765,6 +787,7 @@ export async function executeAgentMarkdownStage(
     c.inputs[out.name] = await Bun.file(out.path).text();
     c.inputArtifactIds[out.name] = a.id;
     artifactIds.push(a.id);
+    producedArtifactIds[out.name] = a.id;
     console.log(`[runner] ${stage} artifact ${a.id} (${out.name})`);
   }
   await deps.finishAgentSuccess(
@@ -772,6 +795,13 @@ export async function executeAgentMarkdownStage(
     artifactIds,
     `${stage} produced ${artifactIds.length} artifact(s)`,
   );
+  await checkpointStageContext(c, deps, {
+    stepRunId: stepId,
+    stage,
+    phase: 'finish',
+    producedArtifactIds,
+    agent,
+  });
   await deps.api.stepFinished({ stepRunId: stepId, status: 'passed' });
 }
 
@@ -852,6 +882,11 @@ export async function runContextPack(
     name: 'context_pack',
   });
   const stepId = step.id;
+  await checkpointStageContext(c, deps, {
+    stepRunId: stepId,
+    stage: 'context_pack',
+    phase: 'start',
+  });
   const stageArtifactsDir = join(c.runArtifactsDir, 'context_pack');
   await mkdir(stageArtifactsDir, { recursive: true });
 
@@ -893,6 +928,7 @@ export async function runContextPack(
     inputs: c.inputs,
   });
   const artifactIds: string[] = [];
+  const producedArtifactIds: Record<string, string> = {};
   for (const out of agent.outputs) {
     const a = await deps.api.postArtifact({
       workflowRunId: c.run.id,
@@ -911,6 +947,7 @@ export async function runContextPack(
     c.inputs[out.name] = await Bun.file(out.path).text();
     c.inputArtifactIds[out.name] = a.id;
     artifactIds.push(a.id);
+    producedArtifactIds[out.name] = a.id;
     console.log(`[runner] context_pack artifact ${a.id} (${out.name})`);
   }
   await deps.finishAgentSuccess(
@@ -918,6 +955,13 @@ export async function runContextPack(
     artifactIds,
     `context_pack produced ${artifactIds.length} artifact(s)`,
   );
+  await checkpointStageContext(c, deps, {
+    stepRunId: stepId,
+    stage: 'context_pack',
+    phase: 'finish',
+    producedArtifactIds,
+    agent,
+  });
   await deps.api.stepFinished({ stepRunId: stepId, status: 'passed' });
 }
 
@@ -934,6 +978,11 @@ export async function runStage(
     stage,
     name: skill.id,
   });
+  await checkpointStageContext(c, deps, {
+    stepRunId: step.id,
+    stage,
+    phase: 'start',
+  });
   const stepArtifactsDir = join(c.runArtifactsDir, stage);
   const agent = await deps.invokeSkill(c, skill, {
     workflowRunId: c.run.id,
@@ -948,6 +997,7 @@ export async function runStage(
       : null,
   });
   const artifactIds: string[] = [];
+  const producedArtifactIds: Record<string, string> = {};
   for (const out of agent.outputs) {
     const text = await Bun.file(out.path).text();
     const kind = artifactKindForStageOutput(stage, artifactKind, out.name);
@@ -975,6 +1025,7 @@ export async function runStage(
       });
     }
     artifactIds.push(a.id);
+    producedArtifactIds[out.name] = a.id;
     console.log(`[runner] ${stage} artifact ${a.kind} -> ${a.uri}`);
   }
   await deps.finishAgentSuccess(
@@ -985,6 +1036,13 @@ export async function runStage(
   if (stage === 'review') {
     await recordReviewHandoff(c, step.id, agent.sessionId, artifactIds, deps);
   }
+  await checkpointStageContext(c, deps, {
+    stepRunId: step.id,
+    stage,
+    phase: 'finish',
+    producedArtifactIds,
+    agent,
+  });
   await deps.api.stepFinished({ stepRunId: step.id, status: 'passed' });
 
   if (rulebasedGateId) {
@@ -1027,6 +1085,134 @@ export async function runStage(
       throw new Error(`${approverGateId} rejected`);
     }
   }
+}
+
+export interface StageContextCheckpointSnapshot {
+  phase: 'start' | 'finish';
+  workflowRunId: string;
+  stepRunId: string;
+  stage: WorkflowStage;
+  inputs: Record<string, string>;
+  inputArtifactIds: Record<string, string>;
+  producedArtifactIds: Record<string, string>;
+  contextPackArtifactIds: string[];
+  createdAt: string;
+}
+
+export function restoreRunCtxInputsFromStageCheckpoint(
+  checkpoint: Pick<StepCheckpoint, 'metadata'>,
+): Pick<RunCtx, 'inputs' | 'inputArtifactIds'> {
+  const snapshot = stageContextSnapshotFromMetadata(checkpoint.metadata);
+  if (!snapshot) {
+    throw new Error('step checkpoint does not contain stage context metadata');
+  }
+  return {
+    inputs: { ...snapshot.inputs },
+    inputArtifactIds: { ...snapshot.inputArtifactIds },
+  };
+}
+
+async function checkpointStageContext(
+  c: RunCtx,
+  deps: StepDeps,
+  input: {
+    stepRunId: string;
+    stage: WorkflowStage;
+    phase: 'start' | 'finish';
+    producedArtifactIds?: Record<string, string>;
+    agent?: InvokedAgent;
+  },
+): Promise<void> {
+  const snapshot: StageContextCheckpointSnapshot = {
+    phase: input.phase,
+    workflowRunId: c.run.id,
+    stepRunId: input.stepRunId,
+    stage: input.stage,
+    inputs: { ...c.inputs },
+    inputArtifactIds: { ...c.inputArtifactIds },
+    producedArtifactIds: input.producedArtifactIds ? { ...input.producedArtifactIds } : {},
+    contextPackArtifactIds: contextPackArtifactIdsForStage(c, input.agent),
+    createdAt: nowIso(),
+  };
+  await deps.api.stepCheckpoint({
+    workflowRunId: c.run.id,
+    stepRunId: input.stepRunId,
+    stage: input.stage,
+    status: input.phase === 'finish' ? 'passed' : 'running',
+    inputArtifactIds: Object.values(c.inputArtifactIds),
+    outputArtifactIds: Object.values(snapshot.producedArtifactIds),
+    contextPackId: input.agent?.contextPack.id ?? undefined,
+    agentSessionIds: input.agent ? [input.agent.sessionId] : undefined,
+    retryIndex: input.agent?.contextRequest ? 1 : undefined,
+    metadata: {
+      stageContextPhase: input.phase,
+      [input.phase === 'start' ? 'stageContextStart' : 'stageContextFinish']: snapshot,
+    },
+  });
+}
+
+function stageContextSnapshotFromMetadata(
+  metadata: Record<string, unknown>,
+): StageContextCheckpointSnapshot | null {
+  const finish = asStageContextSnapshot(metadata.stageContextFinish);
+  if (finish) return finish;
+  return asStageContextSnapshot(metadata.stageContextStart);
+}
+
+function asStageContextSnapshot(value: unknown): StageContextCheckpointSnapshot | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const inputs = record.inputs;
+  const inputArtifactIds = record.inputArtifactIds;
+  if (!isRecordOfStrings(inputs) || !isRecordOfStrings(inputArtifactIds)) return null;
+  const phase = record.phase;
+  if (phase !== 'start' && phase !== 'finish') return null;
+  if (
+    typeof record.workflowRunId !== 'string'
+    || typeof record.stepRunId !== 'string'
+    || !isWorkflowStage(record.stage)
+    || typeof record.createdAt !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    phase,
+    workflowRunId: record.workflowRunId,
+    stepRunId: record.stepRunId,
+    stage: record.stage,
+    inputs,
+    inputArtifactIds,
+    producedArtifactIds: isRecordOfStrings(record.producedArtifactIds)
+      ? record.producedArtifactIds
+      : {},
+    contextPackArtifactIds: Array.isArray(record.contextPackArtifactIds)
+      ? record.contextPackArtifactIds.filter((item): item is string => typeof item === 'string')
+      : [],
+    createdAt: record.createdAt,
+  };
+}
+
+function isRecordOfStrings(value: unknown): value is Record<string, string> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  return Object.values(value).every((item) => typeof item === 'string');
+}
+
+function contextPackArtifactIdsForStage(c: RunCtx, agent?: InvokedAgent): string[] {
+  const fromInputs = Object.entries(c.inputArtifactIds)
+    .filter(([name]) => (
+      name === 'context_pack.md'
+      || name.startsWith('context_supplement.')
+      || name.startsWith('context_pack.')
+    ))
+    .map(([, id]) => id);
+  const fromAgent = agent
+    ? [
+      agent.contextPackArtifactId,
+      agent.contextRequest?.baseContextPackArtifactId ?? null,
+      agent.contextRequest?.supplementArtifactId ?? null,
+    ]
+    : [];
+  return [...new Set([...fromInputs, ...fromAgent].filter((id): id is string => Boolean(id)))];
 }
 
 // ---- shared step utilities -------------------------------------------------

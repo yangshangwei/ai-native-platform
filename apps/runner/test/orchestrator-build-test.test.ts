@@ -253,13 +253,19 @@ describe('executeImplementation ToolInvocation evidence', () => {
           sha256: 'diff_sha',
         })),
         toolInvocation: vi.fn(async () => ({})),
+        stepCheckpoint: vi.fn(async () => ({ checkpoint: { id: 'scp_impl' } })),
         runGate: vi.fn(async () => ({ gate: { status: 'pass' } })),
         stepFinished: vi.fn(async () => ({})),
         awaitHuman: vi.fn(async () => ({})),
       },
       mustSkill: vi.fn(async () => skillFixture('implementation')),
       invokeSkill: vi.fn(async () => ({
-        task: { id: 'agtask_impl' },
+        taskId: 'agtask_impl',
+        sessionId: 'ags_impl',
+        invocationId: 'ctxinv_impl',
+        contextPackArtifactId: 'art_ctxpack_impl',
+        contextPack: { id: 'ctxpack_impl' },
+        contextRequest: null,
         outputs: [
           { name: 'diff', path: diffPath, size: 36, contentType: 'text/x-diff' },
           { name: 'changed-files', path: changedFilesPath, size: 23, contentType: 'text/plain' },
@@ -296,6 +302,23 @@ describe('executeImplementation ToolInvocation evidence', () => {
         changedFileCount: 2,
         changedFiles: ['src/app.ts', 'src/app.test.ts'],
       }),
+    }));
+    expect(deps.api.stepCheckpoint).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      workflowRunId: 'run_orch',
+      stepRunId: 'step_impl',
+      stage: 'implementation',
+      status: 'running',
+      metadata: expect.objectContaining({ stageContextPhase: 'start' }),
+    }));
+    expect(deps.api.stepCheckpoint).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      workflowRunId: 'run_orch',
+      stepRunId: 'step_impl',
+      stage: 'implementation',
+      status: 'passed',
+      outputArtifactIds: ['art_diff'],
+      contextPackId: 'ctxpack_impl',
+      agentSessionIds: ['ags_impl'],
+      metadata: expect.objectContaining({ stageContextPhase: 'finish' }),
     }));
     expect(deps.finishAgentSuccess).toHaveBeenCalledWith(
       expect.anything(),

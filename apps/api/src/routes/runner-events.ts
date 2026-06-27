@@ -27,6 +27,7 @@ import {
   isHandoffRole,
   isHandoffStatus,
   isPerRunArtifactKind,
+  isStepCheckpointStatus,
   isRunnerToolId,
   isToolInvocationStatus,
   isToolPermissionDecision,
@@ -68,6 +69,7 @@ import {
 } from '../gate-engine';
 import { store } from '../store/store';
 import { assertReadableFileUri } from '../artifact-content';
+import { mergeStepCheckpoint } from '../step-checkpoints';
 
 /**
  * Runner-driven event ingress. The Runner is NOT a state writer — it tells
@@ -99,6 +101,43 @@ runnerEvents.post('/step-finished', async (c) => {
   };
   const step = finishStep(body.stepRunId, body.status, body.failureReason ?? null);
   return c.json({ ok: true, step });
+});
+
+runnerEvents.post('/step-checkpoint', async (c) => {
+  const body = (await c.req.json()) as {
+    workflowRunId?: string;
+    stepRunId?: string;
+    stage?: string;
+    status?: string;
+    inputArtifactIds?: string[];
+    outputArtifactIds?: string[];
+    contextPackId?: string | null;
+    agentSessionIds?: string[];
+    retryIndex?: number;
+    metadata?: Record<string, unknown>;
+  };
+  if (!body.workflowRunId || !body.stepRunId || !body.stage) {
+    return c.json({ error: 'workflowRunId, stepRunId, stage required' }, 400);
+  }
+  if (!isWorkflowStage(body.stage)) {
+    return c.json({ error: `unknown stage: ${body.stage}` }, 400);
+  }
+  if (body.status !== undefined && !isStepCheckpointStatus(body.status)) {
+    return c.json({ error: `unknown checkpoint status: ${String(body.status)}` }, 400);
+  }
+  const checkpoint = mergeStepCheckpoint({
+    workflowRunId: body.workflowRunId,
+    stepRunId: body.stepRunId,
+    stage: body.stage,
+    status: body.status,
+    inputArtifactIds: body.inputArtifactIds,
+    outputArtifactIds: body.outputArtifactIds,
+    contextPackId: body.contextPackId ?? undefined,
+    agentSessionIds: body.agentSessionIds,
+    retryIndex: body.retryIndex,
+    metadata: body.metadata,
+  });
+  return c.json({ ok: true, checkpoint });
 });
 
 runnerEvents.post('/graph-run-started', async (c) => {
@@ -730,6 +769,7 @@ runnerEvents.post('/context-request', async (c) => {
     sourceName?: string;
     taskId?: string;
     baseContextPackId?: string;
+    baseContextPackArtifactId?: string | null;
     supplementContextPackId?: string;
     requestArtifactId?: string;
     supplementArtifactId?: string;
@@ -752,6 +792,7 @@ runnerEvents.post('/context-request', async (c) => {
   }
   const chainError = validateContextRequestChain(body.workflowRunId, {
     taskId: body.taskId,
+    baseContextPackArtifactId: body.baseContextPackArtifactId ?? null,
     requestArtifactId: body.requestArtifactId,
     supplementArtifactId: body.supplementArtifactId,
   });
@@ -766,6 +807,7 @@ runnerEvents.post('/context-request', async (c) => {
     sourceName: body.sourceName ?? 'unknown',
     taskId: body.taskId,
     baseContextPackId: body.baseContextPackId,
+    baseContextPackArtifactId: body.baseContextPackArtifactId ?? null,
     supplementContextPackId: body.supplementContextPackId,
     requestArtifactId: body.requestArtifactId,
     supplementArtifactId: body.supplementArtifactId,
@@ -777,6 +819,7 @@ function validateContextRequestChain(
   workflowRunId: string,
   ids: {
     taskId: string;
+    baseContextPackArtifactId: string | null;
     requestArtifactId: string;
     supplementArtifactId: string;
   },
@@ -784,6 +827,12 @@ function validateContextRequestChain(
   const task = store.agentTasks.get(ids.taskId);
   if (!task || task.workflowRunId !== workflowRunId) {
     return 'taskId must reference an agent task on this workflow run';
+  }
+  if (ids.baseContextPackArtifactId) {
+    const baseArtifact = store.artifacts.get(ids.baseContextPackArtifactId);
+    if (!baseArtifact || baseArtifact.workflowRunId !== workflowRunId) {
+      return 'baseContextPackArtifactId must reference an artifact on this workflow run';
+    }
   }
   const requestArtifact = store.artifacts.get(ids.requestArtifactId);
   if (!requestArtifact || requestArtifact.workflowRunId !== workflowRunId) {

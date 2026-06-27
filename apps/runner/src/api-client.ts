@@ -213,6 +213,23 @@ export const api = {
     failureReason?: string | null;
   }) => request('POST', '/runner/events/step-finished', params),
 
+  stepCheckpoint: (params: {
+    workflowRunId: string;
+    stepRunId: string;
+    stage: WorkflowStage;
+    status?: StepCheckpoint['status'];
+    inputArtifactIds?: string[];
+    outputArtifactIds?: string[];
+    contextPackId?: string | null;
+    agentSessionIds?: string[];
+    retryIndex?: number;
+    metadata?: Record<string, unknown>;
+  }) => request<{ ok: boolean; checkpoint: StepCheckpoint }>(
+    'POST',
+    '/runner/events/step-checkpoint',
+    params,
+  ),
+
   graphRunStarted: (params: { workflowRunId: string; graphDefinition: GraphDefinition }) =>
     request<{ ok: boolean; graphRun: GraphRun }>(
       'POST',
@@ -555,6 +572,7 @@ export const api = {
     sourceName: string;
     taskId: string;
     baseContextPackId: string;
+    baseContextPackArtifactId?: string;
     supplementContextPackId: string;
     requestArtifactId: string;
     supplementArtifactId: string;

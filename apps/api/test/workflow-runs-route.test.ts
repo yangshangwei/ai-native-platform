@@ -953,6 +953,106 @@ test('runner events merge agent, tool, gate and failure refs into a step checkpo
   }]);
 });
 
+test('runner checkpoint event records stage context metadata maps', async () => {
+  const run = await createRun('stage-context-checkpoint-route', 'record stage context maps');
+  const input = await postArtifact(run, 'requirement-input');
+  const output = await postArtifact(run, 'design-output');
+  const stepStarted = await app.request('/runner/events/step-started', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      stage: 'design',
+      name: 'skill.design',
+    }),
+  });
+  expect(stepStarted.status).toBe(200);
+  const step = ((await stepStarted.json()) as { step: { id: string } }).step;
+
+  const startSnapshot = {
+    phase: 'start',
+    workflowRunId: run.id,
+    stepRunId: step.id,
+    stage: 'design',
+    inputs: { 'requirement.md': 'REQ: keep behavior compatible' },
+    inputArtifactIds: { 'requirement.md': input.id },
+    producedArtifactIds: {},
+    contextPackArtifactIds: ['ctxpack_base_artifact'],
+    createdAt: nowIso(),
+  };
+  const startRes = await app.request('/runner/events/step-checkpoint', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      stepRunId: step.id,
+      stage: 'design',
+      status: 'running',
+      inputArtifactIds: [input.id],
+      metadata: {
+        stageContextPhase: 'start',
+        stageContextStart: startSnapshot,
+      },
+    }),
+  });
+  expect(startRes.status).toBe(200);
+
+  const finishSnapshot = {
+    ...startSnapshot,
+    phase: 'finish',
+    inputs: {
+      ...startSnapshot.inputs,
+      'design.md': 'Design summary',
+    },
+    inputArtifactIds: {
+      ...startSnapshot.inputArtifactIds,
+      'design.md': output.id,
+    },
+    producedArtifactIds: { 'design.md': output.id },
+    createdAt: nowIso(),
+  };
+  const finishRes = await app.request('/runner/events/step-checkpoint', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      stepRunId: step.id,
+      stage: 'design',
+      status: 'passed',
+      outputArtifactIds: [output.id],
+      metadata: {
+        stageContextPhase: 'finish',
+        stageContextFinish: finishSnapshot,
+      },
+    }),
+  });
+  expect(finishRes.status).toBe(200);
+  const checkpoint = ((await finishRes.json()) as { checkpoint: StepCheckpoint }).checkpoint;
+
+  expect(checkpoint).toMatchObject({
+    stepRunId: step.id,
+    stage: 'design',
+    status: 'passed',
+    inputArtifactIds: [input.id],
+    outputArtifactIds: [output.id],
+  });
+  expect(checkpoint.metadata.stageContextStart).toMatchObject({
+    inputs: { 'requirement.md': 'REQ: keep behavior compatible' },
+    inputArtifactIds: { 'requirement.md': input.id },
+  });
+  expect(checkpoint.metadata.stageContextFinish).toMatchObject({
+    inputs: {
+      'requirement.md': 'REQ: keep behavior compatible',
+      'design.md': 'Design summary',
+    },
+    inputArtifactIds: {
+      'requirement.md': input.id,
+      'design.md': output.id,
+    },
+    producedArtifactIds: { 'design.md': output.id },
+  });
+});
+
 test('runner event ingress records and exposes agent sessions by workflow run', async () => {
   const project = registerProject('agent-sessions-route');
   const create = await app.request('/workflow-runs', {
