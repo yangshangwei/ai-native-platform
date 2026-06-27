@@ -75,6 +75,35 @@ gets a little wider. A side effect in the wrong place is a bug.
 
 ---
 
+## Gate Markdown section matching
+
+`gate-engine.ts` validates human/agent-authored Markdown artifacts. These
+documents come from real Claude/Codex runs, so section matching must be strict
+about the semantic heading token but tolerant of harmless Markdown decoration.
+
+Good section headings for a required title such as `现状`:
+
+```markdown
+## 现状
+## 1. **现状 (Current State)**
+## 1. 现状（Current State）
+```
+
+Bad:
+
+```markdown
+## 现状分析
+## Current State
+```
+
+When changing `matchGateSection()` or gate heading rules, add regression tests
+in the relevant gate test file for both the accepted real-agent shape and the
+near-miss shape that must still fail. The matcher should accept numbering,
+bolding, and ASCII/full-width translation parentheses, but must not accept a
+different title.
+
+---
+
 ## Transaction boundaries
 
 `db.transaction(() => { ... })` in `bun:sqlite` is **synchronous**. The

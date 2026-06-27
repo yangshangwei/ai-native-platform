@@ -106,6 +106,47 @@ describe('runDesignGate cs-feat-design rules', () => {
     expect(findRule(gate.ruleResults, 'design.rollout_section_present')?.status).toBe('pass');
   });
 
+  test('accepts numbered headings with full-width translations from Claude Code output', () => {
+    const decorated = VALID_CS_DESIGN
+      .replace('## 现状', '## 1. 现状（Current State）')
+      .replace('## 变化', '## 2. 变化（Changes）')
+      .replace(
+        /## 挂载点[\s\S]*?(?=\n## )/,
+        [
+          '## 3. 挂载点（Mount Points）',
+          '1. `src/main/java/sample/Calculator.java` 新增 `divide` 方法',
+          '2. `src/test/java/sample/CalculatorTest.java` 新增 3 个 `@Test`',
+          '3. `mvn test` 通过 surefire 运行新增与既有用例',
+          '',
+        ].join('\n'),
+      )
+      .replace('## 推进策略', '## 4. 推进策略（Roll-out）');
+    const a = artifactFor(decorated);
+    const gate = gates.runDesignGate({
+      workflowRunId: 'run_csdesign',
+      stepRunId: 'step_csdesign',
+      artifact: a,
+    });
+
+    expect(gate.status).toBe('pass');
+    expect(findRule(gate.ruleResults, 'design.current_state_section_present')?.status).toBe('pass');
+    expect(findRule(gate.ruleResults, 'design.changes_section_present')?.status).toBe('pass');
+    expect(findRule(gate.ruleResults, 'design.mount_points_count_in_range')?.status).toBe('pass');
+    expect(findRule(gate.ruleResults, 'design.rollout_section_present')?.status).toBe('pass');
+  });
+
+  test('does not accept a different Chinese title with a valid-looking translation', () => {
+    const nearMiss = VALID_CS_DESIGN.replace('## 现状', '## 1. 现状分析（Current State）');
+    const a = artifactFor(nearMiss);
+    const gate = gates.runDesignGate({
+      workflowRunId: 'run_csdesign',
+      stepRunId: 'step_csdesign',
+      artifact: a,
+    });
+
+    expect(findRule(gate.ruleResults, 'design.current_state_section_present')?.status).toBe('fail');
+  });
+
   test('fails when DSN-### frontmatter is missing', () => {
     const a = artifactFor(VALID_CS_DESIGN.replace(/^design_id: DSN-\d+$\n/m, ''));
     const gate = gates.runDesignGate({

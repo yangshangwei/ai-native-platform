@@ -379,7 +379,7 @@ function hasRequirementSection(text: string, title: string): boolean {
 function matchGateSection(text: string, title: string): RegExpMatchArray | null {
   const escaped = escapeRegExp(title);
   return text.match(new RegExp(
-    String.raw`^##\s*(?:\d+\.\s*)?(?:\*\*)?\s*${escaped}(?:\s|\*\*|$)[\s\S]*?(?=^##\s|(?![\s\S]))`,
+    String.raw`^##\s*(?:\d+\.\s*)?(?:\*\*)?\s*${escaped}(?:\s|\*\*|[（(:：]|$)[\s\S]*?(?=^##\s|(?![\s\S]))`,
     'im',
   ));
 }
