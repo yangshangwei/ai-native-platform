@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "graph-runtime-branch-duplicate-evidence",
+  "title": "Graph runtime red fixture rejects duplicate branch evidence expectations",
+  "description": "Intentionally seeds duplicate StepRun/StepCheckpoint/idempotency refs across branch nodes while expecting isolated evidence.",
+  "kind": "graph_runtime_fixture",
+  "input": {
+    "projectId": "proj_eval_graph_runtime_branch_red",
+    "title": "Reject duplicate branch evidence",
+    "flowId": "feature.fastforward",
+    "profile": "branch_duplicate_evidence"
+  },
+  "expectations": {
+    "stageOrder": ["implementation", "build_test", "review"],
+    "runnableStages": ["build_test", "review"],
+    "branchNodeRunCount": 2,
+    "branchEvidenceIsolated": true
+  }
+}

@@ -51,6 +51,19 @@
         "resumeRejected": true,
         "resumeErrorIncludes": "cannot resume completed graph node"
       }
+    },
+    {
+      "id": "branch-fanout",
+      "label": "Branch fan-out exposes both ready downstream nodes with isolated evidence",
+      "inputOverrides": {
+        "profile": "branch_fanout"
+      },
+      "expectations": {
+        "stageOrder": ["implementation", "build_test", "review"],
+        "runnableStages": ["build_test", "review"],
+        "branchNodeRunCount": 2,
+        "branchEvidenceIsolated": true
+      }
     }
   ]
 }

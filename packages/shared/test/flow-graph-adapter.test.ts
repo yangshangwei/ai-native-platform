@@ -2,6 +2,7 @@ import { expect, test } from 'vitest';
 import {
   FLOW_REGISTRY,
   assertGraphMatchesFlowOrder,
+  branchFanOutGraphDefinition,
   flowToGraphDefinition,
   graphStageOrder,
 } from '../src';
@@ -49,4 +50,21 @@ test('graphStageOrder rejects edges that reference unknown nodes', () => {
   };
 
   expect(() => graphStageOrder(graph)).toThrow('unknown node');
+});
+
+test('branchFanOutGraphDefinition creates a deterministic non-linear fixture', () => {
+  const graph = branchFanOutGraphDefinition({
+    version: 'test',
+    createdAt: '2026-06-28T00:00:00.000Z',
+  });
+
+  expect(graph.sourceFlowId).toBeNull();
+  expect(graph.metadata).toMatchObject({ fixture: 'branch_fanout', linear: false });
+  expect(graph.nodes.map((node) => node.stage)).toEqual(['implementation', 'build_test', 'review']);
+  expect(graph.entryNodeIds).toEqual([graph.nodes[0]!.id]);
+  expect(graph.edges.map((edge) => [edge.fromNodeId, edge.toNodeId, edge.mode])).toEqual([
+    [graph.nodes[0]!.id, graph.nodes[1]!.id, 'all_success'],
+    [graph.nodes[0]!.id, graph.nodes[2]!.id, 'all_success'],
+  ]);
+  expect(graphStageOrder(graph)).toEqual(['implementation', 'build_test', 'review']);
 });

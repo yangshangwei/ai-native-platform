@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'vitest';
 import {
   FLOW_REGISTRY,
+  branchFanOutGraphDefinition,
   flowToGraphDefinition,
+  type GraphDefinition,
   type GraphNodeRun,
   type GraphRun,
 } from '@ainp/shared';
@@ -105,5 +107,83 @@ describe('linear graph scheduler', () => {
         nodeRuns: [],
       }),
     ).toThrow(/graph version mismatch/);
+  });
+});
+
+describe('branch graph scheduler', () => {
+  test('returns every ready fan-out branch in graph node order', () => {
+    const fanOut = branchFanOutGraphDefinition();
+    const source = fanOut.nodes[0]!;
+
+    expect(computeRunnableGraphNodes({
+      graph: fanOut,
+      nodeRuns: [nodeRun(source.id, 'passed')],
+    }).map((node) => node.stage)).toEqual(['build_test', 'review']);
+  });
+
+  test('releases always edges after the predecessor reaches a terminal status', () => {
+    const fanOut = branchFanOutGraphDefinition({ edgeMode: 'always' });
+    const source = fanOut.nodes[0]!;
+
+    expect(computeRunnableGraphNodes({
+      graph: fanOut,
+      nodeRuns: [nodeRun(source.id, 'failed')],
+    }).map((node) => node.stage)).toEqual(['build_test', 'review']);
+  });
+
+  test('keeps manual edges blocked without an explicit release event', () => {
+    const fanOut = branchFanOutGraphDefinition({ edgeMode: 'manual' });
+    const source = fanOut.nodes[0]!;
+
+    expect(computeRunnableGraphNodes({
+      graph: fanOut,
+      nodeRuns: [nodeRun(source.id, 'passed')],
+    })).toEqual([]);
+  });
+
+  test('satisfies any_success when one sibling edge into the target passes', () => {
+    const fanOut = branchFanOutGraphDefinition();
+    const graph: GraphDefinition = {
+      ...fanOut,
+      nodes: [
+        ...fanOut.nodes,
+        {
+          ...fanOut.nodes[0]!,
+          id: 'node:fixture.branch-fanout:3:completion',
+          stage: 'completion',
+          kind: 'engine',
+          skillId: null,
+          label: 'completion',
+          metadata: { fixture: 'branch_fanout', stageIndex: 3 },
+        },
+      ],
+      edges: [
+        ...fanOut.edges,
+        {
+          id: `edge:any:${fanOut.nodes[1]!.id}->completion`,
+          fromNodeId: fanOut.nodes[1]!.id,
+          toNodeId: 'node:fixture.branch-fanout:3:completion',
+          mode: 'any_success',
+          condition: null,
+          metadata: {},
+        },
+        {
+          id: `edge:any:${fanOut.nodes[2]!.id}->completion`,
+          fromNodeId: fanOut.nodes[2]!.id,
+          toNodeId: 'node:fixture.branch-fanout:3:completion',
+          mode: 'any_success',
+          condition: null,
+          metadata: {},
+        },
+      ],
+    };
+
+    expect(computeRunnableGraphNodes({
+      graph,
+      nodeRuns: [
+        nodeRun(fanOut.nodes[0]!.id, 'passed'),
+        nodeRun(fanOut.nodes[1]!.id, 'passed'),
+      ],
+    }).map((node) => node.stage)).toEqual(['review', 'completion']);
   });
 });

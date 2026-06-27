@@ -1,5 +1,7 @@
 import type {
   GraphDefinition,
+  GraphEdgeDefinition,
+  GraphEvent,
   GraphNodeDefinition,
   GraphNodeRun,
   GraphRun,
@@ -28,6 +30,7 @@ export interface ComputeRunnableGraphNodesInput {
    * intentionally skipped by the dispatch window.
    */
   ignoreExternalIncoming?: boolean;
+  events?: readonly GraphEvent[];
 }
 
 export function computeRunnableGraphNodes(
@@ -46,6 +49,7 @@ export function computeRunnableGraphNodes(
 
   const latestRuns = latestNodeRunsByNode(input.nodeRuns);
   const incoming = incomingDependencies(input.graph, allowed, input.ignoreExternalIncoming ?? false);
+  const events = input.events ?? [];
 
   return input.graph.nodes.filter((node) => {
     if (!allowed.has(node.id)) return false;
@@ -55,7 +59,7 @@ export function computeRunnableGraphNodes(
       return false;
     }
     const upstream = incoming.get(node.id) ?? [];
-    return upstream.every((upstreamId) => latestRuns.get(upstreamId)?.status === 'passed');
+    return upstream.every((edge) => edgeSatisfied(edge, upstream, latestRuns, events));
   });
 }
 
@@ -91,9 +95,9 @@ function incomingDependencies(
   graph: GraphDefinition,
   allowed: Set<string>,
   ignoreExternalIncoming: boolean,
-): Map<string, string[]> {
+): Map<string, GraphEdgeDefinition[]> {
   const nodesById = new Set(graph.nodes.map((node) => node.id));
-  const incoming = new Map<string, string[]>();
+  const incoming = new Map<string, GraphEdgeDefinition[]>();
   for (const node of graph.nodes) incoming.set(node.id, []);
   for (const edge of graph.edges) {
     if (!nodesById.has(edge.fromNodeId) || !nodesById.has(edge.toNodeId)) {
@@ -102,10 +106,52 @@ function incomingDependencies(
     if (!allowed.has(edge.toNodeId)) continue;
     if (!allowed.has(edge.fromNodeId)) {
       if (ignoreExternalIncoming) continue;
-      incoming.set(edge.toNodeId, [...(incoming.get(edge.toNodeId) ?? []), edge.fromNodeId]);
+      incoming.set(edge.toNodeId, [...(incoming.get(edge.toNodeId) ?? []), edge]);
       continue;
     }
-    incoming.set(edge.toNodeId, [...(incoming.get(edge.toNodeId) ?? []), edge.fromNodeId]);
+    incoming.set(edge.toNodeId, [...(incoming.get(edge.toNodeId) ?? []), edge]);
   }
   return incoming;
+}
+
+function edgeSatisfied(
+  edge: GraphEdgeDefinition,
+  targetIncomingEdges: readonly GraphEdgeDefinition[],
+  latestRuns: ReadonlyMap<string, GraphNodeRun>,
+  events: readonly GraphEvent[],
+): boolean {
+  const fromStatus = latestRuns.get(edge.fromNodeId)?.status;
+  switch (edge.mode) {
+    case 'all_success':
+      return fromStatus === 'passed';
+    case 'any_success':
+      return targetIncomingEdges.some((candidate) =>
+        candidate.mode === 'any_success'
+        && latestRuns.get(candidate.fromNodeId)?.status === 'passed',
+      );
+    case 'always':
+      return fromStatus !== undefined && isTerminalStatus(fromStatus);
+    case 'manual':
+      return manualEdgeReleased(edge, events);
+    default: {
+      const _exhaustive: never = edge.mode;
+      throw new Error(`unknown graph edge mode: ${String(_exhaustive)}`);
+    }
+  }
+}
+
+function isTerminalStatus(status: GraphNodeRun['status']): boolean {
+  return TERMINAL_SUCCESS.has(status) || TERMINAL_BLOCKING.has(status);
+}
+
+function manualEdgeReleased(edge: GraphEdgeDefinition, events: readonly GraphEvent[]): boolean {
+  return events.some((event) => {
+    const { payload } = event;
+    if (payload.edgeId === edge.id && (payload.released === true || payload.action === 'edge_released')) {
+      return true;
+    }
+    return Array.isArray(payload.edgeIds)
+      && payload.edgeIds.includes(edge.id)
+      && (payload.released === true || payload.action === 'edge_released');
+  });
 }

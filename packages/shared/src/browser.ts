@@ -28,6 +28,7 @@ export * from './types/router';
 
 export * from './flows/registry';
 export * from './flows/graph-adapter';
+export * from './flows/graph-fixtures';
 
 export * from './coordinator';
 

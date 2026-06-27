@@ -45,6 +45,7 @@ import {
   flowToGraphDefinition,
   graphStageOrder,
 } from '../packages/shared/src/flows/graph-adapter';
+import { branchFanOutGraphDefinition } from '../packages/shared/src/flows/graph-fixtures';
 import type { AgentBackend, AgentRunResult } from '../apps/runner/src/agents/types';
 import type { InvokeSkillDeps } from '../apps/runner/src/orchestrator/invoke-skill';
 import type { RunCtx } from '../apps/runner/src/orchestrator/types';
@@ -221,7 +222,12 @@ interface WorkflowEvalInput {
   profile: WorkflowFixtureProfile;
 }
 
-type GraphRuntimeFixtureProfile = 'linear_equivalence' | 'failed_resume' | 'completed_resume';
+type GraphRuntimeFixtureProfile =
+  | 'linear_equivalence'
+  | 'failed_resume'
+  | 'completed_resume'
+  | 'branch_fanout'
+  | 'branch_duplicate_evidence';
 
 interface GraphRuntimeEvalInput {
   projectId?: string;
@@ -249,6 +255,8 @@ interface GraphRuntimeExpectations {
   stageOrderMatchesFlow?: boolean;
   stageOrder?: WorkflowStage[];
   runnableStages?: WorkflowStage[];
+  branchEvidenceIsolated?: boolean;
+  branchNodeRunCount?: number;
   resumeCreated?: boolean;
   resumeRejected?: boolean;
   resumeAttempt?: number;
@@ -693,6 +701,8 @@ interface GraphRuntimeFixtureOutput {
   resumeAttempt: number | null;
   resumeStatus: GraphNodeStatus | null;
   sourceCheckpointId: string | null;
+  branchEvidenceIsolated: boolean | null;
+  branchNodeRunCount: number | null;
   graphEventTypes: string[];
 }
 
@@ -778,8 +788,14 @@ async function runGraphRuntimeVariant(
     version: input.graphVersion ?? '1',
     createdAt: '2026-06-27T00:00:00.000Z',
   });
+  const fixtureGraph = input.profile === 'branch_fanout' || input.profile === 'branch_duplicate_evidence'
+    ? branchFanOutGraphDefinition({
+        version: input.graphVersion ?? '1',
+        createdAt: '2026-06-28T00:00:00.000Z',
+      })
+    : graph;
   const flowStageOrder = flow.stages.map((step) => step.stage);
-  const stageOrder = graphStageOrder(graph);
+  const stageOrder = graphStageOrder(fixtureGraph);
 
   let output: GraphRuntimeFixtureOutput;
   if (input.profile === 'linear_equivalence') {
@@ -787,11 +803,11 @@ async function runGraphRuntimeVariant(
     output = {
       profile: input.profile,
       flowId: input.flowId,
-      graphDefinitionId: graph.id,
-      graphVersion: graph.version,
+      graphDefinitionId: fixtureGraph.id,
+      graphVersion: fixtureGraph.version,
       stageOrder,
       flowStageOrder,
-      runnableStages: computeRunnableGraphNodes({ graph, nodeRuns: [] }).map((node) => node.stage),
+      runnableStages: computeRunnableGraphNodes({ graph: fixtureGraph, nodeRuns: [] }).map((node) => node.stage),
       resumeCreated: false,
       resumeRejected: false,
       resumeError: null,
@@ -799,10 +815,14 @@ async function runGraphRuntimeVariant(
       resumeAttempt: null,
       resumeStatus: null,
       sourceCheckpointId: null,
+      branchEvidenceIsolated: null,
+      branchNodeRunCount: null,
       graphEventTypes: [],
     };
+  } else if (input.profile === 'branch_fanout' || input.profile === 'branch_duplicate_evidence') {
+    output = await runGraphRuntimeBranchFixture(scenario, variant, input, fixtureGraph, stageOrder, flowStageOrder);
   } else {
-    output = await runGraphRuntimeResumeFixture(scenario, variant, input, graph, stageOrder, flowStageOrder);
+    output = await runGraphRuntimeResumeFixture(scenario, variant, input, fixtureGraph, stageOrder, flowStageOrder);
   }
 
   const checks = checkGraphRuntimeOutput(output, expectations);
@@ -960,8 +980,190 @@ async function runGraphRuntimeResumeFixture(
     sourceCheckpointId: typeof resumedNodeRun?.metadata.sourceCheckpointId === 'string'
       ? resumedNodeRun.metadata.sourceCheckpointId
       : null,
+    branchEvidenceIsolated: null,
+    branchNodeRunCount: null,
     graphEventTypes,
   };
+}
+
+async function runGraphRuntimeBranchFixture(
+  scenario: GraphRuntimeEvalScenario,
+  variant: GraphRuntimeEvalVariant,
+  input: GraphRuntimeEvalInput,
+  graph: GraphDefinition,
+  stageOrder: WorkflowStage[],
+  flowStageOrder: WorkflowStage[],
+): Promise<GraphRuntimeFixtureOutput> {
+  const { store } = await import('../apps/api/src/store/store');
+  const { computeRunnableGraphNodes } = await import('../apps/runner/src/orchestrator/graph-scheduler');
+  const now = new Date().toISOString();
+  const workspacePath = mkdtempSync(join(tmpdir(), `ainp-eval-branch-${safeId(scenario.id)}-${safeId(variant.id)}-`));
+  const projectId = input.projectId ?? `proj_${safeId(scenario.id)}`;
+  const workflowRunId = input.workflowRunId ?? `run_${safeId(scenario.id)}_${safeId(variant.id)}`;
+  const graphRunId = `grun_${safeId(scenario.id)}_${safeId(variant.id)}`;
+  const [sourceNode, ...branchNodes] = graph.nodes;
+  if (!sourceNode || branchNodes.length === 0) {
+    throw new Error(`${scenario.id}/${variant.id}: branch graph fixture has no branch nodes`);
+  }
+
+  store.projects.set(projectId, projectFixture(projectId, workspacePath, now));
+  store.workflowRuns.set(workflowRunId, workflowRunFixture({
+    id: workflowRunId,
+    projectId,
+    title: input.title,
+    workspacePath,
+    now,
+    status: 'running',
+  }));
+  store.graphDefinitions.upsert(graph);
+  store.graphRuns.upsert({
+    id: graphRunId,
+    workflowRunId,
+    graphDefinitionId: graph.id,
+    graphVersion: graph.version,
+    status: 'running',
+    activeNodeIds: [],
+    interruptedReason: null,
+    createdAt: now,
+    updatedAt: now,
+    metadata: {},
+  });
+
+  const sourceRun: GraphNodeRun = graphNodeRunFixture({
+    graphRunId,
+    workflowRunId,
+    nodeId: sourceNode.id,
+    attempt: 1,
+    status: 'passed',
+    now,
+  });
+  store.graphNodeRuns.upsert(sourceRun);
+  const graphRun = store.graphRuns.get(graphRunId);
+  const runnableStages = computeRunnableGraphNodes({
+    graph,
+    graphRun,
+    nodeRuns: store.graphNodeRuns.byGraphRun(graphRunId),
+  }).map((node) => node.stage);
+
+  const duplicateEvidence = input.profile === 'branch_duplicate_evidence';
+  const branchRuns: GraphNodeRun[] = [];
+  for (const [index, node] of branchNodes.entries()) {
+    const evidenceSuffix = duplicateEvidence ? 'duplicate' : String(index + 1);
+    const stepRunId = `step_${safeId(scenario.id)}_${safeId(variant.id)}_${evidenceSuffix}`;
+    const checkpointId = `scp_${safeId(scenario.id)}_${safeId(variant.id)}_${evidenceSuffix}`;
+    store.stepRuns.set(stepRunId, {
+      id: stepRunId,
+      workflowRunId,
+      stage: node.stage,
+      name: node.stage,
+      status: 'passed',
+      startedAt: now,
+      completedAt: now,
+    });
+    store.stepCheckpoints.upsert({
+      id: checkpointId,
+      workflowRunId,
+      stepRunId,
+      stage: node.stage,
+      status: 'passed',
+      inputArtifactIds: [],
+      outputArtifactIds: [],
+      contextPackId: null,
+      agentSessionIds: [],
+      toolInvocationIds: [],
+      gateRunIds: [],
+      retryIndex: 0,
+      resumeCursor: null,
+      failureReason: null,
+      createdAt: now,
+      updatedAt: now,
+      metadata: {},
+    });
+    const branchRun = graphNodeRunFixture({
+      graphRunId,
+      workflowRunId,
+      nodeId: node.id,
+      attempt: 1,
+      status: 'passed',
+      stepRunId,
+      stepCheckpointId: checkpointId,
+      idempotencyKey: duplicateEvidence
+        ? `${graphRunId}:branch:duplicate`
+        : `${graphRunId}:${node.id}:1`,
+      now,
+      upstreamNodeIds: [sourceNode.id],
+      satisfiedNodeIds: [sourceNode.id],
+    });
+    store.graphNodeRuns.upsert(branchRun);
+    branchRuns.push(branchRun);
+  }
+
+  const branchEvidenceIsolated = evidenceRefsAreIsolated(branchRuns);
+  return {
+    profile: input.profile,
+    flowId: input.flowId,
+    graphDefinitionId: graph.id,
+    graphVersion: graph.version,
+    stageOrder,
+    flowStageOrder,
+    runnableStages,
+    resumeCreated: false,
+    resumeRejected: false,
+    resumeError: null,
+    previousAttempt: null,
+    resumeAttempt: null,
+    resumeStatus: null,
+    sourceCheckpointId: null,
+    branchEvidenceIsolated,
+    branchNodeRunCount: branchRuns.length,
+    graphEventTypes: store.graphEvents.byGraphRun(graphRunId).map((event) => event.type),
+  };
+}
+
+function graphNodeRunFixture(input: {
+  graphRunId: string;
+  workflowRunId: string;
+  nodeId: string;
+  attempt: number;
+  status: GraphNodeStatus;
+  now: string;
+  stepRunId?: string | null;
+  stepCheckpointId?: string | null;
+  idempotencyKey?: string;
+  upstreamNodeIds?: string[];
+  satisfiedNodeIds?: string[];
+}): GraphNodeRun {
+  return {
+    id: `gnr_${safeId(input.graphRunId)}_${safeId(input.nodeId)}_${input.attempt}`,
+    graphRunId: input.graphRunId,
+    workflowRunId: input.workflowRunId,
+    nodeId: input.nodeId,
+    attempt: input.attempt,
+    status: input.status,
+    stepRunId: input.stepRunId ?? null,
+    stepCheckpointId: input.stepCheckpointId ?? null,
+    resumeCursor: null,
+    idempotencyKey: input.idempotencyKey ?? `${input.graphRunId}:${input.nodeId}:${input.attempt}`,
+    dependencyState: {
+      upstreamNodeIds: input.upstreamNodeIds ?? [],
+      satisfiedNodeIds: input.satisfiedNodeIds ?? [],
+      blockedNodeIds: [],
+    },
+    startedAt: input.now,
+    completedAt: input.now,
+    metadata: {},
+  };
+}
+
+function evidenceRefsAreIsolated(nodeRuns: readonly GraphNodeRun[]): boolean {
+  const stepRunIds = nodeRuns.map((run) => run.stepRunId).filter((id): id is string => id !== null);
+  const checkpointIds = nodeRuns.map((run) => run.stepCheckpointId).filter((id): id is string => id !== null);
+  const idempotencyKeys = nodeRuns.map((run) => run.idempotencyKey);
+  return stepRunIds.length === nodeRuns.length
+    && checkpointIds.length === nodeRuns.length
+    && new Set(stepRunIds).size === nodeRuns.length
+    && new Set(checkpointIds).size === nodeRuns.length
+    && new Set(idempotencyKeys).size === nodeRuns.length;
 }
 
 function createAgentFixtureTrace(): AgentBackendFixtureTrace {
@@ -1695,6 +1897,12 @@ function checkGraphRuntimeOutput(
       actual: output.runnableStages,
       status: arraysEqual(expectations.runnableStages, output.runnableStages) ? 'pass' : 'fail',
     });
+  }
+  if (expectations.branchEvidenceIsolated !== undefined) {
+    checks.push(check('branchEvidenceIsolated', expectations.branchEvidenceIsolated, output.branchEvidenceIsolated));
+  }
+  if (expectations.branchNodeRunCount !== undefined) {
+    checks.push(check('branchNodeRunCount', expectations.branchNodeRunCount, output.branchNodeRunCount));
   }
   if (expectations.resumeCreated !== undefined) {
     checks.push(check('resumeCreated', expectations.resumeCreated, output.resumeCreated));
