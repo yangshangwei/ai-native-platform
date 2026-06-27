@@ -71,3 +71,36 @@ Implemented Agent Runtime F1/F3/F4 eval expansion: context_pack_fixture, workflo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 55: Typed Tool Registry MVP
+
+**Date**: 2026-06-27
+**Task**: Typed Tool Registry MVP
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Implemented the Runner-owned ToolInvocation ledger for command and diff capture audit, exposed it through API/Web read models, updated specs, and verified the task with tests, eval, typecheck, and diff checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `840f058` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
