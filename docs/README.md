@@ -17,7 +17,14 @@
 - `user/requirement-workflow.md`
   - 面向终端用户解释需求录入前准备、开始执行的基本条件，以及录入后从 Workflow Request 到 Report / Knowledge 的端到端 Pipeline。
 
-## 0.3 2026-05-06 / 2026-05-09 平台核心梳理（最新）
+## 0.3 2026-06-27 当前代码架构（最新）
+
+- `2026-06-27-current-technical-architecture.md`
+  - **当前技术架构快照**。以 2026-06-27 代码事实为基准，覆盖 Bun/TypeScript monorepo、API/Runner/Web/Shared 四层、WorkflowRequest 到 WorkflowRun 的端到端流转、FLOW_REGISTRY、Context Injection、AgentBackend、Gate、Knowledge、Web 页面拆分、关键不变量、扩展点和剩余风险。建议作为理解当前实现的第一入口。
+- `2026-06-27-context-management-architecture.md`
+  - **上下文管理架构说明**。以 2026-06-27 代码事实回答“上下文管理是如何设计的”，覆盖 ContextPack / ContextManifest / ContextRequest 核心对象、Runner 构建与注入流水线、增量补充、API 治理读模型、Web 可观测面、安全边界和当前限制。
+
+## 0.4 2026-05-06 / 2026-05-09 平台核心梳理
 
 基于 V1 已落地 + V2 4 条 Flow / Smart Router / 知识实体化的最新代码现状，以及后续项目生命周期上下文注入设计，重新整理的端到端业务流程、技术方案与 Context Injection Layer：
 
@@ -39,7 +46,7 @@
 - `2026-05-09-ai-native-platform-context-injection-handoff.md`
   - **Context Injection Layer 下一会话交接文档**。总结当前决策、已沉淀文档、推荐实现顺序、MVP 分期、风险和下一轮开发优先检查的代码模块。
 
-## 0.4 一条需求的通俗日程表
+## 0.5 一条需求的通俗日程表
 
 这个项目的初衷不是做一个“把任务丢给 AI 然后等奇迹发生”的黑盒，而是做一个 **AI 参与的软件交付工作台**：用户接入项目、提出需求，平台用 Runner、worktree、Agent、Gate 和人工确认，把一次改动变成能追踪、能验收、能复盘的交付过程。
 

@@ -1,0 +1,11 @@
+{"file":".trellis/spec/api/backend/index.md","reason":"API backend spec entrypoint for route, store, workflow, gate, and persistence conventions."}
+{"file":".trellis/spec/runner/backend/index.md","reason":"Runner backend spec entrypoint for orchestrator, agent backend, flow registry, context, and evidence conventions."}
+{"file":".trellis/spec/shared/backend/index.md","reason":"Shared package spec entrypoint for cross-process type and protocol contracts."}
+{"file":".trellis/spec/web/frontend/index.md","reason":"Web frontend spec entrypoint for current SPA/page-module conventions."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Architecture doc spans API, runner, web, and shared layers; use cross-layer guide to avoid boundary omissions."}
+{"file":"docs/2026-05-06-technical-architecture-design.md","reason":"Baseline architecture document to compare against current code facts."}
+{"file":"docs/2026-05-09-ai-native-platform-project-lifecycle-context-injection-design.md","reason":"Baseline Context Injection Layer design to compare against current implementation."}
+{"file":".trellis/tasks/archive/2026-06/06-11-architecture-review-and-refactor-for-simplicity-and-extensibility/research/api-architecture.md","reason":"Recent API architecture research; useful as historical comparison, with stale parts checked against current code."}
+{"file":".trellis/tasks/archive/2026-06/06-11-architecture-review-and-refactor-for-simplicity-and-extensibility/research/runner-architecture.md","reason":"Recent Runner architecture research; useful as historical comparison, with stale parts checked against current code."}
+{"file":".trellis/tasks/archive/2026-06/06-11-architecture-review-and-refactor-for-simplicity-and-extensibility/research/web-architecture.md","reason":"Recent Web architecture research; useful as historical comparison, with stale parts checked against current code."}
+{"file":".trellis/tasks/archive/2026-06/06-11-architecture-review-and-refactor-for-simplicity-and-extensibility/research/shared-crosscutting.md","reason":"Recent Shared/cross-cutting architecture research; useful for extension and risk sections."}
