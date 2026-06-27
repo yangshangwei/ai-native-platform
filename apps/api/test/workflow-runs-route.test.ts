@@ -68,6 +68,194 @@ test('POST /workflow-runs without flowId creates a full standard feature run', a
   expect(run.startStage).toBeNull();
 });
 
+test('GET /workflow-runs/:id/agent-sessions returns empty list for legacy runs', async () => {
+  const project = registerProject('agent-sessions-empty-route');
+  const create = await app.request('/workflow-runs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      type: 'feature',
+      title: 'legacy run has no sessions yet',
+    }),
+  });
+  const run = (await create.json()) as WorkflowRun;
+
+  const res = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/agent-sessions`);
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ items: [] });
+});
+
+test('runner event ingress records and exposes agent sessions by workflow run', async () => {
+  const project = registerProject('agent-sessions-route');
+  const create = await app.request('/workflow-runs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      type: 'feature',
+      title: 'record an agent session',
+    }),
+  });
+  const run = (await create.json()) as WorkflowRun;
+
+  const taskRes = await app.request('/runner/events/agent-task-started', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      stepRunId: null,
+      kind: 'implementation',
+      backend: 'codex',
+      prompt: 'implement',
+      inputArtifactIds: [],
+    }),
+  });
+  const taskBody = (await taskRes.json()) as { task: { id: string } };
+  const started = await app.request('/runner/events/agent-session-started', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      agentTaskId: taskBody.task.id,
+      stage: 'implementation',
+      skillId: 'skill.implementation',
+      skillVersion: '1.0.0',
+      contextPackId: 'ctx_route',
+    }),
+  });
+  expect(started.status).toBe(201);
+  const startedBody = (await started.json()) as { session: { id: string } };
+  const resultRes = await app.request('/runner/events/agent-task-finished', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      taskId: taskBody.task.id,
+      status: 'success',
+      summary: 'done',
+      outputArtifactIds: [],
+    }),
+  });
+  const resultBody = (await resultRes.json()) as { result: { id: string } };
+  const finished = await app.request('/runner/events/agent-session-finished', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: startedBody.session.id,
+      status: 'success',
+      agentResultId: resultBody.result.id,
+    }),
+  });
+  expect(finished.status).toBe(201);
+
+  const res = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/agent-sessions`);
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as { items: Array<{ id: string; status: string; agentResultId: string }> };
+  expect(body.items).toMatchObject([
+    {
+      id: startedBody.session.id,
+      status: 'success',
+      agentResultId: resultBody.result.id,
+    },
+  ]);
+});
+
+test('runner event ingress validates agent session finish envelopes', async () => {
+  const project = registerProject('agent-sessions-validation-route');
+  const create = await app.request('/workflow-runs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      type: 'feature',
+      title: 'validate agent session finish',
+    }),
+  });
+  const run = (await create.json()) as WorkflowRun;
+
+  const missing = await app.request('/runner/events/agent-session-finished', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: 'ags_missing',
+      status: 'failed',
+    }),
+  });
+  expect(missing.status).toBe(404);
+
+  const taskA = await app.request('/runner/events/agent-task-started', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      stepRunId: null,
+      kind: 'implementation',
+      backend: 'codex',
+      prompt: 'implement A',
+      inputArtifactIds: [],
+    }),
+  });
+  const taskABody = (await taskA.json()) as { task: { id: string } };
+  const taskB = await app.request('/runner/events/agent-task-started', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      stepRunId: null,
+      kind: 'implementation',
+      backend: 'codex',
+      prompt: 'implement B',
+      inputArtifactIds: [],
+    }),
+  });
+  const taskBBody = (await taskB.json()) as { task: { id: string } };
+  const started = await app.request('/runner/events/agent-session-started', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      agentTaskId: taskABody.task.id,
+      stage: 'implementation',
+      skillId: 'skill.implementation',
+      skillVersion: '1.0.0',
+      contextPackId: 'ctx_validate',
+    }),
+  });
+  const startedBody = (await started.json()) as { session: { id: string } };
+  const resultB = await app.request('/runner/events/agent-task-finished', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      taskId: taskBBody.task.id,
+      status: 'success',
+      summary: 'done',
+      outputArtifactIds: [],
+    }),
+  });
+  const resultBBody = (await resultB.json()) as { result: { id: string } };
+
+  const running = await app.request('/runner/events/agent-session-finished', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: startedBody.session.id,
+      status: 'running',
+    }),
+  });
+  expect(running.status).toBe(400);
+
+  const mismatch = await app.request('/runner/events/agent-session-finished', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      sessionId: startedBody.session.id,
+      status: 'success',
+      agentResultId: resultBBody.result.id,
+    }),
+  });
+  expect(mismatch.status).toBe(400);
+});
+
 test('POST /workflow-runs without flowId ignores accepted-design startStage skips', async () => {
   const project = registerProject('route-knowledge-skip-default');
   storeMod.store.knowledgeArtifacts.insert(

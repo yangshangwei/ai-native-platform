@@ -16,6 +16,7 @@ import type {
   TestRun,
   AgentTask,
   AgentResult,
+  AgentSession,
   AgentStreamEvent,
   CoordinatorDecision,
   RequestMessage,
@@ -1252,6 +1253,7 @@ const agentResultsTable = defineTable<AgentResultRow, AgentResult>({
 
 const agentResults = {
   insert: (r: AgentResult): void => agentResultsTable.insert(r),
+  get: (id: string): AgentResult | undefined => agentResultsTable.byId(id),
   byTask: (taskId: string): AgentResult | undefined =>
     agentResultsTable.one('SELECT * FROM agent_results WHERE task_id = ?', taskId),
   byWorkflow: (workflowRunId: string): AgentResult[] =>
@@ -1261,6 +1263,80 @@ const agentResults = {
          JOIN agent_tasks at ON at.id = ar.task_id
         WHERE at.workflow_run_id = ?
         ORDER BY ar.started_at ASC`,
+      workflowRunId,
+    ),
+};
+
+interface AgentSessionRow {
+  id: string;
+  workflow_run_id: string;
+  step_run_id: string | null;
+  agent_task_id: string;
+  agent_result_id: string | null;
+  backend: string;
+  stage: string;
+  skill_id: string;
+  skill_version: string;
+  context_pack_id: string;
+  parent_session_id: string | null;
+  retry_index: number;
+  status: string;
+  started_at: string;
+  completed_at: string | null;
+  metadata_json: string;
+}
+
+function rowToAgentSession(r: AgentSessionRow): AgentSession {
+  return {
+    id: r.id,
+    workflowRunId: r.workflow_run_id,
+    stepRunId: r.step_run_id,
+    agentTaskId: r.agent_task_id,
+    agentResultId: r.agent_result_id,
+    backend: r.backend as AgentSession['backend'],
+    stage: r.stage as AgentSession['stage'],
+    skillId: r.skill_id,
+    skillVersion: r.skill_version,
+    contextPackId: r.context_pack_id,
+    parentSessionId: r.parent_session_id,
+    retryIndex: r.retry_index,
+    status: r.status as AgentSession['status'],
+    startedAt: r.started_at,
+    completedAt: r.completed_at,
+    metadata: JSON.parse(r.metadata_json) as Record<string, unknown>,
+  };
+}
+
+const agentSessionsTable = defineTable<AgentSessionRow, AgentSession>({
+  table: 'agent_sessions',
+  fromRow: rowToAgentSession,
+  toRow: (s) => ({
+    id: s.id,
+    workflow_run_id: s.workflowRunId,
+    step_run_id: s.stepRunId,
+    agent_task_id: s.agentTaskId,
+    agent_result_id: s.agentResultId,
+    backend: s.backend,
+    stage: s.stage,
+    skill_id: s.skillId,
+    skill_version: s.skillVersion,
+    context_pack_id: s.contextPackId,
+    parent_session_id: s.parentSessionId,
+    retry_index: s.retryIndex,
+    status: s.status,
+    started_at: s.startedAt,
+    completed_at: s.completedAt,
+    metadata_json: JSON.stringify(s.metadata),
+  }),
+});
+
+const agentSessions = {
+  insert: (s: AgentSession): void => agentSessionsTable.insert(s),
+  upsert: (s: AgentSession): void => agentSessionsTable.upsert(s),
+  get: (id: string): AgentSession | undefined => agentSessionsTable.byId(id),
+  byWorkflow: (workflowRunId: string): AgentSession[] =>
+    agentSessionsTable.all(
+      'SELECT * FROM agent_sessions WHERE workflow_run_id = ? ORDER BY started_at ASC',
       workflowRunId,
     ),
 };
@@ -1819,6 +1895,7 @@ export const store = {
   testRuns,
   agentTasks,
   agentResults,
+  agentSessions,
   agentEvents,
   workflowActions,
   approvals,

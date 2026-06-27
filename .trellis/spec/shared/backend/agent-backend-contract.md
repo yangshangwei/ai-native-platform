@@ -105,3 +105,88 @@ if (!backend) throw new Error('Choose Claude Code or Codex before starting a wor
 const preflight = await preflightAgentBackend(backend);
 if (!preflight.runnable) throw new Error(preflight.remediationHint);
 ```
+
+## Scenario: AgentSession trajectory ledger
+
+### 1. Scope / Trigger
+
+- Trigger: any change that records, stores, validates, or displays backend invocation envelopes for workflow runs.
+- This is a cross-layer contract: shared types, API persistence/ingress, Workflow Engine state writes, Runner invocation, and read-model APIs must agree.
+- AgentSession is audit/read-model data only. It must not become the authority for workflow status, gate status, or completion.
+
+### 2. Signatures
+
+- Shared type: `AgentSession` records one backend invocation envelope.
+- Shared status: `AgentSessionStatus = 'running' | 'success' | 'failed' | 'cancelled'`.
+- Shared link: `AgentSessionLink` describes retry or handoff-child parentage.
+- DB table: `agent_sessions` with `workflow_run_id`, `step_run_id`, `agent_task_id`, `agent_result_id`, `backend`, `stage`, `skill_id`, `skill_version`, `context_pack_id`, `parent_session_id`, `retry_index`, `status`, timestamps, and `metadata_json`.
+- Runner ingress:
+  - `POST /runner/events/agent-session-started`
+  - `POST /runner/events/agent-session-finished`
+- Read model:
+  - `GET /workflow-runs/:id/agent-sessions`
+  - `GET /workflow-runs/:id` includes `agentSessions`.
+
+### 3. Contracts
+
+- Every workflow-run backend invocation creates an AgentTask first, then an AgentSession linked to that task and the context pack used for the invocation.
+- Successful invocations finish the AgentTask, then finish the AgentSession with `status: 'success'` and the produced `agentResultId`.
+- Failed invocations finish the AgentTask, then finish the AgentSession with `status: 'failed'`, the failure AgentResult id, and concise error metadata.
+- Existing workflow runs with no AgentSession rows must return `items: []`, not fail.
+- Runner reports events through API ingress; Workflow Engine remains the only platform state writer.
+- Gate Engine remains the only pass/warn/fail authority. AgentSession status is invocation audit status, not gate verdict.
+- Retry or child invocations must preserve `parentSessionId` and `retryIndex` so later context retry, handoff, and replay features can reconstruct lineage.
+
+### 4. Validation & Error Matrix
+
+- Missing start fields (`workflowRunId`, `agentTaskId`, `stage`, `skillId`, `skillVersion`, `contextPackId`) -> 400.
+- Unknown start `stage` -> 400.
+- Missing `agentTaskId` on start -> 404.
+- `agentTaskId` belongs to a different `workflowRunId` -> 400.
+- Missing finish fields (`sessionId`, `status`) -> 400.
+- Unknown finish `status` -> 400.
+- Finish with `status: 'running'` -> 400.
+- Missing `sessionId` on finish -> 404.
+- Missing `agentResultId` on finish when supplied -> 404.
+- Supplied `agentResultId` belongs to a different task than the session's `agentTaskId` -> 400.
+
+### 5. Good/Base/Bad Cases
+
+- Good: Runner invokes `skill.implementation@1.0.0`, records AgentTask, creates AgentSession with the context pack id, finishes AgentResult, then finishes AgentSession with `status: 'success'`.
+- Good: Backend throws; Runner records failed AgentResult and failed AgentSession with error metadata before rethrowing.
+- Base: legacy run predates AgentSession; `/workflow-runs/:id/agent-sessions` returns `{ items: [] }`.
+- Bad: Runner finishes a session with an AgentResult from another AgentTask; API rejects the envelope.
+- Bad: UI or API treats AgentSession success as a gate pass; Gate Engine verdicts are the only gate authority.
+
+### 6. Tests Required
+
+- Shared: assert AgentSession statuses and type shape support normal invocation plus retry/child linkage.
+- API store/engine: assert AgentSession rows can be started, finished, linked to AgentTask/AgentResult/ContextPack, and queried by workflow run.
+- API routes: assert legacy empty lists, start/finish ingress success, and validation errors for bad finish envelopes.
+- Runner: assert successful `invokeSkill()` returns `sessionId` and `finishAgentSuccess()` links the success AgentResult to the AgentSession.
+- Runner: assert failed `invokeSkill()` records a failed AgentResult and failed AgentSession instead of leaving the session running or absent.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+// The runner invents durable state locally and never tells the Workflow Engine.
+localSessions.push({ taskId, status: 'success' });
+```
+
+#### Correct
+
+```ts
+const session = await api.agentSessionStarted({
+  workflowRunId,
+  agentTaskId: task.task.id,
+  stage: skill.stage,
+  skillId: skill.id,
+  skillVersion: skill.version,
+  contextPackId: contextPack.id,
+});
+
+const result = await api.agentTaskFinished({ taskId: task.task.id, status: 'success', summary, outputArtifactIds });
+await api.agentSessionFinished({ sessionId: session.session.id, status: 'success', agentResultId: result.result.id });
+```

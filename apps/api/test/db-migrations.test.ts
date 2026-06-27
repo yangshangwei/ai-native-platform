@@ -251,8 +251,10 @@ test('takeover of a pre-rebuild-era DB runs real ALTER + agent_events rebuild an
 // ---------------------------------------------------------------------------
 
 test('initDb is idempotent and rejects a conflicting path while open', () => {
-  // This file never touched the singleton before this test (all tests above
-  // use explicit connections), so initDb opens fresh here.
+  // Other test files may have initialized the singleton before this test when
+  // the full suite runs in one Bun process. Reset it so this lifecycle test
+  // still exercises the intended fresh-open path.
+  closeDb();
   const path = tmpDbPath('ainp-mig-initdb-');
   const first = initDb({ path });
   expect(initDb({ path })).toBe(first);

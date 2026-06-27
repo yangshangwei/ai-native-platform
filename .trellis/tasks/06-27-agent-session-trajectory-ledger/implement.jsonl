@@ -1,0 +1,12 @@
+{"file":"docs/2026-06-27-agent-orchestration-and-harness-improvement-plan.md","reason":"Primary improvement plan and recommended implementation order"}
+{"file":"docs/2026-06-27-agent-runtime-requirements.md","reason":"Product requirements and acceptance criteria for AgentSession / trajectory ledger"}
+{"file":"docs/2026-06-27-agent-runtime-architecture-design.md","reason":"Target data model, API boundaries, and migration strategy"}
+{"file":"docs/2026-06-27-agent-runtime-development-tasks.md","reason":"Epic A A1-A3 implementation breakdown"}
+{"file":"docs/2026-06-27-agent-runtime-red-green-test-plan.md","reason":"Required red/yellow/green coverage for trajectory ledger"}
+{"file":"docs/2026-06-27-current-technical-architecture.md","reason":"Current system architecture and ownership boundaries"}
+{"file":"docs/2026-06-27-context-management-architecture.md","reason":"ContextPack and context_request lifecycle that sessions must reference"}
+{"file":".trellis/spec/shared/backend/agent-backend-contract.md","reason":"Shared AgentBackend type and backend-kind contract"}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"ContextPack audit and invocation context contract"}
+{"file":".trellis/spec/api/backend/database.md","reason":"SQLite migration discipline for adding session storage"}
+{"file":".trellis/spec/runner/backend/agent-backend-runtime.md","reason":"Runner backend invocation and stream evidence contract"}
+{"file":".trellis/spec/runner/backend/flow-registry.md","reason":"Orchestrator and invokeSkill execution boundary"}

@@ -6,10 +6,17 @@ import type {
   GateRun,
   AgentStreamEventInput,
   AgentBackendKind,
+  AgentSessionStatus,
   AgentTaskKind,
   ContextRequest,
 } from '@ainp/shared';
-import { errorMessage, isContextRequestStatus, isPerRunArtifactKind, isWorkflowStage } from '@ainp/shared';
+import {
+  errorMessage,
+  isAgentSessionStatus,
+  isContextRequestStatus,
+  isPerRunArtifactKind,
+  isWorkflowStage,
+} from '@ainp/shared';
 import {
   finishStep,
   recordCommandRun,
@@ -22,6 +29,8 @@ import {
   createArtifact,
   awaitHuman,
   recordAgentEvent,
+  recordAgentSessionFinished,
+  recordAgentSessionStarted,
   recordAgentTask,
   recordAgentResult,
   recordContextRequestAction,
@@ -177,6 +186,82 @@ runnerEvents.post('/agent-task-finished', async (c) => {
     outputArtifactIds: body.outputArtifactIds ?? [],
   });
   return c.json({ ok: true, result }, 201);
+});
+
+runnerEvents.post('/agent-session-started', async (c) => {
+  const body = (await c.req.json()) as {
+    workflowRunId?: string;
+    agentTaskId?: string;
+    stage?: string;
+    skillId?: string;
+    skillVersion?: string;
+    contextPackId?: string;
+    parentSessionId?: string | null;
+    retryIndex?: number;
+    metadata?: Record<string, unknown>;
+  };
+  if (!body.workflowRunId || !body.agentTaskId || !body.stage || !body.skillId || !body.skillVersion || !body.contextPackId) {
+    return c.json({
+      error: 'workflowRunId, agentTaskId, stage, skillId, skillVersion, contextPackId required',
+    }, 400);
+  }
+  if (!isWorkflowStage(body.stage)) {
+    return c.json({ error: `unknown stage: ${body.stage}` }, 400);
+  }
+  const task = store.agentTasks.get(body.agentTaskId);
+  if (!task) return c.json({ error: `agent task not found: ${body.agentTaskId}` }, 404);
+  if (task.workflowRunId !== body.workflowRunId) {
+    return c.json({ error: 'agentTaskId does not belong to workflowRunId' }, 400);
+  }
+  const session = recordAgentSessionStarted({
+    agentTaskId: body.agentTaskId,
+    stage: body.stage,
+    skillId: body.skillId,
+    skillVersion: body.skillVersion,
+    contextPackId: body.contextPackId,
+    parentSessionId: body.parentSessionId ?? null,
+    retryIndex: body.retryIndex ?? 0,
+    metadata: body.metadata ?? {},
+  });
+  return c.json({ ok: true, session }, 201);
+});
+
+runnerEvents.post('/agent-session-finished', async (c) => {
+  const body = (await c.req.json()) as {
+    sessionId?: string;
+    status?: AgentSessionStatus;
+    agentResultId?: string | null;
+    metadata?: Record<string, unknown>;
+  };
+  if (!body.sessionId || !body.status) {
+    return c.json({ error: 'sessionId, status required' }, 400);
+  }
+  if (!isAgentSessionStatus(body.status)) {
+    return c.json({ error: `unknown agent session status: ${String(body.status)}` }, 400);
+  }
+  if (body.status === 'running') {
+    return c.json({ error: 'finished session status cannot be running' }, 400);
+  }
+  const existing = store.agentSessions.get(body.sessionId);
+  if (!existing) {
+    return c.json({ error: `agent session not found: ${body.sessionId}` }, 404);
+  }
+  if (body.agentResultId) {
+    const result = store.agentResults.get(body.agentResultId);
+    if (!result) {
+      return c.json({ error: `agent result not found: ${body.agentResultId}` }, 404);
+    }
+    if (result.taskId !== existing.agentTaskId) {
+      return c.json({ error: 'agentResultId does not belong to agentSession task' }, 400);
+    }
+  }
+  const session = recordAgentSessionFinished({
+    sessionId: body.sessionId,
+    status: body.status,
+    agentResultId: body.agentResultId ?? null,
+    metadata: body.metadata ?? {},
+  });
+  return c.json({ ok: true, session }, 201);
 });
 
 runnerEvents.post('/context-request', async (c) => {

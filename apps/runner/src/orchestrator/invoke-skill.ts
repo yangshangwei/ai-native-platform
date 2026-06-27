@@ -32,6 +32,8 @@ import type { ContextRequestCapture, InvokedAgent, RunCtx } from './types';
 export interface InvokeSkillDeps {
   agentTaskStarted: typeof api.agentTaskStarted;
   agentTaskFinished: typeof api.agentTaskFinished;
+  agentSessionStarted: typeof api.agentSessionStarted;
+  agentSessionFinished: typeof api.agentSessionFinished;
   postArtifact: typeof api.postArtifact;
   recordContextRequest: typeof api.recordContextRequest;
   recordKnowledgeUsage: typeof api.recordKnowledgeUsage;
@@ -41,6 +43,8 @@ export interface InvokeSkillDeps {
 export const DEFAULT_INVOKE_SKILL_DEPS: InvokeSkillDeps = {
   agentTaskStarted: api.agentTaskStarted,
   agentTaskFinished: api.agentTaskFinished,
+  agentSessionStarted: api.agentSessionStarted,
+  agentSessionFinished: api.agentSessionFinished,
   postArtifact: api.postArtifact,
   recordContextRequest: api.recordContextRequest,
   recordKnowledgeUsage: api.recordKnowledgeUsage,
@@ -95,6 +99,19 @@ export async function invokeSkill(
       .map((i) => c.inputArtifactIds[i.name])
       .filter((id): id is string => Boolean(id)),
   });
+  const session = await deps.agentSessionStarted({
+    workflowRunId: skillCtx.workflowRunId,
+    agentTaskId: task.task.id,
+    stage: skill.stage,
+    skillId: skill.id,
+    skillVersion: skill.version,
+    contextPackId: contextPack.id,
+    retryIndex: 0,
+    metadata: {
+      contextMode: contextPack.mode,
+      manifestCount: contextPack.manifest.length,
+    },
+  });
   await recordSelectedKnowledgeUsage(contextPack, task.task.id, deps);
   await recordKnowledgeReviewSignals(contextPack, task.task.id, deps);
   try {
@@ -107,13 +124,25 @@ export async function invokeSkill(
       baseContextPack: contextPack,
       taskId: task.task.id,
     }, deps);
-    return { taskId: task.task.id, outputs: result.outputs, contextPack, contextRequest };
+    return {
+      taskId: task.task.id,
+      sessionId: session.session.id,
+      outputs: result.outputs,
+      contextPack,
+      contextRequest,
+    };
   } catch (err) {
-    await deps.agentTaskFinished({
+    const finished = await deps.agentTaskFinished({
       taskId: task.task.id,
       status: 'failed',
       summary: errorMessage(err),
       outputArtifactIds: [],
+    });
+    await deps.agentSessionFinished({
+      sessionId: session.session.id,
+      status: 'failed',
+      agentResultId: finished.result.id,
+      metadata: { error: errorMessage(err) },
     });
     throw err;
   }
@@ -403,17 +432,28 @@ export async function finishAgentSuccess(
   outputArtifactIds: string[],
   summary: string,
   agentTaskFinished: typeof api.agentTaskFinished = api.agentTaskFinished,
+  agentSessionFinished: typeof api.agentSessionFinished = api.agentSessionFinished,
 ): Promise<void> {
   const supplementIds = agent.contextRequest
     ? [agent.contextRequest.requestArtifactId, agent.contextRequest.supplementArtifactId]
     : [];
-  await agentTaskFinished({
+  const finished = await agentTaskFinished({
     taskId: agent.taskId,
     status: 'success',
     summary: agent.contextRequest
       ? `${summary}; context_request ${agent.contextRequest.request.id} supplemented by ${agent.contextRequest.supplementContextPackId}`
       : summary,
     outputArtifactIds: [...outputArtifactIds, ...supplementIds],
+  });
+  await agentSessionFinished({
+    sessionId: agent.sessionId,
+    status: 'success',
+    agentResultId: finished.result.id,
+    metadata: {
+      outputArtifactIds: [...outputArtifactIds, ...supplementIds],
+      contextRequestId: agent.contextRequest?.request.id ?? null,
+      supplementContextPackId: agent.contextRequest?.supplementContextPackId ?? null,
+    },
   });
 }
 

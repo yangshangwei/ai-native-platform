@@ -13,6 +13,8 @@ import {
   type ArtifactKind,
   type AgentBackendKind,
   type AgentResult,
+  type AgentSession,
+  type AgentSessionStatus,
   type AgentStreamEvent,
   type AgentStreamEventInput,
   type AgentTask,
@@ -1105,6 +1107,84 @@ export function recordAgentResult(input: {
     outputArtifactIds: result.outputArtifactIds,
   });
   return result;
+}
+
+export function recordAgentSessionStarted(input: {
+  agentTaskId: string;
+  stage: WorkflowStage;
+  skillId: string;
+  skillVersion: string;
+  contextPackId: string;
+  parentSessionId?: string | null;
+  retryIndex?: number;
+  metadata?: Record<string, unknown>;
+}): AgentSession {
+  const task = store.agentTasks.get(input.agentTaskId);
+  if (!task) throw new Error(`agent task not found: ${input.agentTaskId}`);
+  const session: AgentSession = {
+    id: newId('ags'),
+    workflowRunId: task.workflowRunId,
+    stepRunId: task.stepRunId,
+    agentTaskId: task.id,
+    agentResultId: null,
+    backend: task.backend,
+    stage: input.stage,
+    skillId: input.skillId,
+    skillVersion: input.skillVersion,
+    contextPackId: input.contextPackId,
+    parentSessionId: input.parentSessionId ?? null,
+    retryIndex: input.retryIndex ?? 0,
+    status: 'running',
+    startedAt: nowIso(),
+    completedAt: null,
+    metadata: input.metadata ?? {},
+  };
+  store.agentSessions.insert(session);
+  audit(task.workflowRunId, 'agent_session.started', {
+    sessionId: session.id,
+    taskId: task.id,
+    stage: session.stage,
+    skillId: session.skillId,
+    contextPackId: session.contextPackId,
+    parentSessionId: session.parentSessionId,
+    retryIndex: session.retryIndex,
+  });
+  return session;
+}
+
+export function recordAgentSessionFinished(input: {
+  sessionId: string;
+  status: Exclude<AgentSessionStatus, 'running'>;
+  agentResultId?: string | null;
+  metadata?: Record<string, unknown>;
+}): AgentSession {
+  const existing = store.agentSessions.get(input.sessionId);
+  if (!existing) throw new Error(`agent session not found: ${input.sessionId}`);
+  if (input.agentResultId) {
+    const result = store.agentResults.get(input.agentResultId);
+    if (!result) throw new Error(`agent result not found: ${input.agentResultId}`);
+    if (result.taskId !== existing.agentTaskId) {
+      throw new Error(`agent result ${input.agentResultId} does not belong to session task ${existing.agentTaskId}`);
+    }
+  }
+  const finished: AgentSession = {
+    ...existing,
+    agentResultId: input.agentResultId ?? existing.agentResultId,
+    status: input.status,
+    completedAt: nowIso(),
+    metadata: {
+      ...existing.metadata,
+      ...(input.metadata ?? {}),
+    },
+  };
+  store.agentSessions.upsert(finished);
+  audit(finished.workflowRunId, 'agent_session.finished', {
+    sessionId: finished.id,
+    taskId: finished.agentTaskId,
+    resultId: finished.agentResultId,
+    status: finished.status,
+  });
+  return finished;
 }
 
 // ---- Audit -----------------------------------------------------------------

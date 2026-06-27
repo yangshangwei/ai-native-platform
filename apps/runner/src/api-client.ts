@@ -17,6 +17,8 @@ import type {
   PromoteResponse,
   AgentStreamEventInput,
   AgentBackendKind,
+  AgentSession,
+  AgentSessionStatus,
   AgentTaskKind,
   ContextRequest,
   CoordinatorDecision,
@@ -418,6 +420,35 @@ export const api = {
     request<{ ok: boolean; result: { id: string } }>(
       'POST',
       '/runner/events/agent-task-finished',
+      params,
+    ),
+
+  agentSessionStarted: (params: {
+    workflowRunId: string;
+    agentTaskId: string;
+    stage: WorkflowStage;
+    skillId: string;
+    skillVersion: string;
+    contextPackId: string;
+    parentSessionId?: string | null;
+    retryIndex?: number;
+    metadata?: Record<string, unknown>;
+  }) =>
+    request<{ ok: boolean; session: AgentSession }>(
+      'POST',
+      '/runner/events/agent-session-started',
+      params,
+    ),
+
+  agentSessionFinished: (params: {
+    sessionId: string;
+    status: Exclude<AgentSessionStatus, 'running'>;
+    agentResultId?: string | null;
+    metadata?: Record<string, unknown>;
+  }) =>
+    request<{ ok: boolean; session: AgentSession }>(
+      'POST',
+      '/runner/events/agent-session-finished',
       params,
     ),
 

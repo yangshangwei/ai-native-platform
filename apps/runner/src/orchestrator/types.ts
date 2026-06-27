@@ -109,6 +109,7 @@ export interface ContextRequestCapture {
 
 export interface InvokedAgent {
   taskId: string;
+  sessionId: string;
   outputs: Awaited<ReturnType<AgentBackend['run']>>['outputs'];
   contextPack: ContextPack;
   contextRequest: ContextRequestCapture | null;

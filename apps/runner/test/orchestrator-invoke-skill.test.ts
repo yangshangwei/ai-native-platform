@@ -3,7 +3,7 @@ import { mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Artifact } from '@ainp/shared';
-import { invokeSkill, type InvokeSkillDeps } from '../src/orchestrator/invoke-skill';
+import { finishAgentSuccess, invokeSkill, type InvokeSkillDeps } from '../src/orchestrator/invoke-skill';
 import { backendFixture, runCtxFixture, skillFixture } from './helpers/orchestrator-fixtures';
 
 // ---------------------------------------------------------------------------
@@ -18,7 +18,9 @@ function depsFixture() {
   let artifactSeq = 0;
   const deps = {
     agentTaskStarted: vi.fn(async () => ({ task: { id: 'task_invoke' } })),
-    agentTaskFinished: vi.fn(async () => ({})),
+    agentTaskFinished: vi.fn(async () => ({ result: { id: 'agr_invoke' } })),
+    agentSessionStarted: vi.fn(async () => ({ session: { id: 'ags_invoke' } })),
+    agentSessionFinished: vi.fn(async () => ({})),
     postArtifact: vi.fn(async (params: { kind: string }) => {
       artifactSeq += 1;
       return { id: `art_${artifactSeq}_${params.kind}` } as unknown as Artifact;
@@ -56,6 +58,7 @@ describe('invokeSkill (de-closured)', () => {
     }, deps);
 
     expect(agent.taskId).toBe('task_invoke');
+    expect(agent.sessionId).toBe('ags_invoke');
     expect(agent.outputs).toHaveLength(1);
     expect(agent.contextRequest).toBeNull();
     expect(agent.contextPack.stage).toBe('requirement');
@@ -66,6 +69,14 @@ describe('invokeSkill (de-closured)', () => {
       kind: 'requirement_draft',
       backend: 'native',
       prompt: expect.stringContaining('Skill: skill.requirement@1.0.0'),
+    }));
+    expect(raw.agentSessionStarted).toHaveBeenCalledWith(expect.objectContaining({
+      workflowRunId: 'run_orch',
+      agentTaskId: 'task_invoke',
+      stage: 'requirement',
+      skillId: 'skill.requirement',
+      skillVersion: '1.0.0',
+      contextPackId: agent.contextPack.id,
     }));
     // The backend received the platform-built context pack.
     expect(backendRun).toHaveBeenCalledWith(skill, expect.objectContaining({
@@ -154,6 +165,48 @@ describe('invokeSkill (de-closured)', () => {
       status: 'failed',
       summary: 'backend exploded',
       outputArtifactIds: [],
+    });
+    expect(raw.agentSessionFinished).toHaveBeenCalledWith({
+      sessionId: 'ags_invoke',
+      status: 'failed',
+      agentResultId: 'agr_invoke',
+      metadata: { error: 'backend exploded' },
+    });
+  });
+
+  test('finishAgentSuccess links successful AgentResult back to the AgentSession', async () => {
+    const agentTaskFinished = vi.fn(async () => ({ result: { id: 'agr_success' } }));
+    const agentSessionFinished = vi.fn(async () => ({ session: { id: 'ags_success' } }));
+
+    await finishAgentSuccess(
+      {
+        taskId: 'task_success',
+        sessionId: 'ags_success',
+        outputs: [],
+        contextPack: {} as never,
+        contextRequest: null,
+      },
+      ['art_output'],
+      'produced output',
+      agentTaskFinished as never,
+      agentSessionFinished as never,
+    );
+
+    expect(agentTaskFinished).toHaveBeenCalledWith({
+      taskId: 'task_success',
+      status: 'success',
+      summary: 'produced output',
+      outputArtifactIds: ['art_output'],
+    });
+    expect(agentSessionFinished).toHaveBeenCalledWith({
+      sessionId: 'ags_success',
+      status: 'success',
+      agentResultId: 'agr_success',
+      metadata: {
+        outputArtifactIds: ['art_output'],
+        contextRequestId: null,
+        supplementContextPackId: null,
+      },
     });
   });
 });

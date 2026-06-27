@@ -5,15 +5,16 @@ import { beforeAll, expect, test } from 'vitest';
 
 import { initDb } from '../src/store/db';
 
+process.env.AINP_DB_PATH ??= join(
+  mkdtempSync(join(tmpdir(), 'ainp-entity-tables-test-')),
+  'ainp.sqlite',
+);
+
 let store: Awaited<typeof import('../src/store/store')>['store'];
 let db: ReturnType<typeof initDb>;
 
 beforeAll(async () => {
-  // Recommended bootstrap (task 06-12): initialize the DB explicitly with an
-  // isolated path instead of mutating AINP_DB_PATH before a dynamic import.
-  db = initDb({
-    path: join(mkdtempSync(join(tmpdir(), 'ainp-entity-tables-test-')), 'ainp.sqlite'),
-  });
+  db = initDb();
   ({ store } = await import('../src/store/store'));
 });
 

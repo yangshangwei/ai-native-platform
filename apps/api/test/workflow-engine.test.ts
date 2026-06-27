@@ -3,15 +3,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, expect, test } from 'vitest';
 import type { KnowledgeArtifact } from '@ainp/shared';
-import { initDb } from '../src/store/db';
+
+process.env.AINP_DB_PATH ??= join(mkdtempSync(join(tmpdir(), 'ainp-api-test-')), 'ainp.sqlite');
 
 let workflow: typeof import('../src/workflow-engine');
 let storeMod: typeof import('../src/store/store');
 
 beforeAll(async () => {
-  // Recommended bootstrap (task 06-12): initialize the DB explicitly with an
-  // isolated path instead of mutating AINP_DB_PATH before a dynamic import.
-  initDb({ path: join(mkdtempSync(join(tmpdir(), 'ainp-api-test-')), 'ainp.sqlite') });
   workflow = await import('../src/workflow-engine');
   storeMod = await import('../src/store/store');
 });
@@ -72,6 +70,55 @@ test('records AgentTask and AgentResult audit rows for a backend invocation', ()
     status: 'success',
     outputArtifactIds: ['art_output'],
   });
+});
+
+test('records AgentSession trajectory rows around an agent invocation', () => {
+  const task = workflow.recordAgentTask({
+    workflowRunId: 'run_agent_session',
+    stepRunId: 'step_agent_session',
+    kind: 'implementation',
+    backend: 'codex',
+    prompt: 'implement approved design',
+    inputArtifactIds: ['art_input'],
+  });
+  const session = workflow.recordAgentSessionStarted({
+    agentTaskId: task.id,
+    stage: 'implementation',
+    skillId: 'skill.implementation',
+    skillVersion: '1.0.0',
+    contextPackId: 'ctx_pack_1',
+    metadata: { manifestCount: 3 },
+  });
+  const result = workflow.recordAgentResult({
+    taskId: task.id,
+    status: 'success',
+    summary: 'produced diff',
+    outputArtifactIds: ['art_output'],
+  });
+  const finished = workflow.recordAgentSessionFinished({
+    sessionId: session.id,
+    status: 'success',
+    agentResultId: result.id,
+  });
+
+  expect(storeMod.store.agentSessions.byWorkflow('run_agent_session')).toMatchObject([
+    {
+      id: session.id,
+      workflowRunId: 'run_agent_session',
+      stepRunId: 'step_agent_session',
+      agentTaskId: task.id,
+      agentResultId: result.id,
+      backend: 'codex',
+      stage: 'implementation',
+      skillId: 'skill.implementation',
+      skillVersion: '1.0.0',
+      contextPackId: 'ctx_pack_1',
+      retryIndex: 0,
+      status: 'success',
+      metadata: { manifestCount: 3 },
+    },
+  ]);
+  expect(finished.completedAt).not.toBeNull();
 });
 
 

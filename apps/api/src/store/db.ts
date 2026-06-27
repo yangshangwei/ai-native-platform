@@ -51,6 +51,14 @@ function hasColumn(database: Database, table: string, column: string): boolean {
   return cols.some((c) => c.name === column);
 }
 
+function hasTable(database: Database, table: string): boolean {
+  return Boolean(
+    database
+      .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
+      .get(table),
+  );
+}
+
 /** Probe + ALTER pairs from the legacy module become one migration each. */
 function addColumn(
   version: number,
@@ -283,6 +291,26 @@ const BASELINE_DDL: string[] = [
      started_at TEXT NOT NULL,
      completed_at TEXT NOT NULL
    )`,
+  `CREATE TABLE IF NOT EXISTS agent_sessions (
+     id TEXT PRIMARY KEY,
+     workflow_run_id TEXT NOT NULL,
+     step_run_id TEXT,
+     agent_task_id TEXT NOT NULL,
+     agent_result_id TEXT,
+     backend TEXT NOT NULL,
+     stage TEXT NOT NULL,
+     skill_id TEXT NOT NULL,
+     skill_version TEXT NOT NULL,
+     context_pack_id TEXT NOT NULL,
+     parent_session_id TEXT,
+     retry_index INTEGER NOT NULL DEFAULT 0,
+     status TEXT NOT NULL,
+     started_at TEXT NOT NULL,
+     completed_at TEXT,
+     metadata_json TEXT NOT NULL
+   )`,
+  `CREATE INDEX IF NOT EXISTS idx_agent_sessions_workflow ON agent_sessions(workflow_run_id, started_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_agent_sessions_task ON agent_sessions(agent_task_id)`,
   `CREATE TABLE IF NOT EXISTS approvals (
      id TEXT PRIMARY KEY,
      workflow_run_id TEXT NOT NULL,
@@ -518,6 +546,33 @@ export const MIGRATIONS: Migration[] = [
   // "normal task" (proceeds through runner watch → coordinator → flow execution).
   // 'ask' means "read-only Q&A" (stays in chat, never enters watch loop).
   addColumn(24, 'workflow_requests', 'kind', `kind TEXT CHECK (kind IN ('ask'))`),
+  {
+    version: 25,
+    name: 'agent_sessions-create',
+    isApplied: (database) => hasTable(database, 'agent_sessions'),
+    up: (database) => {
+      run(database, `CREATE TABLE agent_sessions (
+         id TEXT PRIMARY KEY,
+         workflow_run_id TEXT NOT NULL,
+         step_run_id TEXT,
+         agent_task_id TEXT NOT NULL,
+         agent_result_id TEXT,
+         backend TEXT NOT NULL,
+         stage TEXT NOT NULL,
+         skill_id TEXT NOT NULL,
+         skill_version TEXT NOT NULL,
+         context_pack_id TEXT NOT NULL,
+         parent_session_id TEXT,
+         retry_index INTEGER NOT NULL DEFAULT 0,
+         status TEXT NOT NULL,
+         started_at TEXT NOT NULL,
+         completed_at TEXT,
+         metadata_json TEXT NOT NULL
+       )`);
+      run(database, `CREATE INDEX IF NOT EXISTS idx_agent_sessions_workflow ON agent_sessions(workflow_run_id, started_at)`);
+      run(database, `CREATE INDEX IF NOT EXISTS idx_agent_sessions_task ON agent_sessions(agent_task_id)`);
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------

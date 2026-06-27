@@ -1,0 +1,8 @@
+{"file":"docs/2026-06-27-agent-runtime-development-tasks.md","reason":"Epic A acceptance and red/green test requirements"}
+{"file":"docs/2026-06-27-agent-runtime-red-green-test-plan.md","reason":"Trajectory ledger required failure and success cases"}
+{"file":".trellis/spec/shared/backend/agent-backend-contract.md","reason":"Verify backend-kind and historical native handling remain compatible"}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Verify session contextPack linkage preserves governance contract"}
+{"file":".trellis/spec/api/backend/database.md","reason":"Verify additive migration and old DB compatibility"}
+{"file":".trellis/spec/shared/backend/evidence-verifier-protocol.md","reason":"Verify sessions do not replace digest-backed evidence and gate authority"}
+{"file":".trellis/spec/runner/backend/agent-backend-runtime.md","reason":"Verify session writes do not affect backend execution semantics"}
+{"file":".trellis/spec/runner/backend/flow-registry.md","reason":"Verify orchestrator dispatch behavior remains unchanged"}
