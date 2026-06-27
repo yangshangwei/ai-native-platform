@@ -1,0 +1,12 @@
+{"file":"docs/2026-06-27-agent-runtime-requirements.md","reason":"Epic D product requirements and success metrics."}
+{"file":"docs/2026-06-27-agent-runtime-development-tasks.md","reason":"D1-D3 implementation checklist and red/green cases."}
+{"file":"docs/2026-06-27-agent-runtime-red-green-test-plan.md","reason":"Memory Lifecycle red/yellow/green expectations."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Existing memory/context governance contract to update."}
+{"file":"packages/shared/src/types/artifact.ts","reason":"KnowledgeArtifact metadata normalization and validation surface."}
+{"file":"packages/shared/src/types/context.ts","reason":"Knowledge review signal and context manifest contracts."}
+{"file":"apps/runner/src/context/builder.ts","reason":"Context selection/degradation and calibration signal builder."}
+{"file":"apps/runner/src/context/retriever.ts","reason":"Context inclusion mode and scoring behavior."}
+{"file":"apps/api/src/routes/knowledge-artifacts.ts","reason":"Knowledge metadata API trust boundary and usage updates."}
+{"file":"apps/api/src/routes/workflow-runs.ts","reason":"Retro/review knowledge action behavior."}
+{"file":"apps/api/src/router.ts","reason":"Router planning must not use stale or review-required accepted knowledge as authoritative skip/recommendation input."}
+{"file":".trellis/tasks/06-27-memory-lifecycle-mvp/research/memory-lifecycle-slice.md","reason":"Task-specific current facts and gaps."}

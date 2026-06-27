@@ -511,10 +511,7 @@ function knowledgeCandidate(
     fallbackSourceRefs: fallbackSourceRefsForKnowledgeArtifact(artifact),
   });
   const reviewStatus = reviewStatusForMetadata(artifact.metadata);
-  const hasNegativeReviewSignal = reviewStatus === 'conflict'
-    || reviewStatus === 'stale'
-    || reviewStatus === 'superseded'
-    || reviewStatus === 'downgrade_candidate';
+  const hasReviewRequiredSignal = isReviewRequiredStatus(reviewStatus);
   const title = knowledgeTitle(artifact, metadata.knowledgeClass);
   const content = sanitizeSensitiveContextText(
     knowledgeContent(artifact, title),
@@ -534,14 +531,26 @@ function knowledgeCandidate(
     sourceType: 'knowledge_artifact',
     sourceRefs: metadata.sourceRefs,
     reason: reasonForKnowledgeArtifact(artifact, metadata.knowledgeClass, reviewStatus),
-    priority: metadata.knowledgeClass === 'confirmed' && !hasNegativeReviewSignal ? 1 : 2,
+    priority: metadata.knowledgeClass === 'confirmed' && !hasReviewRequiredSignal ? 1 : 2,
     knowledgeClass: metadata.knowledgeClass,
-    trustLevel: hasNegativeReviewSignal ? 'summary' : metadata.trustLevel,
-    freshness: hasNegativeReviewSignal ? 'historical' : metadata.freshness,
-    confidence: hasNegativeReviewSignal ? Math.min(metadata.confidence, 0.45) : metadata.confidence,
-    mode: 'full',
+    trustLevel: hasReviewRequiredSignal ? 'summary' : metadata.trustLevel,
+    freshness: hasReviewRequiredSignal ? 'historical' : metadata.freshness,
+    confidence: hasReviewRequiredSignal ? Math.min(metadata.confidence, 0.45) : metadata.confidence,
+    mode: knowledgeBaseMode(metadata.freshness, hasReviewRequiredSignal),
     createdAt: artifact.updatedAt ?? artifact.createdAt,
   });
+}
+
+function knowledgeBaseMode(
+  freshness: ContextFreshness,
+  hasNegativeReviewSignal: boolean,
+): ContextInclusionMode {
+  if (hasNegativeReviewSignal) return 'summary';
+  return freshness === 'current' ? 'full' : 'summary';
+}
+
+function isReviewRequiredStatus(reviewStatus: string | null): boolean {
+  return reviewStatus !== null;
 }
 
 function fallbackSourceRefsForKnowledgeArtifact(artifact: KnowledgeArtifact): string[] {
@@ -835,7 +844,8 @@ function reviewStatusForMetadata(metadata: Record<string, unknown>): string | nu
 }
 
 function normalizeReviewStatus(value: string | null): string | null {
-  return value?.trim().toLowerCase().replace(/[\s-]+/g, '_') || null;
+  const normalized = value?.trim().toLowerCase().replace(/[\s-]+/g, '_') || null;
+  return normalized === 'none' ? null : normalized;
 }
 
 function extractFacts(text: string): Map<string, string> {

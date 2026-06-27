@@ -6,18 +6,23 @@ import {
   CONTEXT_TRUST_LEVELS,
   KNOWLEDGE_REVIEW_SEVERITIES,
   KNOWLEDGE_REVIEW_SIGNAL_KINDS,
+  MEMORY_KINDS,
+  MEMORY_REVIEW_STATUSES,
   isKnowledgeArtifactStatus,
   isContextFreshness,
   isContextPackMode,
   isContextRequestStatus,
   isContextTrustLevel,
   isKnowledgeClass,
+  isMemoryKind,
+  isMemoryReviewStatus,
   isKnowledgeReviewSeverity,
   isKnowledgeReviewSignalKind,
   isSensitiveContextPath,
   KNOWLEDGE_ARTIFACT_STATUSES,
   KNOWLEDGE_CLASSES,
   knowledgeContextMetadataValidationErrors,
+  normalizeMemoryLifecycleMetadata,
   normalizeKnowledgeContextMetadata,
   sanitizeSensitiveContextText,
   type ContextManifestItem,
@@ -42,9 +47,23 @@ test('context protocol literal catalogs expose canonical MVP values', () => {
     'downgrade_candidate',
   ]);
   expect(KNOWLEDGE_REVIEW_SEVERITIES).toEqual(['info', 'warning', 'review_required']);
+  expect(MEMORY_KINDS).toEqual(['semantic', 'episodic', 'procedural']);
+  expect(MEMORY_REVIEW_STATUSES).toEqual([
+    'none',
+    'needs_review',
+    'conflict',
+    'stale',
+    'superseded',
+    'upgrade_candidate',
+    'downgrade_candidate',
+  ]);
 
   expect(isKnowledgeClass('confirmed')).toBe(true);
   expect(isKnowledgeClass('accepted')).toBe(false);
+  expect(isMemoryKind('semantic')).toBe(true);
+  expect(isMemoryKind('historical')).toBe(false);
+  expect(isMemoryReviewStatus('conflict')).toBe(true);
+  expect(isMemoryReviewStatus('overwrite')).toBe(false);
   expect(isKnowledgeArtifactStatus('accepted')).toBe(true);
   expect(isKnowledgeArtifactStatus('archived')).toBe(false);
   expect(isContextTrustLevel('accepted_knowledge')).toBe(true);
@@ -187,15 +206,43 @@ test('knowledge metadata helper defaults accepted artifacts to confirmed and val
     knowledgeClass: 'trusted',
     trustLevel: 'seed',
     freshness: 'fresh',
+    memoryKind: 'historical',
+    reviewStatus: 'overwrite',
     sourceRefs: ['ok', ''],
     confidence: 2,
   })).toEqual([
     'metadata.knowledgeClass must be one of: seed, recovered, confirmed',
     'metadata.trustLevel must be one of: source, accepted_knowledge, summary, inference',
     'metadata.freshness must be one of: current, possibly_stale, historical',
+    'metadata.memoryKind must be one of: semantic, episodic, procedural',
+    'metadata.reviewStatus must be one of: none, needs_review, conflict, stale, superseded, upgrade_candidate, downgrade_candidate',
     'metadata.sourceRefs must be an array of non-empty strings',
     'metadata.confidence must be a number between 0 and 1',
   ]);
+});
+
+test('memory lifecycle metadata normalizer is additive and safe for legacy rows', () => {
+  expect(normalizeMemoryLifecycleMetadata(undefined, { knowledgeKind: 'decision' })).toEqual({
+    memoryKind: 'semantic',
+    reviewStatus: 'none',
+    supersedes: [],
+    hitCount: 0,
+    lastUsedAt: null,
+  });
+
+  expect(normalizeMemoryLifecycleMetadata({
+    memoryKind: 'procedural',
+    reviewStatus: 'conflict',
+    supersedes: ['kart_old', '', 'kart_old'],
+    hitCount: 2,
+    lastUsedAt: '2026-06-27T00:00:00.000Z',
+  }, { knowledgeKind: 'lesson' })).toEqual({
+    memoryKind: 'procedural',
+    reviewStatus: 'conflict',
+    supersedes: ['kart_old'],
+    hitCount: 2,
+    lastUsedAt: '2026-06-27T00:00:00.000Z',
+  });
 });
 
 test('ContextRequest carries the structured supplement protocol fields', () => {

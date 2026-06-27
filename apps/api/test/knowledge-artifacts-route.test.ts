@@ -118,12 +118,19 @@ test('POST rejects invalid standardized knowledge metadata', async () => {
     size: 50,
     contentType: 'text/markdown',
     subtype: 'constraint',
-    metadata: { knowledgeClass: 'trusted', confidence: 5 },
+    metadata: {
+      knowledgeClass: 'trusted',
+      memoryKind: 'historical',
+      reviewStatus: 'overwrite',
+      confidence: 5,
+    },
   });
   expect(res.status).toBe(400);
   const json = (await res.json()) as { error: string; field: string };
   expect(json.field).toBe('metadata');
   expect(json.error).toContain('metadata.knowledgeClass');
+  expect(json.error).toContain('metadata.memoryKind');
+  expect(json.error).toContain('metadata.reviewStatus');
   expect(json.error).toContain('metadata.confidence');
 });
 

@@ -214,12 +214,7 @@ function isUsableAcceptedKnowledge(artifact: KnowledgeArtifact): boolean {
   });
   if (metadata.freshness === 'historical') return false;
   const reviewStatus = reviewStatusForMetadata(artifact.metadata);
-  return reviewStatus !== 'conflict'
-    && reviewStatus !== 'stale'
-    && reviewStatus !== 'needs_review'
-    && reviewStatus !== 'review_required'
-    && reviewStatus !== 'superseded'
-    && reviewStatus !== 'downgrade_candidate';
+  return reviewStatus === null;
 }
 
 function metadataString(metadata: Record<string, unknown>, key: string): string | null {
@@ -236,5 +231,6 @@ function reviewStatusForMetadata(metadata: Record<string, unknown>): string | nu
 }
 
 function normalizeReviewStatus(value: string | null): string | null {
-  return value?.trim().toLowerCase().replace(/[\s-]+/g, '_') || null;
+  const normalized = value?.trim().toLowerCase().replace(/[\s-]+/g, '_') || null;
+  return normalized === 'none' ? null : normalized;
 }

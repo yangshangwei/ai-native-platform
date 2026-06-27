@@ -117,6 +117,151 @@ describe('ContextPack builder MVP', () => {
     });
   });
 
+  test('degrades possibly stale memory to summary evidence instead of full authoritative context', () => {
+    const pack = buildContextPack({
+      project: projectFixture(),
+      run: runFixture(),
+      stage: 'implementation',
+      workspacePath: '/tmp/workspace',
+      branch: 'ai/run-1',
+      taskBrief: 'Implement using backend policy evidence.',
+      knowledgeArtifacts: [
+        knowledgeArtifactFixture({
+          id: 'kart_possibly_stale',
+          metadata: {
+            title: 'Backend policy',
+            text: Array.from({ length: 20 }, (_, i) => `Line ${i}: backend policy detail`).join('\n'),
+            summary: 'Backend policy summary for review.',
+            knowledgeClass: 'confirmed',
+            trustLevel: 'accepted_knowledge',
+            freshness: 'possibly_stale',
+            sourceRefs: ['knowledge:accepted', 'entity:ADR-BACKEND'],
+          },
+        }),
+      ],
+      createdAt: '2026-05-09T00:00:00.000Z',
+    });
+
+    const memory = pack.sections.find((s) => s.id === 'knowledge_kart_possibly_stale');
+    expect(memory).toMatchObject({
+      mode: 'summary',
+      content: 'Backend policy summary for review.',
+      knowledgeClass: 'confirmed',
+      trustLevel: 'accepted_knowledge',
+      freshness: 'possibly_stale',
+    });
+    expect(pack.manifest.find((m) => m.ref === 'knowledge_kart_possibly_stale')).toMatchObject({
+      mode: 'summary',
+      freshness: 'possibly_stale',
+    });
+  });
+
+  test('keeps confirmed current memory eligible for full context', () => {
+    const pack = buildContextPack({
+      project: projectFixture(),
+      run: runFixture(),
+      stage: 'implementation',
+      workspacePath: '/tmp/workspace',
+      branch: 'ai/run-1',
+      taskBrief: 'Implement using current backend policy.',
+      knowledgeArtifacts: [
+        knowledgeArtifactFixture({
+          id: 'kart_current',
+          metadata: {
+            title: 'Current backend policy',
+            text: 'Use Claude Code or Codex as configured project backends.',
+            knowledgeClass: 'confirmed',
+            trustLevel: 'accepted_knowledge',
+            freshness: 'current',
+            sourceRefs: ['knowledge:accepted', 'entity:ADR-BACKEND'],
+          },
+        }),
+      ],
+      createdAt: '2026-05-09T00:00:00.000Z',
+    });
+
+    expect(pack.sections.find((s) => s.id === 'knowledge_kart_current')).toMatchObject({
+      mode: 'full',
+      freshness: 'current',
+      trustLevel: 'accepted_knowledge',
+      reason: expect.not.stringContaining('evidence only'),
+    });
+  });
+
+  test('keeps conflict-marked accepted memory as evidence only', () => {
+    const pack = buildContextPack({
+      project: projectFixture(),
+      run: runFixture(),
+      stage: 'implementation',
+      workspacePath: '/tmp/workspace',
+      branch: 'ai/run-1',
+      taskBrief: 'Implement after backend policy changed.',
+      knowledgeArtifacts: [
+        knowledgeArtifactFixture({
+          id: 'kart_conflict',
+          metadata: {
+            title: 'Conflicted backend policy',
+            text: 'Fact: agent backend = native',
+            summary: 'Old backend policy conflicts with current code.',
+            knowledgeClass: 'confirmed',
+            trustLevel: 'accepted_knowledge',
+            freshness: 'current',
+            reviewStatus: 'conflict',
+            sourceRefs: ['knowledge:accepted', 'entity:ADR-BACKEND'],
+          },
+        }),
+      ],
+      createdAt: '2026-05-09T00:00:00.000Z',
+    });
+
+    const memory = pack.sections.find((s) => s.id === 'knowledge_kart_conflict');
+    expect(memory).toMatchObject({
+      mode: 'summary',
+      content: 'Old backend policy conflicts with current code.',
+      trustLevel: 'summary',
+      freshness: 'historical',
+      confidence: 0.45,
+      reason: expect.stringContaining('reviewStatus=conflict'),
+    });
+    expect(pack.calibrationSignals?.map((signal) => signal.kind)).toContain('conflict');
+  });
+
+  test('keeps review-required memory as evidence only', () => {
+    const pack = buildContextPack({
+      project: projectFixture(),
+      run: runFixture(),
+      stage: 'implementation',
+      workspacePath: '/tmp/workspace',
+      branch: 'ai/run-1',
+      taskBrief: 'Implement after backend policy needs review.',
+      knowledgeArtifacts: [
+        knowledgeArtifactFixture({
+          id: 'kart_needs_review',
+          metadata: {
+            title: 'Review-required backend policy',
+            text: 'Fact: agent backend = native',
+            summary: 'Backend policy needs human review before use.',
+            knowledgeClass: 'confirmed',
+            trustLevel: 'accepted_knowledge',
+            freshness: 'current',
+            reviewStatus: 'needs_review',
+            sourceRefs: ['knowledge:accepted', 'entity:ADR-BACKEND'],
+          },
+        }),
+      ],
+      createdAt: '2026-05-09T00:00:00.000Z',
+    });
+
+    expect(pack.sections.find((s) => s.id === 'knowledge_kart_needs_review')).toMatchObject({
+      mode: 'summary',
+      content: 'Backend policy needs human review before use.',
+      trustLevel: 'summary',
+      freshness: 'historical',
+      reason: expect.stringContaining('reviewStatus=needs_review'),
+    });
+    expect(pack.calibrationSignals?.map((signal) => signal.kind)).toContain('conflict');
+  });
+
   test('emits calibration review signals for stale confirmed knowledge and conflicting run evidence', () => {
     const pack = buildContextPack({
       project: projectFixture(),

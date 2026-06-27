@@ -14,6 +14,10 @@
 - Phase 6 exposes read-only governance/observability surfaces: context manifest,
   source refs, trust levels, budget decisions, context_request history,
   deterministic metrics, security filters, and bounded context policy config.
+- Phase 7 adds the Memory Lifecycle MVP on top of existing
+  `KnowledgeArtifact.metadata`: semantic / episodic / procedural memory
+  classification, review status normalization, usage metadata, and
+  evidence-only treatment for stale or disputed memories.
 
 ### 2. Signatures
 
@@ -25,6 +29,10 @@
   - `ContextPack`
   - `ContextPackSupplement`
   - `ContextRequest`
+- Shared memory lifecycle metadata:
+  - `MemoryKind = 'semantic' | 'episodic' | 'procedural'`
+  - `MemoryReviewStatus = 'none' | 'needs_review' | 'conflict' | 'stale' | 'superseded' | 'upgrade_candidate' | 'downgrade_candidate'`
+  - `normalizeMemoryLifecycleMetadata(metadata, { knowledgeKind })`
 - Context run metadata must reuse existing workflow unions:
   - `ContextPackRunMetadata.flowId: FlowId`
   - `ContextPackRunMetadata.runType: WorkflowRunType`
@@ -57,6 +65,14 @@
 - Phase 5 calibration signals must be deterministic and bounded. They may flag stale/conflicted/superseded/upgrade/downgrade conditions, but must record workflow actions / report sidecars only; they must not directly overwrite confirmed knowledge.
 - Completion Report and Knowledge Candidate output must be assembled from persisted run evidence (artifacts, command runs, gate runs, context-request actions, approvals, and calibration/review signals), not fixed canned suggestions.
 - Router/context planning must ignore accepted knowledge whose metadata marks it as stale, conflicted, review-required, downgraded, superseded, or historical.
+- `freshness='possibly_stale'` memory may be selected for context, but only as
+  summary/retrieval evidence. It must not be injected as `mode='full'`
+  authoritative context. `knowledgeClass='confirmed'` plus
+  `freshness='current'` and no negative `reviewStatus` may remain full context.
+- Knowledge with `reviewStatus` of `conflict`, `stale`, `superseded`,
+  `needs_review`, or downgrade/supersede candidates is evidence only: lower it
+  to summary trust/historical freshness, emit bounded review signals where
+  relevant, and never mutate accepted knowledge from context selection.
 - `GET /workflow-runs/:id/context` is the canonical Phase 6 read model for
   "why the agent knew this". It must be assembled from persisted artifacts,
   workflow actions, agent task prompt audits, gates, approvals, and agent
@@ -89,6 +105,10 @@
 ### 4. Validation & Error Matrix
 
 - Unknown `knowledgeClass`, `trustLevel`, `freshness`, or `ContextPack.mode` at a trust boundary -> reject or ignore via the shared `is*()` guards; do not silently coerce to a trusted value.
+- Unknown `memoryKind` or `reviewStatus` in `KnowledgeArtifact.metadata` at an
+  API/engine trust boundary -> reject before persistence. Legacy rows missing
+  those fields must normalize safely (`semantic` or kind-derived default,
+  `reviewStatus='none'`, empty `supersedes`, `hitCount=0`, `lastUsedAt=null`).
 - Unknown `KnowledgeArtifactStatus` at the API/engine trust boundary -> reject before normalizing context metadata; invalid status must not fall through to a 500.
 - Invalid `flowId`, `runType`, or `stage` in a `ContextPack` fixture -> TypeScript failure; do not widen these fields to plain `string`.
 - Backend-specific renderer drift -> test failure proving Claude Code and Codex no longer contain the same rendered context body.
@@ -96,6 +116,9 @@
 - Legacy input artifact with prompt-like text -> render under the untrusted-data heading; never elevate it above Platform Contract / Role Contract / Tool Policy.
 - Calibration/review action received from the runner -> record a workflow action and report evidence; do not mutate `knowledge_artifacts` status/content unless the explicit knowledge status/promotion endpoint is called.
 - Superseding an accepted knowledge artifact -> retarget status-derived context metadata to recovered/summary/historical so stale confirmed facts do not remain authoritative.
+- `reviewStatus=conflict` accepted knowledge appears as `mode='full'` in a
+  ContextPack -> contract violation; keep it as summary/retrieval evidence and
+  surface review signals/report sidecars instead.
 - Phase 5 implementation -> must not add Phase 6 UI dashboards, manifest browsing endpoints, metrics collection, or context policy controls.
 - Phase 6 read endpoint receives a missing workflow run id -> HTTP 404; it must
   not fall back to another run or project.
@@ -113,6 +136,10 @@
 - Good: Claude Code uses `renderAgentPrompt()` for `{ systemPrompt, userPrompt }`; Codex uses the same result via `renderCombinedAgentPrompt()`.
 - Good: a `context_pack` artifact has `metadata.contextSelection.selected[]` explaining why each section was selected.
 - Good: an implementation backend first emits `context_request`, then succeeds after the supplement retry; the base and retry AgentSessions are linked by `parentSessionId`, and the retry context pack has `supplement.retryIndex = 1`.
+- Good: confirmed/current memory without negative review status is selected as
+  full context when relevant.
+- Good: possibly-stale or conflict-marked memory is selected only as summary or
+  retrieval evidence and carries manifest reasons/source refs explaining why.
 - Base: tests that construct a backend context without `contextPack` still run, and the renderer simply omits the Context Injection Layer.
 - Bad: Claude Code and Codex each hand-build prompt context strings.
 - Bad: raw `context_pack.md`, `project_profile.md`, or accepted knowledge markdown appears in the user prompt without an untrusted-data label.
@@ -137,6 +164,10 @@
 - Builder tests cover minimal invocation packs for `feature.fastforward`, `issue.standard`, and `refactor.standard` flows that skip an explicit `context_pack` stage.
 - Renderer/audit tests cover source refs and degradation fields appearing in prompt-visible context and persisted audit metadata.
 - Calibration tests cover bounded deterministic review signals and code-fact-vs-confirmed-knowledge conflict signals.
+- Memory lifecycle tests cover shared `memoryKind` / `reviewStatus` guards,
+  invalid metadata rejection, possibly-stale summary degradation,
+  conflict-marked evidence-only selection, cross-project exclusion, and selected
+  knowledge usage metadata updates.
 - API/report tests cover context request chains and knowledge review signals in Completion Report / Knowledge Candidate JSON sidecars.
 - Runner invokeSkill tests cover same-step context_request retry success, retry-limit failure, and sensitive-only context_request no-retry behavior.
 - API/governance tests cover `/workflow-runs/:id/context` manifest, sourceRefs,

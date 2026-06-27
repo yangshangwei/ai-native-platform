@@ -138,6 +138,30 @@ export function isKnowledgeArtifactStatus(value: unknown): value is KnowledgeArt
     && (KNOWLEDGE_ARTIFACT_STATUSES as readonly string[]).includes(value);
 }
 
+export const MEMORY_KINDS = ['semantic', 'episodic', 'procedural'] as const;
+export type MemoryKind = (typeof MEMORY_KINDS)[number];
+
+export const MEMORY_REVIEW_STATUSES = [
+  'none',
+  'needs_review',
+  'conflict',
+  'stale',
+  'superseded',
+  'upgrade_candidate',
+  'downgrade_candidate',
+] as const;
+export type MemoryReviewStatus = (typeof MEMORY_REVIEW_STATUSES)[number];
+
+export function isMemoryKind(value: unknown): value is MemoryKind {
+  return typeof value === 'string'
+    && (MEMORY_KINDS as readonly string[]).includes(value);
+}
+
+export function isMemoryReviewStatus(value: unknown): value is MemoryReviewStatus {
+  return typeof value === 'string'
+    && (MEMORY_REVIEW_STATUSES as readonly string[]).includes(value);
+}
+
 /**
  * Strongly-typed core fields every knowledge artifact carries. Additional
  * per-kind fields (e.g. lesson severity, decision supersedes-id) ride
@@ -179,6 +203,11 @@ export interface KnowledgeContextMetadata {
   freshness?: ContextFreshness;
   sourceRefs?: string[];
   confidence?: number;
+  memoryKind?: MemoryKind;
+  reviewStatus?: MemoryReviewStatus;
+  supersedes?: string[];
+  hitCount?: number;
+  lastUsedAt?: Iso8601 | null;
 }
 
 export interface NormalizedKnowledgeContextMetadata {
@@ -187,6 +216,14 @@ export interface NormalizedKnowledgeContextMetadata {
   freshness: ContextFreshness;
   sourceRefs: string[];
   confidence: number;
+}
+
+export interface NormalizedMemoryLifecycleMetadata {
+  memoryKind: MemoryKind;
+  reviewStatus: MemoryReviewStatus;
+  supersedes: string[];
+  hitCount: number;
+  lastUsedAt: Iso8601 | null;
 }
 
 /**
@@ -301,13 +338,47 @@ export function knowledgeContextMetadataValidationErrors(
   if ('freshness' in metadata && !isContextFreshness(metadata.freshness)) {
     errors.push(`metadata.freshness must be one of: current, possibly_stale, historical`);
   }
+  if ('memoryKind' in metadata && !isMemoryKind(metadata.memoryKind)) {
+    errors.push(`metadata.memoryKind must be one of: semantic, episodic, procedural`);
+  }
+  if ('reviewStatus' in metadata && !isMemoryReviewStatus(metadata.reviewStatus)) {
+    errors.push(`metadata.reviewStatus must be one of: none, needs_review, conflict, stale, superseded, upgrade_candidate, downgrade_candidate`);
+  }
   if ('sourceRefs' in metadata && !isStringArray(metadata.sourceRefs)) {
     errors.push(`metadata.sourceRefs must be an array of non-empty strings`);
+  }
+  if ('supersedes' in metadata && !isStringArray(metadata.supersedes)) {
+    errors.push(`metadata.supersedes must be an array of non-empty strings`);
+  }
+  if ('hitCount' in metadata && !isNonNegativeInteger(metadata.hitCount)) {
+    errors.push(`metadata.hitCount must be a non-negative integer`);
+  }
+  if ('lastUsedAt' in metadata && !isNullableIso8601String(metadata.lastUsedAt)) {
+    errors.push(`metadata.lastUsedAt must be an ISO-8601 string or null`);
   }
   if ('confidence' in metadata && !isConfidence(metadata.confidence)) {
     errors.push(`metadata.confidence must be a number between 0 and 1`);
   }
   return errors;
+}
+
+export function normalizeMemoryLifecycleMetadata(
+  metadata: Record<string, unknown> | undefined,
+  options: { knowledgeKind?: KnowledgeArtifactKind } = {},
+): NormalizedMemoryLifecycleMetadata {
+  return {
+    memoryKind: isMemoryKind(metadata?.memoryKind)
+      ? metadata.memoryKind
+      : defaultMemoryKindForKnowledgeKind(options.knowledgeKind),
+    reviewStatus: isMemoryReviewStatus(metadata?.reviewStatus)
+      ? metadata.reviewStatus
+      : 'none',
+    supersedes: Array.isArray(metadata?.supersedes)
+      ? normalizeSourceRefs(metadata.supersedes.filter((item): item is string => typeof item === 'string'))
+      : [],
+    hitCount: isNonNegativeInteger(metadata?.hitCount) ? metadata.hitCount : 0,
+    lastUsedAt: isNullableIso8601String(metadata?.lastUsedAt) ? metadata.lastUsedAt : null,
+  };
 }
 
 export function normalizeKnowledgeContextMetadata(
@@ -356,6 +427,33 @@ function normalizeSourceRefs(sourceRefs: readonly string[]): string[] {
 
 function isConfidence(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0;
+}
+
+function isNullableIso8601String(value: unknown): value is string | null {
+  return value === null || (typeof value === 'string' && !Number.isNaN(Date.parse(value)));
+}
+
+function defaultMemoryKindForKnowledgeKind(kind: KnowledgeArtifactKind | undefined): MemoryKind {
+  switch (kind) {
+    case 'pattern':
+    case 'dev_guide':
+    case 'api_doc':
+      return 'procedural';
+    case 'lesson':
+    case 'explore':
+      return 'episodic';
+    case 'requirement':
+    case 'design':
+    case 'architecture':
+    case 'roadmap':
+    case 'decision':
+    default:
+      return 'semantic';
+  }
 }
 
 // ---------------------------------------------------------------------------

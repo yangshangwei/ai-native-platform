@@ -187,13 +187,24 @@ describe('router.recommend()', () => {
         },
       }),
     );
+    storeMod.store.knowledgeArtifacts.insert(
+      fakeKnowledgeArtifact({
+        projectId,
+        kind: 'pattern',
+        entityId: 'PAT-upgrade-export',
+        metadata: {
+          title: 'upgrade export pattern',
+          reviewStatus: 'upgrade_candidate',
+        },
+      }),
+    );
 
     const rec = router.recommend(
       makeInput({
         projectId,
         runType: 'feature',
         title:
-          'implement the stale export design and conflict export requirement with enough detail for standard flow',
+          'implement the stale export design, conflict export requirement, and upgrade export pattern with enough detail for standard flow',
       }),
     );
 

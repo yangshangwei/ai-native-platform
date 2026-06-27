@@ -8,6 +8,7 @@ import {
   isValidKnowledgeSubtype,
   defaultKnowledgeContextMetadataForStatus,
   knowledgeContextMetadataValidationErrors,
+  normalizeMemoryLifecycleMetadata,
   withNormalizedKnowledgeContextMetadata,
   type Artifact,
   type ArtifactKind,
@@ -719,10 +720,13 @@ export function createKnowledgeArtifact(
     subtype: input.subtype ?? null,
     createdAt: ts,
     updatedAt: ts,
-    metadata: withNormalizedKnowledgeContextMetadata(input.metadata, {
-      status,
-      fallbackSourceRefs,
-    }),
+    metadata: {
+      ...withNormalizedKnowledgeContextMetadata(input.metadata, {
+        status,
+        fallbackSourceRefs,
+      }),
+      ...normalizeMemoryLifecycleMetadata(input.metadata, { knowledgeKind: input.kind }),
+    },
   };
   store.knowledgeArtifacts.insert(a);
   return a;
