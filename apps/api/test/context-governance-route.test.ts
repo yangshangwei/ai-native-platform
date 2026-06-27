@@ -2,7 +2,11 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, expect, test } from 'vitest';
-import type { Project } from '@ainp/shared';
+import {
+  STAGE_HANDOFF_SCHEMA_VERSION,
+  type Project,
+  type StageHandoffMetadata,
+} from '@ainp/shared';
 
 process.env.AINP_DB_PATH = join(
   mkdtempSync(join(tmpdir(), 'ainp-context-governance-test-')),
@@ -147,6 +151,59 @@ test('GET /workflow-runs/:id/context exposes manifest, refs, budget, context req
     actor: 'test',
     comment: 'needs rework',
   });
+  const requirementArtifact = engine.createArtifact({
+    workflowRunId: run.id,
+    stepRunId: null,
+    kind: 'requirement_draft',
+    uri: 'mem://requirement.md',
+    size: 20,
+    contentType: 'text/markdown',
+    metadata: { output: 'requirement.md' },
+  });
+  const handoffArtifact = engine.createArtifact({
+    workflowRunId: run.id,
+    stepRunId: null,
+    kind: 'other',
+    uri: 'mem://stage_handoff.requirement.design.md',
+    size: 20,
+    contentType: 'text/markdown',
+    metadata: { schemaVersion: STAGE_HANDOFF_SCHEMA_VERSION, reportKind: 'stage_handoff' },
+  });
+  const stageHandoff: StageHandoffMetadata = {
+    schemaVersion: STAGE_HANDOFF_SCHEMA_VERSION,
+    workflowRunId: run.id,
+    fromStage: 'requirement',
+    toStage: 'design',
+    summary: 'Use confirmed requirement constraints before design.',
+    decisions: ['Reuse HandoffRecord metadata.'],
+    risks: ['Do not let handoff drive gate status.'],
+    openQuestions: [],
+    producedArtifacts: [{
+      key: 'requirement.md',
+      artifactId: requirementArtifact.id,
+      kind: 'requirement_draft',
+      injectionPreference: 'summary',
+    }],
+    createdAt: '2026-06-27T00:00:00.000Z',
+  };
+  const handoffRecord = engine.recordHandoff({
+    workflowRunId: run.id,
+    stepRunId: null,
+    fromRole: 'main',
+    toRole: 'planner',
+    reason: 'Stage semantic handoff from requirement to design.',
+    inputArtifactIds: [requirementArtifact.id],
+    expectedOutput: {
+      schemaVersion: STAGE_HANDOFF_SCHEMA_VERSION,
+      artifactKind: 'other',
+      description: 'Stage handoff summary for design.',
+    },
+    stopCondition: 'Evidence/navigation only; do not drive workflow status.',
+    status: 'completed',
+    adoptionDecision: 'adopted',
+    outputArtifactIds: [handoffArtifact.id],
+    metadata: { stageHandoff },
+  });
 
   const res = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/context`);
   expect(res.status).toBe(200);
@@ -160,6 +217,14 @@ test('GET /workflow-runs/:id/context exposes manifest, refs, budget, context req
       id: string;
       baseContextPackArtifactId: string | null;
       supplementContextPackId: string | null;
+    }>;
+    stageHandoffs: Array<{
+      id: string;
+      artifactId: string | null;
+      fromStage: string;
+      toStage: string;
+      summary: string;
+      producedArtifacts: Array<{ key: string; artifactId: string; injectionPreference: string }>;
     }>;
     metrics: {
       impactCoverage: { numerator: number; denominator: number; value: number };
@@ -214,6 +279,20 @@ test('GET /workflow-runs/:id/context exposes manifest, refs, budget, context req
       id: 'ctxreq_api',
       baseContextPackArtifactId: contextArtifact.id,
       supplementContextPackId: 'ctxpack_supplement',
+    }),
+  ]);
+  expect(body.stageHandoffs).toEqual([
+    expect.objectContaining({
+      id: handoffRecord.id,
+      artifactId: handoffArtifact.id,
+      fromStage: 'requirement',
+      toStage: 'design',
+      summary: 'Use confirmed requirement constraints before design.',
+      producedArtifacts: [expect.objectContaining({
+        key: 'requirement.md',
+        artifactId: requirementArtifact.id,
+        injectionPreference: 'summary',
+      })],
     }),
   ]);
   expect(body.metrics.impactCoverage).toMatchObject({ numerator: 1, denominator: 2, value: 0.5 });

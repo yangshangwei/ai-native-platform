@@ -1,4 +1,10 @@
-import type { Artifact, ContextInclusionMode } from '@ainp/shared';
+import {
+  stageHandoffFromMetadata,
+  type Artifact,
+  type ContextInclusionMode,
+  type HandoffRecord,
+  type StageProducedArtifactRef,
+} from '@ainp/shared';
 import { store, type WorkflowAction } from './store/store';
 import { readArtifactContent } from './artifact-content';
 
@@ -12,6 +18,7 @@ export interface ContextGovernanceReadModel {
   trustLevels: Record<string, number>;
   budgetDecisions: BudgetDecisionSummary[];
   contextRequests: ContextRequestSummary[];
+  stageHandoffs: StageHandoffSummary[];
   metrics: ContextGovernanceMetrics;
 }
 
@@ -87,6 +94,19 @@ export interface ContextRequestSummary {
   createdAt: string;
 }
 
+export interface StageHandoffSummary {
+  id: string;
+  artifactId: string | null;
+  fromStage: string;
+  toStage: string;
+  summary: string;
+  decisions: string[];
+  risks: string[];
+  openQuestions: string[];
+  producedArtifacts: StageProducedArtifactRef[];
+  createdAt: string;
+}
+
 export interface ContextGovernanceMetrics {
   impactCoverage: RatioMetric;
   evidenceTraceability: RatioMetric;
@@ -120,6 +140,7 @@ export function buildContextGovernanceReadModel(workflowRunId: string): ContextG
   const agentResults = store.agentResults.byWorkflow(workflowRunId);
   const gates = store.gateRuns.byWorkflow(workflowRunId);
   const approvals = store.approvals.byWorkflow(workflowRunId);
+  const handoffs = store.handoffs.byWorkflow(workflowRunId);
 
   const contextPacks = [
     ...contextPackSummariesFromArtifacts(artifacts),
@@ -127,6 +148,7 @@ export function buildContextGovernanceReadModel(workflowRunId: string): ContextG
   ];
   const manifest = contextPacks.flatMap((pack) => pack.manifest);
   const contextRequests = contextRequestsFromActions(actions);
+  const stageHandoffs = stageHandoffsFromRecords(handoffs);
 
   return {
     schemaVersion: 'ainp.context_governance.v1',
@@ -138,6 +160,7 @@ export function buildContextGovernanceReadModel(workflowRunId: string): ContextG
     trustLevels: summarizeTrustLevels(manifest),
     budgetDecisions: budgetDecisionsFromManifest(manifest),
     contextRequests,
+    stageHandoffs,
     metrics: {
       impactCoverage: ratio(
         agentTasks.filter((task) => task.prompt.includes('ContextPack:')).length,
@@ -161,6 +184,27 @@ export function buildContextGovernanceReadModel(workflowRunId: string): ContextG
       downstreamReworkSignal: downstreamReworkMetric({ approvals, gates, agentResults }),
     },
   };
+}
+
+function stageHandoffsFromRecords(handoffs: HandoffRecord[]): StageHandoffSummary[] {
+  return handoffs
+    .map((handoff): StageHandoffSummary | null => {
+      const stageHandoff = stageHandoffFromMetadata(handoff.metadata);
+      if (!stageHandoff) return null;
+      return {
+        id: handoff.id,
+        artifactId: handoff.outputArtifactIds[0] ?? null,
+        fromStage: stageHandoff.fromStage,
+        toStage: stageHandoff.toStage,
+        summary: stageHandoff.summary,
+        decisions: stageHandoff.decisions,
+        risks: stageHandoff.risks,
+        openQuestions: stageHandoff.openQuestions,
+        producedArtifacts: stageHandoff.producedArtifacts,
+        createdAt: stageHandoff.createdAt,
+      };
+    })
+    .filter((handoff): handoff is StageHandoffSummary => handoff !== null);
 }
 
 function contextPackSummariesFromArtifacts(artifacts: Artifact[]): ContextPackSummary[] {

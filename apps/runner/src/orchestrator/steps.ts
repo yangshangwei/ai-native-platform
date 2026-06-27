@@ -14,7 +14,9 @@ import type {
   WorkflowStage,
 } from '@ainp/shared';
 import {
+  REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT,
   RUNNER_TOOL_SPECS,
+  STAGE_HANDOFF_SCHEMA_VERSION,
   VERIFIER_AC_MATRIX_SCHEMA_VERSION,
   errorMessage,
   isWorkflowStage,
@@ -41,6 +43,10 @@ import {
   enforceSensitiveChangeCheckpoint,
   postRejectionFeedback,
 } from './approval';
+import {
+  buildRequirementDesignStageHandoff,
+  renderStageHandoffMarkdown,
+} from './stage-handoff';
 import {
   acceptanceCriterionIdsFromInputs,
   persistVerifierMediaArtifacts,
@@ -1033,6 +1039,9 @@ export async function runStage(
     artifactIds,
     `${stage} produced ${artifactIds.length} artifact(s)`,
   );
+  if (stage === 'requirement') {
+    await recordRequirementToDesignStageHandoff(c, step.id, producedArtifactIds, deps);
+  }
   if (stage === 'review') {
     await recordReviewHandoff(c, step.id, agent.sessionId, artifactIds, deps);
   }
@@ -1085,6 +1094,73 @@ export async function runStage(
       throw new Error(`${approverGateId} rejected`);
     }
   }
+}
+
+async function recordRequirementToDesignStageHandoff(
+  c: RunCtx,
+  stepRunId: string,
+  producedArtifactIds: Record<string, string>,
+  deps: StepDeps,
+): Promise<void> {
+  const requirementArtifactId = producedArtifactIds['requirement.md'];
+  const requirementMarkdown = c.inputs['requirement.md'];
+  if (!requirementArtifactId || !requirementMarkdown) return;
+
+  const stageHandoff = buildRequirementDesignStageHandoff({
+    workflowRunId: c.run.id,
+    requirementArtifactId,
+    requirementArtifactKind: 'requirement_draft',
+    requirementMarkdown,
+    createdAt: nowIso(),
+  });
+  const handoffBody = renderStageHandoffMarkdown(stageHandoff);
+  const outDir = join(c.runArtifactsDir, 'stage_handoffs');
+  await mkdir(outDir, { recursive: true });
+  const handoffPath = join(outDir, REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT);
+  await writeFile(handoffPath, handoffBody, 'utf8');
+
+  const handoffArtifact = await deps.api.postArtifact({
+    workflowRunId: c.run.id,
+    stepRunId,
+    kind: 'other',
+    uri: pathToFileUri(handoffPath),
+    size: Buffer.byteLength(handoffBody, 'utf8'),
+    contentType: 'text/markdown',
+    metadata: {
+      schemaVersion: STAGE_HANDOFF_SCHEMA_VERSION,
+      reportKind: 'stage_handoff',
+      fromStage: 'requirement',
+      toStage: 'design',
+      sourceArtifactId: requirementArtifactId,
+      stageHandoff,
+    },
+  });
+
+  c.inputs[REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT] = handoffBody;
+  c.inputArtifactIds[REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT] = handoffArtifact.id;
+  producedArtifactIds[REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT] = handoffArtifact.id;
+
+  await deps.api.recordHandoff({
+    workflowRunId: c.run.id,
+    stepRunId,
+    fromRole: 'main',
+    toRole: 'planner',
+    reason: 'Stage semantic handoff from requirement to design.',
+    inputArtifactIds: [requirementArtifactId],
+    expectedOutput: {
+      schemaVersion: STAGE_HANDOFF_SCHEMA_VERSION,
+      artifactKind: 'other',
+      description: 'Stage handoff summary and artifact references for downstream design.',
+    },
+    stopCondition: 'Use as evidence/navigation only; workflow and gate status remain owned by existing engines.',
+    status: 'completed',
+    adoptionDecision: 'adopted',
+    outputArtifactIds: [handoffArtifact.id],
+    metadata: {
+      stageHandoff,
+      authority: 'evidence_navigation',
+    },
+  });
 }
 
 export interface StageContextCheckpointSnapshot {

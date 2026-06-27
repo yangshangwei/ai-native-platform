@@ -2,7 +2,12 @@ import { describe, expect, test, vi } from 'vitest';
 import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Artifact, StepRun } from '@ainp/shared';
+import {
+  REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT,
+  STAGE_HANDOFF_SCHEMA_VERSION,
+  type Artifact,
+  type StepRun,
+} from '@ainp/shared';
 import {
   restoreRunCtxInputsFromStageCheckpoint,
   runStage,
@@ -85,9 +90,24 @@ describe('runStage (de-closured)', () => {
   test('gate pass + approval approved: posts artifacts, tracks drafts, finishes step', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'runstage-'));
     const draftPath = join(dir, 'requirement.md');
-    await writeFile(draftPath, '# REQ-001\n', 'utf8');
+    const requirementMarkdown = [
+      '---',
+      'doc_type: requirement',
+      'pitch: Keep design grounded in confirmed requirement constraints.',
+      'status: draft',
+      '---',
+      '# REQ-001',
+      '',
+      '## 边界',
+      '- Constraint: preserve existing handoff authority boundaries.',
+      '',
+      '## 风险',
+      '- Handoff evidence must not drive gate status.',
+      '',
+    ].join('\n');
+    await writeFile(draftPath, requirementMarkdown, 'utf8');
     const agent = agentFixture([
-      { name: 'requirement.md', path: draftPath, contentType: 'text/markdown', size: 11 },
+      { name: 'requirement.md', path: draftPath, contentType: 'text/markdown', size: Buffer.byteLength(requirementMarkdown, 'utf8') },
     ]);
     const { deps, raw, calls } = baseDeps({ agent });
     const c = runCtxFixture();
@@ -95,8 +115,12 @@ describe('runStage (de-closured)', () => {
     await runStage(c, 'requirement', 'requirement_draft', 'requirement_gate', deps);
 
     expect(c.ok.value).toBe(true);
-    expect(c.inputs['requirement.md']).toBe('# REQ-001\n');
+    expect(c.inputs['requirement.md']).toBe(requirementMarkdown);
     expect(c.inputArtifactIds['requirement.md']).toBe('art_requirement_draft');
+    expect(c.inputs[REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT]).toContain(
+      '# Stage Handoff: requirement -> design',
+    );
+    expect(c.inputArtifactIds[REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT]).toBe('art_other');
     expect(raw.api.stepCheckpoint).toHaveBeenNthCalledWith(1, expect.objectContaining({
       stage: 'requirement',
       status: 'running',
@@ -113,34 +137,74 @@ describe('runStage (de-closured)', () => {
     expect(raw.api.stepCheckpoint).toHaveBeenNthCalledWith(2, expect.objectContaining({
       stage: 'requirement',
       status: 'passed',
-      outputArtifactIds: ['art_requirement_draft'],
+      outputArtifactIds: expect.arrayContaining(['art_requirement_draft', 'art_other']),
       metadata: expect.objectContaining({
         stageContextPhase: 'finish',
         stageContextFinish: expect.objectContaining({
           phase: 'finish',
           inputArtifactIds: expect.objectContaining({
             'requirement.md': 'art_requirement_draft',
+            [REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT]: 'art_other',
           }),
-          producedArtifactIds: {
+          producedArtifactIds: expect.objectContaining({
             'requirement.md': 'art_requirement_draft',
-          },
+            [REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT]: 'art_other',
+          }),
           contextPackArtifactIds: expect.arrayContaining(['art_context_pack_stage']),
         }),
       }),
     }));
     const finishMetadata = raw.api.stepCheckpoint.mock.calls[1][0].metadata;
     expect(restoreRunCtxInputsFromStageCheckpoint({ metadata: finishMetadata })).toEqual({
-      inputs: expect.objectContaining({ 'requirement.md': '# REQ-001\n' }),
-      inputArtifactIds: expect.objectContaining({ 'requirement.md': 'art_requirement_draft' }),
+      inputs: expect.objectContaining({
+        'requirement.md': requirementMarkdown,
+        [REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT]: expect.stringContaining('Produced Artifacts'),
+      }),
+      inputArtifactIds: expect.objectContaining({
+        'requirement.md': 'art_requirement_draft',
+        [REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT]: 'art_other',
+      }),
     });
     expect(c.draftsToPromote).toHaveLength(1);
     expect(c.draftsToPromote[0]).toMatchObject({
       kind: 'requirement_draft',
-      text: '# REQ-001\n',
+      text: requirementMarkdown,
     });
     expect(raw.api.postArtifact).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'requirement_draft', stepRunId: 'step_stage' }),
     );
+    expect(raw.api.postArtifact).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'other',
+      stepRunId: 'step_stage',
+      metadata: expect.objectContaining({
+        schemaVersion: STAGE_HANDOFF_SCHEMA_VERSION,
+        reportKind: 'stage_handoff',
+        stageHandoff: expect.objectContaining({
+          schemaVersion: STAGE_HANDOFF_SCHEMA_VERSION,
+          fromStage: 'requirement',
+          toStage: 'design',
+          producedArtifacts: [expect.objectContaining({
+            key: 'requirement.md',
+            artifactId: 'art_requirement_draft',
+            injectionPreference: 'summary',
+          })],
+        }),
+      }),
+    }));
+    expect(raw.api.recordHandoff).toHaveBeenCalledWith(expect.objectContaining({
+      fromRole: 'main',
+      toRole: 'planner',
+      inputArtifactIds: ['art_requirement_draft'],
+      outputArtifactIds: ['art_other'],
+      expectedOutput: expect.objectContaining({
+        schemaVersion: STAGE_HANDOFF_SCHEMA_VERSION,
+      }),
+      metadata: expect.objectContaining({
+        stageHandoff: expect.objectContaining({
+          schemaVersion: STAGE_HANDOFF_SCHEMA_VERSION,
+        }),
+      }),
+    }));
     expect(calls).toEqual([
       'stepStarted',
       'finishAgentSuccess',
@@ -150,6 +214,33 @@ describe('runStage (de-closured)', () => {
       'awaitApproval:requirement_gate',
     ]);
     expect(raw.postRejectionFeedback).not.toHaveBeenCalled();
+  });
+
+  test('design stage receives requirement handoff input before invocation', async () => {
+    const { deps, raw } = baseDeps();
+    const c = runCtxFixture({
+      inputs: {
+        user_request: 'Orchestrator de-closure test run',
+        'requirement.md': '# REQ-001\n',
+        [REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT]: '# Stage Handoff: requirement -> design\n',
+      },
+      inputArtifactIds: {
+        'requirement.md': 'art_requirement_draft',
+        [REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT]: 'art_stage_handoff',
+      },
+    });
+
+    await runStage(c, 'design', 'design_doc', 'design_gate', deps);
+
+    expect(raw.invokeSkill).toHaveBeenCalledWith(
+      c,
+      expect.anything(),
+      expect.objectContaining({
+        inputs: expect.objectContaining({
+          [REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT]: '# Stage Handoff: requirement -> design\n',
+        }),
+      }),
+    );
   });
 
   test('rule gate fail: marks run failed, throws, never reaches human approval', async () => {

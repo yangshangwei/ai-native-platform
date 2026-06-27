@@ -1,3 +1,4 @@
+import { REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT } from '@ainp/shared';
 import type { SkillSpec, ProjectAgentBackendKind, ConfigKey } from '@ainp/shared';
 import { getConfig } from '../config-client';
 
@@ -203,8 +204,20 @@ The goal is to help later stages know where to look, not decide how to change th
         required: false,
         description: 'context pack',
       },
+      {
+        name: REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT,
+        kind: 'artifact',
+        required: false,
+        description: 'stage handoff summary and requirement artifact reference',
+      },
     ],
     inputPolicies: [
+      {
+        artifactKey: REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT,
+        mode: 'full',
+        maxTokens: 900,
+        required: false,
+      },
       { artifactKey: 'requirement.md', mode: 'summary', maxTokens: 900, required: true },
       { artifactKey: 'context_pack.md', mode: 'summary', maxTokens: 700, required: false },
     ],

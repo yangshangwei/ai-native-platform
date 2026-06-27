@@ -31,6 +31,10 @@
   - `ContextRequest`
   - `InputInjectionMode = 'full' | 'summary' | 'reference' | 'omit'`
   - `SkillInputInjectionPolicy`
+  - `StageHandoffMetadata` with
+    `schemaVersion='ainp.stage_handoff.v1'`, `fromStage`, `toStage`,
+    `summary`, `decisions`, `risks`, `openQuestions`, `producedArtifacts`,
+    and `createdAt`
 - Shared memory lifecycle metadata:
   - `MemoryKind = 'semantic' | 'episodic' | 'procedural'`
   - `MemoryReviewStatus = 'none' | 'needs_review' | 'conflict' | 'stale' | 'superseded' | 'upgrade_candidate' | 'downgrade_candidate'`
@@ -111,6 +115,19 @@
   "why the agent knew this". It must be assembled from persisted artifacts,
   workflow actions, agent task prompt audits, gates, approvals, and agent
   results; it must not invent missing context or call an LLM.
+- P4 stage handoff records use existing `HandoffRecord.metadata.stageHandoff`
+  plus an optional per-run `other` artifact for human-readable Markdown. The
+  handoff is evidence/navigation only: it must not set workflow status, gate
+  status, approval state, or replace the source artifact it summarizes.
+- The MVP stage handoff path is `requirement -> design`. After
+  `requirement.md` is persisted, the runner records a
+  `StageHandoffMetadata` payload and exposes a compact input named
+  `stage_handoff.requirement.design.md` before the design agent invocation.
+  The original `requirement.md` artifact id must remain present in
+  `producedArtifacts` and `RunCtx.inputArtifactIds`.
+- `GET /workflow-runs/:id/context` must expose valid stage handoffs from
+  persisted handoff metadata as `stageHandoffs`. Malformed or unknown
+  `metadata.stageHandoff` payloads are ignored rather than coerced.
 - Phase 6 metrics are deterministic proxies:
   - impact coverage = agent tasks with ContextPack prompt audit / all agent tasks
   - evidence traceability = manifest items with sourceRefs / all manifest items
@@ -183,6 +200,10 @@
 - Good: a `context_pack` artifact has `metadata.contextSelection.selected[]` explaining why each section was selected.
 - Good: a design-stage prompt renders `requirement.md` as summary/reference
   with `artifact://requirement.md/<id>` instead of injecting the full body.
+- Good: a design-stage prompt includes
+  `stage_handoff.requirement.design.md` with summary, decisions, risks, open
+  questions, and `artifact://requirement.md/<id>` reference, while
+  `requirement.md` remains available as the source artifact.
 - Good: a stage finish checkpoint can restore both
   `RunCtx.inputs['requirement.md']` and
   `RunCtx.inputArtifactIds['requirement.md']`.
@@ -238,6 +259,11 @@
 - API/governance tests cover `/workflow-runs/:id/context` manifest, sourceRefs,
   trust levels, budget decisions, context_request history, and deterministic
   metric formulas.
+- API/governance tests cover `stageHandoffs` parsed from
+  `HandoffRecord.metadata.stageHandoff`, including produced artifact refs.
+- Runner stage tests cover `requirement -> design` handoff creation,
+  persistence as handoff metadata/artifact evidence, and design-stage
+  consumption before invocation.
 - API/governance tests cover artifact-sourced context pack `role`,
   `invocationId`, `retryIndex`, and context request
   `baseContextPackArtifactId` fields.

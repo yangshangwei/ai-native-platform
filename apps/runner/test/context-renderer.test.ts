@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'vitest';
+import { REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT } from '@ainp/shared';
 import type { ContextPack, SkillSpec } from '@ainp/shared';
 import {
   PLATFORM_TRUST_BOUNDARY,
   renderAgentPrompt,
   renderCombinedAgentPrompt,
 } from '../src/context/renderer';
+import { SKILLS } from '../src/skills';
 
 describe('provider-neutral context renderer', () => {
   test('renders the ContextPack as the shared 8-layer structure with trust metadata', () => {
@@ -116,6 +118,60 @@ describe('provider-neutral context renderer', () => {
     expect(rendered.userPrompt).toContain('INPUT INJECTION AUDIT:');
     expect(rendered.userPrompt).toContain('- requirement.md: mode=summary; requested=summary');
     expect(rendered.userPrompt).toContain('sourceArtifactId=art_req');
+  });
+
+  test('design skill renders stage handoff before raw requirement body', () => {
+    const designSkill = SKILLS.find((skill) => skill.stage === 'design');
+    expect(designSkill).toBeDefined();
+    const handoff = [
+      '# Stage Handoff: requirement -> design',
+      '',
+      '## Summary',
+      'Use confirmed requirement constraints before design.',
+      '',
+      '## Produced Artifacts',
+      '- requirement.md: artifact://requirement.md/art_req (summary; kind=requirement_draft)',
+      '',
+    ].join('\n');
+    const requirement = [
+      'Requirement brief.',
+      'x'.repeat(5_000),
+      'FULL_REQUIREMENT_BODY_SENTINEL_SHOULD_NOT_RENDER',
+    ].join('\n');
+
+    const rendered = renderAgentPrompt({
+      skill: designSkill!,
+      workflowRunId: 'run_ctx',
+      workspacePath: '/tmp/workspace',
+      artifactsDir: '/tmp/artifacts',
+      branch: 'ai/run',
+      title: 'Draft design',
+      inputs: {
+        user_request: 'Draft design',
+        [REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT]: handoff,
+        'requirement.md': requirement,
+      },
+      inputArtifactIds: {
+        [REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT]: 'art_handoff',
+        'requirement.md': 'art_req',
+      },
+      mode: 'produce_file',
+      targetPath: '/tmp/artifacts/design.md',
+      outputName: 'design.md',
+    });
+
+    expect(rendered.userPrompt).toContain(`--- ${REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT} ---`);
+    expect(rendered.userPrompt).toContain('Use confirmed requirement constraints before design.');
+    expect(rendered.userPrompt).toContain(
+      'artifact://requirement.md/art_req (summary; kind=requirement_draft)',
+    );
+    expect(rendered.userPrompt).toContain('--- requirement.md (summary) ---');
+    expect(rendered.userPrompt).toContain('Source reference: artifact://requirement.md/art_req');
+    expect(rendered.userPrompt).not.toContain('FULL_REQUIREMENT_BODY_SENTINEL_SHOULD_NOT_RENDER');
+    expect(rendered.userPrompt).toContain(
+      `- ${REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT}: mode=full; requested=full`,
+    );
+    expect(rendered.userPrompt).toContain('sourceArtifactId=art_handoff');
   });
 
   test('downgrades optional over-budget references to omit but preserves required references', () => {

@@ -3,10 +3,15 @@ import {
   HANDOFF_ADOPTION_DECISIONS,
   HANDOFF_ROLES,
   HANDOFF_STATUSES,
+  REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT,
+  STAGE_HANDOFF_SCHEMA_VERSION,
   isHandoffAdoptionDecision,
   isHandoffRole,
   isHandoffStatus,
+  isStageHandoffMetadata,
+  stageHandoffFromMetadata,
   type HandoffRecord,
+  type StageHandoffMetadata,
 } from '../src';
 
 test('Handoff shared contract enumerates bounded lifecycle fields', () => {
@@ -52,4 +57,34 @@ test('Handoff record links parent and child AgentSessions without owning gate st
   expect(record.childSessionId).toBe('ags_child');
   expect(record.adoptionDecision).toBe('needs_review');
   expect(record.metadata.gateAuthority).toBe('gate_engine');
+});
+
+test('Stage handoff metadata is typed but remains handoff evidence metadata', () => {
+  const stageHandoff: StageHandoffMetadata = {
+    schemaVersion: STAGE_HANDOFF_SCHEMA_VERSION,
+    workflowRunId: 'run_1',
+    fromStage: 'requirement',
+    toStage: 'design',
+    summary: 'Users need design to start from confirmed requirement constraints.',
+    decisions: ['Use existing HandoffRecord metadata storage.'],
+    risks: ['Do not treat handoff as workflow status.'],
+    openQuestions: [],
+    producedArtifacts: [{
+      key: 'requirement.md',
+      artifactId: 'art_requirement',
+      kind: 'requirement_draft',
+      injectionPreference: 'summary',
+    }],
+    createdAt: '2026-06-27T00:00:00.000Z',
+  };
+
+  expect(REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT).toBe('stage_handoff.requirement.design.md');
+  expect(isStageHandoffMetadata(stageHandoff)).toBe(true);
+  expect(stageHandoffFromMetadata({ stageHandoff })).toEqual(stageHandoff);
+  expect(isStageHandoffMetadata({
+    ...stageHandoff,
+    producedArtifacts: [{ ...stageHandoff.producedArtifacts[0]!, injectionPreference: 'omit' }],
+  })).toBe(false);
+  expect(stageHandoffFromMetadata({ stageHandoff: { ...stageHandoff, fromStage: 'unknown' } }))
+    .toBeNull();
 });
