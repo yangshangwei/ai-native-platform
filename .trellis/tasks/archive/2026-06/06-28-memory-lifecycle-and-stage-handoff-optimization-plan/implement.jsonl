@@ -1,0 +1,23 @@
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "Shared backend spec index for cross-package contract files that govern ContextPack, memory metadata, handoff, and evidence protocols."}
+{"file": ".trellis/spec/shared/backend/context-injection-protocol.md", "reason": "Canonical ContextPack, memory lifecycle, review-signal, stage handoff, selection, audit, and governance contract for this task."}
+{"file": ".trellis/spec/shared/backend/evidence-verifier-protocol.md", "reason": "Evidence-first reporting and gate constraints that memory review, handoff, and completion-report work must preserve."}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API backend spec index for database, route, and state-writer constraints."}
+{"file": ".trellis/spec/api/backend/database.md", "reason": "SQLite migration and connection lifecycle rules for adding durable memory review queue persistence."}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "API quality rules for workflow-engine/store boundaries, trust-boundary validation, transactions, and tests."}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "Runner backend spec index for orchestration and ContextPack execution constraints."}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "Runner quality rules for orchestrator hot paths, test placement, idempotency, and subprocess boundaries."}
+{"file": ".trellis/spec/runner/backend/flow-registry.md", "reason": "Flow/stage dispatch contract needed when generalizing stage handoff without breaking current flow semantics."}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Web frontend spec index for governance polish and projection work."}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Task detail Context Flow and diagnostic panel contracts that apply to memory lifecycle and handoff governance UI."}
+{"file": "docs/2026-06-27-context-management-architecture.md", "reason": "Current code architecture for ContextPack construction, injection, governance, safety boundaries, and known limitations."}
+{"file": "docs/2026-06-27-context-management-optimization-requirements.md", "reason": "Context management requirements that define durable context snapshots, checkpointing, input policies, and explicit handoffs."}
+{"file": "docs/2026-06-27-context-management-optimization-design.md", "reason": "Design for invocation snapshots, stage checkpoints, stage handoff, and injection policy layering."}
+{"file": "docs/2026-06-27-context-management-optimization-tasks.md", "reason": "Prior context-management task sequencing and current completed/pending P1-P8 boundary."}
+{"file": "docs/2026-06-27-context-management-p4-stage-handoff-requirements.md", "reason": "Stage handoff MVP requirements and non-goals that the generalized handoff work should extend."}
+{"file": "docs/2026-06-27-context-management-p4-stage-handoff-design.md", "reason": "Existing StageHandoffMetadata storage, extraction, consumption, and governance design."}
+{"file": "docs/2026-06-27-context-management-p4-stage-handoff-tasks.md", "reason": "Detailed handoff milestones useful for extending requirement-design into design-implementation and implementation-review."}
+{"file": "docs/2026-06-27-agent-orchestration-and-harness-improvement-plan.md", "reason": "Agent harness roadmap explaining memory lifecycle, review queue, bounded handoff, eval, and non-negotiable runtime invariants."}
+{"file": "docs/2026-06-27-agent-runtime-requirements.md", "reason": "Agent runtime requirements for memory lifecycle, bounded handoff, eval, and observability."}
+{"file": "docs/2026-06-27-agent-runtime-architecture-design.md", "reason": "Target architecture for memory lifecycle layering over KnowledgeArtifact metadata and API/Runner/Web boundaries."}
+{"file": "docs/2026-06-27-agent-runtime-development-tasks.md", "reason": "Epic D memory lifecycle and Epic E handoff implementation decomposition with red/green expectations."}
+{"file": "docs/2026-06-27-agent-runtime-red-green-test-plan.md", "reason": "Red/yellow/green test matrix for memory lifecycle, handoff, evidence, and eval behavior."}

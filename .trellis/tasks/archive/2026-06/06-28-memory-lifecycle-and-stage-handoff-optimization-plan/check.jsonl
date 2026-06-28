@@ -1,0 +1,13 @@
+{"file": ".trellis/spec/shared/backend/context-injection-protocol.md", "reason": "Primary check contract for memory lifecycle selection, ContextPack audit, review signals, stage handoff, and governance behavior."}
+{"file": ".trellis/spec/shared/backend/evidence-verifier-protocol.md", "reason": "Verification must preserve evidence-first gates and completion-report sidecar behavior."}
+{"file": ".trellis/spec/api/backend/database.md", "reason": "Check migrations, takeover probes, DB initialization, and no import-time IO for new review queue persistence."}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "Check API trust-boundary validation, workflow-engine/store state-writer boundaries, transactions, and route test placement."}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "Check runner orchestrator hot-path changes, idempotency, test placement, and no forbidden subprocess/state shortcuts."}
+{"file": ".trellis/spec/runner/backend/flow-registry.md", "reason": "Check generalized stage handoff keeps flow/stage semantics and does not become workflow control flow."}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Check Web governance polish stays in existing task-detail/context-flow projection surfaces and remains collapsed/read-only where required."}
+{"file": "docs/2026-06-27-context-management-architecture.md", "reason": "Check implementation claims against current ContextPack/governance architecture and known limitations."}
+{"file": "docs/2026-06-27-context-management-optimization-requirements.md", "reason": "Check context persistence, checkpoint, injection policy, and handoff requirements are preserved."}
+{"file": "docs/2026-06-27-context-management-p4-stage-handoff-requirements.md", "reason": "Check generalized stage handoff extends the existing MVP while preserving non-goals and evidence-only semantics."}
+{"file": "docs/2026-06-27-agent-runtime-requirements.md", "reason": "Check memory lifecycle and bounded handoff requirements against the broader runtime goals."}
+{"file": "docs/2026-06-27-agent-runtime-development-tasks.md", "reason": "Check implementation slices preserve Epic D/E decomposition and minimum red/green coverage."}
+{"file": "docs/2026-06-27-agent-runtime-red-green-test-plan.md", "reason": "Check red/yellow/green coverage for stale/conflict/current memory, handoff, evidence, and eval behavior."}
