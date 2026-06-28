@@ -365,3 +365,36 @@ Captured Post-MVP planning docs, implemented deterministic branch fan-out schedu
 ### Next Steps
 
 - None - task complete
+
+
+## Session 63: Memory lifecycle contract
+
+**Date**: 2026-06-28
+**Task**: Memory lifecycle contract
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Implemented and verified PR1 memory lifecycle metadata contract with shared validation, API normalization, lifecycle-preserving status transitions, and full isolated E2E verification.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `65b31b2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
