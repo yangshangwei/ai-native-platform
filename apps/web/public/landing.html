@@ -6,7 +6,7 @@
     <title>AI Native Platform · 可验证的 AI 软件交付工作台</title>
     <meta
       name="description"
-      content="从一句话需求到验收报告的闭环。九阶段流程、真实构建测试、Gate 把关、Completion Report —— AI 交付，可被证明。"
+      content="从一句话需求到验收报告的闭环。标准功能流、真实构建测试、Gate 把关、Completion Report —— AI 交付，可被证明。"
     />
     <link rel="stylesheet" href="/design-tokens.css" />
     <link rel="stylesheet" href="/landing.css" />
@@ -47,7 +47,7 @@
             <span class="eyebrow">AI 软件交付工作台 · MVP</span>
             <h1>一句话需求，到<span class="accent">可被证明</span>的交付。</h1>
             <p class="hero-lede">
-              AI Native Platform 把软件交付收敛成一条九阶段闭环：需求 → 设计 → AI 开发 →
+              AI Native Platform 把软件交付收敛成可审计的标准功能流：需求 → 设计 → AI 开发 →
               本地构建测试 → 验收 → 报告 → 知识沉淀。Agent 负责执行，<strong>但不能自己宣布通过</strong>——
               每一步都有 Gate 把关，测试来自真实 <code>mvn</code> 命令，每次交付都生成 Completion Report。
             </p>
@@ -56,7 +56,7 @@
               <a class="btn btn-ghost btn-lg" href="#how">看它怎么工作 →</a>
             </div>
             <div class="hero-proof">
-              <div class="proof-item"><strong>9</strong><span>阶段闭环</span></div>
+              <div class="proof-item"><strong>8</strong><span>标准功能阶段</span></div>
               <div class="proof-item"><strong>0</strong><span>Agent 自报状态</span></div>
               <div class="proof-item"><strong>100%</strong><span>真实命令证据</span></div>
             </div>
@@ -105,23 +105,22 @@
         </div>
       </section>
 
-      <!-- ============ How it works · 9-stage pipeline ============ -->
+      <!-- ============ How it works · feature.standard pipeline ============ -->
       <section class="band band-alt" id="how">
         <div class="section-inner">
-          <h2 class="reveal">九阶段闭环，每步都有把关</h2>
+          <h2 class="reveal">标准功能流，每步都有把关</h2>
           <p class="section-lede reveal" data-delay="1">
             一条流水线串起从需求到知识沉淀的全过程。绿色阶段产出 Artifact，灰色菱形是必须通过的 Gate。
           </p>
           <div class="pipeline" role="list">
-            <div class="stage reveal" role="listitem"><span class="stage-idx">1</span><strong>init</strong><small>项目接入</small></div>
-            <div class="stage reveal" data-delay="1" role="listitem"><span class="stage-idx">2</span><strong>context_pack</strong><small>上下文打包</small></div>
-            <div class="stage reveal" data-delay="2" role="listitem"><span class="stage-idx">3</span><strong>requirement</strong><small>需求草稿 + Gate</small></div>
-            <div class="stage reveal" data-delay="3" role="listitem"><span class="stage-idx">4</span><strong>design</strong><small>设计 + 人工批准</small></div>
-            <div class="stage reveal" data-delay="4" role="listitem"><span class="stage-idx">5</span><strong>implementation</strong><small>AI 开发 + Diff Gate</small></div>
-            <div class="stage stage-hot reveal" data-delay="5" role="listitem"><span class="stage-idx">6</span><strong>build_test</strong><small>真实 mvn 编译测试</small></div>
-            <div class="stage reveal" data-delay="6" role="listitem"><span class="stage-idx">7</span><strong>review</strong><small>验收 Gate</small></div>
-            <div class="stage reveal" data-delay="7" role="listitem"><span class="stage-idx">8</span><strong>completion</strong><small>Completion Report</small></div>
-            <div class="stage reveal" data-delay="8" role="listitem"><span class="stage-idx">9</span><strong>knowledge</strong><small>知识候选入库</small></div>
+            <div class="stage reveal" role="listitem"><span class="stage-idx">1</span><strong>context_pack</strong><small>上下文打包</small></div>
+            <div class="stage reveal" data-delay="1" role="listitem"><span class="stage-idx">2</span><strong>requirement</strong><small>需求草稿 + Gate</small></div>
+            <div class="stage reveal" data-delay="2" role="listitem"><span class="stage-idx">3</span><strong>design</strong><small>设计 + 人工批准</small></div>
+            <div class="stage reveal" data-delay="3" role="listitem"><span class="stage-idx">4</span><strong>implementation</strong><small>AI 开发 + Diff Gate</small></div>
+            <div class="stage stage-hot reveal" data-delay="4" role="listitem"><span class="stage-idx">5</span><strong>build_test</strong><small>真实 mvn 编译测试</small></div>
+            <div class="stage reveal" data-delay="5" role="listitem"><span class="stage-idx">6</span><strong>review</strong><small>验收 Gate</small></div>
+            <div class="stage reveal" data-delay="6" role="listitem"><span class="stage-idx">7</span><strong>completion</strong><small>Completion Report</small></div>
+            <div class="stage reveal" data-delay="7" role="listitem"><span class="stage-idx">8</span><strong>knowledge</strong><small>知识候选入库</small></div>
           </div>
           <p class="pipeline-note reveal">
             所有产物（Artifact、CommandRun、BuildRun/TestRun、GateRun、Approval、AuditLog）持久化到 SQLite，

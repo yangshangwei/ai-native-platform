@@ -1,0 +1,3 @@
+{"file":".trellis/spec/api/backend/smart-router.md","reason":"Defines smart-router behavior, skip rules, and relevantKnowledge contract."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Defines freshness and review status semantics for usable context knowledge."}
+{"file":".trellis/spec/api/backend/build-commands.md","reason":"Lists relevant backend validation commands for targeted verification."}

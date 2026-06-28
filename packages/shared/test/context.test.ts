@@ -307,6 +307,13 @@ test('memory lifecycle metadata normalizer is additive and safe for legacy rows'
   });
 
   expect(normalizeMemoryLifecycleMetadata({
+    reviewStatus: 'Needs Review',
+  }, { knowledgeKind: 'lesson' }).reviewStatus).toBe('needs_review');
+  expect(normalizeMemoryLifecycleMetadata({
+    reviewStatus: 'Conflict',
+  }, { knowledgeKind: 'lesson' }).reviewStatus).toBe('conflict');
+
+  expect(normalizeMemoryLifecycleMetadata({
     memoryScope: 'organization',
     memoryStatus: 'active',
     decayPolicy: 'calendar',

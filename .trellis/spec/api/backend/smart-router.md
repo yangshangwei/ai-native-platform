@@ -32,15 +32,21 @@
 **R11 — startStage selection** (only meaningful for `feature.standard`):
 
 1. If `flowId !== 'feature.standard'` → `startStage = null` (rule id: `startStage.short_flow_no_skip`). Other flows are short and run head-to-tail.
-2. Else if any accepted KnowledgeArtifact with `kind='design'` matches title keywords → `startStage = 'implementation'` (rule id: `startStage.has_accepted_design`).
-3. Else if any accepted KnowledgeArtifact with `kind='requirement'` matches title keywords → `startStage = 'design'` (rule id: `startStage.has_accepted_requirement`).
+2. Else if any usable accepted KnowledgeArtifact with `kind='design'` matches title keywords → `startStage = 'implementation'` (rule id: `startStage.has_accepted_design`).
+3. Else if any usable accepted KnowledgeArtifact with `kind='requirement'` matches title keywords → `startStage = 'design'` (rule id: `startStage.has_accepted_requirement`).
 4. Else → `startStage = null` (rule id: `startStage.no_skip`).
 
 Keyword matching: tokenize title by `[\s\-_/.,;:!?()[]{}'"`+]+` separator, keep words ≥4 chars; check if any token is a substring of `entityId + metadata.json` (lowercased) of the candidate artifact.
 
+Usable accepted knowledge means `status === 'accepted'`, context freshness is
+not `historical`, normalized memory lifecycle status is `current`, and
+normalized memory review status is `none`. Router planning must ignore
+accepted knowledge marked stale, conflicted, review-required, superseded,
+upgrade/downgrade candidate, rejected, or historical.
+
 **R12 — relevantKnowledge selection**:
 
-- Source: `store.knowledgeArtifacts.byProject(projectId).filter(a => a.status === 'accepted')`.
+- Source: `store.knowledgeArtifacts.byProject(projectId).filter(isUsableAcceptedKnowledge)`, using the same usable accepted knowledge gate as R11.
 - Score each candidate by count of overlapping keywords (same tokenizer as R11) between the title words and the candidate's `entityId + metadata.json` haystack.
 - Sort descending by score; return top 5 (`KNOWLEDGE_LIMIT = 5`) with `score > 0`. Empty array if no matches.
 

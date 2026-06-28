@@ -177,6 +177,12 @@ export function isMemoryReviewStatus(value: unknown): value is MemoryReviewStatu
     && (MEMORY_REVIEW_STATUSES as readonly string[]).includes(value);
 }
 
+function normalizeMemoryReviewStatus(value: unknown): MemoryReviewStatus | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase().replace(/[\s-]+/g, '_');
+  return isMemoryReviewStatus(normalized) ? normalized : null;
+}
+
 export function isMemoryScope(value: unknown): value is MemoryScope {
   return typeof value === 'string'
     && (MEMORY_SCOPES as readonly string[]).includes(value);
@@ -431,13 +437,12 @@ export function normalizeMemoryLifecycleMetadata(
   metadata: Record<string, unknown> | undefined,
   options: { knowledgeKind?: KnowledgeArtifactKind; status?: KnowledgeArtifactStatus } = {},
 ): NormalizedMemoryLifecycleMetadata {
+  const reviewStatus = normalizeMemoryReviewStatus(metadata?.reviewStatus);
   return {
     memoryKind: isMemoryKind(metadata?.memoryKind)
       ? metadata.memoryKind
       : defaultMemoryKindForKnowledgeKind(options.knowledgeKind),
-    reviewStatus: isMemoryReviewStatus(metadata?.reviewStatus)
-      ? metadata.reviewStatus
-      : 'none',
+    reviewStatus: reviewStatus ?? 'none',
     memoryScope: isMemoryScope(metadata?.memoryScope)
       ? metadata.memoryScope
       : defaultMemoryScope(metadata, options),

@@ -7,7 +7,8 @@
  * approval to /approvals so the orchestrator can move on.
  *
  * Asserts at the end:
- *   - all 9 stages reached (init through knowledge)
+ *   - feature.standard reaches the required agent/build/review stages
+ *     (`init` is only a run status placeholder, not a dispatch stage)
  *   - 4 human gates approved
  *   - rule-based gates (requirement, design, diff_scope, sensitive_change,
  *     compile, test) recorded with status=pass

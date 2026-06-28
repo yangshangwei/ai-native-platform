@@ -6,7 +6,11 @@ import type {
   RouterRecommendation,
   WorkflowStage,
 } from '@ainp/shared';
-import { FLOW_REGISTRY, normalizeKnowledgeContextMetadata } from '@ainp/shared';
+import {
+  FLOW_REGISTRY,
+  normalizeKnowledgeContextMetadata,
+  normalizeMemoryLifecycleMetadata,
+} from '@ainp/shared';
 import { store } from './store/store';
 
 // ---------------------------------------------------------------------------
@@ -213,24 +217,9 @@ function isUsableAcceptedKnowledge(artifact: KnowledgeArtifact): boolean {
     status: artifact.status,
   });
   if (metadata.freshness === 'historical') return false;
-  const reviewStatus = reviewStatusForMetadata(artifact.metadata);
-  return reviewStatus === null;
-}
-
-function metadataString(metadata: Record<string, unknown>, key: string): string | null {
-  const value = metadata[key];
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
-}
-
-function reviewStatusForMetadata(metadata: Record<string, unknown>): string | null {
-  return normalizeReviewStatus(
-    metadataString(metadata, 'reviewStatus')
-      ?? metadataString(metadata, 'knowledgeReviewStatus')
-      ?? metadataString(metadata, 'calibrationStatus'),
-  );
-}
-
-function normalizeReviewStatus(value: string | null): string | null {
-  const normalized = value?.trim().toLowerCase().replace(/[\s-]+/g, '_') || null;
-  return normalized === 'none' ? null : normalized;
+  const lifecycle = normalizeMemoryLifecycleMetadata(artifact.metadata, {
+    knowledgeKind: artifact.kind,
+    status: artifact.status,
+  });
+  return lifecycle.memoryStatus === 'current' && lifecycle.reviewStatus === 'none';
 }

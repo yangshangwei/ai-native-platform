@@ -1,6 +1,8 @@
 # Docs 索引：CodeStable 与 AI Native 云开发平台讨论沉淀
 
-本文是 `docs/` 目录的入口索引。当前文档主要来自同一轮连续讨论，记录的是：如何借鉴 CodeStable 的 skill 思想，设计一个 Web 化、配置化、可审计的 AI Native 软件生命周期平台。
+本文是 `docs/` 目录的入口索引。当前文档主要来自多轮连续讨论，记录的是：如何借鉴 CodeStable 的 skill 思想，设计一个 Web 化、配置化、可审计的 AI Native 软件生命周期平台。
+
+如果要理解**当前代码事实**，优先读根目录 `README.md`、本索引的 `0.3` 小节，以及 `user/requirement-workflow.md`。2026-05 的长文多为历史设计/交接快照，其中可能保留当时的“9 stage / V1”措辞；遇到冲突时，以 2026-06 当前架构文档和代码为准。
 
 ## 0. 总入口
 
@@ -25,6 +27,8 @@
   - **上下文管理架构说明**。以 2026-06-27 代码事实回答“上下文管理是如何设计的”，覆盖 ContextPack / ContextManifest / ContextRequest 核心对象、Runner 构建与注入流水线、增量补充、API 治理读模型、Web 可观测面、安全边界和当前限制。
 - `2026-06-27-agent-orchestration-and-harness-improvement-plan.md`
   - **Agent 编排与 Harness 改进方案**。分析当前 Runner/AgentBackend/Context/Knowledge/Gate/Eval 实现，对照 OpenAI Agents SDK、LangGraph、SWE-agent/OpenHands/Codex harness、RAG memory 和 typed tool registry 等主流模式，提出 Trajectory Ledger、Typed Tool Registry、Durable Step Runtime、Memory Lifecycle、Context Retry Loop、Bounded Handoff、Eval Harness 扩展的落地路线和任务拆解。
+- `2026-06-28-harness-engineering-practice.md`
+  - **Harness 工程实践核验**。以当前代码为准梳理控制平面/执行平面/证据平面、AgentBackend CLI 驯化、Context Injection、Graph Runtime、ToolInvocation、Handoff 和 Eval Harness 的实际落地位置，并对照 06-27 改进方案说明哪些能力已落地、哪些仍是预留。
 - `2026-06-27-agent-runtime-requirements.md`
   - **Agent Runtime 与 Harness 升级需求文档**。从用户价值、范围、需求、成功指标和风险角度，把 Agent 编排改进方案拆成可验收 PRD。
 - `2026-06-27-agent-runtime-architecture-design.md`
@@ -34,9 +38,9 @@
 - `2026-06-27-agent-runtime-red-green-test-plan.md`
   - **Agent Runtime 与 Harness 红黄绿测试计划**。定义必须失败的红灯负例、允许降级的黄灯路径和必须通过的绿灯正例，覆盖 trajectory、context retry、tool、memory、handoff、eval 和 evidence。
 
-## 0.4 2026-05-06 / 2026-05-09 平台核心梳理
+## 0.4 2026-05-06 / 2026-05-09 平台核心梳理（历史背景）
 
-基于 V1 已落地 + V2 4 条 Flow / Smart Router / 知识实体化的最新代码现状，以及后续项目生命周期上下文注入设计，重新整理的端到端业务流程、技术方案与 Context Injection Layer：
+这些文档基于当时的 V1/V2 代码和后续项目生命周期上下文注入设计，整理端到端业务流程、技术方案与 Context Injection Layer。它们适合理解演进背景；具体 endpoint、stage 计数、Runner 启动方式和 harness 落地状态以 `0.3` 的 2026-06 文档为准。
 
 - `2026-05-06-end-to-end-business-flow.md`
   - **业务流程梳理**。覆盖项目接入、Coordinator 分诊、Smart Router、四种 Flow 的 stage 详述、人工 Gate 触发点、报告与知识沉淀、用户视角时间线。建议作为新人理解全流程的第一入口。
@@ -47,7 +51,7 @@
 - `2026-05-06-ui-end-to-end-operations.md`
   - **UI 端到端操作流程梳理**。基于 `apps/web/src/main.ts` 真实代码，覆盖 6 个顶层页面（工作台/项目接入/新建任务/报告/知识库/配置）+ 任务详情页；详述 5 个人工检查点的 UI 入口、Smart Router 预览、Agent Stream SSE 面板、完整 4 分钟 fastforward 鼠标键盘时间线、新人「最少必学」6 件事。面向用户使用 + 客户演示 + UI/UX 评审。
 - `2026-05-06-architecture-pillars-detail.md`
-  - **架构支柱代码级详解**。把 4 Flow / 9 Stage / 10 类 KnowledgeArtifact / 唯一写者契约 / 真命令证据 / 5 个人工 Gate / SSE 流式这 7 块从代码事实出发逐个展开，每条都带 `packages/shared` 与 `apps/api` 的文件路径和行号锚点（FLOW_REGISTRY、ArtifactKind 二族、KNOWLEDGE_SUBTYPES、Workflow Engine 写入函数族、Gate Engine 各 gate 规则、Promote 6 步事务、Agent Stream Bus、SSE 不变量）。文末附速查索引（一页定位代码）。面向新人源码 onboarding + 架构评审。
+  - **架构支柱代码级详解**。把 Flow / Stage 集合 / KnowledgeArtifact / 唯一写者契约 / 真命令证据 / 人工 Gate / SSE 流式等支柱从当时代码事实出发展开，每条都带 `packages/shared` 与 `apps/api` 的文件路径和行号锚点（FLOW_REGISTRY、ArtifactKind 二族、KNOWLEDGE_SUBTYPES、Workflow Engine 写入函数族、Gate Engine 各 gate 规则、Promote 6 步事务、Agent Stream Bus、SSE 不变量）。文末附速查索引（一页定位代码）。面向新人源码 onboarding + 架构评审；精确 stage 数以当前 `FLOW_REGISTRY` 为准。
 
 - `2026-05-09-ai-native-platform-project-lifecycle-context-injection-design.md`
   - **项目生命周期上下文注入机制设计 / 机制与协议篇**。把新项目、成长中项目、遗留项目的上下文问题统一落成平台级 Context Injection Layer：Project Maturity Profile、Seed / Recovered / Confirmed 知识、Context Manifest / Context Pack 协议、注入分层和上下文预算。
@@ -66,7 +70,7 @@
 |---|---|---|---|
 | 准备阶段 | 接入项目，选择 GitHub / Gitee / 本地项目 / 私有 GitLab，检测分支和默认分支。 | 保存 Project 配置、源地址、默认 Source Branch、可选分支列表和 runner 本地路径。 | 可复用的 Project 配置。 |
 | 任务开始 | 在“新建任务”里选择 Project、任务类型和 Source Branch，写清楚目标、验收标准和约束。 | 创建 Workflow Request，等待本地 runner watch 认领。 | 一条排队中的任务请求。 |
-| 任务认领 | 不需要手动建分支，只要确认 runner 在线。 | Runner 按选定 Source Branch 准备独立 Git worktree，并创建本次任务分支。 | 可隔离执行的 worktree。 |
+| 任务认领 | 不需要手动建分支，只要 Runner 可由 UI/API 启动或已手动运行。 | Runner 按选定 Source Branch 准备独立 Git worktree，并创建本次任务分支。 | 可隔离执行的 worktree。 |
 | 需求澄清 | 在工作台阅读 Requirement Draft，确认它是否理解了业务目标。 | Agent 结合项目上下文生成需求草稿，Requirement Gate 检查 ID、AC、范围和证据。 | 可验收需求与 AC。 |
 | 方案确认 | 阅读 Design，确认影响范围、测试策略和风险。 | Agent 生成设计说明和追踪矩阵，Design Gate 检查需求覆盖和工程依据。 | 可执行设计方案。 |
 | 自动开发 | 关注工作台状态，必要时处理敏感改动确认。 | Agent 在 worktree 中改代码，平台记录 diff，并跑 Diff Scope / Sensitive Change Gate。 | 真实代码 diff。 |
@@ -180,7 +184,7 @@
 ## 2. 业务流程主线
 
 ```text
-用户使用入口：项目接入 → 新建任务 → 工作台 Pipeline → 报告 / 知识库
+feature.standard 主线：项目接入 → 新建任务 → 工作台 Pipeline → 报告 / 知识库
   ↓
 项目接入 / 初始化
   ↓
@@ -207,6 +211,8 @@ Knowledge Capture：经验候选、确认、入库
 未来需求阶段复用 Accepted Knowledge 与 Context Pack
 ```
 
+`feature.fastforward`、`issue.standard`、`refactor.standard` 会按自己的 `FLOW_REGISTRY` 阶段列表跳过部分前置或知识沉淀步骤；不要把上面的标准功能流当成所有任务的固定流程。
+
 ## 3. 当前已经形成的核心结论
 
 1. 平台要编排完整软件生命周期，不只是调 Agent。
@@ -224,14 +230,15 @@ Knowledge Capture：经验候选、确认、入库
 ## 4. 已发现并处理的文档问题
 
 - 已补充本入口索引，避免只靠文件名理解文档关系。
-- 已检查所有 Markdown 文档行数，目前均不超过 `AGENTS.md` 要求的 300 行。
+- 已区分当前事实文档与历史讨论快照：`README.md`、`2026-06-27-current-technical-architecture.md`、`2026-06-28-harness-engineering-practice.md`、`user/requirement-workflow.md` 是优先入口；2026-05 文档保留历史语境。
+- 当前面向入口/架构的文档大多控制在约 300 行内；历史规划和交接文档中仍有超过 300 行的长文，保留为归档资料，不再声称全仓 Markdown 都满足该限制。
 - 已检查代码块 fence，没有发现明显未闭合代码块。
 - 已保留部分文档的连续章节编号，因为它们是同一轮讨论拆分后的续篇；阅读时按本索引顺序即可。
 
 ## 5. 后续维护规则
 
 1. 新增文档优先更新本 `docs/README.md`。
-2. 单个 Markdown 文件不要超过 300 行；接近 280 行时优先拆分。
+2. 新增当前事实文档优先控制在 300 行以内；历史快照可保留原貌，但不要继续把超长历史文档当作最新入口。
 3. 文档引用其他文档时尽量使用完整文件名。
 4. 新增平台设计结论时，同时检查是否影响：Workflow、Agent、Gate、Config、Build、Report、Knowledge。
 5. 不要把 CodeStable skill 当作平台控制面依赖；相关能力应抽象为 instruction pack / workflow preset / import source。

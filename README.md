@@ -7,7 +7,7 @@ AI 软件交付工作台。从一句话需求到验收报告的闭环：需求 �
 
 ## Status — End-to-end MVP
 
-九阶段闭环已打通：`init → context_pack → requirement → design → implementation → build_test → review → completion → knowledge`。所有产物（Artifact、CommandRun、BuildRun/TestRun、GateRun、Approval、AuditLog）持久化到 SQLite，可被 Web UI 和 Completion Report 引用。
+标准功能流已打通 8 个可调度阶段：`context_pack → requirement → design → implementation → build_test → review → completion → knowledge`。`init` 只是 WorkflowRun 创建后、首个阶段开始前的状态占位，不是 Runner dispatch stage。当前还支持 `feature.fastforward`、`issue.standard`、`refactor.standard` 三条较短 flow。所有产物（Artifact、CommandRun、BuildRun/TestRun、GateRun、Approval、AuditLog）持久化到 SQLite，可被 Web UI 和 Completion Report 引用。
 
 项目级 Agent Backend 已收敛为真实 CLI：用户在项目配置里选择 Claude Code 或 Codex；Runner 启动任务前会做 CLI preflight，失败时直接给出安装/登录修复提示。
 
@@ -19,7 +19,7 @@ AI 软件交付工作台。从一句话需求到验收报告的闭环：需求 �
 apps/
   api/      Hono on Bun + SQLite store + Workflow Engine + Gate Engine + Reports + local Runner control
   runner/   Local Runner CLI (worktree, local compile/test, Codex/Claude Code backends, orchestrator)
-  web/      Vite-less TS delivery workbench: project onboarding, API-managed Runner startup, task queue, structured Requirement/Design/Acceptance, reports, knowledge, evidence
+  web/      Bun-served frameworkless TS delivery workbench: project onboarding, API-managed Runner startup, task queue, structured Requirement/Design/Acceptance, reports, knowledge, evidence
 packages/
   shared/   Cross-cutting types + utils (whitelist, surefire parser, slug/id)
 examples/
@@ -57,7 +57,7 @@ bun run runner -- watch
 
 # One-shot smokes (no manual interaction):
 bun run smoke   # quick: just `mvn -B test`
-bun run e2e     # full 9-stage lifecycle, auto-approval (default: Codex backend)
+bun run e2e     # full feature.standard lifecycle, auto-approval (default: Codex backend)
 
 # E2E with specific Agent Backend:
 AINP_E2E_AGENT_BACKEND=claude_code bun run e2e  # test with Claude Code
@@ -93,17 +93,21 @@ bun run typecheck
 
 ## API surface
 
+Core endpoints:
+
 - `GET /health` — counts of all entities
 - `POST /projects`, `GET /projects/:idOrName` — register / lookup projects
 - `POST /workflow-runs`, `GET /workflow-runs[?projectId=]`, `GET /workflow-runs/:id` — runs (detail returns runs + steps + commands + gates + artifacts + builds + tests + approvals + audit)
 - `POST /workflow-requests`, `GET /workflow-requests[?status=]`, `POST /workflow-requests/:id/{claim,complete}` — UI → runner watch queue
-- `POST /workflow-runs/:id/completion-report`, `POST /workflow-runs/:id/knowledge-candidate`
+- `POST /workflow-runs/:id/completion-report`, `POST /workflow-runs/:id/knowledge-candidate`, `POST /workflow-runs/:id/retro`
 - `POST /approvals`, `GET /approvals?workflowRunId=` — manual gate decisions
 - `GET /runners` — last-seen runner heartbeats
 - `GET /runner/control/status`, `POST /runner/control/{start,stop}` — API-managed local Runner watch supervision for Web UI flows
 - `GET /artifacts/:id/content`, `GET /artifacts/workflow-runs/:workflowRunId/:kind/latest/content` — local file artifact text for UI drill-down
 - `GET /command-runs/:id/logs` — stdout/stderr text for Build/Test evidence drill-down
 - `POST /runner/events/{workspace-prepared,step-started,step-finished,command-run,stage-transition,await-human,workflow-completed,heartbeat,maven-build,artifact,run-gate}` — runner ingress; only path that touches the Workflow Engine
+- `GET /workflow-runs/:id/{context,agent-sessions,handoffs,step-checkpoints,graph,agent-events,agent-stream}` — governance, resume, and streaming diagnostics
+- `POST /workflow-runs/:id/{requirement-actions,acceptance-decision,knowledge-actions,retro-actions,retry-step,re-evaluate-gate}` plus `POST /runner/control/retry-run` — human actions and retry/debug operations
 
 ## Non-goals (still)
 
@@ -116,7 +120,7 @@ Docker/K8s/microVM 沙箱级强制、复杂多 Agent、IDE 集成、PR/CI 深度
 - `apps/api/src/gate-engine.ts` — every gate's pass/warn/fail logic
 - `apps/api/src/reports.ts` — Completion Report + Knowledge Candidate generators
 - `apps/api/src/store/{db,store}.ts` — SQLite migrations + repositories
-- `apps/runner/src/orchestrator.ts` — drives the 9 stages + waits on human gates
+- `apps/runner/src/orchestrator.ts` — drives `FLOW_REGISTRY` stages + waits on human gates
 - `apps/runner/src/cmd/watch.ts` — claims UI-created WorkflowRequests and runs them in local worktrees
 - `apps/runner/src/agents/{codex,claude-code}.ts` — real CLI Agent Backend adapters + streaming events
 - `apps/runner/src/skills/index.ts` — Canonical SkillSpecs per stage

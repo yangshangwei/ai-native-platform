@@ -50,7 +50,7 @@ test('FlowDef shape carries id, kind, description, stages and a stable order', (
   const flow: FlowDef = {
     id: 'feature.standard',
     kind: 'feature' satisfies WorkflowRunType,
-    description: 'V1-equivalent 9-stage pipeline (W2-1 baseline).',
+    description: 'V1-equivalent 8-stage pipeline (W2-1 baseline).',
     stages: [
       { stage: 'context_pack', kind: 'agent', skillId: 'context_pack' },
       { stage: 'requirement', kind: 'agent', skillId: 'cs-req' },

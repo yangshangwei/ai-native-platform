@@ -219,10 +219,10 @@ REQ-001: ${ctx.workflowRunId}
 - 作为下游验收人，我希望看到结构化产物和证据链，而不是只读 LLM 自述完成
 
 ## 为什么需要
-当前 "${ctx.title}" 在该项目中尚未实现或与现状不一致。把它做成一次完整的 9 阶段流水线交付，可以保留每个阶段的 artifact 给后续验收和审计追溯，比起把任务整段丢给 AI 然后等结果，过程的每一步都是可观察的。
+当前 "${ctx.title}" 在该项目中尚未实现或与现状不一致。把它做成一次完整的 feature.standard 标准功能流交付，可以保留每个阶段的 artifact 给后续验收和审计追溯，比起把任务整段丢给 AI 然后等结果，过程的每一步都是可观察的。
 
 ## 怎么解决
-平台沿着既有 9 阶段流水线推进这次需求：从 Context Pack 拉取工程背景，经过 design / implementation，最终通过本地真实 mvn compile/test 与 acceptance gate 验收，结果落进 Completion Report 与 Knowledge Candidate。
+平台沿着既有 feature.standard flow 推进这次需求：从 Context Pack 拉取工程背景，经过 design / implementation，最终通过本地真实 mvn compile/test 与 acceptance gate 验收，结果落进 Completion Report 与 Knowledge Candidate。
 
 ## 边界
 - AC-001 验收标准: \`mvn -B -DskipTests compile\` 在 worktree 内通过
@@ -267,7 +267,7 @@ status: draft
 public static int divide(int a, int b)
 \`\`\`
 
-**编排层（control flow）**：从一个用例点（runner orchestrate）经现有 9 阶段流水线推进，本次变化仅落在 implementation + build_test 两阶段，其它阶段产出物保持现状。
+**编排层（control flow）**：从一个用例点（runner orchestrate）经现有 feature.standard flow 推进，本次变化仅落在 implementation + build_test 两阶段，其它阶段产出物保持现状。
 
 ## 挂载点
 - \`src/main/java/sample/Calculator.java\` 新增源代码（implementation 阶段产出）
