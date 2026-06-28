@@ -10,7 +10,8 @@
  * Asserts:
  *   - CoordinatorDecision persisted with action=proceed and source=rules
  *   - WorkflowRun created with type matching the decision's runType
- *   - All 9 stages reached, all rule gates pass, human gates auto-approved
+ *   - feature.standard reaches its 8 dispatch stages (`init` is only a run
+ *     status placeholder), all rule gates pass, human gates auto-approved
  *   - Tests passed and completion_report + knowledge_candidate artifacts exist
  */
 import { spawn } from 'node:child_process';
