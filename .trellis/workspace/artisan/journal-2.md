@@ -398,3 +398,36 @@ Implemented and verified PR1 memory lifecycle metadata contract with shared vali
 ### Next Steps
 
 - None - task complete
+
+
+## Session 64: Finish docs audit and router calibration tasks
+
+**Date**: 2026-06-29
+**Task**: Finish docs audit and router calibration tasks
+**Branch**: `feat/context-injection-layer-mvp`
+
+### Summary
+
+Completed finish-work for the docs/code audit and router stale accepted knowledge calibration tasks. Verified router regression coverage, typecheck, full vitest suite, and current-facing 9-stage documentation search; archived both Trellis tasks after committing the runnable E2E stage-count documentation fix.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `055cee0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

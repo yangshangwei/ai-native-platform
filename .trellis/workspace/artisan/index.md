@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 63
-- **Last Active**: 2026-06-28
+- **Total Sessions**: 64
+- **Last Active**: 2026-06-29
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~400 | Active |
+| `journal-2.md` | ~433 | Active |
 | `journal-1.md` | ~1983 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 64 | 2026-06-29 | Finish docs audit and router calibration tasks | `055cee0` | `feat/context-injection-layer-mvp` |
 | 63 | 2026-06-28 | Memory lifecycle contract | `65b31b2` | `feat/context-injection-layer-mvp` |
 | 62 | 2026-06-28 | Graph Runtime Post-MVP branch fan-out | `30502e8`, `903e5c2` | `feat/context-injection-layer-mvp` |
 | 61 | 2026-06-28 | Real runner E2E stage handoff validation | `cba915e` | `feat/context-injection-layer-mvp` |
