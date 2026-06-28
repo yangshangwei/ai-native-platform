@@ -28,7 +28,12 @@ import type {
   GraphNodeRun,
   GraphEvent,
 } from '@ainp/shared';
-import { errorMessage, isProjectAgentBackendKind, nowIso } from '@ainp/shared';
+import {
+  errorMessage,
+  isProjectAgentBackendKind,
+  normalizeMemoryLifecycleMetadata,
+  nowIso,
+} from '@ainp/shared';
 import { appendFileSync, mkdirSync } from 'node:fs';
 import * as path from 'node:path';
 import { db } from './db';
@@ -752,21 +757,27 @@ interface KnowledgeArtifactRow {
 }
 
 function rowToKnowledgeArtifact(r: KnowledgeArtifactRow): KnowledgeArtifact {
+  const kind = r.kind as KnowledgeArtifactKind;
+  const status = r.status as KnowledgeArtifactStatus;
+  const metadata = JSON.parse(r.metadata_json) as Record<string, unknown>;
   return {
     id: r.id,
-    kind: r.kind as KnowledgeArtifactKind,
+    kind,
     uri: r.uri,
     projectId: r.project_id,
     size: r.size,
     contentType: r.content_type,
-    status: r.status as KnowledgeArtifactStatus,
+    status,
     version: r.version,
     entityId: r.entity_id,
     derivedFromArtifactId: r.derived_from_artifact_id,
     subtype: r.subtype,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
-    metadata: JSON.parse(r.metadata_json) as Record<string, unknown>,
+    metadata: {
+      ...metadata,
+      ...normalizeMemoryLifecycleMetadata(metadata, { knowledgeKind: kind, status }),
+    },
   };
 }
 

@@ -13,10 +13,12 @@ process.env.AINP_HOME = join(
 );
 
 let app: Awaited<typeof import('../src/app')>['app'];
+let store: Awaited<typeof import('../src/store/store')>['store'];
 const PROJECT_ID = 'proj-test-knowledge';
 
 beforeAll(async () => {
   ({ app } = await import('../src/app'));
+  ({ store } = await import('../src/store/store'));
 });
 
 async function postKnowledge(body: Record<string, unknown>): Promise<Response> {
@@ -47,7 +49,21 @@ test('POST creates a requirement entity row with default status/version', async 
   expect(json.artifact.version).toBe(1);
   expect(json.artifact.entityId).toBe('REQ-001');
   expect(json.artifact.projectId).toBe(PROJECT_ID);
-  expect((json.artifact.metadata as Record<string, unknown>).knowledgeClass).toBe('recovered');
+  expect(json.artifact.metadata as Record<string, unknown>).toMatchObject({
+    knowledgeClass: 'recovered',
+    memoryKind: 'semantic',
+    reviewStatus: 'none',
+    memoryScope: 'project',
+    memoryStatus: 'candidate',
+    decayPolicy: 'none',
+    lastValidatedAt: null,
+    expiresAt: null,
+    decayReason: null,
+    supersededBy: [],
+    supersedes: [],
+    hitCount: 0,
+    lastUsedAt: null,
+  });
 });
 
 test('POST accepts a lesson with valid subtype', async () => {
@@ -65,6 +81,44 @@ test('POST accepts a lesson with valid subtype', async () => {
   expect((json.artifact.metadata as Record<string, unknown>).severity).toBe('high');
 });
 
+test('GET normalizes lifecycle metadata defaults for legacy rows', async () => {
+  store.knowledgeArtifacts.insert({
+    id: 'kart-legacy-lifecycle',
+    kind: 'decision',
+    uri: 'mem://legacy-lifecycle',
+    projectId: PROJECT_ID,
+    size: 10,
+    contentType: 'text/markdown',
+    status: 'accepted',
+    version: 1,
+    entityId: null,
+    derivedFromArtifactId: null,
+    subtype: 'constraint',
+    createdAt: '2026-06-28T00:00:00.000Z',
+    updatedAt: '2026-06-28T00:00:00.000Z',
+    metadata: { title: 'Legacy accepted decision' },
+  });
+
+  const res = await app.request('/knowledge-artifacts/kart-legacy-lifecycle');
+  expect(res.status).toBe(200);
+  const json = (await res.json()) as { artifact: { metadata: Record<string, unknown> } };
+  expect(json.artifact.metadata).toMatchObject({
+    title: 'Legacy accepted decision',
+    memoryKind: 'semantic',
+    reviewStatus: 'none',
+    memoryScope: 'project',
+    memoryStatus: 'current',
+    decayPolicy: 'none',
+    lastValidatedAt: null,
+    expiresAt: null,
+    decayReason: null,
+    supersededBy: [],
+    supersedes: [],
+    hitCount: 0,
+    lastUsedAt: null,
+  });
+});
+
 test('POST defaults accepted knowledge metadata to confirmed and allows valid overrides', async () => {
   const confirmed = await postKnowledge({
     kind: 'decision',
@@ -80,6 +134,9 @@ test('POST defaults accepted knowledge metadata to confirmed and allows valid ov
     trustLevel: 'accepted_knowledge',
     freshness: 'possibly_stale',
     confidence: 0.9,
+    memoryScope: 'project',
+    memoryStatus: 'current',
+    decayPolicy: 'none',
   });
   expect(confirmedJson.artifact.metadata.sourceRefs).toEqual(
     expect.arrayContaining(['knowledge:accepted', 'uri:mem://accepted-default']),
@@ -122,6 +179,13 @@ test('POST rejects invalid standardized knowledge metadata', async () => {
       knowledgeClass: 'trusted',
       memoryKind: 'historical',
       reviewStatus: 'overwrite',
+      memoryScope: 'organization',
+      memoryStatus: 'active',
+      decayPolicy: 'calendar',
+      lastValidatedAt: 'not a date',
+      expiresAt: 123,
+      decayReason: '',
+      supersededBy: ['kart-ok', ''],
       confidence: 5,
     },
   });
@@ -131,6 +195,13 @@ test('POST rejects invalid standardized knowledge metadata', async () => {
   expect(json.error).toContain('metadata.knowledgeClass');
   expect(json.error).toContain('metadata.memoryKind');
   expect(json.error).toContain('metadata.reviewStatus');
+  expect(json.error).toContain('metadata.memoryScope');
+  expect(json.error).toContain('metadata.memoryStatus');
+  expect(json.error).toContain('metadata.decayPolicy');
+  expect(json.error).toContain('metadata.lastValidatedAt');
+  expect(json.error).toContain('metadata.expiresAt');
+  expect(json.error).toContain('metadata.decayReason');
+  expect(json.error).toContain('metadata.supersededBy');
   expect(json.error).toContain('metadata.confidence');
 });
 
@@ -367,6 +438,40 @@ test('POST /usage records selected knowledge hit metadata once per artifact', as
   expect(persisted.artifact.metadata.lastUsedContextPackId).toBe('ctxpack_usage');
 });
 
+test('POST /usage rejects invalid lifecycle timestamp metadata', async () => {
+  const created = (await (
+    await postKnowledge({
+      kind: 'decision',
+      uri: 'mem://usage-invalid-date',
+      size: 50,
+      contentType: 'text/markdown',
+      status: 'accepted',
+      entityId: 'ADR-USAGE-BAD-DATE',
+    })
+  ).json()) as { artifact: { id: string } };
+
+  const res = await app.request('/knowledge-artifacts/usage', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: 'run_usage_bad_date',
+      contextPackId: 'ctxpack_usage_bad_date',
+      usedAt: 'not a date',
+      items: [{ knowledgeArtifactId: created.artifact.id }],
+    }),
+  });
+
+  expect(res.status).toBe(400);
+  const json = (await res.json()) as { error: string; field: string };
+  expect(json.field).toBe('usedAt');
+  expect(json.error).toContain('metadata.lastUsedAt');
+
+  const fetched = await app.request(`/knowledge-artifacts/${created.artifact.id}`);
+  const persisted = (await fetched.json()) as { artifact: { metadata: Record<string, unknown> } };
+  expect(persisted.artifact.metadata.hitCount).toBe(0);
+  expect(persisted.artifact.metadata.lastUsedAt).toBeNull();
+});
+
 // ---------------------------------------------------------------------------
 // Versioning via entityId
 // ---------------------------------------------------------------------------
@@ -429,6 +534,7 @@ test('PATCH /:id/status flips a draft to accepted and retargets default context 
     trustLevel: 'accepted_knowledge',
     freshness: 'possibly_stale',
     confidence: 0.9,
+    memoryStatus: 'current',
   });
   expect(j.artifact.metadata.sourceRefs).toEqual(
     expect.arrayContaining(['knowledge:accepted', 'uri:mem://roadmap-1']),
@@ -468,6 +574,7 @@ test('PATCH /:id/status retargets only status-derived metadata fields', async ()
     trustLevel: 'source',
     freshness: 'possibly_stale',
     confidence: 0.9,
+    memoryStatus: 'current',
   });
   expect(j.artifact.metadata.sourceRefs).toEqual(
     expect.arrayContaining(['knowledge:accepted', 'uri:mem://roadmap-partial-override']),
@@ -512,6 +619,42 @@ test('PATCH /:id/status preserves explicit seed classification overrides', async
     freshness: 'current',
     sourceRefs: ['seed:patch-test'],
     confidence: 0.7,
+  });
+});
+
+test('PATCH /:id/status preserves explicit lifecycle status overrides', async () => {
+  const created = (await (
+    await postKnowledge({
+      kind: 'roadmap',
+      uri: 'mem://roadmap-explicit-lifecycle',
+      size: 10,
+      contentType: 'text/markdown',
+      subtype: 'feature',
+      metadata: {
+        memoryStatus: 'stale',
+        decayPolicy: 'manual_review',
+        decayReason: 'operator flagged',
+      },
+    })
+  ).json()) as { artifact: { id: string } };
+  const patch = await app.request(
+    `/knowledge-artifacts/${created.artifact.id}/status`,
+    {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ status: 'accepted' }),
+    },
+  );
+  expect(patch.status).toBe(200);
+  const j = (await patch.json()) as {
+    ok: boolean;
+    artifact: { status: string; metadata: Record<string, unknown> };
+  };
+  expect(j.artifact.status).toBe('accepted');
+  expect(j.artifact.metadata).toMatchObject({
+    memoryStatus: 'stale',
+    decayPolicy: 'manual_review',
+    decayReason: 'operator flagged',
   });
 });
 

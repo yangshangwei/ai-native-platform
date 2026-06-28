@@ -152,6 +152,21 @@ export const MEMORY_REVIEW_STATUSES = [
 ] as const;
 export type MemoryReviewStatus = (typeof MEMORY_REVIEW_STATUSES)[number];
 
+export const MEMORY_SCOPES = ['run', 'task', 'project', 'workspace', 'global'] as const;
+export type MemoryScope = (typeof MEMORY_SCOPES)[number];
+
+export const MEMORY_STATUSES = ['candidate', 'current', 'stale', 'superseded', 'rejected'] as const;
+export type MemoryStatus = (typeof MEMORY_STATUSES)[number];
+
+export const MEMORY_DECAY_POLICIES = [
+  'none',
+  'time',
+  'code_churn',
+  'evidence_conflict',
+  'manual_review',
+] as const;
+export type MemoryDecayPolicy = (typeof MEMORY_DECAY_POLICIES)[number];
+
 export function isMemoryKind(value: unknown): value is MemoryKind {
   return typeof value === 'string'
     && (MEMORY_KINDS as readonly string[]).includes(value);
@@ -160,6 +175,21 @@ export function isMemoryKind(value: unknown): value is MemoryKind {
 export function isMemoryReviewStatus(value: unknown): value is MemoryReviewStatus {
   return typeof value === 'string'
     && (MEMORY_REVIEW_STATUSES as readonly string[]).includes(value);
+}
+
+export function isMemoryScope(value: unknown): value is MemoryScope {
+  return typeof value === 'string'
+    && (MEMORY_SCOPES as readonly string[]).includes(value);
+}
+
+export function isMemoryStatus(value: unknown): value is MemoryStatus {
+  return typeof value === 'string'
+    && (MEMORY_STATUSES as readonly string[]).includes(value);
+}
+
+export function isMemoryDecayPolicy(value: unknown): value is MemoryDecayPolicy {
+  return typeof value === 'string'
+    && (MEMORY_DECAY_POLICIES as readonly string[]).includes(value);
 }
 
 /**
@@ -205,6 +235,13 @@ export interface KnowledgeContextMetadata {
   confidence?: number;
   memoryKind?: MemoryKind;
   reviewStatus?: MemoryReviewStatus;
+  memoryScope?: MemoryScope;
+  memoryStatus?: MemoryStatus;
+  decayPolicy?: MemoryDecayPolicy;
+  lastValidatedAt?: Iso8601 | null;
+  expiresAt?: Iso8601 | null;
+  decayReason?: string | null;
+  supersededBy?: string[];
   supersedes?: string[];
   hitCount?: number;
   lastUsedAt?: Iso8601 | null;
@@ -221,6 +258,13 @@ export interface NormalizedKnowledgeContextMetadata {
 export interface NormalizedMemoryLifecycleMetadata {
   memoryKind: MemoryKind;
   reviewStatus: MemoryReviewStatus;
+  memoryScope: MemoryScope;
+  memoryStatus: MemoryStatus;
+  decayPolicy: MemoryDecayPolicy;
+  lastValidatedAt: Iso8601 | null;
+  expiresAt: Iso8601 | null;
+  decayReason: string | null;
+  supersededBy: string[];
   supersedes: string[];
   hitCount: number;
   lastUsedAt: Iso8601 | null;
@@ -344,6 +388,27 @@ export function knowledgeContextMetadataValidationErrors(
   if ('reviewStatus' in metadata && !isMemoryReviewStatus(metadata.reviewStatus)) {
     errors.push(`metadata.reviewStatus must be one of: none, needs_review, conflict, stale, superseded, upgrade_candidate, downgrade_candidate`);
   }
+  if ('memoryScope' in metadata && !isMemoryScope(metadata.memoryScope)) {
+    errors.push(`metadata.memoryScope must be one of: run, task, project, workspace, global`);
+  }
+  if ('memoryStatus' in metadata && !isMemoryStatus(metadata.memoryStatus)) {
+    errors.push(`metadata.memoryStatus must be one of: candidate, current, stale, superseded, rejected`);
+  }
+  if ('decayPolicy' in metadata && !isMemoryDecayPolicy(metadata.decayPolicy)) {
+    errors.push(`metadata.decayPolicy must be one of: none, time, code_churn, evidence_conflict, manual_review`);
+  }
+  if ('lastValidatedAt' in metadata && !isNullableIso8601String(metadata.lastValidatedAt)) {
+    errors.push(`metadata.lastValidatedAt must be an ISO-8601 string or null`);
+  }
+  if ('expiresAt' in metadata && !isNullableIso8601String(metadata.expiresAt)) {
+    errors.push(`metadata.expiresAt must be an ISO-8601 string or null`);
+  }
+  if ('decayReason' in metadata && !isNullableNonEmptyString(metadata.decayReason)) {
+    errors.push(`metadata.decayReason must be a non-empty string or null`);
+  }
+  if ('supersededBy' in metadata && !isStringArray(metadata.supersededBy)) {
+    errors.push(`metadata.supersededBy must be an array of non-empty strings`);
+  }
   if ('sourceRefs' in metadata && !isStringArray(metadata.sourceRefs)) {
     errors.push(`metadata.sourceRefs must be an array of non-empty strings`);
   }
@@ -364,7 +429,7 @@ export function knowledgeContextMetadataValidationErrors(
 
 export function normalizeMemoryLifecycleMetadata(
   metadata: Record<string, unknown> | undefined,
-  options: { knowledgeKind?: KnowledgeArtifactKind } = {},
+  options: { knowledgeKind?: KnowledgeArtifactKind; status?: KnowledgeArtifactStatus } = {},
 ): NormalizedMemoryLifecycleMetadata {
   return {
     memoryKind: isMemoryKind(metadata?.memoryKind)
@@ -373,6 +438,21 @@ export function normalizeMemoryLifecycleMetadata(
     reviewStatus: isMemoryReviewStatus(metadata?.reviewStatus)
       ? metadata.reviewStatus
       : 'none',
+    memoryScope: isMemoryScope(metadata?.memoryScope)
+      ? metadata.memoryScope
+      : defaultMemoryScope(metadata, options),
+    memoryStatus: isMemoryStatus(metadata?.memoryStatus)
+      ? metadata.memoryStatus
+      : defaultMemoryStatus(metadata, options.status),
+    decayPolicy: isMemoryDecayPolicy(metadata?.decayPolicy)
+      ? metadata.decayPolicy
+      : defaultMemoryDecayPolicy(metadata),
+    lastValidatedAt: isNullableIso8601String(metadata?.lastValidatedAt) ? metadata.lastValidatedAt : null,
+    expiresAt: isNullableIso8601String(metadata?.expiresAt) ? metadata.expiresAt : null,
+    decayReason: isNullableNonEmptyString(metadata?.decayReason) ? metadata.decayReason : null,
+    supersededBy: Array.isArray(metadata?.supersededBy)
+      ? normalizeSourceRefs(metadata.supersededBy.filter((item): item is string => typeof item === 'string'))
+      : [],
     supersedes: Array.isArray(metadata?.supersedes)
       ? normalizeSourceRefs(metadata.supersedes.filter((item): item is string => typeof item === 'string'))
       : [],
@@ -437,6 +517,10 @@ function isNullableIso8601String(value: unknown): value is string | null {
   return value === null || (typeof value === 'string' && !Number.isNaN(Date.parse(value)));
 }
 
+function isNullableNonEmptyString(value: unknown): value is string | null {
+  return value === null || (typeof value === 'string' && value.trim().length > 0);
+}
+
 function defaultMemoryKindForKnowledgeKind(kind: KnowledgeArtifactKind | undefined): MemoryKind {
   switch (kind) {
     case 'pattern':
@@ -454,6 +538,33 @@ function defaultMemoryKindForKnowledgeKind(kind: KnowledgeArtifactKind | undefin
     default:
       return 'semantic';
   }
+}
+
+function defaultMemoryScope(
+  metadata: Record<string, unknown> | undefined,
+  _options: { knowledgeKind?: KnowledgeArtifactKind; status?: KnowledgeArtifactStatus },
+): MemoryScope {
+  return metadata && 'memoryScope' in metadata ? 'run' : 'project';
+}
+
+function defaultMemoryStatus(
+  metadata: Record<string, unknown> | undefined,
+  status: KnowledgeArtifactStatus | undefined,
+): MemoryStatus {
+  if (metadata && 'memoryStatus' in metadata) return 'candidate';
+  switch (status) {
+    case 'accepted':
+      return 'current';
+    case 'superseded':
+      return 'superseded';
+    case 'draft':
+    default:
+      return 'candidate';
+  }
+}
+
+function defaultMemoryDecayPolicy(metadata: Record<string, unknown> | undefined): MemoryDecayPolicy {
+  return metadata && 'decayPolicy' in metadata ? 'manual_review' : 'none';
 }
 
 // ---------------------------------------------------------------------------

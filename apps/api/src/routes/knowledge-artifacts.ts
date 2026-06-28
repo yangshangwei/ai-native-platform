@@ -17,6 +17,7 @@ import {
   isKnowledgeClass,
   isKnowledgeArtifactKind,
   isKnowledgeArtifactStatus,
+  knowledgeContextMetadataValidationErrors,
   nowIso,
   normalizeKnowledgeContextMetadata,
   type ContextFreshness,
@@ -245,6 +246,10 @@ knowledgeArtifacts.post('/usage', async (c) => {
   const usedAt = typeof body.usedAt === 'string' && body.usedAt.trim()
     ? body.usedAt.trim()
     : nowIso();
+  const usedAtErrors = knowledgeContextMetadataValidationErrors({ lastUsedAt: usedAt });
+  if (usedAtErrors.length > 0) {
+    return c.json({ error: usedAtErrors.join('; '), field: 'usedAt' }, 400);
+  }
   const actor = typeof body.actor === 'string' && body.actor.trim()
     ? body.actor.trim()
     : 'runner';

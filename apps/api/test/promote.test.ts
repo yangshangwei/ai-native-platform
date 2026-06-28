@@ -121,6 +121,7 @@ test('promoting the same entity_id again advances version and supersedes the pri
     trustLevel: 'summary',
     freshness: 'historical',
     confidence: 0.4,
+    memoryStatus: 'superseded',
   });
   expect(v1Row?.metadata.sourceRefs).toEqual(
     expect.arrayContaining(['knowledge:superseded', 'uri:file:///tmp/draft.md']),

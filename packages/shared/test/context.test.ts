@@ -6,16 +6,22 @@ import {
   CONTEXT_TRUST_LEVELS,
   KNOWLEDGE_REVIEW_SEVERITIES,
   KNOWLEDGE_REVIEW_SIGNAL_KINDS,
+  MEMORY_DECAY_POLICIES,
   MEMORY_KINDS,
   MEMORY_REVIEW_STATUSES,
+  MEMORY_SCOPES,
+  MEMORY_STATUSES,
   isKnowledgeArtifactStatus,
   isContextFreshness,
   isContextPackMode,
   isContextRequestStatus,
   isContextTrustLevel,
   isKnowledgeClass,
+  isMemoryDecayPolicy,
   isMemoryKind,
   isMemoryReviewStatus,
+  isMemoryScope,
+  isMemoryStatus,
   isKnowledgeReviewSeverity,
   isKnowledgeReviewSignalKind,
   isSensitiveContextPath,
@@ -48,6 +54,15 @@ test('context protocol literal catalogs expose canonical MVP values', () => {
   ]);
   expect(KNOWLEDGE_REVIEW_SEVERITIES).toEqual(['info', 'warning', 'review_required']);
   expect(MEMORY_KINDS).toEqual(['semantic', 'episodic', 'procedural']);
+  expect(MEMORY_SCOPES).toEqual(['run', 'task', 'project', 'workspace', 'global']);
+  expect(MEMORY_STATUSES).toEqual(['candidate', 'current', 'stale', 'superseded', 'rejected']);
+  expect(MEMORY_DECAY_POLICIES).toEqual([
+    'none',
+    'time',
+    'code_churn',
+    'evidence_conflict',
+    'manual_review',
+  ]);
   expect(MEMORY_REVIEW_STATUSES).toEqual([
     'none',
     'needs_review',
@@ -62,6 +77,12 @@ test('context protocol literal catalogs expose canonical MVP values', () => {
   expect(isKnowledgeClass('accepted')).toBe(false);
   expect(isMemoryKind('semantic')).toBe(true);
   expect(isMemoryKind('historical')).toBe(false);
+  expect(isMemoryScope('project')).toBe(true);
+  expect(isMemoryScope('organization')).toBe(false);
+  expect(isMemoryStatus('current')).toBe(true);
+  expect(isMemoryStatus('active')).toBe(false);
+  expect(isMemoryDecayPolicy('code_churn')).toBe(true);
+  expect(isMemoryDecayPolicy('calendar')).toBe(false);
   expect(isMemoryReviewStatus('conflict')).toBe(true);
   expect(isMemoryReviewStatus('overwrite')).toBe(false);
   expect(isKnowledgeArtifactStatus('accepted')).toBe(true);
@@ -208,7 +229,17 @@ test('knowledge metadata helper defaults accepted artifacts to confirmed and val
     freshness: 'fresh',
     memoryKind: 'historical',
     reviewStatus: 'overwrite',
+    memoryScope: 'organization',
+    memoryStatus: 'active',
+    decayPolicy: 'calendar',
+    lastValidatedAt: 'not a date',
+    expiresAt: 123,
+    decayReason: '',
+    supersededBy: ['ok', ''],
     sourceRefs: ['ok', ''],
+    supersedes: ['ok', ''],
+    hitCount: -1,
+    lastUsedAt: 'not a date',
     confidence: 2,
   })).toEqual([
     'metadata.knowledgeClass must be one of: seed, recovered, confirmed',
@@ -216,15 +247,32 @@ test('knowledge metadata helper defaults accepted artifacts to confirmed and val
     'metadata.freshness must be one of: current, possibly_stale, historical',
     'metadata.memoryKind must be one of: semantic, episodic, procedural',
     'metadata.reviewStatus must be one of: none, needs_review, conflict, stale, superseded, upgrade_candidate, downgrade_candidate',
+    'metadata.memoryScope must be one of: run, task, project, workspace, global',
+    'metadata.memoryStatus must be one of: candidate, current, stale, superseded, rejected',
+    'metadata.decayPolicy must be one of: none, time, code_churn, evidence_conflict, manual_review',
+    'metadata.lastValidatedAt must be an ISO-8601 string or null',
+    'metadata.expiresAt must be an ISO-8601 string or null',
+    'metadata.decayReason must be a non-empty string or null',
+    'metadata.supersededBy must be an array of non-empty strings',
     'metadata.sourceRefs must be an array of non-empty strings',
+    'metadata.supersedes must be an array of non-empty strings',
+    'metadata.hitCount must be a non-negative integer',
+    'metadata.lastUsedAt must be an ISO-8601 string or null',
     'metadata.confidence must be a number between 0 and 1',
   ]);
 });
 
 test('memory lifecycle metadata normalizer is additive and safe for legacy rows', () => {
-  expect(normalizeMemoryLifecycleMetadata(undefined, { knowledgeKind: 'decision' })).toEqual({
+  expect(normalizeMemoryLifecycleMetadata(undefined, { knowledgeKind: 'decision', status: 'accepted' })).toEqual({
     memoryKind: 'semantic',
     reviewStatus: 'none',
+    memoryScope: 'project',
+    memoryStatus: 'current',
+    decayPolicy: 'none',
+    lastValidatedAt: null,
+    expiresAt: null,
+    decayReason: null,
+    supersededBy: [],
     supersedes: [],
     hitCount: 0,
     lastUsedAt: null,
@@ -233,16 +281,44 @@ test('memory lifecycle metadata normalizer is additive and safe for legacy rows'
   expect(normalizeMemoryLifecycleMetadata({
     memoryKind: 'procedural',
     reviewStatus: 'conflict',
+    memoryScope: 'workspace',
+    memoryStatus: 'stale',
+    decayPolicy: 'code_churn',
+    lastValidatedAt: '2026-06-26T00:00:00.000Z',
+    expiresAt: '2026-07-26T00:00:00.000Z',
+    decayReason: 'source changed',
+    supersededBy: ['kart_new', '', 'kart_new'],
     supersedes: ['kart_old', '', 'kart_old'],
     hitCount: 2,
     lastUsedAt: '2026-06-27T00:00:00.000Z',
   }, { knowledgeKind: 'lesson' })).toEqual({
     memoryKind: 'procedural',
     reviewStatus: 'conflict',
+    memoryScope: 'workspace',
+    memoryStatus: 'stale',
+    decayPolicy: 'code_churn',
+    lastValidatedAt: '2026-06-26T00:00:00.000Z',
+    expiresAt: '2026-07-26T00:00:00.000Z',
+    decayReason: 'source changed',
+    supersededBy: ['kart_new'],
     supersedes: ['kart_old'],
     hitCount: 2,
     lastUsedAt: '2026-06-27T00:00:00.000Z',
   });
+
+  expect(normalizeMemoryLifecycleMetadata({
+    memoryScope: 'organization',
+    memoryStatus: 'active',
+    decayPolicy: 'calendar',
+  }, { knowledgeKind: 'decision', status: 'accepted' })).toMatchObject({
+    memoryScope: 'run',
+    memoryStatus: 'candidate',
+    decayPolicy: 'manual_review',
+  });
+
+  expect(normalizeMemoryLifecycleMetadata({}, { status: 'draft' }).memoryStatus).toBe('candidate');
+  expect(normalizeMemoryLifecycleMetadata({}, { status: 'accepted' }).memoryStatus).toBe('current');
+  expect(normalizeMemoryLifecycleMetadata({}, { status: 'superseded' }).memoryStatus).toBe('superseded');
 });
 
 test('ContextRequest carries the structured supplement protocol fields', () => {

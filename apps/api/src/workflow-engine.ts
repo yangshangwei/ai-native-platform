@@ -888,7 +888,7 @@ export function createKnowledgeArtifact(
         status,
         fallbackSourceRefs,
       }),
-      ...normalizeMemoryLifecycleMetadata(input.metadata, { knowledgeKind: input.kind }),
+      ...normalizeMemoryLifecycleMetadata(input.metadata, { knowledgeKind: input.kind, status }),
     },
   };
   store.knowledgeArtifacts.insert(a);
@@ -958,13 +958,33 @@ function knowledgeMetadataForStatusTransition(
     previousDefault,
     previousFallbackSourceRefs,
   );
-  return withNormalizedKnowledgeContextMetadata(baseMetadata, {
-    status: nextStatus,
-    fallbackSourceRefs: fallbackSourceRefsForKnowledgeArtifact({
-      ...artifact,
+  const lifecycleMetadata = omitStatusDerivedMemoryLifecycleDefaults(baseMetadata, artifact);
+  return {
+    ...withNormalizedKnowledgeContextMetadata(lifecycleMetadata, {
+      status: nextStatus,
+      fallbackSourceRefs: fallbackSourceRefsForKnowledgeArtifact({
+        ...artifact,
+        status: nextStatus,
+      }),
+    }),
+    ...normalizeMemoryLifecycleMetadata(lifecycleMetadata, {
+      knowledgeKind: artifact.kind,
       status: nextStatus,
     }),
+  };
+}
+
+function omitStatusDerivedMemoryLifecycleDefaults(
+  metadata: Record<string, unknown>,
+  artifact: KnowledgeArtifact,
+): Record<string, unknown> {
+  const next = { ...metadata };
+  const previousDefault = normalizeMemoryLifecycleMetadata({}, {
+    knowledgeKind: artifact.kind,
+    status: artifact.status,
   });
+  if (metadata.memoryStatus === previousDefault.memoryStatus) delete next.memoryStatus;
+  return next;
 }
 
 function omitStatusDerivedContextDefaults(
