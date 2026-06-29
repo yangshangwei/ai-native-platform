@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Web frontend guideline index for any future implementation spawned from this planning task."}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Future UI edits must preserve draft, focus, IME, and details state across polling renders."}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Future UI edits touch task creation, backend readiness, task detail review hierarchy, and Agent Stream presentation."}

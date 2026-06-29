@@ -524,3 +524,91 @@ export function reportIsAcceptable(run: WorkflowRunDto): boolean {
   return run.status === 'passed' || run.status === 'completed';
 }
 ```
+
+## Scenario: operator workbench hierarchy and evidence-first surfaces
+
+### 1. Scope / Trigger
+
+- Trigger: changes to the workbench, new-task form, task detail reviewer flow,
+  report center rows, settings runtime diagnostics, or shared design tokens for
+  these pages.
+- These pages are developer/operator tools. They should prioritize the next
+  action and real execution evidence over decorative dashboard density.
+
+### 2. Signatures
+
+- Workbench render entry points:
+  - `renderWorkbenchPage()`
+  - `buildTaskTrendSeries(runs, now?)`
+- New-task render entry point: `renderNewTaskPage()`.
+- Task detail renderer: `renderStageTimeline(detail, projection)`.
+- Report row renderer: `renderReportRow(run)`.
+- Settings diagnostics renderer:
+  `renderSettingsDiagnostics(settingsOperationalState(...))`.
+
+### 3. Contracts
+
+- Workbench attention rows are an action queue, not a generic alert. Include
+  failed runs, awaiting-human runs, failed requests, and clarification requests,
+  with the row action routing to the relevant task or run.
+- Task trend charts must use real run data only. If the seven-day window has no
+  counted runs, render an empty state instead of sample data.
+- New-task keeps the project/title/details draft, focus, and IME preservation
+  contracts while changing layout. Recommendation UI may move, but it must not
+  become a second source of task-submit state.
+- Task detail is reviewer-first: current stage, compact stage timeline, and
+  evidence summary appear before raw backend diagnostics.
+- Report rows sort as a review inbox: failed, awaiting human, acceptable,
+  running, then archived/other. Raw run ids, worktree paths, and command details
+  stay in collapsed technical disclosures with stable `data-details-key` values.
+- Settings runtime diagnostics auto-open only when operational state is `warn`
+  or `bad`; healthy diagnostics stay collapsed.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+| --- | --- |
+| No workflow runs in the trend window | Render a real-data empty state and no chart canvas. |
+| Awaiting-human or failed run exists | Show it in the workbench action queue before passive overview panels. |
+| Task detail has run evidence | Show summarized gates/commands/checkpoints/agent results before raw diagnostics. |
+| Failed, awaiting-human, passed, and running reports coexist | Sort rows in review priority order, then by newest creation time within each priority. |
+| Settings operational state is healthy | Keep diagnostics collapsed. |
+| Settings operational state is warn/bad | Open diagnostics and show concise remediation copy before raw environment detail. |
+
+### 5. Good/Base/Bad Cases
+
+- Good: an empty installation shows a quiet action queue and a trend empty
+  state, not synthetic success/failure lines.
+- Base: a healthy settings page keeps runtime details reachable but collapsed.
+- Bad: the report center sorts newest-first while burying failed or
+  awaiting-human work below acceptable reports.
+- Bad: task detail exposes gate ids, worktree paths, or command logs before the
+  reviewer sees the current stage and evidence summary.
+
+### 6. Tests Required
+
+- DOM tests should cover workbench trend empty states, new-task draft hydration
+  and stable details keys, compact task-detail timeline rendering, evidence
+  summary before raw diagnostics, report inbox ordering, and settings
+  diagnostics promotion/collapse.
+- `bun run --filter @ainp/web typecheck` must pass after changing render helpers.
+- `bun test apps/web/test` must pass after changing these pages.
+- Manual/Browser smoke should verify desktop and mobile layouts have no
+  document-level horizontal overflow when a browser runtime is available.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const hasRealData = datasets.some((dataset) => dataset.data.some(Boolean));
+createLineChart(canvas, labels, hasRealData ? datasets : sampleDatasets, '任务执行趋势');
+```
+
+#### Correct
+
+```ts
+const trend = buildTaskTrendSeries(data.runs);
+if (!trend.hasRealData) return renderTrendEmptyState();
+createLineChart(canvas, trend.labels, trend.datasets, '任务执行趋势');
+```

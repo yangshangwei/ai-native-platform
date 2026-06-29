@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Check agents need the frontend guideline index for package-specific validation."}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Check agents should verify render-cycle state preservation risks after any UI implementation."}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Check agents should verify task creation, review hierarchy, and stream UI contracts after any implementation."}
