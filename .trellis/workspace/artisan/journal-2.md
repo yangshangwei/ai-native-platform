@@ -431,3 +431,37 @@ Completed finish-work for the docs/code audit and router stale accepted knowledg
 ### Next Steps
 
 - None - task complete
+
+
+## Session 65: design-md Web workbench UI
+
+**Date**: 2026-06-30
+**Task**: design-md Web workbench UI
+**Branch**: `feat/design-md-workbench-ui-ralph-finish`
+
+### Summary
+
+Implemented and documented the design-md Web workbench UI direction: Linear-style tokens and shell, Raycast-like action/task entry hierarchy, Cursor-style stage timeline, focused DOM coverage, and verified web checks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dc7a070` | (see git log) |
+| `1d5432c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
