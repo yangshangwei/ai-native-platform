@@ -14,7 +14,7 @@
 
 import { reportStats } from './projection';
 import type { Page, ProjectDto, RunnerDto, StatusKind } from './types';
-import { button, el, icon, metric, shortId, statusKind, octopusIcon } from './dom';
+import { button, el, icon, shortId, statusKind, octopusIcon } from './dom';
 import {
   activeProjects,
   activeTaskRequest,
@@ -178,20 +178,30 @@ function renderQueueSummary(): HTMLElement {
   const last = data.requests[0];
   const control = data.runnerControl;
   return el('section', {
-    class: 'sidebar-card',
+    class: 'sidebar-card sidebar-console',
     children: [
-      el('h2', { text: '自动执行' }),
+      el('h2', { text: '执行队列' }),
       el('div', {
-        class: 'queue-stats',
+        class: 'queue-console-grid',
         children: [
-          metric('等待开始', String(pending), control?.running ? '自动排队中' : '等待执行器', 'info'),
-          metric('执行中', String(claimed), 'AI 正在处理', 'warn'),
+          renderQueueConsoleStat('等待开始', String(pending), 'info'),
+          renderQueueConsoleStat(control?.running ? '自动排队中' : '等待执行器', String(claimed), control?.running ? 'warn' : 'muted'),
         ],
       }),
       last
-        ? el('p', { class: 'muted compact', text: `${shortId(last.id)} · ${last.status} · ${last.title}` })
-        : el('p', { class: 'muted compact', text: '暂无任务请求。' }),
-      el('p', { class: 'muted compact', text: control?.running ? `Runner pid=${control.pid ?? '—'}` : 'UI 会尝试自动启动 Runner；命令行仅作兜底。' }),
+        ? el('p', { class: 'muted compact queue-latest', text: `${shortId(last.id)} · ${last.status} · ${last.title}` })
+        : el('p', { class: 'muted compact queue-latest', text: '暂无任务请求。' }),
+      el('p', { class: 'muted compact', text: control?.running ? `Runner pid=${control.pid ?? '—'}` : 'Runner 未运行，UI 会尝试自动启动。' }),
+    ],
+  });
+}
+
+function renderQueueConsoleStat(label: string, value: string, kind: StatusKind): HTMLElement {
+  return el('div', {
+    class: `queue-console-stat ${kind}`,
+    children: [
+      el('span', { text: label }),
+      el('strong', { text: value }),
     ],
   });
 }
@@ -200,7 +210,7 @@ function renderGlobalStatusBadge(label: string, count: number, kind: StatusKind)
   return el('div', {
     class: `global-status-badge ${kind}`,
     children: [
-      el('span', { class: 'status-badge-count', text: String(count) }),
+      count > 0 ? el('span', { class: 'status-badge-count', text: String(count) }) : null,
       el('span', { class: 'status-badge-label', text: label }),
     ],
   });

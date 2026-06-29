@@ -4,11 +4,18 @@
 // view-model is already covered by `projection.test.ts`; this file protects the
 // task-detail integration: stable disclosure key, stage/artifact/relation DOM,
 // the context-governance loading vs. loaded branches, and the empty state.
+import { Window } from 'happy-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 import { renderContextFlowPanel } from '../src/page-task-detail';
 import { contextGovernanceByRun } from '../src/state';
 import type { RunDetail } from '../src/projection';
 import type { ContextGovernanceDto } from '../src/types';
+
+const testWindow = new Window();
+globalThis.window = testWindow as unknown as Window & typeof globalThis;
+globalThis.document = testWindow.document as unknown as Document;
+globalThis.HTMLElement = testWindow.HTMLElement;
+globalThis.HTMLDetailsElement = testWindow.HTMLDetailsElement;
 
 function stageFlowDetail(): RunDetail {
   return {

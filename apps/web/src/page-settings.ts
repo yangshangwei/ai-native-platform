@@ -675,13 +675,20 @@ function renderSettingsOverview(vm: SettingsViewModel | null): HTMLElement {
   });
 }
 
-function renderSettingsDiagnostics(): HTMLElement {
+function renderSettingsDiagnostics(operational: ReturnType<typeof settingsOperationalState>): HTMLElement {
   const runner = latestRunner();
-  return el('details', {
-    class: 'panel settings-diagnostics',
+  const shouldPromote = operational.kind === 'bad' || operational.kind === 'warn';
+  const details = el('details', {
+    class: `panel settings-diagnostics${shouldPromote ? ' attention' : ''}`,
     attrs: { 'data-details-key': 'settings-runtime-diagnostics' },
     children: [
-      el('summary', { text: '运行环境详情' }),
+      el('summary', {
+        children: [
+          el('span', { text: shouldPromote ? '运行环境需要处理' : '运行环境详情' }),
+          pill(operational.label, operational.kind),
+        ],
+      }),
+      shouldPromote ? el('p', { class: 'muted compact', text: operational.detail }) : null,
       el('div', {
         class: 'settings-diagnostics-grid',
         children: [
@@ -708,6 +715,8 @@ function renderSettingsDiagnostics(): HTMLElement {
       }),
     ],
   });
+  if (shouldPromote) details.open = true;
+  return details;
 }
 
 export function renderSettingsPage(): HTMLElement {
@@ -715,10 +724,11 @@ export function renderSettingsPage(): HTMLElement {
     void loadSettingsConfig();
   }
   const vm = currentSettingsViewModel();
+  const operational = settingsOperationalState(selectedProject(), latestRunner());
 
   return el('section', {
     class: 'settings-page stack',
-    children: [renderSettingsOverview(vm), renderSettingsDiagnostics(), renderConfigSection(vm)],
+    children: [renderSettingsOverview(vm), renderSettingsDiagnostics(operational), renderConfigSection(vm)],
   });
 }
 

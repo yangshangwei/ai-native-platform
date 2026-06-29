@@ -1,7 +1,7 @@
 /**
  * Component Styles - AI Native Platform
- * Modular, reusable component styles following Sub2API design system
- * Version: 2024-06-24-v2 (筛选器样式优化)
+ * Modular, reusable workbench component styles
+ * Version: 2026-06-29-design-md-shell
  */
 
 /* ==================== Chart Panel ==================== */
@@ -15,7 +15,7 @@
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
   padding: var(--space-xl);
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
 }
 
 .chart-container {
@@ -32,29 +32,29 @@
   height: auto !important;
 }
 
-/* ==================== Metric Card (Sub2API style) ==================== */
+/* ==================== Metric Card ==================== */
 
 /**
- * Metric Card - 彩色圆形图标 + 大数字 + 辅助文字
+ * Metric Card - compact metric row/card for workbench surfaces
  * 用于展示关键指标统计
  */
 .metric-card-v2 {
   background: var(--bg-surface);
   border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
-  padding: var(--space-lg) var(--space-xl);
-  box-shadow: var(--shadow-sm);
-  transition: box-shadow var(--transition-base), transform var(--transition-base);
+  padding: var(--space-md) var(--space-lg);
+  box-shadow: none;
+  transition: border-color var(--transition-base), background var(--transition-base);
   display: grid;
   grid-template-columns: auto 1fr;
   gap: var(--space-md);
   align-items: center;
-  min-height: 100px;
+  min-height: 78px;
 }
 
 .metric-card-v2:hover {
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
+  background: var(--bg-surface-hover);
+  border-color: var(--border-medium);
 }
 
 /* Enhanced hover for clickable cards */
@@ -63,60 +63,58 @@
 }
 
 .metric-card-v2.clickable:hover {
-  box-shadow: var(--shadow-lg);
-  transform: translateY(-2px);
   border-color: var(--color-primary);
 }
 
 .metric-card-v2.clickable:active {
-  transform: translateY(0);
-  box-shadow: var(--shadow-sm);
+  background: var(--bg-surface);
 }
 
-/* Icon circle - 彩色圆形图标容器 */
 .metric-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-full);
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
   display: grid;
   place-items: center;
   flex-shrink: 0;
+  border: 1px solid currentColor;
+  opacity: 0.9;
 }
 
 .metric-icon svg {
-  width: 24px;
-  height: 24px;
-  stroke-width: 2.5;
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.2;
 }
 
 /* Color variants */
 .metric-icon.success {
-  background: var(--success-100);
+  background: transparent;
   color: var(--success-600);
 }
 
 .metric-icon.warning {
-  background: var(--warning-100);
+  background: transparent;
   color: var(--warning-600);
 }
 
 .metric-icon.danger {
-  background: var(--danger-100);
+  background: transparent;
   color: var(--danger-600);
 }
 
 .metric-icon.primary {
-  background: var(--primary-100);
+  background: transparent;
   color: var(--primary-600);
 }
 
 .metric-icon.purple {
-  background: var(--purple-100);
+  background: transparent;
   color: var(--purple-600);
 }
 
 .metric-icon.info {
-  background: var(--primary-50);
+  background: transparent;
   color: var(--primary-700);
 }
 
@@ -132,11 +130,11 @@
   font-weight: var(--font-weight-medium);
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
 }
 
 .metric-value {
-  font-size: var(--font-size-3xl);
+  font-size: var(--font-size-2xl);
   font-weight: var(--font-weight-bold);
   line-height: var(--line-height-tight);
   color: var(--text-primary);
@@ -167,14 +165,14 @@
 .card-enhanced {
   background: var(--bg-surface);
   border: 1px solid var(--border-light);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
   padding: var(--space-xl);
   transition: all var(--transition-base);
 }
 
 .card-enhanced:hover {
-  box-shadow: var(--shadow-md);
+  border-color: var(--border-medium);
 }
 
 .card-header {
@@ -233,8 +231,6 @@
 .btn-primary:hover:not(:disabled) {
   background: var(--color-primary-hover);
   border-color: var(--color-primary-hover);
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
 }
 
 .btn-secondary {
@@ -246,7 +242,6 @@
 .btn-secondary:hover:not(:disabled) {
   border-color: var(--color-primary);
   color: var(--color-primary);
-  transform: translateY(-1px);
 }
 
 .btn-danger {
@@ -258,7 +253,6 @@
 .btn-danger:hover:not(:disabled) {
   background: var(--danger-700);
   border-color: var(--danger-700);
-  transform: translateY(-1px);
 }
 
 .btn-ghost {
@@ -295,7 +289,7 @@
   padding: 4px 10px;
   border-radius: var(--radius-full);
   font-size: var(--font-size-xs);
-  font-weight: var(--font-weight-bold);
+  font-weight: var(--font-weight-semibold);
   line-height: 1.4;
   white-space: nowrap;
 }
@@ -303,34 +297,40 @@
 .badge-success {
   background: var(--success-100);
   color: var(--success-700);
+  border: 1px solid currentColor;
 }
 
 .badge-warning {
   background: var(--warning-100);
   color: var(--warning-700);
+  border: 1px solid currentColor;
 }
 
 .badge-danger {
   background: var(--danger-100);
   color: var(--danger-700);
+  border: 1px solid currentColor;
 }
 
 .badge-info {
   background: var(--primary-100);
   color: var(--primary-700);
+  border: 1px solid currentColor;
 }
 
 .badge-muted {
   background: var(--gray-200);
   color: var(--gray-700);
+  border: 1px solid currentColor;
 }
 
 .badge-purple {
   background: var(--purple-100);
   color: var(--purple-700);
+  border: 1px solid currentColor;
 }
 
-/* ==================== Table Styles (Sub2API inspired) ==================== */
+/* ==================== Table Styles ==================== */
 
 .table-container {
   border: 1px solid var(--border-light);
@@ -559,7 +559,7 @@
  * My Todos Header - 页面标题和统计
  */
 .my-todos-header {
-  border-left: 4px solid var(--color-primary, #3b82f6);
+  border-left: 4px solid var(--color-primary, #5e6ad2);
 }
 
 .my-todos-header-content {
@@ -582,17 +582,17 @@
   align-items: baseline;
   gap: 0.25rem;
   padding: var(--space-md) var(--space-lg);
-  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-  border: 2px solid #93c5fd;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
   flex-shrink: 0;
-  box-shadow: 0 2px 4px rgba(147, 197, 253, 0.15);
+  box-shadow: none;
 }
 
 .count-number {
   font-size: 2rem;
   font-weight: 700;
-  color: #3b82f6;
+  color: var(--color-primary);
   line-height: 1;
 }
 
@@ -623,9 +623,7 @@
 
 .my-todos-item:hover {
   background: var(--bg-surface-hover, #f9fafb);
-  border-color: var(--color-primary, #3b82f6);
-  box-shadow: var(--shadow-sm);
-  transform: translateY(-1px);
+  border-color: var(--color-primary, #5e6ad2);
 }
 
 .my-todos-item-main {
@@ -694,10 +692,11 @@
  * 提醒用户有待办任务需要处理
  */
 .todos-alert {
-  background: var(--warning-100, #fef3c7);
-  border: 1px solid var(--color-warning, #fb923c);
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--color-warning, #fb923c);
   border-radius: var(--radius-lg);
-  padding: var(--space-lg) var(--space-xl);
+  padding: var(--space-md) var(--space-lg);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -767,22 +766,22 @@
 
 .filter-group button.small.secondary:hover {
   background: var(--bg-surface-hover, #f3f4f6);
-  border-color: var(--color-primary, #3b82f6);
+  border-color: var(--color-primary, #5e6ad2);
   color: var(--text-primary);
 }
 
 /* 选中状态 */
 .filter-group button.small.primary {
-  background: var(--color-primary, #3b82f6);
-  border: 1px solid var(--color-primary, #3b82f6);
+  background: var(--color-primary, #5e6ad2);
+  border: 1px solid var(--color-primary, #5e6ad2);
   color: #ffffff;
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3);
 }
 
 .filter-group button.small.primary:hover {
-  background: var(--color-primary-hover, #2563eb);
-  border-color: var(--color-primary-hover, #2563eb);
+  background: var(--color-primary-hover, #4f5bc2);
+  border-color: var(--color-primary-hover, #4f5bc2);
 }
 
 /* ==================== Empty State ==================== */
@@ -869,7 +868,8 @@
 }
 
 /* Status color indicators via left border accent */
-.report-card-v2.completed {
+.report-card-v2.completed,
+.report-card-v2.passed {
   border-left: 4px solid var(--success-500);
 }
 
@@ -891,6 +891,19 @@
   flex-direction: column;
   gap: var(--space-xs);
   min-width: 0; /* Allow text truncation */
+}
+
+.report-card-priority {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.report-card-priority small {
+  color: var(--text-muted);
+  font-size: 0.75rem;
 }
 
 .report-card-title {
@@ -939,8 +952,16 @@
 
 .report-card-next-action {
   font-size: 0.875rem;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   max-width: 240px;
+  line-height: 1.45;
+}
+
+.report-card-evidence {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  max-width: 280px;
+  line-height: 1.4;
 }
 
 /* Actions column */

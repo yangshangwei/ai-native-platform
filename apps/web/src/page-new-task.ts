@@ -344,7 +344,7 @@ export function renderNewTaskPage(): HTMLElement {
   // Coordinator path doesn't yet plumb flowId/startStage through
   // workflow_requests. The card is informational: ordinary task creation uses
   // conservative server defaults unless a future explicit override is sent.
-  const recoCard = el('div', { class: 'inline-panel compact' });
+  const recoCard = el('div', { class: 'inline-panel compact new-task-recommendation' });
   recoCard.style.display = 'none';
   let recoLastKey = '';
   let recoInFlight = false;
@@ -654,8 +654,6 @@ export function renderNewTaskPage(): HTMLElement {
     }),
   );
   advanced.appendChild(startStageRow);
-  advanced.appendChild(recoCard);
-
   const retryProjects = button('重试', 'btn btn-secondary btn-sm');
   retryProjects.onclick = () => void loadData({ keepDetail: true });
   const projectIssue = ui.projectsLoadError
@@ -674,17 +672,36 @@ export function renderNewTaskPage(): HTMLElement {
   const submitIssue = ui.lastError && !ui.projectsLoadError
     ? renderNewTaskInlineNotice('warn', '暂时无法创建任务', ui.lastError)
     : null;
+  const composer = el('section', {
+    class: 'new-task-composer',
+    children: [
+      el('label', { class: 'input-block new-task-project-row', children: [el('span', { text: '项目' }), projectSelect, projectIssue] }),
+      el('label', { class: 'input-block new-task-title-block', children: [el('span', { text: '任务目标' }), title] }),
+      el('label', { class: 'input-block new-task-details-block', children: [el('span', { text: '补充说明（可选）' }), details] }),
+    ],
+  });
+  const submitGuard = el('section', {
+    class: 'new-task-submit-guard',
+    children: [
+      el('div', {
+        children: [
+          el('span', { class: 'eyebrow', text: 'Submit Guard' }),
+          el('h3', { text: '创建前检查' }),
+          submitHint,
+        ],
+      }),
+      readiness,
+    ],
+  });
   form.append(
     panelHeader('创建任务', '只需要说明目标；工程设置默认自动处理。'),
-    el('label', { class: 'input-block', children: [el('span', { text: '项目' }), projectSelect, projectIssue] }),
-    el('label', { class: 'input-block', children: [el('span', { text: '任务目标' }), title] }),
-    el('label', { class: 'input-block', children: [el('span', { text: '补充说明（可选）' }), details] }),
+    composer,
+    recoCard,
     advanced,
-    readiness,
   );
   if (submitIssue) form.append(submitIssue);
   form.append(
-    submitHint,
+    submitGuard,
     el('div', { class: 'button-row', children: [submit, actionLink('查看工作台', 'workbench')] }),
   );
   form.onsubmit = (event) => void submitWorkflowRequest(event, form);

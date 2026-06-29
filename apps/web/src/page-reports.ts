@@ -52,6 +52,13 @@ import { loadRunDetail } from './data-loading';
 
 let reportsActiveView: ReportViewId = 'all';
 
+interface ReportInboxMeta {
+  rank: number;
+  label: string;
+  hint: string;
+  kind: 'good' | 'warn' | 'bad' | 'info' | 'muted';
+}
+
 // R2 (T2.4): 'awaiting_clarification' is a WorkflowRequestStatus value the
 // API never writes onto a run (see task notes.md evidence chain). The
 // historical defensive branch is kept verbatim; only the parameter's status
@@ -80,10 +87,36 @@ function reportEvidenceSummary(run: WorkflowRunDto): string {
 }
 
 function filteredReportRuns(): WorkflowRunDto[] {
-  if (reportsActiveView === 'attention') return data.runs.filter(reportNeedsAttention);
-  if (reportsActiveView === 'acceptable') return data.runs.filter(reportIsAcceptable);
-  if (reportsActiveView === 'running') return data.runs.filter(reportIsRunning);
-  return data.runs;
+  const runs = reportsActiveView === 'attention'
+    ? data.runs.filter(reportNeedsAttention)
+    : reportsActiveView === 'acceptable'
+      ? data.runs.filter(reportIsAcceptable)
+      : reportsActiveView === 'running'
+        ? data.runs.filter(reportIsRunning)
+        : data.runs;
+  return [...runs].sort(reportInboxSort);
+}
+
+function reportInboxMeta(run: WorkflowRunDto): ReportInboxMeta {
+  if (run.status === 'failed') {
+    return { rank: 0, label: '需处理', hint: '失败证据优先', kind: 'bad' };
+  }
+  if (run.status === 'awaiting_human') {
+    return { rank: 1, label: '等待确认', hint: '需要人工决定', kind: 'warn' };
+  }
+  if (reportIsAcceptable(run)) {
+    return { rank: 2, label: '可验收', hint: '查看交付摘要', kind: 'good' };
+  }
+  if (reportIsRunning(run)) {
+    return { rank: 3, label: '执行中', hint: '等待报告更新', kind: 'info' };
+  }
+  return { rank: 4, label: '已归档', hint: '按需查看详情', kind: 'muted' };
+}
+
+function reportInboxSort(a: WorkflowRunDto, b: WorkflowRunDto): number {
+  const priority = reportInboxMeta(a).rank - reportInboxMeta(b).rank;
+  if (priority !== 0) return priority;
+  return b.createdAt.localeCompare(a.createdAt);
 }
 
 function setReportsView(view: ReportViewId): void {
@@ -184,6 +217,7 @@ function renderReportRow(run: WorkflowRunDto): HTMLElement {
   const request = data.requests.find((candidate) => candidate.workflowRunId === run.id);
   const detail = data.activeDetail?.run.id === run.id ? data.activeDetail : null;
   const projection = detail ? buildRunProjection(detail) : null;
+  const inbox = reportInboxMeta(run);
 
   const open = button('打开任务', 'button secondary small');
   open.onclick = () => (request ? setHash('task', request.id) : setHash('workbench', run.id));
@@ -200,6 +234,13 @@ function renderReportRow(run: WorkflowRunDto): HTMLElement {
       el('div', {
         class: 'report-card-header',
         children: [
+          el('div', {
+            class: 'report-card-priority',
+            children: [
+              pill(inbox.label, inbox.kind),
+              el('small', { text: inbox.hint }),
+            ],
+          }),
           el('h3', { class: 'report-card-title', text: run.title }),
           el('div', {
             class: 'report-card-meta',
@@ -216,6 +257,7 @@ function renderReportRow(run: WorkflowRunDto): HTMLElement {
         class: 'report-card-status',
         children: [
           pill(reportStatusLabel(run.status), statusKind(run.status)),
+          el('div', { class: 'report-card-next-action', text: reportNextAction(run) }),
           projection
             ? el('div', {
                 class: 'report-card-metrics',
@@ -233,7 +275,7 @@ function renderReportRow(run: WorkflowRunDto): HTMLElement {
                     : null,
                 ],
               })
-            : el('div', { class: 'report-card-next-action', text: reportNextAction(run) }),
+            : el('div', { class: 'report-card-evidence', text: reportEvidenceSummary(run) }),
         ],
       }),
 

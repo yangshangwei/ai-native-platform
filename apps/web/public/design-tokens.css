@@ -1,24 +1,24 @@
 /**
  * Design Tokens - AI Native Platform
- * Based on Sub2API dashboard style
+ * Workbench style guided by Linear surfaces, Raycast density, and Cursor stages.
  *
  * Color system, spacing, typography, shadows, and other design constants.
  */
 
 :root {
-  /* ===== Color Palette (Sub2API inspired) ===== */
+  /* ===== Color Palette ===== */
 
-  /* Primary - Blue */
-  --primary-50: #eff6ff;
-  --primary-100: #dbeafe;
-  --primary-200: #bfdbfe;
-  --primary-300: #93c5fd;
-  --primary-400: #60a5fa;
-  --primary-500: #3b82f6;
-  --primary-600: #2563eb;
-  --primary-700: #1d4ed8;
-  --primary-800: #1e40af;
-  --primary-900: #1e3a8a;
+  /* Primary - Linear-style indigo */
+  --primary-50: #f0f1ff;
+  --primary-100: #e2e4ff;
+  --primary-200: #c8ccff;
+  --primary-300: #aeb4f6;
+  --primary-400: #8b92e7;
+  --primary-500: #6f77da;
+  --primary-600: #5e6ad2;
+  --primary-700: #4f5bc2;
+  --primary-800: #404aa0;
+  --primary-900: #303875;
 
   /* Success - Green */
   --success-50: #f0fdf4;
@@ -83,29 +83,41 @@
   /* ===== Semantic Colors ===== */
 
   /* Background */
-  --bg-primary: var(--gray-50);
+  --bg-primary: #f6f7f9;
   --bg-surface: #ffffff;
-  --bg-surface-elevated: #ffffff;
-  --bg-surface-hover: var(--gray-100);
+  --bg-surface-elevated: #f8fafc;
+  --bg-surface-hover: #f1f3f7;
 
   /* Text */
-  --text-primary: var(--gray-800);
-  --text-secondary: var(--gray-600);
-  --text-muted: var(--gray-500);
+  --text-primary: #171c26;
+  --text-secondary: #47505f;
+  --text-muted: #6b7280;
   --text-faint: var(--gray-400);
 
   /* Borders */
-  --border-light: var(--gray-200);
-  --border-medium: var(--gray-300);
-  --border-strong: var(--gray-400);
+  --border-light: #d8dee8;
+  --border-medium: #c5cedc;
+  --border-strong: #aeb9c9;
 
   /* Semantic shortcuts */
-  --color-primary: var(--primary-600);
-  --color-primary-hover: var(--primary-700);
+  --color-primary: #5e6ad2;
+  --color-primary-hover: #4f5bc2;
   --color-success: var(--success-600);
   --color-warning: var(--warning-600);
   --color-danger: var(--danger-600);
   --color-purple: var(--purple-600);
+
+  /* AI stage colors stay separate from result good/warn/bad semantics. */
+  --stage-thinking: #b45309;
+  --stage-thinking-bg: #fff4db;
+  --stage-context: #2563a8;
+  --stage-context-bg: #e8f1ff;
+  --stage-implementation: #6d5bd0;
+  --stage-implementation-bg: #f0edff;
+  --stage-validation: #15803d;
+  --stage-validation-bg: #e5f6ed;
+  --stage-done: #157f4f;
+  --stage-done-bg: #e5f6ed;
 
   /* ===== Spacing Scale ===== */
   --space-xs: 4px;
@@ -120,16 +132,16 @@
   --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 20px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
+  --radius-2xl: 10px;
   --radius-full: 9999px;
 
   /* ===== Shadows ===== */
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
-  --shadow-md: 0 2px 4px rgba(15, 23, 42, 0.06), 0 4px 8px rgba(15, 23, 42, 0.08);
-  --shadow-lg: 0 4px 8px rgba(15, 23, 42, 0.08), 0 8px 16px rgba(15, 23, 42, 0.12);
-  --shadow-xl: 0 8px 16px rgba(15, 23, 42, 0.12), 0 16px 32px rgba(15, 23, 42, 0.16);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --shadow-xl: 0 8px 24px rgba(15, 23, 42, 0.10);
 
   /* ===== Typography ===== */
   --font-heading: "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -173,23 +185,23 @@
 /* Explicit light mode override - takes precedence over @media (prefers-color-scheme: dark) */
 [data-theme="light"] {
   /* Force light mode even if system prefers dark */
-  --bg-base: #f8fafc;
-  --bg-primary: var(--gray-50);
+  --bg-base: #f6f7f9;
+  --bg-primary: #f6f7f9;
   --bg-surface: #ffffff;
-  --bg-surface-elevated: #ffffff;
-  --bg-surface-hover: var(--gray-100);
+  --bg-surface-elevated: #f8fafc;
+  --bg-surface-hover: #f1f3f7;
 
-  --text-primary: var(--gray-800);
-  --text-secondary: var(--gray-600);
-  --text-muted: var(--gray-500);
+  --text-primary: #171c26;
+  --text-secondary: #47505f;
+  --text-muted: #6b7280;
   --text-faint: var(--gray-400);
 
-  --border-light: var(--gray-200);
-  --border-medium: var(--gray-300);
-  --border-strong: var(--gray-400);
+  --border-light: #d8dee8;
+  --border-medium: #c5cedc;
+  --border-strong: #aeb9c9;
 
-  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
-  --shadow-md: 0 2px 4px rgba(15, 23, 42, 0.06), 0 4px 8px rgba(15, 23, 42, 0.08);
-  --shadow-lg: 0 4px 8px rgba(15, 23, 42, 0.08), 0 8px 16px rgba(15, 23, 42, 0.12);
-  --shadow-xl: 0 8px 16px rgba(15, 23, 42, 0.12), 0 16px 32px rgba(15, 23, 42, 0.16);
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-lg: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --shadow-xl: 0 8px 24px rgba(15, 23, 42, 0.10);
 }

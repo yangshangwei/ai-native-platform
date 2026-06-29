@@ -21,12 +21,12 @@ import {
   buildEnvLabel,
   data,
   latestRunner,
+  myTodos,
   projectName,
   requestStatusLabel,
   selectedProject,
-  ui,
 } from './state';
-import { actionLink, setHash } from './router';
+import { setHash } from './router';
 
 export function workbenchEnvironmentSummary(project: ProjectDto | null, runner: RunnerDto | null): { value: string; kind: StatusKind } {
   if (!project) return { value: '需要连接项目', kind: 'warn' };
@@ -40,14 +40,28 @@ export function workbenchEnvironmentSummary(project: ProjectDto | null, runner: 
 
 import { render } from './render-core';
 import { createLineChart } from './charts';
-import { myTodosCount } from './state';
+
+interface WorkbenchActionItem {
+  title: string;
+  meta: string;
+  statusLabel: string;
+  statusKind: StatusKind;
+  actionLabel: string;
+  onClick: () => void;
+}
+
+export interface TaskTrendSeries {
+  labels: string[];
+  datasets: Array<{ label: string; data: number[] }>;
+  hasRealData: boolean;
+}
 
 export function renderWorkbenchPage(): HTMLElement {
   return el('section', {
     class: 'page-grid',
     children: [
       renderWelcomeGuide(),
-      renderTodosAlert(),
+      renderWorkbenchActionQueue(),
       renderWorkbenchOverviewPanel(),
       renderTaskExecutionChart(),
       renderWorkbenchEnvironmentPanel(),
@@ -131,29 +145,105 @@ function renderChecklistItem(label: string, completed: boolean, actionLink: stri
   });
 }
 
-function renderTodosAlert(): HTMLElement | null {
-  const todosCount = myTodosCount();
-  if (todosCount === 0) return null;
-
-  const viewBtn = button('查看待办', 'button primary');
-  viewBtn.onclick = () => setHash('my-todos');
+function renderWorkbenchActionQueue(): HTMLElement {
+  const items = buildWorkbenchActionItems();
+  if (items.length === 0) return renderEmptyActionQueue();
 
   return el('section', {
-    class: 'panel todos-alert',
+    class: 'panel action-queue-panel',
     children: [
       el('div', {
-        class: 'todos-alert-content',
+        class: 'action-queue-head',
         children: [
-          el('span', { class: 'todos-alert-icon', text: '⚠️' }),
           el('div', {
             children: [
-              el('strong', { text: `你有 ${todosCount} 个任务需要处理` }),
-              el('p', { class: 'muted compact', text: '请及时查看并处理待办任务。' }),
+              el('span', { class: 'eyebrow', text: 'Action Queue' }),
+              el('h2', { text: `${items.length} 个需要处理` }),
+              el('p', { class: 'muted compact', text: '优先处理人工确认、补充信息和失败任务。' }),
             ],
           }),
+          (() => {
+            const btn = button('查看全部', 'button secondary small');
+            btn.onclick = () => setHash('my-todos');
+            return btn;
+          })(),
         ],
       }),
-      viewBtn,
+      el('div', {
+        class: 'action-queue-list',
+        children: items.slice(0, 4).map(renderWorkbenchActionItem),
+      }),
+    ],
+  });
+}
+
+function buildWorkbenchActionItems(): WorkbenchActionItem[] {
+  const requestItems = myTodos()
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .map<WorkbenchActionItem>((request) => ({
+      title: request.title,
+      meta: `${projectName(request.projectId)} · ${fmtTime(request.updatedAt)}`,
+      statusLabel: requestStatusLabel(request.status),
+      statusKind: statusKind(request.status),
+      actionLabel: request.status === 'awaiting_clarification' ? '补充信息' : '查看失败',
+      onClick: () => setHash('task', request.id),
+    }));
+
+  const runItems = data.runs
+    .filter((run) => run.status === 'awaiting_human' || run.status === 'failed')
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map<WorkbenchActionItem>((run) => ({
+      title: run.title,
+      meta: `${projectName(run.projectId)} · ${STAGE_LABELS[run.currentStage] ?? run.currentStage} · ${fmtTime(run.createdAt)}`,
+      statusLabel: run.status === 'awaiting_human' ? '等待你确认' : '执行失败',
+      statusKind: statusKind(run.status),
+      actionLabel: run.status === 'awaiting_human' ? '处理确认' : '查看证据',
+      onClick: () => setHash('workbench', run.id),
+    }));
+
+  return [...runItems, ...requestItems].slice(0, 5);
+}
+
+function renderWorkbenchActionItem(item: WorkbenchActionItem): HTMLElement {
+  const action = button(item.actionLabel, 'button primary small');
+  action.onclick = item.onClick;
+
+  return el('article', {
+    class: `action-queue-item ${item.statusKind}`,
+    children: [
+      pill(item.statusLabel, item.statusKind),
+      el('div', {
+        class: 'action-queue-copy',
+        children: [
+          el('strong', { text: item.title }),
+          el('small', { text: item.meta }),
+        ],
+      }),
+      action,
+    ],
+  });
+}
+
+function renderEmptyActionQueue(): HTMLElement {
+  const createBtn = button('新建任务', 'button primary small');
+  createBtn.onclick = () => setHash('new-task');
+
+  return el('section', {
+    class: 'panel action-queue-panel empty-action-panel',
+    children: [
+      el('div', {
+        class: 'action-queue-head',
+        children: [
+          el('div', {
+            children: [
+              el('span', { class: 'eyebrow', text: 'Action Queue' }),
+              el('h2', { text: '没有待处理事项' }),
+              el('p', { class: 'muted compact', text: '运行正常时保持安静；有确认、失败或澄清时会置顶。' }),
+            ],
+          }),
+          createBtn,
+        ],
+      }),
     ],
   });
 }
@@ -231,60 +321,29 @@ function renderWorkbenchEnvironmentPanel(): HTMLElement {
 }
 
 function renderTaskExecutionChart(): HTMLElement {
+  const trend = buildTaskTrendSeries(data.runs);
+  if (!trend.hasRealData) {
+    return el('section', {
+      class: 'panel chart-panel trend-empty-panel',
+      children: [
+        panelHeader('任务执行趋势', '最近 7 天暂无真实任务数据'),
+        el('div', {
+          class: 'trend-empty-state',
+          children: [
+            el('strong', { text: '等待真实执行数据' }),
+            el('p', { class: 'muted compact', text: '不会用示例数据伪装趋势；任务完成、失败或运行后这里会自动生成图表。' }),
+          ],
+        }),
+      ],
+    });
+  }
+
   const canvas = document.createElement('canvas');
   canvas.id = 'task-execution-chart';
   canvas.style.maxHeight = '300px';
 
-  // Defer chart creation until canvas is mounted
   requestAnimationFrame(() => {
-    // Group runs by date and status
-    const last7Days = Array.from({ length: 7 }, (_, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() - (6 - i));
-      return date;
-    });
-
-    const labels = last7Days.map((date) => `${date.getMonth() + 1}/${date.getDate()}`);
-
-    // Count runs by status for each day
-    const successData: number[] = [];
-    const failedData: number[] = [];
-    const runningData: number[] = [];
-
-    last7Days.forEach((date) => {
-      const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-      const dayEnd = new Date(dayStart);
-      dayEnd.setDate(dayEnd.getDate() + 1);
-
-      const runsInDay = data.runs.filter((run) => {
-        const runDate = new Date(run.createdAt);
-        return runDate >= dayStart && runDate < dayEnd;
-      });
-
-      successData.push(runsInDay.filter((r) => r.status === 'passed').length);
-      failedData.push(runsInDay.filter((r) => r.status === 'failed').length);
-      runningData.push(runsInDay.filter((r) => r.status === 'running' || r.status === 'pending').length);
-    });
-
-    // Use sample data if no real data
-    const hasRealData = successData.some((v) => v > 0) || failedData.some((v) => v > 0) || runningData.some((v) => v > 0);
-
-    createLineChart(
-      canvas,
-      labels,
-      hasRealData
-        ? [
-            { label: '成功', data: successData },
-            { label: '失败', data: failedData },
-            { label: '进行中', data: runningData },
-          ]
-        : [
-            { label: '成功', data: [2, 3, 1, 4, 2, 3, 5] },
-            { label: '失败', data: [0, 1, 0, 0, 1, 0, 0] },
-            { label: '进行中', data: [1, 0, 2, 1, 0, 1, 2] },
-          ],
-      '任务执行趋势'
-    );
+    createLineChart(canvas, trend.labels, trend.datasets, '任务执行趋势');
   });
 
   return el('section', {
@@ -297,4 +356,44 @@ function renderTaskExecutionChart(): HTMLElement {
       }),
     ],
   });
+}
+
+export function buildTaskTrendSeries(runs: WorkflowRunDto[], now = new Date()): TaskTrendSeries {
+  const last7Days = Array.from({ length: 7 }, (_, i) => {
+    const date = new Date(now);
+    date.setDate(date.getDate() - (6 - i));
+    return date;
+  });
+
+  const labels = last7Days.map((date) => `${date.getMonth() + 1}/${date.getDate()}`);
+  const successData: number[] = [];
+  const failedData: number[] = [];
+  const runningData: number[] = [];
+
+  last7Days.forEach((date) => {
+    const dayStart = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+
+    const runsInDay = runs.filter((run) => {
+      const runDate = new Date(run.createdAt);
+      return runDate >= dayStart && runDate < dayEnd;
+    });
+
+    successData.push(runsInDay.filter((run) => run.status === 'passed').length);
+    failedData.push(runsInDay.filter((run) => run.status === 'failed').length);
+    runningData.push(runsInDay.filter((run) => run.status === 'running' || run.status === 'pending').length);
+  });
+
+  const datasets = [
+    { label: '成功', data: successData },
+    { label: '失败', data: failedData },
+    { label: '进行中', data: runningData },
+  ];
+
+  return {
+    labels,
+    datasets,
+    hasRealData: datasets.some((dataset) => dataset.data.some((value) => value > 0)),
+  };
 }

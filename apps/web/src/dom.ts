@@ -154,8 +154,8 @@ export function metric(label: string, value: string, hint?: string, kind: Status
 }
 
 /**
- * metricCardV2 - Sub2API 风格的统计卡片
- * 彩色圆形图标 + 大数字 + 辅助文字
+ * metricCardV2 - workbench metric card
+ * 紧凑图标 + 数字 + 辅助文字
  */
 export function metricCardV2(
   label: string,

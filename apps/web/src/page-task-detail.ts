@@ -359,10 +359,11 @@ export function renderTaskDetailPage(): HTMLElement {
           renderTaskHero(request, detail, projection),
           el('div', { class: 'mobile-next-action', children: [nextActionPanel()] }),
           coordinatorPanel,
+          askRouted ? null : renderCurrentStagePanel(request, detail, projection),
           askRouted
             ? renderAskActivityIndicator(request)
-            : detail ? renderLifecycle(detail, projection!) : renderQueuedLifecycle(request),
-          askRouted ? null : renderCurrentStagePanel(request, detail, projection),
+            : detail ? renderStageTimeline(detail, projection!) : renderQueuedLifecycle(request),
+          askRouted ? null : detail ? renderEvidencePanel(detail) : null,
           askRouted ? null : detail ? renderContextGovernancePanel(detail) : null,
           askRouted ? null : detail ? renderContextFlowPanel(detail) : null,
           askRouted ? null : (detail ? renderStageBackendDetails(detail, projection!) : renderQueuedBackendDetails(request)),
@@ -372,7 +373,7 @@ export function renderTaskDetailPage(): HTMLElement {
         class: 'workspace-side',
         children: [
           el('div', { class: 'desktop-next-action', children: [nextActionPanel()] }),
-          askRouted ? renderRequestDebugPanel(request, 'ask-side-panel') : (detail ? renderEvidencePanel(detail) : renderRequestDebugPanel(request, 'side-panel')),
+          askRouted || !detail ? renderRequestDebugPanel(request, askRouted ? 'ask-side-panel' : 'side-panel') : null,
           askRouted ? null : renderRunnerControlPanel(),
           askRouted ? null : detail ? renderAgentStreamPanel() : null,
         ],
@@ -493,16 +494,21 @@ function renderQueuedLifecycle(request: WorkflowRequestDto): HTMLElement {
   return el('section', {
     class: 'panel',
     children: [
-      panelHeader('完整流程', subtitle),
+      panelHeader('任务进度', subtitle),
       el('div', {
-        class: 'stage-board',
+        class: 'stage-timeline',
         children: states.map((stage, index) =>
           el('article', {
-            class: `stage-card ${stage.state}`,
+            class: `stage-node ${stage.state}`,
             children: [
-              el('span', { class: 'stage-index', text: String(index + 1).padStart(2, '0') }),
-              el('strong', { text: stage.label }),
-              el('small', { text: stage.help }),
+              el('span', { class: `stage-dot ${stage.state}`, text: String(index + 1).padStart(2, '0') }),
+              el('div', {
+                class: 'stage-node-copy',
+                children: [
+                  el('strong', { text: stage.label }),
+                  el('small', { text: stage.help }),
+                ],
+              }),
               el('span', { class: `stage-state ${stage.state}`, text: stageStateLabel(stage.state) }),
             ],
           }),
@@ -1335,20 +1341,25 @@ function lifecycleSubtitle(projection: ReturnType<typeof buildRunProjection>): s
   return `${flowLabel} · ${total} 个用户阶段`;
 }
 
-function renderLifecycle(detail: RunDetail, projection: ReturnType<typeof buildRunProjection>): HTMLElement {
+export function renderStageTimeline(detail: RunDetail, projection: ReturnType<typeof buildRunProjection>): HTMLElement {
   return el('section', {
-    class: 'panel',
+    class: 'panel stage-timeline-panel',
     children: [
-      panelHeader('任务进度', lifecycleSubtitle(projection)),
+      panelHeader('阶段时间线', lifecycleSubtitle(projection)),
       el('div', {
-        class: 'stage-board',
+        class: 'stage-timeline',
         children: projection.visibleStages.map((stage, index) => {
           const card = el('article', {
-            class: `stage-card ${stage.state}`,
+            class: `stage-node ${stage.state}`,
             children: [
-              el('span', { class: 'stage-index', text: String(index + 1).padStart(2, '0') }),
-              el('strong', { text: stage.label }),
-              el('small', { text: stage.state === 'failed' ? '⚠️ 点击查看详情' : stageCardHint(stage.state) }),
+              el('span', { class: `stage-dot ${stage.state}`, text: String(index + 1).padStart(2, '0') }),
+              el('div', {
+                class: 'stage-node-copy',
+                children: [
+                  el('strong', { text: stage.label }),
+                  el('small', { text: stage.state === 'failed' ? '点击查看详情' : stageCardHint(stage.state) }),
+                ],
+              }),
               el('span', { class: `stage-state ${stage.state}`, text: stageStateLabel(stage.state) }),
             ],
           });
@@ -2072,13 +2083,106 @@ function renderCompactAcList(title: string, items: Array<{ id: string; text: str
   });
 }
 
-function renderEvidencePanel(detail: RunDetail): HTMLElement {
-  return el('section', {
-    class: 'panel side-panel evidence-panel',
+type EvidenceSummaryKind = 'passed' | 'attention' | 'waiting';
+
+function evidenceSummaryKind(ok: number, attention: number): EvidenceSummaryKind {
+  if (attention > 0) return 'attention';
+  if (ok > 0) return 'passed';
+  return 'waiting';
+}
+
+function renderEvidenceSummaryItem(label: string, value: string, hint: string, kind: EvidenceSummaryKind): HTMLElement {
+  return el('div', {
+    class: `evidence-summary-item ${kind}`,
     children: [
-      panelHeader('技术证据', '排查或审计时展开。'),
+      el('span', { text: label }),
+      el('strong', { text: value }),
+      el('small', { text: hint }),
+    ],
+  });
+}
+
+function artifactKindLabel(kind: string): string {
+  if (kind === 'requirement_draft') return '需求文档';
+  if (kind === 'design_doc') return '方案文档';
+  if (kind === 'diff') return '代码变更';
+  if (kind === 'surefire_report') return '单测报告';
+  if (kind === 'failsafe_report') return '集成测试报告';
+  if (kind === 'completion_report') return '交付报告';
+  if (kind === 'knowledge_candidate') return '知识候选';
+  if (kind === 'context_pack') return '上下文包';
+  if (kind === 'project_profile') return '项目画像';
+  if (kind === 'traceability') return '追踪矩阵';
+  if (kind === 'command_log') return '命令日志';
+  return '阶段产物';
+}
+
+export function renderEvidencePanel(detail: RunDetail): HTMLElement {
+  const gateOk = detail.gates.filter((gate) => gate.status === 'pass').length;
+  const gateAttention = detail.gates.filter((gate) => gate.status === 'warn' || gate.status === 'fail').length;
+  const commandOk = detail.commands.filter((command) => command.status === 'passed').length;
+  const commandAttention = detail.commands.filter((command) => command.status === 'failed' || command.status === 'timeout').length;
+  const checkpointOk = detail.stepCheckpoints.filter((checkpoint) => checkpoint.status === 'passed').length;
+  const checkpointAttention = detail.stepCheckpoints.filter((checkpoint) => checkpoint.status === 'failed').length;
+  const agentOk = detail.agentResults.filter((result) => result.status === 'success').length;
+  const agentAttention = detail.agentResults.filter((result) => result.status === 'failed').length;
+  const latestArtifacts = [...detail.artifacts]
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 4);
+
+  return el('section', {
+    class: 'panel evidence-panel evidence-summary-panel',
+    children: [
+      panelHeader('证据摘要', '先看结论；原始 Gate、命令、产物和 Agent 记录默认折叠。'),
+      el('div', {
+        class: 'evidence-summary-grid',
+        children: [
+          renderEvidenceSummaryItem(
+            '质量门禁',
+            gateAttention ? `${gateAttention} 项需关注` : gateOk ? `${gateOk} 项通过` : '等待证据',
+            gateAttention ? `${gateOk} 项已通过` : '需求、方案、变更和验收检查',
+            evidenceSummaryKind(gateOk, gateAttention),
+          ),
+          renderEvidenceSummaryItem(
+            '本地命令',
+            commandAttention ? `${commandAttention} 条异常` : commandOk ? `${commandOk} 条通过` : '尚未运行',
+            detail.commands.length ? `${detail.commands.length} 条命令记录` : '等待构建或测试阶段',
+            evidenceSummaryKind(commandOk, commandAttention),
+          ),
+          renderEvidenceSummaryItem(
+            '阶段检查点',
+            checkpointAttention ? `${checkpointAttention} 个失败` : checkpointOk ? `${checkpointOk} 个完成` : '等待推进',
+            detail.stepCheckpoints.length ? `${detail.stepCheckpoints.length} 个检查点` : 'Runner 尚未记录阶段交接',
+            evidenceSummaryKind(checkpointOk, checkpointAttention),
+          ),
+          renderEvidenceSummaryItem(
+            'Agent 结果',
+            agentAttention ? `${agentAttention} 个失败` : agentOk ? `${agentOk} 个完成` : '等待输出',
+            detail.agentTasks.length ? `${detail.agentTasks.length} 个 Agent 任务` : '尚未调度 Agent 任务',
+            evidenceSummaryKind(agentOk, agentAttention),
+          ),
+        ],
+      }),
+      latestArtifacts.length
+        ? el('div', {
+            class: 'evidence-artifact-list',
+            children: [
+              el('strong', { text: '最新产物' }),
+              ...latestArtifacts.map((artifact) =>
+                el('div', {
+                  class: 'mini-row evidence-artifact-summary',
+                  children: [
+                    pill(artifactKindLabel(artifact.kind), 'muted'),
+                    el('span', { text: artifact.uri.split('/').at(-1) ?? artifactKindLabel(artifact.kind) }),
+                    artifact.sha256 ? pill('sha256', 'good') : pill('未校验', 'muted'),
+                  ],
+                }),
+              ),
+            ],
+          })
+        : el('p', { class: 'muted compact', text: '当前运行还没有可展示的产物。' }),
       el('details', {
-        class: 'raw-details diagnostic-shell',
+        class: 'raw-details diagnostic-shell evidence-diagnostics',
         attrs: { 'data-details-key': `evidence-panel:${detail.run.id}` },
         children: [
           el('summary', { text: '查看 Gate、命令、产物和 Agent 记录' }),
