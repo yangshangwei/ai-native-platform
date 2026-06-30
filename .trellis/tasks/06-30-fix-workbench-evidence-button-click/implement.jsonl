@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Workbench/task detail reviewer and evidence surface contracts"}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Render rebuild and user-owned disclosure-state constraints"}

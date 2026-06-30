@@ -8,8 +8,9 @@
  * `data` / `ui` in state.ts. `workbenchEnvironmentSummary` is exported for
  * the shell topbar (same summary feeds both the topbar context strip and
  * the environment panel). Moved verbatim out of `main.ts` (T2.3 page
- * split); depends only on the base layer (dom/state/router) plus pure
- * `projection` constants.
+ * split); depends mostly on the base layer (dom/state/router), pure
+ * `projection` constants, and the shared task-detail evidence panel for
+ * explicit `#run/<id>` drill-downs.
  */
 
 import { STAGE_LABELS, type WorkflowRunDto } from './projection';
@@ -25,8 +26,10 @@ import {
   projectName,
   requestStatusLabel,
   selectedProject,
+  ui,
 } from './state';
 import { setHash } from './router';
+import { renderEvidencePanel } from './page-task-detail';
 
 export function workbenchEnvironmentSummary(project: ProjectDto | null, runner: RunnerDto | null): { value: string; kind: StatusKind } {
   if (!project) return { value: '需要连接项目', kind: 'warn' };
@@ -57,16 +60,25 @@ export interface TaskTrendSeries {
 }
 
 export function renderWorkbenchPage(): HTMLElement {
+  const activeRunEvidence = renderActiveRunEvidencePanel();
   return el('section', {
     class: 'page-grid',
     children: [
       renderWelcomeGuide(),
+      activeRunEvidence,
       renderWorkbenchActionQueue(),
       renderWorkbenchOverviewPanel(),
       renderTaskExecutionChart(),
       renderWorkbenchEnvironmentPanel(),
     ],
   });
+}
+
+function renderActiveRunEvidencePanel(): HTMLElement | null {
+  if (!window.location.hash.startsWith('#run/')) return null;
+  const detail = data.activeDetail?.run.id === ui.activeRunId ? data.activeDetail : null;
+  if (!detail) return null;
+  return renderEvidencePanel(detail);
 }
 
 function renderWelcomeGuide(): HTMLElement | null {
@@ -192,14 +204,17 @@ function buildWorkbenchActionItems(): WorkbenchActionItem[] {
   const runItems = data.runs
     .filter((run) => run.status === 'awaiting_human' || run.status === 'failed')
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .map<WorkbenchActionItem>((run) => ({
-      title: run.title,
-      meta: `${projectName(run.projectId)} · ${STAGE_LABELS[run.currentStage] ?? run.currentStage} · ${fmtTime(run.createdAt)}`,
-      statusLabel: run.status === 'awaiting_human' ? '等待你确认' : '执行失败',
-      statusKind: statusKind(run.status),
-      actionLabel: run.status === 'awaiting_human' ? '处理确认' : '查看证据',
-      onClick: () => setHash('workbench', run.id),
-    }));
+    .map<WorkbenchActionItem>((run) => {
+      const request = data.requests.find((candidate) => candidate.workflowRunId === run.id);
+      return {
+        title: run.title,
+        meta: `${projectName(run.projectId)} · ${STAGE_LABELS[run.currentStage] ?? run.currentStage} · ${fmtTime(run.createdAt)}`,
+        statusLabel: run.status === 'awaiting_human' ? '等待你确认' : '执行失败',
+        statusKind: statusKind(run.status),
+        actionLabel: run.status === 'awaiting_human' ? '处理确认' : '查看证据',
+        onClick: () => (request ? setHash('task', request.id) : setHash('workbench', run.id)),
+      };
+    });
 
   return [...runItems, ...requestItems].slice(0, 5);
 }

@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Verify evidence/reviewer UX stays consistent"}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Verify render/disclosure behavior remains stable"}

@@ -232,6 +232,12 @@ try {
   still `awaiting_human`, the checkpoint panel must switch to an acknowledged
   state such as `已批准，等待继续` or `已打回，等待修订`. Do not keep showing the
   same action buttons, because that makes a successful click look inert.
+- Workbench run drill-downs use `#run/<workflowRunId>` as the active-run hash.
+  When that hash is active and `data.activeDetail` matches it, the Workbench
+  must render a visible evidence surface for the active run. Plain `#workbench`
+  may still keep an internally selected run for polling/stream purposes, but it
+  must not show evidence for that default selection unless the user explicitly
+  opened a run.
 - Stream panels must keep the backend-specific title/status and recording
   action visible, but the raw log body should be collapsed by default on the
   task detail page.
@@ -247,6 +253,12 @@ try {
   do not ask the user to inspect Requirement/Design/Gate internals.
 - Runner stopped/error -> keep Runner controls reachable in the diagnostic
   panel; do not remove the fallback start action.
+- Workbench `查看证据` for a failed run without a matching workflow request ->
+  navigate to `#run/<workflowRunId>` and show the active run evidence panel once
+  the detail payload is loaded.
+- Plain Workbench overview with a default `ui.activeRunId` selected by polling
+  -> keep the overview quiet; do not show evidence until the hash is an
+  explicit run deep link.
 - Mobile viewport -> document `scrollWidth` should not exceed
   `window.innerWidth`; wide lifecycle tracks should scroll inside their own
   container.
@@ -255,15 +267,24 @@ try {
 
 - Good: `requirement_gate` pending renders `等待你确认`, `批准需求`, and
   `打回修改`, with Gate Runs available only after expanding technical evidence.
+- Good: a failed run card with no request mapping opens `#run/<id>` and the
+  Workbench shows `证据摘要` for that run after detail load.
 - Base: a running task with no pending gate shows progress and current stage;
   the right column contains collapsed diagnostics.
 - Bad: the hero exposes `Approve requirement_gate`, worktree paths, command
   counts, or Runner pids as default visible content.
+- Bad: `查看证据` changes only `ui.activeRunId` / the hash while the Workbench
+  continues to render the same overview, making the click appear inert.
 
 ### 6. Tests Required
 
 - Typecheck `@ainp/web` after changing render helpers.
 - Run `vitest` for `apps/web/test` to protect projection and stream helpers.
+- Workbench action queue tests should cover both request-backed run actions
+  (`#task/<requestId>`) and requestless failed-run evidence actions
+  (`#run/<workflowRunId>` plus a visible evidence panel). Also assert that
+  plain `#workbench` with an internally selected active run does not show that
+  evidence panel.
 - Manual/Playwright visual check at desktop and mobile widths:
   - no overlap between task hero and side panel;
   - no mobile horizontal page overflow;
@@ -285,6 +306,19 @@ button(`Approve ${pendingGate}`, 'button primary');
 const copy = reviewGateCopy(pendingGate, currentStage);
 panelHeader('等待你确认', copy.subtitle);
 button(copy.approveLabel, 'button primary');
+```
+
+#### Wrong
+
+```ts
+onClick: () => setHash('workbench', run.id); // no visible run detail on Workbench
+```
+
+#### Correct
+
+```ts
+// Workbench renders evidence only for explicit #run/<id> drill-downs.
+onClick: () => (request ? setHash('task', request.id) : setHash('workbench', run.id));
 ```
 
 ## Scenario: ask-routed task detail UI
