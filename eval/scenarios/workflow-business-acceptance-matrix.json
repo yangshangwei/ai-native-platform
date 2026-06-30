@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "workflow-business-acceptance-matrix",
+  "title": "Workflow fixture proves business acceptance matrix gates captcha toggle acceptance",
+  "description": "Uses deterministic workflow evidence to verify core, boundary, and exception AC rows for a login captcha toggle, and proves test_gate alone cannot pass Acceptance Gate.",
+  "kind": "workflow_fixture",
+  "input": {
+    "projectId": "proj_eval_business_acceptance",
+    "title": "Add login captcha toggle with business acceptance matrix",
+    "profile": "captcha_business_acceptance"
+  },
+  "variants": [
+    {
+      "id": "captcha-matrix-complete",
+      "label": "Captcha toggle has core, boundary, and exception evidence",
+      "expectations": {
+        "acceptanceGateStatus": "pass",
+        "acceptanceRuleStatuses": {
+          "acceptance.test_gate_passed": "pass",
+          "acceptance.business_matrix_present": "pass",
+          "acceptance.business_matrix_criteria_proven": "pass",
+          "acceptance.business_matrix_scenarios_present": "pass"
+        },
+        "evidenceGateStatus": "pass",
+        "businessMatrixRows": 3,
+        "businessMatrixScenarioTypes": ["core", "boundary", "exception"],
+        "commandDigestBacked": true,
+        "completionReportGenerated": true,
+        "completionReportHasStatusAtGeneration": true,
+        "completionReportHasBusinessMatrix": true,
+        "retroReportGenerated": true
+      }
+    },
+    {
+      "id": "captcha-test-only-rejected",
+      "label": "Passing test_gate without business matrix fails Acceptance Gate",
+      "inputOverrides": {
+        "profile": "captcha_test_only"
+      },
+      "expectations": {
+        "acceptanceGateStatus": "fail",
+        "acceptanceRuleStatuses": {
+          "acceptance.test_gate_passed": "pass",
+          "acceptance.business_matrix_present": "fail",
+          "acceptance.business_matrix_scenarios_present": "fail"
+        },
+        "businessMatrixRows": 0,
+        "commandDigestBacked": true,
+        "retroReportGenerated": true
+      }
+    }
+  ]
+}

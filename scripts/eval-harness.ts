@@ -46,6 +46,7 @@ import {
   graphStageOrder,
 } from '../packages/shared/src/flows/graph-adapter';
 import { branchFanOutGraphDefinition } from '../packages/shared/src/flows/graph-fixtures';
+import { VERIFIER_AC_MATRIX_SCHEMA_VERSION } from '../packages/shared/src/types/artifact';
 import type { AgentBackend, AgentRunResult } from '../apps/runner/src/agents/types';
 import type { InvokeSkillDeps } from '../apps/runner/src/orchestrator/invoke-skill';
 import type { RunCtx } from '../apps/runner/src/orchestrator/types';
@@ -213,7 +214,12 @@ interface ContextPackExpectations {
   selectedCountMax?: number;
 }
 
-type WorkflowFixtureProfile = 'complete' | 'missing_command_digest' | 'artifact_only_compile';
+type WorkflowFixtureProfile =
+  | 'complete'
+  | 'missing_command_digest'
+  | 'artifact_only_compile'
+  | 'captcha_business_acceptance'
+  | 'captcha_test_only';
 
 interface WorkflowEvalInput {
   projectId?: string;
@@ -241,11 +247,16 @@ interface GraphRuntimeEvalInput {
 }
 
 interface WorkflowExpectations {
+  acceptanceGateStatus?: GateStatus;
+  acceptanceRuleStatuses?: Record<string, RuleStatus>;
   evidenceGateStatus?: GateStatus;
   ruleStatuses?: Record<string, RuleStatus>;
+  businessMatrixRows?: number;
+  businessMatrixScenarioTypes?: string[];
   commandDigestBacked?: boolean;
   completionReportGenerated?: boolean;
   completionReportHasStatusAtGeneration?: boolean;
+  completionReportHasBusinessMatrix?: boolean;
   retroReportGenerated?: boolean;
   retroFindingsMin?: number;
   reportArtifactCountMin?: number;
@@ -676,11 +687,16 @@ async function runContextPackVariant(
 
 interface WorkflowFixtureOutput {
   profile: WorkflowFixtureProfile;
+  acceptanceGateStatus: GateStatus | null;
+  acceptanceRuleStatuses: Record<string, RuleStatus>;
   evidenceGateStatus: GateStatus;
   ruleStatuses: Record<string, RuleStatus>;
+  businessMatrixRows: number;
+  businessMatrixScenarioTypes: string[];
   commandDigestBacked: boolean;
   completionReportGenerated: boolean;
   completionReportHasStatusAtGeneration: boolean;
+  completionReportHasBusinessMatrix: boolean;
   retroReportGenerated: boolean;
   retroFindings: number;
   reportArtifactCount: number;
@@ -713,9 +729,10 @@ async function runWorkflowVariant(
   expectations: WorkflowExpectations,
 ): Promise<EvalVariantResult> {
   const workDir = mkdtempSync(join(tmpdir(), `ainp-eval-workflow-${safeId(scenario.id)}-${safeId(variant.id)}-`));
+  process.env.AINP_ARTIFACTS_DIR ??= tmpdir();
   process.env.AINP_REPORTS_DIR ??= join(workDir, 'reports');
   const { store } = await import('../apps/api/src/store/store');
-  const { runEvidenceGate } = await import('../apps/api/src/gate-engine');
+  const { runAcceptanceTraceabilityGate, runEvidenceGate } = await import('../apps/api/src/gate-engine');
   const { generateCompletionReport, generateRetroReport } = await import('../apps/api/src/reports');
   const now = new Date().toISOString();
   const projectId = input.projectId ?? `proj_${safeId(scenario.id)}`;
@@ -731,17 +748,24 @@ async function runWorkflowVariant(
     status: 'passed',
   }));
   seedWorkflowEvidenceFixture({ store, workDir, workflowRunId, stepRunId, profile: input.profile, now });
+  const acceptanceGate = isBusinessAcceptanceWorkflowProfile(input.profile)
+    ? runAcceptanceTraceabilityGate({ workflowRunId, stepRunId })
+    : store.gateRuns.latestForGate(workflowRunId, 'acceptance_gate');
   const evidenceGate = runEvidenceGate({ workflowRunId, stepRunId });
   let completionReportGenerated = false;
   let completionReportHasStatusAtGeneration = false;
+  let completionReportHasBusinessMatrix = false;
   if (evidenceGate.status === 'pass') {
     const completion = await generateCompletionReport(workflowRunId);
     completionReportGenerated = true;
     const sidecar = JSON.parse(await readFile(fileURLToPath(completion.sidecar.uri), 'utf8')) as {
       summary?: unknown[];
+      businessAcceptanceMatrix?: unknown[];
     };
     completionReportHasStatusAtGeneration = Array.isArray(sidecar.summary)
       && sidecar.summary.some((entry) => typeof entry === 'string' && entry.startsWith('Status at report generation:'));
+    completionReportHasBusinessMatrix = Array.isArray(sidecar.businessAcceptanceMatrix)
+      && sidecar.businessAcceptanceMatrix.length > 0;
   }
   const retro = await generateRetroReport(workflowRunId);
   const retroSidecar = JSON.parse(await readFile(fileURLToPath(retro.sidecar.uri), 'utf8')) as {
@@ -749,13 +773,20 @@ async function runWorkflowVariant(
   };
   const output: WorkflowFixtureOutput = {
     profile: input.profile,
+    acceptanceGateStatus: acceptanceGate?.status ?? null,
+    acceptanceRuleStatuses: acceptanceGate
+      ? Object.fromEntries(acceptanceGate.ruleResults.map((rule) => [rule.ruleId, rule.status]))
+      : {},
     evidenceGateStatus: evidenceGate.status,
     ruleStatuses: Object.fromEntries(evidenceGate.ruleResults.map((rule) => [rule.ruleId, rule.status])),
+    businessMatrixRows: businessAcceptanceMatrixRows(store.artifacts.byWorkflow(workflowRunId)),
+    businessMatrixScenarioTypes: businessAcceptanceMatrixScenarioTypes(store.artifacts.byWorkflow(workflowRunId)),
     commandDigestBacked: store.commandRuns.byWorkflow(workflowRunId).every((command) =>
       Boolean(command.stdoutSha256 && command.stderrSha256 && command.combinedSha256),
     ),
     completionReportGenerated,
     completionReportHasStatusAtGeneration,
+    completionReportHasBusinessMatrix,
     retroReportGenerated: true,
     retroFindings: Array.isArray(retroSidecar.findings) ? retroSidecar.findings.length : 0,
     reportArtifactCount: store.artifacts.byKind(workflowRunId, 'completion_report').length
@@ -1511,17 +1542,55 @@ function seedWorkflowEvidenceFixture(input: {
 }): void {
   const stdoutPath = join(input.workDir, `${input.profile}-stdout.log`);
   const stderrPath = join(input.workDir, `${input.profile}-stderr.log`);
+  const reqPath = join(input.workDir, `${input.profile}-requirement.md`);
+  const designPath = join(input.workDir, `${input.profile}-design.md`);
   const diffPath = join(input.workDir, `${input.profile}-changes.diff`);
   const reviewPath = join(input.workDir, `${input.profile}-review.md`);
   const surefirePath = join(input.workDir, `${input.profile}-TEST.xml`);
+  const matrixPath = join(input.workDir, `${input.profile}-verifier-ac-matrix.json`);
   const stdout = 'BUILD SUCCESS\n';
   const stderr = '';
-  const diff = 'diff --git a/src/main.ts b/src/main.ts\n';
-  const review = '# Review\n\nVerified with fixture evidence.\n';
-  const surefire = '<testsuite tests="1" failures="0" errors="0" skipped="0"></testsuite>\n';
+  const businessProfile = isBusinessAcceptanceWorkflowProfile(input.profile);
+  const req = businessProfile
+    ? [
+        '# Login Captcha Toggle Requirement',
+        '',
+        'REQ-001',
+        '',
+        '## Acceptance Criteria',
+        '- AC-001: Disabling captcha lets a valid login submit without a captcha challenge.',
+        '- AC-002: Enabling captcha still requires a captcha challenge before login succeeds.',
+        '- AC-003: Invalid captcha configuration falls back to the safe default that requires captcha.',
+        '',
+      ].join('\n')
+    : '# Requirement\n\nREQ-001\n- AC-001: Fixture acceptance criterion has business behavior.\n';
+  const design = businessProfile
+    ? [
+        '# Login Captcha Toggle Design',
+        '',
+        '## Requirement Coverage Matrix',
+        '| Requirement | Design item | Acceptance criteria | Verification |',
+        '|---|---|---|---|',
+        '| REQ-001 | AuthConfig disables captcha branch | AC-001 | Login integration fixture asserts no captcha challenge when config disables captcha |',
+        '| REQ-001 | AuthConfig enables captcha branch | AC-002 | Login integration fixture asserts captcha challenge is required when config enables captcha |',
+        '| REQ-001 | AuthConfig validation fallback | AC-003 | Login integration fixture asserts invalid config falls back to captcha required |',
+        '',
+      ].join('\n')
+    : '# Design\n\n| Requirement | Design | Acceptance criteria | Verification |\n|---|---|---|---|\n| REQ-001 | Fixture | AC-001 | fixture verifies business behavior |\n';
+  const diff = businessProfile
+    ? 'diff --git a/src/auth/captcha.ts b/src/auth/captcha.ts\n'
+    : 'diff --git a/src/main.ts b/src/main.ts\n';
+  const review = businessProfile
+    ? '# Review\n\nVerified captcha toggle core, boundary, and exception fixture evidence.\n'
+    : '# Review\n\nVerified with fixture evidence.\n';
+  const surefire = businessProfile
+    ? '<testsuite tests="3" failures="0" errors="0" skipped="0"></testsuite>\n'
+    : '<testsuite tests="1" failures="0" errors="0" skipped="0"></testsuite>\n';
   for (const [path, content] of [
     [stdoutPath, stdout],
     [stderrPath, stderr],
+    [reqPath, req],
+    [designPath, design],
     [diffPath, diff],
     [reviewPath, review],
     [surefirePath, surefire],
@@ -1529,12 +1598,98 @@ function seedWorkflowEvidenceFixture(input: {
     writeFileSync(path, content);
   }
 
+  const artifactPrefix = `art_eval_${safeId(input.profile)}`;
+  const reqArtifactId = `${artifactPrefix}_requirement`;
+  const designArtifactId = `${artifactPrefix}_design`;
+  const diffArtifactId = `${artifactPrefix}_diff`;
+  const reviewArtifactId = `${artifactPrefix}_review`;
+  const surefireArtifactId = `${artifactPrefix}_surefire`;
+  const matrixArtifactId = `${artifactPrefix}_matrix`;
   const artifacts = [
-    artifactFixture('art_eval_diff', 'diff', diffPath, input.workflowRunId, input.stepRunId, 'text/x-diff', input.now),
-    artifactFixture('art_eval_review', 'other', reviewPath, input.workflowRunId, input.stepRunId, 'text/markdown', input.now),
-    artifactFixture('art_eval_surefire', 'surefire_report', surefirePath, input.workflowRunId, input.stepRunId, 'application/xml', input.now),
+    artifactFixture(reqArtifactId, 'requirement_draft', reqPath, input.workflowRunId, input.stepRunId, 'text/markdown', input.now),
+    artifactFixture(designArtifactId, 'design_doc', designPath, input.workflowRunId, input.stepRunId, 'text/markdown', input.now),
+    artifactFixture(diffArtifactId, 'diff', diffPath, input.workflowRunId, input.stepRunId, 'text/x-diff', input.now),
+    artifactFixture(reviewArtifactId, 'other', reviewPath, input.workflowRunId, input.stepRunId, 'text/markdown', input.now),
+    artifactFixture(surefireArtifactId, 'surefire_report', surefirePath, input.workflowRunId, input.stepRunId, 'application/xml', input.now),
   ];
   for (const artifact of artifacts) input.store.artifacts.insert(artifact);
+  if (businessProfile && input.profile !== 'captcha_test_only') {
+    const matrix = {
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      workflowRunId: input.workflowRunId,
+      stepRunId: input.stepRunId,
+      verifierRequired: false,
+      verifierStatus: 'pass',
+      acceptanceCriteria: [
+        {
+          id: 'AC-001',
+          text: 'Disabling captcha lets a valid login submit without a captcha challenge.',
+          scenarioType: 'core',
+          verificationMethod: 'Login integration fixture asserts no captcha challenge when config disables captcha.',
+          businessStatus: 'passed',
+          status: 'pass',
+          evidenceRefs: [
+            { artifactId: reqArtifactId, claim: 'captcha disabled business requirement' },
+            { artifactId: designArtifactId, claim: 'captcha disabled verification strategy' },
+            { artifactId: surefireArtifactId, claim: 'captcha disabled integration test report' },
+          ],
+        },
+        {
+          id: 'AC-002',
+          text: 'Enabling captcha still requires a captcha challenge before login succeeds.',
+          scenarioType: 'boundary',
+          verificationMethod: 'Login integration fixture asserts captcha challenge is required when config enables captcha.',
+          businessStatus: 'passed',
+          status: 'pass',
+          evidenceRefs: [
+            { artifactId: reqArtifactId, claim: 'captcha enabled boundary requirement' },
+            { artifactId: designArtifactId, claim: 'captcha enabled verification strategy' },
+            { artifactId: surefireArtifactId, claim: 'captcha enabled integration test report' },
+          ],
+        },
+        {
+          id: 'AC-003',
+          text: 'Invalid captcha configuration falls back to the safe default that requires captcha.',
+          scenarioType: 'exception',
+          verificationMethod: 'Login integration fixture asserts invalid config falls back to captcha required.',
+          businessStatus: 'passed',
+          status: 'pass',
+          evidenceRefs: [
+            { artifactId: reqArtifactId, claim: 'invalid config exception requirement' },
+            { artifactId: designArtifactId, claim: 'invalid config fallback verification strategy' },
+            { artifactId: surefireArtifactId, claim: 'invalid config fallback integration test report' },
+          ],
+        },
+      ],
+      createdAt: input.now,
+    };
+    writeFileSync(matrixPath, `${JSON.stringify(matrix, null, 2)}\n`);
+    input.store.artifacts.insert({
+      ...artifactFixture(matrixArtifactId, 'other', matrixPath, input.workflowRunId, input.stepRunId, 'application/json', input.now),
+      metadata: {
+        schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+        reportKind: 'verifier_ac_matrix',
+        verifierArtifactType: 'ac_matrix',
+        verifierStatus: 'pass',
+        stage: 'review',
+        subStage: 'verifier',
+        output: 'verifier-ac-matrix.json',
+      },
+    });
+  }
+  if (businessProfile) {
+    for (const stage of ['requirement', 'design'] as const) {
+      input.store.stepRuns.set(`step_${safeId(input.profile)}_${stage}`, {
+        id: `step_${safeId(input.profile)}_${stage}`,
+        workflowRunId: input.workflowRunId,
+        stage,
+        name: `${stage}-fixture`,
+        status: 'passed',
+        startedAt: input.now,
+        completedAt: input.now,
+      });
+    }
+  }
 
   const commandDigest = input.profile === 'missing_command_digest'
     ? { stdoutSha256: null, stderrSha256: null, combinedSha256: null }
@@ -1582,9 +1737,9 @@ function seedWorkflowEvidenceFixture(input: {
     claim: `command ${id} passed`,
   }));
   const diffReviewEvidence = [
-    { artifactId: 'art_eval_diff', claim: 'implementation diff' },
-    { artifactId: 'art_eval_review', claim: 'review artifact' },
-    { artifactId: 'art_eval_surefire', claim: 'test report artifact' },
+    { artifactId: diffArtifactId, claim: 'implementation diff' },
+    { artifactId: reviewArtifactId, claim: 'review artifact' },
+    { artifactId: surefireArtifactId, claim: 'test report artifact' },
   ];
   input.store.gateRuns.insert(gateFixture({
     id: `gate_${safeId(input.profile)}_compile`,
@@ -1593,7 +1748,7 @@ function seedWorkflowEvidenceFixture(input: {
     stepRunId: input.stepRunId,
     ruleId: 'compile.exit_zero',
     evidenceRefs: input.profile === 'artifact_only_compile'
-      ? [{ artifactId: 'art_eval_review', claim: 'compile note without command evidence' }]
+      ? [{ artifactId: reviewArtifactId, claim: 'compile note without command evidence' }]
       : commandEvidence.slice(0, 1),
     commandRunIds: commandRunIds.slice(0, 1),
     now: input.now,
@@ -1605,7 +1760,7 @@ function seedWorkflowEvidenceFixture(input: {
     stepRunId: input.stepRunId,
     ruleId: 'test.exit_zero',
     evidenceRefs: input.profile === 'artifact_only_compile'
-      ? [{ artifactId: 'art_eval_surefire', claim: 'test report artifact' }]
+      ? [{ artifactId: surefireArtifactId, claim: 'test report artifact' }]
       : commandEvidence.slice(1, 2),
     commandRunIds: commandRunIds.slice(1, 2),
     now: input.now,
@@ -1625,6 +1780,44 @@ function seedWorkflowEvidenceFixture(input: {
       { ruleId: 'acceptance.test_gate_passed', status: 'pass', message: 'test evidence present', evidenceRefs: [diffReviewEvidence[2]!] },
     ],
   }));
+}
+
+function isBusinessAcceptanceWorkflowProfile(profile: WorkflowFixtureProfile): boolean {
+  return profile === 'captcha_business_acceptance' || profile === 'captcha_test_only';
+}
+
+function latestBusinessAcceptanceMatrixArtifact(artifacts: Artifact[]): Artifact | null {
+  return artifacts
+    .filter((artifact) =>
+      artifact.metadata.schemaVersion === VERIFIER_AC_MATRIX_SCHEMA_VERSION
+      || artifact.metadata.reportKind === 'verifier_ac_matrix'
+      || artifact.metadata.verifierArtifactType === 'ac_matrix')
+    .at(-1) ?? null;
+}
+
+function businessAcceptanceMatrixRows(artifacts: Artifact[]): number {
+  const matrix = readBusinessAcceptanceMatrix(artifacts);
+  return matrix.length;
+}
+
+function businessAcceptanceMatrixScenarioTypes(artifacts: Artifact[]): string[] {
+  return uniqueStrings(readBusinessAcceptanceMatrix(artifacts)
+    .map((row) => row.scenarioType)
+    .filter((value): value is string => typeof value === 'string' && value.length > 0));
+}
+
+function readBusinessAcceptanceMatrix(artifacts: Artifact[]): Array<Record<string, unknown>> {
+  const artifact = latestBusinessAcceptanceMatrixArtifact(artifacts);
+  if (!artifact) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(fileURLToPath(artifact.uri), 'utf8')) as { acceptanceCriteria?: unknown };
+    return Array.isArray(parsed.acceptanceCriteria)
+      ? parsed.acceptanceCriteria.filter((row): row is Record<string, unknown> =>
+          typeof row === 'object' && row !== null && !Array.isArray(row))
+      : [];
+  } catch {
+    return [];
+  }
 }
 
 function artifactFixture(
@@ -1829,6 +2022,12 @@ function checkWorkflowOutput(
   expectations: WorkflowExpectations,
 ): EvalCheck[] {
   const checks: EvalCheck[] = [];
+  if (expectations.acceptanceGateStatus !== undefined) {
+    checks.push(check('acceptanceGateStatus', expectations.acceptanceGateStatus, output.acceptanceGateStatus));
+  }
+  for (const [ruleId, status] of Object.entries(expectations.acceptanceRuleStatuses ?? {})) {
+    checks.push(check(`acceptanceRuleStatus:${ruleId}`, status, output.acceptanceRuleStatuses[ruleId] ?? null));
+  }
   if (expectations.evidenceGateStatus !== undefined) {
     checks.push(check('evidenceGateStatus', expectations.evidenceGateStatus, output.evidenceGateStatus));
   }
@@ -1838,6 +2037,17 @@ function checkWorkflowOutput(
   if (expectations.commandDigestBacked !== undefined) {
     checks.push(check('commandDigestBacked', expectations.commandDigestBacked, output.commandDigestBacked));
   }
+  if (expectations.businessMatrixRows !== undefined) {
+    checks.push(check('businessMatrixRows', expectations.businessMatrixRows, output.businessMatrixRows));
+  }
+  for (const scenarioType of expectations.businessMatrixScenarioTypes ?? []) {
+    checks.push(includesCheck(
+      `businessMatrixScenarioTypes:${scenarioType}`,
+      output.businessMatrixScenarioTypes,
+      scenarioType,
+      true,
+    ));
+  }
   if (expectations.completionReportGenerated !== undefined) {
     checks.push(check('completionReportGenerated', expectations.completionReportGenerated, output.completionReportGenerated));
   }
@@ -1846,6 +2056,13 @@ function checkWorkflowOutput(
       'completionReportHasStatusAtGeneration',
       expectations.completionReportHasStatusAtGeneration,
       output.completionReportHasStatusAtGeneration,
+    ));
+  }
+  if (expectations.completionReportHasBusinessMatrix !== undefined) {
+    checks.push(check(
+      'completionReportHasBusinessMatrix',
+      expectations.completionReportHasBusinessMatrix,
+      output.completionReportHasBusinessMatrix,
     ));
   }
   if (expectations.retroReportGenerated !== undefined) {

@@ -85,6 +85,8 @@ export const ALL_STAGES = [
   'review',
   'completion',
   'knowledge',
+  'inventory',
+  'profile',
   'report',
   'analyze',
   'scan',
@@ -117,6 +119,8 @@ export const STAGE_LABELS: Record<Stage, string> = {
   review: '验收确认',
   completion: '交付报告',
   knowledge: '知识沉淀',
+  inventory: '项目盘点',
+  profile: '画像生成',
   report: '问题报告',
   analyze: '根因分析',
   scan: '现状扫描',
@@ -133,6 +137,8 @@ export const STAGE_HELP: Record<Stage, string> = {
   review: '汇总验收清单、测试证据和风险，等待用户验收。',
   completion: '生成交付报告，汇总阶段、Gate、命令、产物和审批证据。',
   knowledge: '抽取可复用经验，用户确认后沉淀到项目知识库。',
+  inventory: 'Runner 只读扫描项目文件、配置和 Git 线索，生成可审阅的 inventory artifact。',
+  profile: 'Agent 基于 inventory 生成项目画像；发现仍需通过 Knowledge Gate 才能成为长期知识。',
   report: 'Agent 整理问题现象、复现步骤和影响范围，作为后续分析的输入。',
   analyze: 'Agent 定位根因、评估影响面，给出修复方向。',
   scan: 'Agent 扫描目标代码，识别坏味道、重复和结构问题。',
@@ -153,6 +159,7 @@ export const FLOW_LABELS: Record<FlowId, string> = {
   'feature.fastforward': '快速功能流程',
   'issue.standard': '问题修复流程',
   'refactor.standard': '重构流程',
+  'profile.bootstrap': '项目画像初始化',
 };
 
 const FALLBACK_FLOW_ID: FlowId = 'feature.standard';
@@ -1005,6 +1012,8 @@ export interface AcceptanceChecklistItem {
   id: string;
   text: string;
   status: 'passed' | 'at_risk' | 'missing';
+  scenarioType?: string;
+  verificationMethod?: string;
   evidence: string[];
   risk: string | null;
 }

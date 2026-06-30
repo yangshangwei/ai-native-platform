@@ -14,6 +14,8 @@ import {
   type EvidenceRef,
   VERIFIER_AC_MATRIX_SCHEMA_VERSION,
   VERIFIER_MEDIA_SCHEMA_VERSION,
+  type AcceptanceBusinessStatus,
+  type AcceptanceScenarioType,
   type VerifierAcMatrix,
   type VerifierMediaRole,
   type VerifierStatus,
@@ -280,6 +282,7 @@ export function runRequirementGate(params: {
   const hasArtifact = Boolean(params.artifact);
   const hasReqId = /\bREQ-\d{3}\b/i.test(text);
   const hasAcceptance = hasAcceptanceCriteria(text);
+  const hasBusinessAcceptance = hasBusinessAcceptanceCriteria(text);
   const hasScope = /goals?|目标|non-goals?|非目标|scope|范围/i.test(text);
   const hasContextEvidence =
     /context pack|context evidence|relevant code|evidence refs|`src\//i.test(text);
@@ -317,6 +320,13 @@ export function runRequirementGate(params: {
       ok: hasAcceptance,
       pass: 'acceptance criteria IDs present',
       fail: 'missing AC-### acceptance criteria section',
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'requirement.acceptance_business_meaning_present',
+      ok: hasBusinessAcceptance,
+      pass: 'acceptance criteria describe business behavior beyond a build/test command',
+      fail: 'acceptance criteria are missing business behavior or only cite a build/test command',
       evidenceRefs: evidence,
     }),
     textRule({
@@ -371,6 +381,57 @@ function hasAcceptanceCriteria(text: string): boolean {
   return /(?:^|\n)\s*(?:[-*]\s*)?(?:\*\*)?AC-\d{3}(?:\*\*)?\s*[:：-]/i.test(text);
 }
 
+function hasBusinessAcceptanceCriteria(text: string): boolean {
+  const lines = acceptanceCriterionLines(text);
+  if (lines.length === 0) return false;
+  return lines.some((line) => !isCommandOnlyText(line) && businessTextScore(line) >= 8);
+}
+
+function hasBusinessVerificationStrategy(text: string): boolean {
+  const lines = acceptanceCriterionLines(text);
+  if (lines.length === 0) return false;
+  return lines.some((line) => {
+    const verificationText = verificationTextFromPotentialTableRow(line);
+    return !isCommandOnlyText(verificationText) && businessTextScore(verificationText) >= 12;
+  });
+}
+
+function acceptanceCriterionLines(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => /\bAC-\d{3}\b/i.test(line));
+}
+
+function verificationTextFromPotentialTableRow(line: string): string {
+  if (!line.includes('|')) return line;
+  const cells = line
+    .slice(line.startsWith('|') ? 1 : 0, line.endsWith('|') ? -1 : undefined)
+    .split('|')
+    .map((cell) => cell.trim());
+  return cells[3] ?? cells.at(-1) ?? line;
+}
+
+function isCommandOnlyText(text: string): boolean {
+  const normalized = text
+    .replace(/`[^`]*(?:mvn|mvnw|bun|npm|pnpm|yarn|pytest|gradle|go test)[^`]*`/gi, ' ')
+    .replace(/\b(?:\.\/)?mvnw?\b[\w\s./:=+-]*/gi, ' ')
+    .replace(/\b(?:bun|npm|pnpm|yarn|pytest|gradle|go)\b[\w\s./:=+-]*/gi, ' ')
+    .replace(/\b(?:test|tests|compile|build|typecheck|lint|verify|verified|verifies|passed?|passing|green|exit|command|standard|is|by)\b/gi, ' ')
+    .replace(/验收|标准|命令|测试|编译|通过|全部|用例|运行|项目|标准|成功|失败|错误|无/g, ' ')
+    .replace(/\b(?:AC|REQ)-\d{3}\b/gi, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+  return normalized.length < 8;
+}
+
+function businessTextScore(text: string): number {
+  return text
+    .replace(/\b(?:AC|REQ)-\d{3}\b/gi, '')
+    .replace(/[^\p{L}\p{N}]+/gu, '')
+    .length;
+}
+
 function hasRequirementSection(text: string, title: string): boolean {
   return Boolean(matchGateSection(text, title));
 }
@@ -396,6 +457,7 @@ export function runDesignGate(params: {
     /requirement coverage|coverage matrix|需求覆盖|对应需求/i.test(text) ||
     /\bREQ-\d{3}\b[\s\S]{0,200}\b(?:D-\d{3}|DSN-\d{3}|AC-\d{3})\b/i.test(text);
   const hasTestStrategy = /test strategy|测试策略|\bAC-\d{3}\b[\s\S]{0,200}(test|mvn|测试)/i.test(text);
+  const hasBusinessTestStrategy = hasBusinessVerificationStrategy(text);
   const hasRisk = /risks?|风险/i.test(text);
   const hasContextGrounding =
     /context evidence|context pack|existing implementation|现有工程|`[a-z][\w\-]*\/[^\s`]+`/i.test(text);
@@ -432,6 +494,13 @@ export function runDesignGate(params: {
       ok: hasTestStrategy,
       pass: 'test strategy present',
       fail: 'missing test strategy tied to acceptance criteria',
+      evidenceRefs: evidence,
+    }),
+    textRule({
+      ruleId: 'design.business_verification_strategy_present',
+      ok: hasBusinessTestStrategy,
+      pass: 'test strategy maps ACs to business verification, not only a command',
+      fail: 'test strategy does not describe business behavior beyond command execution',
       evidenceRefs: evidence,
     }),
     textRule({
@@ -521,6 +590,16 @@ export function runAcceptanceTraceabilityGate(params: {
   const stagesRun = new Set(
     store.stepRuns.byWorkflow(params.workflowRunId).map((s) => s.stage),
   );
+  const matrixArtifact = store.artifacts
+    .byWorkflow(params.workflowRunId)
+    .filter(isVerifierAcMatrixArtifact)
+    .at(-1) ?? null;
+  const matrix = matrixArtifact ? parseVerifierAcMatrix(matrixArtifact) : null;
+  const matrixRequired = stagesRun.has('requirement') || stagesRun.has('design');
+  const matrixEvaluation = evaluateBusinessAcceptanceMatrix(matrix);
+  const scenarioTypes = new Set(matrixEvaluation.criteria.map((criterion) => criterion.scenarioType));
+  const missingScenarioTypes = ['core', 'boundary', 'exception']
+    .filter((scenarioType) => !scenarioTypes.has(scenarioType as AcceptanceScenarioType));
 
   const results: RuleResult[] = [
     stagesRun.has('requirement')
@@ -572,6 +651,54 @@ export function runAcceptanceTraceabilityGate(params: {
         ? `latest test_gate=${testGate.status}`
         : 'missing test_gate before acceptance',
       evidenceRefs: testGate?.evidenceRefs ?? [],
+    },
+    {
+      ruleId: 'acceptance.business_matrix_present',
+      status: !matrixRequired || (matrixArtifact && matrix) ? 'pass' : 'fail',
+      message: !matrixRequired
+        ? 'not applicable: no requirement/design AC stage in this flow'
+        : matrixArtifact && matrix
+          ? `business acceptance matrix present (${matrixArtifact.id})`
+          : `missing ${VERIFIER_AC_MATRIX_SCHEMA_VERSION} business acceptance matrix`,
+      evidenceRefs: matrixArtifact
+        ? [{ artifactId: matrixArtifact.id, claim: 'business acceptance matrix' }]
+        : [],
+    },
+    {
+      ruleId: 'acceptance.business_matrix_criteria_proven',
+      status: !matrixRequired
+        ? 'pass'
+        : matrixEvaluation.failed.length > 0 || matrixEvaluation.criteria.length === 0
+          ? 'fail'
+          : matrixEvaluation.atRisk.length > 0
+            ? 'warn'
+            : 'pass',
+      message: !matrixRequired
+        ? 'not applicable: no requirement/design AC stage in this flow'
+        : matrixEvaluation.criteria.length === 0
+          ? 'business acceptance matrix contains no AC rows'
+          : matrixEvaluation.failed.length > 0
+            ? `AC evidence missing or failed: ${matrixEvaluation.failed.slice(0, 6).join(', ')}${matrixEvaluation.failed.length > 6 ? '...' : ''}`
+            : matrixEvaluation.atRisk.length > 0
+              ? `AC accepted at risk: ${matrixEvaluation.atRisk.slice(0, 6).join(', ')}${matrixEvaluation.atRisk.length > 6 ? '...' : ''}`
+              : `${matrixEvaluation.criteria.length} AC row(s) have business evidence`,
+      evidenceRefs: matrixEvaluation.criteria.flatMap((criterion) => criterion.evidenceRefs),
+    },
+    {
+      ruleId: 'acceptance.business_matrix_scenarios_present',
+      status: !matrixRequired
+        ? 'pass'
+        : matrixEvaluation.criteria.length > 0 && missingScenarioTypes.length === 0
+          ? 'pass'
+          : 'fail',
+      message: !matrixRequired
+        ? 'not applicable: no requirement/design AC stage in this flow'
+        : matrixEvaluation.criteria.length === 0
+          ? 'business acceptance matrix contains no scenario rows'
+          : missingScenarioTypes.length === 0
+            ? 'business acceptance matrix covers core, boundary, and exception scenarios'
+            : `business acceptance matrix missing scenario type(s): ${missingScenarioTypes.join(', ')}`,
+      evidenceRefs: matrixEvaluation.criteria.flatMap((criterion) => criterion.evidenceRefs),
     },
   ];
 
@@ -874,7 +1001,13 @@ function isAcceptanceReviewArtifact(artifact: Artifact): boolean {
 
 interface ParsedVerifierCriterion {
   id: string;
+  text?: string;
   status: VerifierStatus;
+  scenarioType?: AcceptanceScenarioType;
+  verificationMethod?: string;
+  businessStatus?: AcceptanceBusinessStatus;
+  risk?: string | null;
+  riskAccepted?: boolean;
   evidenceRefs: Array<EvidenceRef & { role?: VerifierMediaRole | 'ac_matrix' }>;
 }
 
@@ -1000,13 +1133,61 @@ function parseVerifierCriterion(value: unknown): ParsedVerifierCriterion | null 
   const refs = Array.isArray(recordValue.evidenceRefs)
     ? recordValue.evidenceRefs.map(parseVerifierEvidenceRef).filter((ref): ref is ParsedVerifierCriterion['evidenceRefs'][number] => Boolean(ref))
     : [];
-  return { id, status, evidenceRefs: refs };
+  return {
+    id,
+    status,
+    text: typeof recordValue.text === 'string' ? recordValue.text : undefined,
+    scenarioType: parseAcceptanceScenarioType(recordValue.scenarioType),
+    verificationMethod: typeof recordValue.verificationMethod === 'string'
+      ? recordValue.verificationMethod
+      : undefined,
+    businessStatus: parseAcceptanceBusinessStatus(recordValue.businessStatus),
+    risk: typeof recordValue.risk === 'string' ? recordValue.risk : null,
+    riskAccepted: recordValue.riskAccepted === true,
+    evidenceRefs: refs,
+  };
 }
 
 function parseVerifierStatus(value: unknown): VerifierStatus {
   return value === 'pass' || value === 'fail' || value === 'blocked'
     ? value
     : 'blocked';
+}
+
+function parseAcceptanceScenarioType(value: unknown): AcceptanceScenarioType | undefined {
+  return value === 'core' || value === 'boundary' || value === 'exception' || value === 'regression'
+    ? value
+    : undefined;
+}
+
+function parseAcceptanceBusinessStatus(value: unknown): AcceptanceBusinessStatus | undefined {
+  return value === 'passed' || value === 'missing' || value === 'at_risk' || value === 'failed'
+    ? value
+    : undefined;
+}
+
+function evaluateBusinessAcceptanceMatrix(
+  matrix: { acceptanceCriteria: ParsedVerifierCriterion[] } | null,
+): { criteria: ParsedVerifierCriterion[]; failed: string[]; atRisk: string[] } {
+  const criteria = matrix?.acceptanceCriteria ?? [];
+  const failed: string[] = [];
+  const atRisk: string[] = [];
+
+  for (const criterion of criteria) {
+    const hasEvidence = criterion.evidenceRefs.length > 0;
+    const passed = (criterion.businessStatus === 'passed' || criterion.status === 'pass')
+      && hasEvidence
+      && !isCommandOnlyText(`${criterion.text ?? ''} ${criterion.verificationMethod ?? ''}`);
+    const risk = criterion.businessStatus === 'at_risk' && hasEvidence;
+    if (passed) continue;
+    if (risk) {
+      atRisk.push(criterion.id);
+      continue;
+    }
+    failed.push(criterion.id);
+  }
+
+  return { criteria, failed, atRisk };
 }
 
 function parseVerifierEvidenceRef(value: unknown): ParsedVerifierCriterion['evidenceRefs'][number] | null {

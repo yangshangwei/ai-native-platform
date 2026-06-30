@@ -47,7 +47,7 @@ import {
   type RunDetail,
   type Stage,
 } from './projection';
-import { errorMessage } from '@ainp/shared/browser';
+import { VERIFIER_AC_MATRIX_SCHEMA_VERSION, errorMessage } from '@ainp/shared/browser';
 import type {
   AgentBackendKind,
   ContextGovernanceDto,
@@ -1781,7 +1781,7 @@ function renderTestReportPreviews(artifacts: ArtifactDto[]): HTMLElement {
 function renderAcceptancePanel(detail: RunDetail): HTMLElement {
   const req = parsedRequirement(detail);
   const design = parsedDesign(detail);
-  const checklist = buildAcceptanceChecklist(req, design, detail);
+  const checklist = acceptanceMatrixChecklist(detail) ?? buildAcceptanceChecklist(req, design, detail);
   const reviewText = artifactText(detail, 'other');
   return el('article', {
     class: 'panel doc-panel structured-panel',
@@ -1795,6 +1795,14 @@ function renderAcceptancePanel(detail: RunDetail): HTMLElement {
                 class: `acceptance-card ${item.status}`,
                 children: [
                   el('div', { children: [pill(item.id, item.status === 'passed' ? 'good' : item.status === 'at_risk' ? 'warn' : 'bad'), el('strong', { text: item.text })] }),
+                  item.scenarioType || item.verificationMethod
+                    ? el('small', {
+                        text: [
+                          item.scenarioType ? `Scenario: ${item.scenarioType}` : null,
+                          item.verificationMethod ? `Verification: ${item.verificationMethod}` : null,
+                        ].filter(Boolean).join(' · '),
+                      })
+                    : null,
                   item.evidence.length ? el('small', { text: `Evidence: ${item.evidence.join(' · ')}` }) : null,
                   item.risk ? el('small', { class: 'warn', text: item.risk }) : null,
                 ],
@@ -1805,6 +1813,69 @@ function renderAcceptancePanel(detail: RunDetail): HTMLElement {
       reviewText ? el('details', { class: 'raw-details', children: [el('summary', { text: '查看 Review 原文' }), el('pre', { class: 'doc-preview', text: previewText(reviewText) })] }) : null,
     ],
   });
+}
+
+function acceptanceMatrixChecklist(detail: RunDetail): ReturnType<typeof buildAcceptanceChecklist> | null {
+  const artifact = detail.artifacts
+    .filter((candidate) =>
+      candidate.metadata?.schemaVersion === VERIFIER_AC_MATRIX_SCHEMA_VERSION ||
+      candidate.metadata?.reportKind === 'verifier_ac_matrix' ||
+      candidate.metadata?.verifierArtifactType === 'ac_matrix',
+    )
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .at(-1);
+  if (!artifact) return null;
+  const text = artifactContent.get(artifact.id)?.text;
+  if (!text) return null;
+  try {
+    const parsed = JSON.parse(text) as {
+      acceptanceCriteria?: Array<{
+        id?: unknown;
+        text?: unknown;
+        scenarioType?: unknown;
+        verificationMethod?: unknown;
+        businessStatus?: unknown;
+        status?: unknown;
+        risk?: unknown;
+        notes?: unknown;
+        evidenceRefs?: Array<{ artifactId?: unknown; claim?: unknown }>;
+      }>;
+    };
+    const rows = Array.isArray(parsed.acceptanceCriteria) ? parsed.acceptanceCriteria : [];
+    return rows
+      .map((row) => {
+        if (typeof row.id !== 'string') return null;
+        const status: 'passed' | 'at_risk' | 'missing' = row.businessStatus === 'passed' || row.status === 'pass'
+          ? 'passed'
+          : row.businessStatus === 'at_risk'
+            ? 'at_risk'
+            : 'missing';
+        return {
+          id: row.id,
+          text: typeof row.text === 'string' && row.text.trim() ? row.text.trim() : row.id,
+          status,
+          scenarioType: typeof row.scenarioType === 'string' ? row.scenarioType : undefined,
+          verificationMethod: typeof row.verificationMethod === 'string' ? row.verificationMethod : undefined,
+          evidence: Array.isArray(row.evidenceRefs)
+            ? row.evidenceRefs
+                .map((ref) => typeof ref.claim === 'string'
+                  ? ref.claim
+                  : typeof ref.artifactId === 'string'
+                    ? ref.artifactId
+                    : null)
+                .filter((claim): claim is string => Boolean(claim))
+            : [],
+          risk: typeof row.risk === 'string'
+            ? row.risk
+            : typeof row.notes === 'string' && status !== 'passed'
+              ? row.notes
+              : null,
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+  } catch {
+    return null;
+  }
 }
 
 function renderKnowledgeSuggestionsPanel(detail: RunDetail): HTMLElement {

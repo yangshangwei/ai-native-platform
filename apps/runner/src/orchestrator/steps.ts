@@ -4,6 +4,8 @@ import { existsSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import type {
   ArtifactKind,
+  AcceptanceBusinessStatus,
+  AcceptanceScenarioType,
   CommandRun,
   GateRun,
   SkillSpec,
@@ -30,6 +32,8 @@ import { runWhitelistedCommand } from '../command-runner';
 import { DEFAULT_MAX_LOG_BYTES, DEFAULT_TIMEOUT_MS, WORKTREES_DIR } from '../config';
 import { findSkillForStage } from '../skills';
 import { generateProjectProfile } from '../profile';
+import { buildProjectInventory } from '../project-inventory';
+import { selectAgentBackend } from '../backend-selection';
 import {
   collectAcceptedKnowledge,
   persistKnowledgeCandidate,
@@ -116,6 +120,8 @@ export interface StepDeps {
   generateProjectProfile: typeof generateProjectProfile;
   collectAcceptedKnowledge: typeof collectAcceptedKnowledge;
   persistKnowledgeCandidate: typeof persistKnowledgeCandidate;
+  buildProjectInventory: typeof buildProjectInventory;
+  selectAgentBackend: typeof selectAgentBackend;
 }
 
 export const DEFAULT_STEP_DEPS: StepDeps = {
@@ -136,6 +142,8 @@ export const DEFAULT_STEP_DEPS: StepDeps = {
   generateProjectProfile,
   collectAcceptedKnowledge,
   persistKnowledgeCandidate,
+  buildProjectInventory,
+  selectAgentBackend,
 };
 
 type ToolCommandInput = Parameters<typeof runWhitelistedCommand>[0];
@@ -626,7 +634,10 @@ export async function executeVerifier(
   c: RunCtx,
   deps: StepDeps = DEFAULT_STEP_DEPS,
 ): Promise<void> {
-  if (!shouldRequireUiVerifier(c.run.title)) return;
+  const uiVerifierRequired = shouldRequireUiVerifier(c.run.title);
+  const criterionIds = acceptanceCriterionIdsFromInputs(c.inputs);
+  const hasBusinessCriteria = criterionIds.some((id) => id !== 'AC-UI-001');
+  if (!uiVerifierRequired && !hasBusinessCriteria) return;
 
   const { step } = await deps.api.stepStarted({
     workflowRunId: c.run.id,
@@ -638,28 +649,43 @@ export async function executeVerifier(
   await mkdir(verifierDir, { recursive: true });
 
   const mediaArtifacts = await deps.persistVerifierMediaArtifacts(c, stepId, verifierDir);
-  const criterionIds = acceptanceCriterionIdsFromInputs(c.inputs);
-  const criterionStatus: VerifierStatus = verifierMediaSatisfiesCoverage(mediaArtifacts)
-    ? 'pass'
-    : 'blocked';
+  const mediaSatisfied = verifierMediaSatisfiesCoverage(mediaArtifacts);
+  const criterionStatus: VerifierStatus = uiVerifierRequired
+    ? (mediaSatisfied ? 'pass' : 'blocked')
+    : 'pass';
   const matrix: VerifierAcMatrix = {
     schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
     workflowRunId: c.run.id,
     stepRunId: stepId,
-    verifierRequired: true,
+    verifierRequired: uiVerifierRequired,
     verifierStatus: criterionStatus,
-    acceptanceCriteria: criterionIds.map((id) => ({
-      id,
-      status: criterionStatus,
-      evidenceRefs: mediaArtifacts.map(({ artifact, role }) => ({
-        artifactId: artifact.id,
-        role,
-        claim: `${role} verifier media for ${id}`,
-      })),
-      notes: criterionStatus === 'pass'
-        ? 'UI verifier media evidence present.'
-        : 'Missing before+after screenshots or video evidence under .ainp-verifier/.',
-    })),
+    acceptanceCriteria: criterionIds.map((id) => {
+      const text = acceptanceCriterionText(c.inputs, id);
+      const verificationMethod = verificationMethodForCriterion(c.inputs, id);
+      const businessStatus = businessAcceptanceStatus({
+        text,
+        verificationMethod,
+        uiVerifierRequired,
+        mediaSatisfied,
+      });
+      return {
+        id,
+        text,
+        scenarioType: acceptanceScenarioType(`${text} ${verificationMethod}`),
+        verificationMethod,
+        businessStatus,
+        status: businessStatus === 'passed' || businessStatus === 'at_risk' ? criterionStatus : 'blocked',
+        evidenceRefs: [
+          ...businessAcceptanceEvidenceRefs(c, id),
+          ...mediaArtifacts.map(({ artifact, role }) => ({
+            artifactId: artifact.id,
+            role,
+            claim: `${role} verifier media for ${id}`,
+          })),
+        ],
+        notes: verifierCriterionNotes({ businessStatus, uiVerifierRequired, mediaSatisfied }),
+      };
+    }),
     createdAt: nowIso(),
   };
   const matrixBody = `${JSON.stringify(matrix, null, 2)}\n`;
@@ -676,7 +702,7 @@ export async function executeVerifier(
       schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
       reportKind: 'verifier_ac_matrix',
       verifierArtifactType: 'ac_matrix',
-      verifierRequired: true,
+      verifierRequired: uiVerifierRequired,
       verifierStatus: criterionStatus,
       stage: 'review',
       subStage: 'verifier',
@@ -686,9 +712,97 @@ export async function executeVerifier(
   c.inputs['verifier-ac-matrix.json'] = matrixBody;
   c.inputArtifactIds['verifier-ac-matrix.json'] = matrixArtifact.id;
   console.log(
-    `[runner] verifier matrix ${matrixArtifact.id} (${criterionStatus}; media=${mediaArtifacts.length})`,
+    `[runner] verifier matrix ${matrixArtifact.id} (${criterionStatus}; criteria=${criterionIds.length}; media=${mediaArtifacts.length})`,
   );
   await deps.api.stepFinished({ stepRunId: stepId, status: 'passed' });
+}
+
+function acceptanceCriterionText(inputs: Record<string, string>, id: string): string | undefined {
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  for (const key of ['requirement.json', 'requirement.md', 'design.md', 'user_request']) {
+    const text = inputs[key];
+    if (!text) continue;
+    const match = new RegExp(String.raw`\b${escaped}\b\s*[:：-]?\s*(.+)`, 'i').exec(text);
+    if (match?.[1]?.trim()) return match[1].trim().slice(0, 500);
+  }
+  return undefined;
+}
+
+function verificationMethodForCriterion(inputs: Record<string, string>, id: string): string | undefined {
+  const design = inputs['design.md'] ?? '';
+  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const row = design
+    .split('\n')
+    .find((line) => line.includes('|') && new RegExp(String.raw`\b${escaped}\b`, 'i').test(line));
+  if (row) {
+    const cells = row.slice(1, row.endsWith('|') ? -1 : undefined).split('|').map((cell) => cell.trim());
+    const verification = cells[3] ?? cells.at(-1);
+    if (verification) return verification.slice(0, 500);
+  }
+  const window = new RegExp(String.raw`\b${escaped}\b[\s\S]{0,240}`, 'i').exec(design)?.[0]?.trim();
+  return window ? window.slice(0, 500) : undefined;
+}
+
+function businessAcceptanceStatus(input: {
+  text: string | undefined;
+  verificationMethod: string | undefined;
+  uiVerifierRequired: boolean;
+  mediaSatisfied: boolean;
+}): AcceptanceBusinessStatus {
+  const body = `${input.text ?? ''} ${input.verificationMethod ?? ''}`;
+  if (!input.text || !input.verificationMethod || commandOnlyVerifierText(body)) return 'missing';
+  if (input.uiVerifierRequired && !input.mediaSatisfied) return 'missing';
+  return 'passed';
+}
+
+function businessAcceptanceEvidenceRefs(c: RunCtx, id: string): Array<{ artifactId: string; claim: string }> {
+  const refs: Array<{ artifactId: string; claim: string }> = [];
+  for (const [inputName, claim] of [
+    ['requirement.md', `requirement business criterion ${id}`],
+    ['design.md', `design verification strategy for ${id}`],
+    ['diff', `implementation diff relevant to ${id}`],
+    ['review.md', `review evidence for ${id}`],
+  ] as const) {
+    const artifactId = c.inputArtifactIds[inputName];
+    if (artifactId) refs.push({ artifactId, claim });
+  }
+  return refs;
+}
+
+function acceptanceScenarioType(text: string): AcceptanceScenarioType {
+  if (/exception|error|invalid|failure|fallback|timeout|异常|非法|失败|错误|回退|超时/i.test(text)) return 'exception';
+  if (/boundary|edge|empty|null|max|min|limit|toggle|边界|为空|最大|最小|限制|开启|关闭/i.test(text)) return 'boundary';
+  if (/regression|existing|backward|兼容|回归|既有/i.test(text)) return 'regression';
+  return 'core';
+}
+
+function verifierCriterionNotes(input: {
+  businessStatus: AcceptanceBusinessStatus;
+  uiVerifierRequired: boolean;
+  mediaSatisfied: boolean;
+}): string {
+  if (input.businessStatus === 'passed') {
+    return input.uiVerifierRequired
+      ? 'Business AC has verifier media evidence and textual verification strategy.'
+      : 'Business AC has textual verification strategy and run evidence refs.';
+  }
+  if (input.uiVerifierRequired && !input.mediaSatisfied) {
+    return 'Missing before+after screenshots or video evidence under .ainp-verifier/.';
+  }
+  return 'Missing business AC text or verification method beyond a build/test command.';
+}
+
+function commandOnlyVerifierText(text: string): boolean {
+  const normalized = text
+    .replace(/`[^`]*(?:mvn|mvnw|bun|npm|pnpm|yarn|pytest|gradle|go test)[^`]*`/gi, ' ')
+    .replace(/\b(?:\.\/)?mvnw?\b[\w\s./:=+-]*/gi, ' ')
+    .replace(/\b(?:bun|npm|pnpm|yarn|pytest|gradle|go)\b[\w\s./:=+-]*/gi, ' ')
+    .replace(/\b(?:test|tests|compile|build|typecheck|lint|verify|verified|verifies|passed?|passing|green|exit|command|standard|is|by)\b/gi, ' ')
+    .replace(/验收|标准|命令|测试|编译|通过|全部|用例|运行|项目|标准|成功|失败|错误|无/g, ' ')
+    .replace(/\b(?:AC|REQ)-\d{3}\b/gi, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+  return normalized.length < 8;
 }
 
 export async function executeAcceptance(
@@ -804,6 +918,155 @@ export async function executeAgentMarkdownStage(
   await checkpointStageContext(c, deps, {
     stepRunId: stepId,
     stage,
+    phase: 'finish',
+    producedArtifactIds,
+    agent,
+  });
+  await deps.api.stepFinished({ stepRunId: stepId, status: 'passed' });
+}
+
+export async function executeInventory(
+  c: RunCtx,
+  deps: StepDeps = DEFAULT_STEP_DEPS,
+): Promise<void> {
+  const { step } = await deps.api.stepStarted({
+    workflowRunId: c.run.id,
+    stage: 'inventory',
+    name: 'project_inventory',
+  });
+  const stepId = step.id;
+  await checkpointStageContext(c, deps, {
+    stepRunId: stepId,
+    stage: 'inventory',
+    phase: 'start',
+  });
+
+  const inventory = await deps.buildProjectInventory({
+    projectId: c.project.id,
+    workflowRunId: c.run.id,
+    repoRoot: c.workspace.path,
+  });
+  const body = `${JSON.stringify(inventory, null, 2)}\n`;
+  const outDir = join(c.runArtifactsDir, 'inventory');
+  await mkdir(outDir, { recursive: true });
+  const outPath = join(outDir, 'project-inventory.json');
+  await writeFile(outPath, body, 'utf8');
+
+  const artifact = await deps.api.postArtifact({
+    workflowRunId: c.run.id,
+    stepRunId: stepId,
+    kind: 'other',
+    uri: pathToFileUri(outPath),
+    size: Buffer.byteLength(body, 'utf8'),
+    contentType: 'application/json',
+    metadata: {
+      role: 'project_inventory',
+      schemaVersion: inventory.schemaVersion,
+      output: 'project-inventory.json',
+      stage: 'inventory',
+    },
+  });
+  c.inputs['project-inventory.json'] = body;
+  c.inputArtifactIds['project-inventory.json'] = artifact.id;
+  console.log(`[runner] project_inventory artifact ${artifact.id}`);
+
+  await checkpointStageContext(c, deps, {
+    stepRunId: stepId,
+    stage: 'inventory',
+    phase: 'finish',
+    producedArtifactIds: { 'project-inventory.json': artifact.id },
+  });
+  await deps.api.stepFinished({ stepRunId: stepId, status: 'passed' });
+}
+
+export async function executeProfileBootstrap(
+  c: RunCtx,
+  deps: StepDeps = DEFAULT_STEP_DEPS,
+): Promise<void> {
+  const skill = await deps.mustSkill('profile');
+  const { step } = await deps.api.stepStarted({
+    workflowRunId: c.run.id,
+    stage: 'profile',
+    name: skill.id,
+  });
+  const stepId = step.id;
+  await checkpointStageContext(c, deps, {
+    stepRunId: stepId,
+    stage: 'profile',
+    phase: 'start',
+  });
+
+  try {
+    c.backend = await deps.selectAgentBackend(c.project, c.opts.agentBackend);
+  } catch (err) {
+    c.ok.value = false;
+    await deps.api.stepFinished({
+      stepRunId: stepId,
+      status: 'failed',
+      failureReason: errorMessage(err),
+    });
+    throw err;
+  }
+
+  const stepArtifactsDir = join(c.runArtifactsDir, 'profile');
+  const agent = await deps.invokeSkill(c, skill, {
+    workflowRunId: c.run.id,
+    stepRunId: stepId,
+    workspacePath: c.workspace.path,
+    branch: c.workspace.branch,
+    title: c.opts.title,
+    artifactsDir: stepArtifactsDir,
+    inputs: c.inputs,
+  });
+
+  const markdownOut = agent.outputs.find((out) => out.name === 'project-profile.md');
+  const jsonOut = agent.outputs.find((out) => out.name === 'project-profile.json');
+  if (!markdownOut || !jsonOut) {
+    throw new Error('profile: missing project-profile.md or project-profile.json outputs');
+  }
+
+  const jsonText = await Bun.file(jsonOut.path).text();
+  const schemaVersion = profileSchemaVersion(jsonText);
+  if (schemaVersion !== 'ainp.project_profile.v1') {
+    throw new Error('profile: project-profile.json must use schemaVersion ainp.project_profile.v1');
+  }
+
+  const artifactIds: string[] = [];
+  const producedArtifactIds: Record<string, string> = {};
+  for (const out of [markdownOut, jsonOut]) {
+    const text = out === jsonOut ? jsonText : await Bun.file(out.path).text();
+    const profileFormat = out.name.endsWith('.json') ? 'json' : 'markdown';
+    const artifact = await deps.api.postArtifact({
+      workflowRunId: c.run.id,
+      stepRunId: stepId,
+      kind: 'project_profile',
+      uri: pathToFileUri(out.path),
+      size: out.size,
+      contentType: out.contentType,
+      metadata: {
+        skill: skill.id,
+        output: out.name,
+        stage: 'profile',
+        profileFormat,
+        inventoryArtifactId: c.inputArtifactIds['project-inventory.json'] ?? null,
+        ...(profileFormat === 'json' ? { schemaVersion } : {}),
+      },
+    });
+    c.inputs[out.name] = text;
+    c.inputArtifactIds[out.name] = artifact.id;
+    artifactIds.push(artifact.id);
+    producedArtifactIds[out.name] = artifact.id;
+    console.log(`[runner] profile artifact ${artifact.id} (${out.name})`);
+  }
+
+  await deps.finishAgentSuccess(
+    agent,
+    artifactIds,
+    `profile produced ${artifactIds.length} artifact(s)`,
+  );
+  await checkpointStageContext(c, deps, {
+    stepRunId: stepId,
+    stage: 'profile',
     phase: 'finish',
     producedArtifactIds,
     agent,
@@ -1294,11 +1557,20 @@ function contextPackArtifactIdsForStage(c: RunCtx, agent?: InvokedAgent): string
 // ---- shared step utilities -------------------------------------------------
 
 export async function mustSkill(
-  stage: 'requirement' | 'design' | 'implementation' | 'review' | 'report' | 'analyze' | 'scan' | 'plan',
+  stage: 'requirement' | 'design' | 'implementation' | 'review' | 'report' | 'analyze' | 'scan' | 'plan' | 'profile',
 ) {
   const s = await findSkillForStage(stage);
   if (!s) throw new Error(`no skill for stage ${stage}`);
   return s;
+}
+
+function profileSchemaVersion(text: string): string | null {
+  try {
+    const parsed = JSON.parse(text) as { schemaVersion?: unknown };
+    return typeof parsed.schemaVersion === 'string' ? parsed.schemaVersion : null;
+  } catch {
+    return null;
+  }
 }
 
 function artifactKindForStageOutput(

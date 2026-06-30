@@ -1,8 +1,8 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, expect, test } from 'vitest';
-import { newId, nowIso, type CommandRun, type GateRun, type Project } from '@ainp/shared';
+import { newId, nowIso, pathToFileUri, VERIFIER_AC_MATRIX_SCHEMA_VERSION, type CommandRun, type GateRun, type Project, type WorkflowRunType } from '@ainp/shared';
 
 process.env.AINP_DB_PATH = join(mkdtempSync(join(tmpdir(), 'ainp-report-sidecars-')), 'ainp.sqlite');
 process.env.AINP_REPORTS_DIR = mkdtempSync(join(tmpdir(), 'ainp-reports-'));
@@ -17,7 +17,7 @@ beforeAll(async () => {
   storeMod = await import('../src/store/store');
 });
 
-function seedRun() {
+function seedRun(overrides: { type?: WorkflowRunType; title?: string } = {}) {
   const project: Project = {
     id: newId('proj'),
     name: `report-sidecar-project-${Date.now()}`,
@@ -28,7 +28,11 @@ function seedRun() {
     registeredAt: nowIso(),
   };
   storeMod.store.projects.set(project.id, project);
-  return workflow.createWorkflowRun({ projectId: project.id, type: 'feature', title: 'report sidecar test' });
+  return workflow.createWorkflowRun({
+    projectId: project.id,
+    type: overrides.type ?? 'feature',
+    title: overrides.title ?? 'report sidecar test',
+  });
 }
 
 test('completion report route blocks when Evidence Gate fails', async () => {
@@ -169,6 +173,42 @@ test('completion report route emits markdown plus structured JSON sidecar artifa
     outputArtifactIds: [handoffOutput.id],
     metadata: { gateAuthority: 'gate_engine' },
   });
+  const matrixPath = join(mkdtempSync(join(tmpdir(), 'ainp-report-matrix-')), 'verifier-ac-matrix.json');
+  writeFileSync(
+    matrixPath,
+    `${JSON.stringify({
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      workflowRunId: run.id,
+      stepRunId: step.id,
+      verifierRequired: false,
+      verifierStatus: 'pass',
+      acceptanceCriteria: [
+        {
+          id: 'AC-001',
+          text: 'Export respects active filters.',
+          scenarioType: 'core',
+          verificationMethod: 'Integration test checks filtered export output.',
+          businessStatus: 'passed',
+          status: 'pass',
+          evidenceRefs: [{ artifactId: handoffOutput.id, claim: 'review confirms filtered export evidence' }],
+        },
+      ],
+      createdAt: nowIso(),
+    }, null, 2)}\n`,
+  );
+  workflow.createArtifact({
+    workflowRunId: run.id,
+    stepRunId: step.id,
+    kind: 'other',
+    uri: pathToFileUri(matrixPath),
+    size: 1,
+    contentType: 'application/json',
+    metadata: {
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      reportKind: 'verifier_ac_matrix',
+      verifierArtifactType: 'ac_matrix',
+    },
+  });
   const res = await app.request(`/workflow-runs/${run.id}/completion-report`, { method: 'POST' });
 
   expect(res.status).toBe(201);
@@ -186,6 +226,8 @@ test('completion report route emits markdown plus structured JSON sidecar artifa
   const markdown = await app.request(`/artifacts/${body.artifact.id}/content`);
   const markdownText = ((await markdown.json()) as { text: string }).text;
   expect(markdownText).toContain('**Status at report generation:**');
+  expect(markdownText).toContain('## Business Acceptance Matrix');
+  expect(markdownText).toContain('AC-001');
   expect(markdownText).not.toContain('**Status:** running');
 
   const json = await app.request(`/artifacts/${body.sidecar.id}/content`);
@@ -196,6 +238,7 @@ test('completion report route emits markdown plus structured JSON sidecar artifa
     contextRequests: Array<{ id: string; supplementContextPackId: string }>;
     handoffs: Array<{ toRole: string; adoptionDecision: string; outputArtifactIds: string[] }>;
     stepCheckpoints: Array<{ stepRunId: string; contextPackId: string; agentSessionIds: string[] }>;
+    businessAcceptanceMatrix: Array<{ id: string; status: string; scenarioType: string }>;
     knowledgeReviewSignals: Array<{ kind: string; recommendedAction: string }>;
   };
   expect(parsed.schemaVersion).toBe('ainp.completion_report.v1');
@@ -229,6 +272,11 @@ test('completion report route emits markdown plus structured JSON sidecar artifa
   );
   expect(parsed.sections.find((section) => section.title.startsWith('Step Checkpoints'))?.body)
     .toContain(step.id);
+  expect(parsed.sections.find((section) => section.title === 'Business Acceptance Matrix')?.body)
+    .toContain('AC-001');
+  expect(parsed.businessAcceptanceMatrix).toEqual([
+    expect.objectContaining({ id: 'AC-001', status: 'passed', scenarioType: 'core' }),
+  ]);
   expect(parsed.knowledgeReviewSignals).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ kind: 'mark_stale', recommendedAction: 'mark_stale' }),
@@ -426,6 +474,256 @@ test('knowledge candidate route emits markdown plus structured JSON sidecar arti
   expect(JSON.stringify(parsed.suggestions)).not.toContain('Trusted Local Worktree mode');
   expect(parsed.provenance.commandRunIds).toContain('cmd_typecheck');
   expect(parsed.provenance.contextRequestActionIds.length).toBeGreaterThan(0);
+});
+
+test('profile completion report includes inventory/profile stage and artifact evidence', async () => {
+  const run = seedRun({ type: 'profile', title: 'Generate legacy project profile' });
+  const inventoryStep = workflow.startStep({
+    workflowRunId: run.id,
+    stage: 'inventory',
+    name: 'project_inventory',
+  });
+  workflow.finishStep(inventoryStep.id, 'passed');
+  const profileStep = workflow.startStep({
+    workflowRunId: run.id,
+    stage: 'profile',
+    name: 'project-profile-bootstrap',
+  });
+  workflow.finishStep(profileStep.id, 'passed');
+
+  const inventoryText = '{"schemaVersion":"ainp.project_inventory.v1"}\n';
+  const inventoryPath = join(process.env.AINP_REPORTS_DIR!, `${run.id}-project-inventory.json`);
+  writeFileSync(inventoryPath, inventoryText, 'utf8');
+  workflow.createArtifact({
+    workflowRunId: run.id,
+    stepRunId: inventoryStep.id,
+    kind: 'other',
+    uri: pathToFileUri(inventoryPath),
+    size: Buffer.byteLength(inventoryText, 'utf8'),
+    contentType: 'application/json',
+    metadata: {
+      role: 'project_inventory',
+      output: 'project-inventory.json',
+      schemaVersion: 'ainp.project_inventory.v1',
+    },
+  });
+
+  const profileText = '{"schemaVersion":"ainp.project_profile.v1"}\n';
+  const profilePath = join(process.env.AINP_REPORTS_DIR!, `${run.id}-project-profile.json`);
+  writeFileSync(profilePath, profileText, 'utf8');
+  workflow.createArtifact({
+    workflowRunId: run.id,
+    stepRunId: profileStep.id,
+    kind: 'project_profile',
+    uri: pathToFileUri(profilePath),
+    size: Buffer.byteLength(profileText, 'utf8'),
+    contentType: 'application/json',
+    metadata: {
+      output: 'project-profile.json',
+      profileFormat: 'json',
+      schemaVersion: 'ainp.project_profile.v1',
+    },
+  });
+
+  const { generateCompletionReport } = await import('../src/reports');
+  const report = await generateCompletionReport(run.id);
+
+  const markdown = await app.request(`/artifacts/${report.artifact.id}/content`);
+  const markdownText = ((await markdown.json()) as { text: string }).text;
+  expect(markdownText).toContain('| inventory | passed |');
+  expect(markdownText).toContain('| profile | passed |');
+  expect(markdownText).toContain('project-inventory.json');
+  expect(markdownText).toContain('project-profile.json');
+
+  const json = await app.request(`/artifacts/${report.sidecar.id}/content`);
+  const parsed = JSON.parse(((await json.json()) as { text: string }).text) as {
+    sections: Array<{ title: string; body: string }>;
+  };
+  const timeline = parsed.sections.find((section) => section.title === 'Stage timeline')?.body ?? '';
+  expect(timeline).toContain('| inventory | passed |');
+  expect(timeline).toContain('| profile | passed |');
+});
+
+test('profile knowledge candidate route converts valid profile suggestions and drops unsafe entries', async () => {
+  const run = seedRun({ type: 'profile', title: 'Generate legacy project profile' });
+  const profile = {
+    schemaVersion: 'ainp.project_profile.v1',
+    projectId: run.projectId,
+    workflowRunId: run.id,
+    generatedAt: nowIso(),
+    inventoryArtifactId: 'art_inventory',
+    repo: { root: '/tmp/report-sidecar-project', branch: 'main', commit: 'abc123' },
+    summary: 'Legacy commerce platform.',
+    architecture: {
+      title: 'Architecture',
+      body: 'API and worker packages share a workflow engine.',
+      sourceRefs: ['file:README.md'],
+      confidence: 0.88,
+    },
+    commands: [],
+    modules: [],
+    businessFlows: [],
+    riskAreas: [],
+    conventions: [],
+    domainVocabulary: [],
+    openQuestions: [],
+    knowledgeCandidates: [
+      {
+        title: 'Workflow engine owns run state',
+        kind: 'architecture',
+        body: 'Workflow run state is written through the API workflow engine.',
+        sourceRefs: ['file:apps/api/src/workflow-engine.ts'],
+        confidence: 0.91,
+        freshness: 'current',
+        rationale: 'Multiple modules route state changes through this file.',
+      },
+      {
+        title: 'Backend setup is an explicit constraint',
+        kind: 'decision',
+        subtype: 'constraint',
+        body: 'Profile synthesis requires a configured real agent backend.',
+        sourceRefs: ['file:.trellis/spec/runner/backend/agent-backend-runtime.md'],
+        confidence: 0.82,
+        freshness: 'possibly_stale',
+        rationale: 'The runtime contract forbids fake fallback backends.',
+      },
+      {
+        title: 'Bad kind',
+        kind: 'memory_blob',
+        body: 'Should be dropped.',
+        sourceRefs: ['file:README.md'],
+        confidence: 0.95,
+        freshness: 'current',
+      },
+      {
+        title: 'Bad subtype',
+        kind: 'decision',
+        subtype: 'pitfall',
+        body: 'Should be dropped.',
+        sourceRefs: ['file:README.md'],
+        confidence: 0.95,
+        freshness: 'current',
+      },
+      {
+        title: 'Low confidence',
+        kind: 'lesson',
+        subtype: 'pitfall',
+        body: 'Should be dropped.',
+        sourceRefs: ['file:README.md'],
+        confidence: 0.4,
+        freshness: 'historical',
+      },
+      {
+        title: 'No evidence',
+        kind: 'pattern',
+        subtype: 'pattern',
+        body: 'Should be dropped.',
+        sourceRefs: [],
+        confidence: 0.9,
+        freshness: 'current',
+      },
+    ],
+  };
+  const profileText = `${JSON.stringify(profile, null, 2)}\n`;
+  const profilePath = join(process.env.AINP_REPORTS_DIR!, `${run.id}-project-profile.json`);
+  writeFileSync(profilePath, profileText, 'utf8');
+  const profileArtifact = workflow.createArtifact({
+    workflowRunId: run.id,
+    stepRunId: null,
+    kind: 'project_profile',
+    uri: pathToFileUri(profilePath),
+    size: Buffer.byteLength(profileText, 'utf8'),
+    contentType: 'application/json',
+    metadata: {
+      output: 'project-profile.json',
+      profileFormat: 'json',
+      schemaVersion: 'ainp.project_profile.v1',
+    },
+  });
+
+  const res = await app.request(`/workflow-runs/${run.id}/knowledge-candidate`, { method: 'POST' });
+
+  expect(res.status).toBe(201);
+  const body = (await res.json()) as {
+    artifact: { id: string; kind: string; contentType: string; metadata: Record<string, unknown> };
+    sidecar: { id: string; kind: string; contentType: string; metadata: Record<string, unknown> };
+  };
+  expect(body.artifact).toMatchObject({
+    kind: 'knowledge_candidate',
+    contentType: 'text/markdown',
+    metadata: { origin: 'profile.bootstrap', profileArtifactId: profileArtifact.id },
+  });
+  expect(body.sidecar).toMatchObject({
+    kind: 'knowledge_candidate',
+    contentType: 'application/json',
+    metadata: {
+      structured: true,
+      schemaVersion: 'ainp.knowledge_candidate.v1',
+      origin: 'profile.bootstrap',
+      profileArtifactId: profileArtifact.id,
+    },
+  });
+
+  const json = await app.request(`/artifacts/${body.sidecar.id}/content`);
+  const parsed = JSON.parse(((await json.json()) as { text: string }).text) as {
+    schemaVersion: string;
+    status: string;
+    origin: string;
+    suggestions: Array<{
+      kind: string;
+      knowledgeKind: string;
+      subtype: string | null;
+      confidence: number;
+      freshness: string;
+      sourceRefs: string[];
+      origin: string;
+    }>;
+    profileCandidates: Array<{
+      knowledgeKind: string;
+      subtype: string | null;
+      confidence: number;
+      freshness: string;
+      sourceRefs: string[];
+      origin: string;
+      status: string;
+    }>;
+    warnings: Array<{ title: string | null; reason: string }>;
+    provenance: { profileArtifactId: string; sourceRefs: string[] };
+  };
+  expect(parsed.schemaVersion).toBe('ainp.knowledge_candidate.v1');
+  expect(parsed.status).toBe('candidate');
+  expect(parsed.origin).toBe('profile.bootstrap');
+  expect(parsed.suggestions.map((item) => item.knowledgeKind)).toEqual(['architecture', 'decision']);
+  expect(parsed.suggestions[0]).toMatchObject({
+    kind: 'Pattern',
+    confidence: 0.91,
+    freshness: 'current',
+    origin: 'profile.bootstrap',
+  });
+  expect(parsed.profileCandidates[1]).toMatchObject({
+    knowledgeKind: 'decision',
+    subtype: 'constraint',
+    confidence: 0.82,
+    freshness: 'possibly_stale',
+    origin: 'profile.bootstrap',
+    status: 'candidate',
+  });
+  expect(parsed.profileCandidates[0]?.sourceRefs).toEqual(
+    expect.arrayContaining([`artifact:${profileArtifact.id}`, 'file:apps/api/src/workflow-engine.ts']),
+  );
+  expect(parsed.warnings.map((warning) => warning.title)).toEqual(
+    expect.arrayContaining(['Bad kind', 'Bad subtype', 'Low confidence', 'No evidence']),
+  );
+  expect(parsed.warnings.map((warning) => warning.reason).join('\n')).toContain('below the 0.70');
+  expect(parsed.provenance.profileArtifactId).toBe(profileArtifact.id);
+  expect(parsed.provenance.sourceRefs).toContain(`artifact:${profileArtifact.id}`);
+  expect(storeMod.store.knowledgeArtifacts.byProject(run.projectId)).toHaveLength(0);
+
+  const markdown = await app.request(`/artifacts/${body.artifact.id}/content`);
+  const markdownText = ((await markdown.json()) as { text: string }).text;
+  expect(markdownText).toContain('### architecture');
+  expect(markdownText).toContain('Backend setup is an explicit constraint');
+  expect(markdownText).toContain('Dropped candidates / warnings');
 });
 
 test('retro route emits fact-first retro artifacts with knowledge/eval candidates', async () => {

@@ -24,8 +24,14 @@
   - `context_request`
 - `agent_backend_fixture.expectations` supports checks for session start/finish, final status, AgentResult linkage, observed error, context request capture, output count, backend call count, and external CLI usage.
 - `context_pack_fixture.expectations` supports checks for mode, manifest refs, source refs, authoritative source-ref exclusion, section inclusion modes, retrieval hint count, calibration signal count, and selected item count.
-- `workflow_fixture.input.profile` supports `complete`, `missing_command_digest`, and `artifact_only_compile`.
-- `workflow_fixture.expectations` supports checks for Evidence Gate status, rule statuses, digest-backed commands, completion report generation, retro report generation, retro finding count, and report artifact count.
+- `workflow_fixture.input.profile` supports `complete`, `missing_command_digest`,
+  `artifact_only_compile`, `captcha_business_acceptance`, and
+  `captcha_test_only`.
+- `workflow_fixture.expectations` supports checks for Acceptance Gate
+  status/rule statuses, Evidence Gate status/rule statuses, business
+  acceptance matrix row count/scenario types, digest-backed commands,
+  completion report generation, completion report business-matrix presence,
+  retro report generation, retro finding count, and report artifact count.
 - `graph_runtime_fixture.input.profile` supports `linear_equivalence`, `failed_resume`, and `completed_resume`.
 - `graph_runtime_fixture.expectations` supports checks for FLOW_REGISTRY stage-order equivalence, scheduler runnable stages, failed-node resume attempt creation, completed-node resume rejection, source-checkpoint linkage, and graph event emission.
 - Report schema: `ainp.eval.result.v1`; JSON and HTML reports include scenario kind, variant, checks, output, and pass/fail status.
@@ -41,6 +47,8 @@
 - Context-request fake invocations in the default suite must model the bounded retry path: first backend call emits `context_request`, second backend call succeeds, and expectations assert `backendCalls: 2`.
 - `context_pack_fixture` must call the real Runner context builder and expose structured manifest/source-ref/degradation output for expectations. It must not snapshot the whole ContextPack.
 - `workflow_fixture` must seed deterministic workflow evidence into the eval SQLite store, call the real Evidence Gate, and use report generators for completion/retro sidecar checks. It must not run a live API server.
+- Business acceptance workflow fixtures must call the real Acceptance Gate
+  before Evidence Gate. They must not hand-implement matrix verdicts.
 - `graph_runtime_fixture` must use the real shared flow-to-graph adapter, API graph resume helper, graph ledger store, and Runner graph scheduler. It must not hand-implement alternate graph traversal or resume rules.
 
 ### 4. Validation & Error Matrix
@@ -61,6 +69,10 @@
 - Good: the context_request variant checks `contextRequestCaptured: true`, `finalStatus: 'success'`, and `backendCalls: 2`.
 - Good: default suite includes `context_pack_fixture` variants for selected accepted/current knowledge and observable budget degradation.
 - Good: default suite includes `workflow_fixture` with digest-backed compile/test/acceptance evidence, passing Evidence Gate, and generated completion/retro report sidecars.
+- Good: default suite includes a login captcha toggle workflow fixture whose
+  complete variant covers core, boundary, and exception AC rows, plus a
+  test-only variant that expects Acceptance Gate failure even though
+  `test_gate` is passing.
 - Good: default suite includes `graph_runtime_fixture` variants for linear graph equivalence, failed-node resume creating a new ready attempt, and completed-node resume rejection.
 - Good: `bun run eval -- --scenario-dir eval/scenarios-red` exits 1 for an intentionally bad AgentSession expectation.
 - Good: red suite includes context/workflow/graph bad expectations for sensitive context, missing command digests, and invalid graph resume expectations.
@@ -69,6 +81,8 @@
 - Bad: a red scenario is placed under `eval/scenarios/`, causing the default eval suite to fail.
 - Bad: `context_pack_fixture` uses whole-pack snapshots that churn on harmless score/id/timestamp changes.
 - Bad: `workflow_fixture` hand-implements an alternate Evidence Gate instead of calling the real gate.
+- Bad: a business-acceptance workflow fixture marks the test-only path as
+  accepted. It must expect `acceptance.business_matrix_present=fail`.
 - Bad: `graph_runtime_fixture` hand-implements a fake scheduler/resume policy instead of calling the real Graph Runtime helpers.
 
 ### 6. Tests Required

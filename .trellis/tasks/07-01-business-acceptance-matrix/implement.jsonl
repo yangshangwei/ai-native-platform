@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/shared/backend/evidence-verifier-protocol.md", "reason": "Cross-layer contract for verifier matrix artifacts, evidence refs, Evidence Gate, and completion report evidence"}
+{"file": ".trellis/spec/api/backend/build-commands.md", "reason": "Project build/test command contract; test_gate remains necessary evidence but not sufficient for business acceptance"}
+{"file": ".trellis/spec/runner/backend/flow-registry.md", "reason": "Runner flow stage ordering and extension constraints for inserting/generating verifier artifacts before acceptance"}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Workbench task detail and report-center UX contract for acceptance and evidence display"}

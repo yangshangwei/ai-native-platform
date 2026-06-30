@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/shared/backend/evidence-verifier-protocol.md", "reason": "Verify matrix/gate/report changes preserve the evidence authority model and verifier artifact rules"}
+{"file": ".trellis/spec/api/backend/build-commands.md", "reason": "Verify build/test command behavior remains compatible while acceptance gets stricter"}
+{"file": ".trellis/spec/runner/backend/flow-registry.md", "reason": "Verify runner orchestration still respects registered flow semantics"}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Verify Workbench acceptance UI remains aligned with project UX contracts"}

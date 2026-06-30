@@ -94,7 +94,7 @@ test('design gate requires coverage, test strategy, risks, and existing context 
       '3. run mvn test',
       '',
       '## Test Strategy',
-      '- AC-001 is verified by mvn test.',
+      '- AC-001 is verified by a JUnit test that calls Calculator.subtract for normal integer subtraction via mvn test.',
       '',
       '## Risks',
       '- Low risk.',
@@ -113,6 +113,105 @@ test('design gate requires coverage, test strategy, risks, and existing context 
 
   expect(gate.status).toBe('pass');
   expect(gate.ruleResults.every((r) => r.status === 'pass')).toBe(true);
+});
+
+test('requirement gate rejects command-only acceptance criteria without business behavior', () => {
+  const path = join(tmpdir(), `requirement-command-only-${Date.now()}.md`);
+  writeFileSync(
+    path,
+    [
+      '---',
+      'pitch: tighten acceptance',
+      '---',
+      '# Requirement',
+      '',
+      'REQ-001',
+      '',
+      '## 用户故事',
+      '- 作为验收负责人，我希望验收标准能说明业务行为，而不是只有命令。',
+      '- 作为维护者，我希望缺失业务场景时 Gate 能阻止继续。',
+      '',
+      '## 为什么需要',
+      '只看命令通过会漏掉核心业务行为。',
+      '',
+      '## 怎么解决',
+      '- AC-001: mvn test 通过。',
+      '',
+      '## 边界',
+      '本任务只验证验收标准文本质量，不改变构建命令本身。',
+      '',
+      '## Context Evidence',
+      '- `src/main/java/sample/Calculator.java:1`',
+    ].join('\n'),
+  );
+  const a = artifact('requirement_draft', path);
+
+  const gate = gates.runRequirementGate({
+    workflowRunId: 'run_requirement_command_only',
+    stepRunId: 'step_requirement_command_only',
+    artifact: a,
+  });
+  const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
+
+  expect(ruleById['requirement.acceptance_criteria_present'].status).toBe('pass');
+  expect(ruleById['requirement.acceptance_business_meaning_present'].status).toBe('fail');
+});
+
+test('design gate rejects command-only AC verification strategy', () => {
+  const path = join(tmpdir(), `design-command-only-${Date.now()}.md`);
+  writeFileSync(
+    path,
+    [
+      '---',
+      'doc_type: design',
+      'design_id: DSN-001',
+      'related_req: REQ-001',
+      'status: draft',
+      '---',
+      '# Design',
+      '',
+      '## Requirement Coverage Matrix',
+      '| Requirement | Design item | Acceptance criteria | Verification |',
+      '|---|---|---|---|',
+      '| REQ-001 | D-001: Captcha config | AC-001 | mvn test |',
+      '',
+      '## 现状',
+      'Existing implementation lives in `src/main/java/sample/Calculator.java`.',
+      '',
+      '## 变化',
+      'Add a verifier matrix check.',
+      '',
+      '## 挂载点',
+      '- Requirement gate checks AC text',
+      '- Design gate checks verification text',
+      '- Acceptance gate checks matrix rows',
+      '',
+      '## 推进策略',
+      '1. update gates',
+      '2. add tests',
+      '3. run typecheck',
+      '',
+      '## Test Strategy',
+      '- AC-001: mvn test',
+      '',
+      '## Risks',
+      '- Low risk.',
+      '',
+      '## Context Evidence',
+      '- `src/main/java/sample/Calculator.java:1`',
+    ].join('\n'),
+  );
+  const a = artifact('design_doc', path);
+
+  const gate = gates.runDesignGate({
+    workflowRunId: 'run_design_command_only',
+    stepRunId: 'step_design_command_only',
+    artifact: a,
+  });
+  const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
+
+  expect(ruleById['design.test_strategy_present'].status).toBe('pass');
+  expect(ruleById['design.business_verification_strategy_present'].status).toBe('fail');
 });
 
 test('acceptance traceability gate requires requirement, design, diff, review, and passing test gate', () => {
@@ -203,6 +302,69 @@ test('acceptance traceability gate requires requirement, design, diff, review, a
       reportPaths: [],
     },
   });
+  const reqArtifact = storeMod.store.artifacts.byKind(workflowRunId, 'requirement_draft').at(-1)!;
+  const designArtifact = storeMod.store.artifacts.byKind(workflowRunId, 'design_doc').at(-1)!;
+  const matrixPath = join(tmpdir(), `acceptance-matrix-${Date.now()}.json`);
+  writeFileSync(
+    matrixPath,
+    `${JSON.stringify({
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      workflowRunId,
+      stepRunId,
+      verifierRequired: false,
+      verifierStatus: 'pass',
+      acceptanceCriteria: [
+        {
+          id: 'AC-001',
+          text: 'Calculator subtract returns the arithmetic difference for normal integer inputs.',
+          scenarioType: 'core',
+          verificationMethod: 'JUnit subtract test exercises normal integer subtraction through mvn test.',
+          businessStatus: 'passed',
+          status: 'pass',
+          evidenceRefs: [
+            { artifactId: reqArtifact.id, claim: 'requirement business behavior for AC-001' },
+            { artifactId: designArtifact.id, claim: 'design verification strategy for AC-001' },
+          ],
+        },
+        {
+          id: 'AC-002',
+          text: 'Calculator subtract handles zero as a boundary input without changing the other operand.',
+          scenarioType: 'boundary',
+          verificationMethod: 'JUnit subtract boundary test exercises zero subtraction through mvn test.',
+          businessStatus: 'passed',
+          status: 'pass',
+          evidenceRefs: [
+            { artifactId: reqArtifact.id, claim: 'requirement boundary behavior for AC-002' },
+            { artifactId: designArtifact.id, claim: 'design verification strategy for AC-002' },
+          ],
+        },
+        {
+          id: 'AC-003',
+          text: 'Calculator subtract rejects unsupported overflow handling as an explicit exception risk.',
+          scenarioType: 'exception',
+          verificationMethod: 'JUnit exception-path test documents overflow behavior through mvn test.',
+          businessStatus: 'passed',
+          status: 'pass',
+          evidenceRefs: [
+            { artifactId: reqArtifact.id, claim: 'requirement exception behavior for AC-003' },
+            { artifactId: designArtifact.id, claim: 'design verification strategy for AC-003' },
+          ],
+        },
+      ],
+      createdAt: new Date().toISOString(),
+    }, null, 2)}\n`,
+  );
+  storeMod.store.artifacts.insert({
+    ...artifact('other', matrixPath),
+    workflowRunId,
+    stepRunId,
+    contentType: 'application/json',
+    metadata: {
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      reportKind: 'verifier_ac_matrix',
+      verifierArtifactType: 'ac_matrix',
+    },
+  });
 
   const gate = gates.runAcceptanceTraceabilityGate({ workflowRunId, stepRunId });
 
@@ -213,7 +375,155 @@ test('acceptance traceability gate requires requirement, design, diff, review, a
     'acceptance.diff_present',
     'acceptance.review_present',
     'acceptance.test_gate_passed',
+    'acceptance.business_matrix_present',
+    'acceptance.business_matrix_criteria_proven',
+    'acceptance.business_matrix_scenarios_present',
   ]);
+});
+
+test('acceptance traceability gate rejects feature ACs when only test_gate passes and no business matrix exists', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-acceptance-matrix-missing-'));
+  const reqPath = join(dir, 'req.md');
+  const designPath = join(dir, 'design.md');
+  const diffPath = join(dir, 'diff.diff');
+  const reviewPath = join(dir, 'review.md');
+  const workflowRunId = 'run_acceptance_matrix_missing';
+  const stepRunId = 'step_acceptance_matrix_missing';
+  writeFileSync(reqPath, '# Requirement\nREQ-001\n- AC-001: Captcha can be disabled for configured environments.\n');
+  writeFileSync(designPath, '# Design\n| Requirement | Design | Acceptance criteria | Verification |\n|---|---|---|---|\n| REQ-001 | Captcha config | AC-001 | Login flow test covers captcha disabled behavior |\n');
+  writeFileSync(diffPath, 'diff --git a/src/auth.ts b/src/auth.ts\n');
+  writeFileSync(reviewPath, '# Review\nLooks plausible.\n');
+
+  for (const a of [
+    { ...artifact('requirement_draft', reqPath), workflowRunId, stepRunId },
+    { ...artifact('design_doc', designPath), workflowRunId, stepRunId },
+    { ...artifact('diff', diffPath), workflowRunId, stepRunId },
+    { ...artifact('other', reviewPath), workflowRunId, stepRunId },
+  ]) {
+    storeMod.store.artifacts.insert(a);
+  }
+  for (const stage of ['requirement', 'design'] as const) {
+    storeMod.store.stepRuns.set(`step_${stage}_${workflowRunId}`, {
+      id: `step_${stage}_${workflowRunId}`,
+      workflowRunId,
+      stage,
+      name: `${stage}-fixture`,
+      status: 'passed',
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+    });
+  }
+  insertPassingTestGate(workflowRunId, stepRunId);
+
+  const gate = gates.runAcceptanceTraceabilityGate({ workflowRunId, stepRunId });
+  const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
+
+  expect(gate.status).toBe('fail');
+  expect(ruleById['acceptance.test_gate_passed'].status).toBe('pass');
+  expect(ruleById['acceptance.business_matrix_present'].status).toBe('fail');
+});
+
+test('acceptance traceability gate rejects business matrix without core boundary and exception scenario coverage', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-acceptance-matrix-scenarios-'));
+  const reqPath = join(dir, 'req.md');
+  const designPath = join(dir, 'design.md');
+  const diffPath = join(dir, 'diff.diff');
+  const reviewPath = join(dir, 'review.md');
+  const matrixPath = join(dir, 'verifier-ac-matrix.json');
+  const workflowRunId = 'run_acceptance_matrix_missing_scenario';
+  const stepRunId = 'step_acceptance_matrix_missing_scenario';
+  writeFileSync(
+    reqPath,
+    [
+      '# Requirement',
+      'REQ-001',
+      '- AC-001: Captcha can be disabled for configured environments.',
+      '- AC-002: Captcha remains enabled when the config explicitly requires it.',
+    ].join('\n'),
+  );
+  writeFileSync(
+    designPath,
+    [
+      '# Design',
+      '| Requirement | Design | Acceptance criteria | Verification |',
+      '|---|---|---|---|',
+      '| REQ-001 | Captcha config | AC-001 | Login flow test covers captcha disabled behavior |',
+      '| REQ-001 | Captcha config | AC-002 | Login flow test covers captcha enabled boundary behavior |',
+    ].join('\n'),
+  );
+  writeFileSync(diffPath, 'diff --git a/src/auth.ts b/src/auth.ts\n');
+  writeFileSync(reviewPath, '# Review\nLooks plausible.\n');
+
+  for (const a of [
+    { ...artifact('requirement_draft', reqPath), workflowRunId, stepRunId },
+    { ...artifact('design_doc', designPath), workflowRunId, stepRunId },
+    { ...artifact('diff', diffPath), workflowRunId, stepRunId },
+    { ...artifact('other', reviewPath), workflowRunId, stepRunId },
+  ]) {
+    storeMod.store.artifacts.insert(a);
+  }
+  const reqArtifact = storeMod.store.artifacts.byKind(workflowRunId, 'requirement_draft').at(-1)!;
+  const designArtifact = storeMod.store.artifacts.byKind(workflowRunId, 'design_doc').at(-1)!;
+  writeFileSync(
+    matrixPath,
+    `${JSON.stringify({
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      workflowRunId,
+      stepRunId,
+      verifierRequired: false,
+      verifierStatus: 'pass',
+      acceptanceCriteria: [
+        {
+          id: 'AC-001',
+          text: 'Captcha can be disabled for configured environments.',
+          scenarioType: 'core',
+          verificationMethod: 'Login flow test proves disabled captcha behavior.',
+          businessStatus: 'passed',
+          status: 'pass',
+          evidenceRefs: [
+            { artifactId: reqArtifact.id, claim: 'requirement business behavior for AC-001' },
+            { artifactId: designArtifact.id, claim: 'design verification strategy for AC-001' },
+          ],
+        },
+        {
+          id: 'AC-002',
+          text: 'Captcha remains enabled when the config explicitly requires it.',
+          scenarioType: 'boundary',
+          verificationMethod: 'Login flow test proves enabled captcha boundary behavior.',
+          businessStatus: 'passed',
+          status: 'pass',
+          evidenceRefs: [
+            { artifactId: reqArtifact.id, claim: 'requirement boundary behavior for AC-002' },
+            { artifactId: designArtifact.id, claim: 'design verification strategy for AC-002' },
+          ],
+        },
+      ],
+      createdAt: new Date().toISOString(),
+    }, null, 2)}\n`,
+  );
+  storeMod.store.artifacts.insert({
+    ...artifact('other', matrixPath),
+    workflowRunId,
+    stepRunId,
+    contentType: 'application/json',
+    metadata: {
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      reportKind: 'verifier_ac_matrix',
+      verifierArtifactType: 'ac_matrix',
+    },
+  });
+  for (const stage of ['requirement', 'design'] as const) {
+    insertStepRun(workflowRunId, stage);
+  }
+  insertPassingTestGate(workflowRunId, stepRunId);
+
+  const gate = gates.runAcceptanceTraceabilityGate({ workflowRunId, stepRunId });
+  const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
+
+  expect(gate.status).toBe('fail');
+  expect(ruleById['acceptance.business_matrix_present'].status).toBe('pass');
+  expect(ruleById['acceptance.business_matrix_criteria_proven'].status).toBe('pass');
+  expect(ruleById['acceptance.business_matrix_scenarios_present'].status).toBe('fail');
 });
 
 // ---------------------------------------------------------------------------

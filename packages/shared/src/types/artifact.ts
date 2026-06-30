@@ -298,6 +298,8 @@ export const VERIFIER_MEDIA_SCHEMA_VERSION = 'ainp.verifier_media.v1' as const;
 
 export type VerifierMediaRole = 'screenshot_before' | 'screenshot_after' | 'video';
 export type VerifierStatus = 'pass' | 'fail' | 'blocked';
+export type AcceptanceScenarioType = 'core' | 'boundary' | 'exception' | 'regression';
+export type AcceptanceBusinessStatus = 'passed' | 'missing' | 'at_risk' | 'failed';
 
 export interface VerifierEvidenceRef extends EvidenceRef {
   role?: VerifierMediaRole | 'ac_matrix';
@@ -306,6 +308,11 @@ export interface VerifierEvidenceRef extends EvidenceRef {
 export interface VerifierAcceptanceCriterionEvidence {
   id: string;
   text?: string;
+  scenarioType?: AcceptanceScenarioType;
+  verificationMethod?: string;
+  businessStatus?: AcceptanceBusinessStatus;
+  risk?: string | null;
+  riskAccepted?: boolean;
   status: VerifierStatus;
   evidenceRefs: VerifierEvidenceRef[];
   notes?: string;

@@ -1,10 +1,24 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { newId, nowIso, pathToFileUri, type Artifact, type ArtifactKind } from '@ainp/shared';
+import {
+  FLOW_REGISTRY,
+  VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+  isContextFreshness,
+  isKnowledgeArtifactKind,
+  isValidKnowledgeSubtype,
+  newId,
+  nowIso,
+  pathToFileUri,
+  type Artifact,
+  type ArtifactKind,
+  type ContextFreshness,
+  type KnowledgeArtifactKind,
+} from '@ainp/shared';
 import { store } from './store/store';
 import { createArtifact, audit } from './workflow-engine';
 import { buildContextGovernanceReadModel } from './context-governance';
+import { readArtifactContent } from './artifact-content';
 
 // Honors AINP_REPORTS_DIR, then AINP_HOME (so one AINP_HOME relocates the
 // whole local store together), then the ~/.ai-native default.
@@ -109,7 +123,7 @@ export async function generateCompletionReport(
   const gateRow = (g: (typeof gates)[number]): string =>
     `| ${g.gateId} | ${g.status} | ${g.ruleResults.map((r) => `${r.ruleId}=${r.status}`).join('; ')} |`;
 
-  const stages = [
+  const stages = FLOW_REGISTRY[run.flowId]?.stages.map((step) => step.stage) ?? [
     'requirement',
     'design',
     'implementation',
@@ -276,6 +290,8 @@ export async function generateCompletionReport(
     `- context request count: ${contextGovernance.metrics.contextRequestCount.value}`,
     `- downstream rework signal: ${contextGovernance.metrics.downstreamReworkSignal.value} (rejected approvals=${contextGovernance.metrics.downstreamReworkSignal.rejectedApprovals}, failed gates=${contextGovernance.metrics.downstreamReworkSignal.failedGates}, failed agents=${contextGovernance.metrics.downstreamReworkSignal.failedAgentResults})`,
   ].join('\n');
+  const acceptanceMatrix = latestAcceptanceMatrixSummary(artifacts);
+  const acceptanceMatrixBody = acceptanceMatrix.body;
 
   const md = [
     `# Completion Report`,
@@ -302,6 +318,10 @@ export async function generateCompletionReport(
     `## Build & Tests`,
     ``,
     buildBody,
+    ``,
+    `## Business Acceptance Matrix`,
+    ``,
+    acceptanceMatrixBody,
     ``,
     `## Commands (${commands.length})`,
     ``,
@@ -357,6 +377,7 @@ export async function generateCompletionReport(
       { title: 'Stage timeline', body: stageTimeline },
       { title: 'Gates', body: gatesBody },
       { title: 'Build & Tests', body: buildBody },
+      { title: 'Business Acceptance Matrix', body: acceptanceMatrixBody },
       { title: `Commands (${commands.length})`, body: commandsBody },
       { title: `Artifacts (${artifacts.length})`, body: artifactsBody },
       { title: `Approvals (${approvals.length})`, body: approvalsBody },
@@ -369,6 +390,7 @@ export async function generateCompletionReport(
     handoffs: handoffSummaries,
     stepCheckpoints: stepCheckpointSummaries,
     contextRequests,
+    businessAcceptanceMatrix: acceptanceMatrix.rows,
     knowledgeReviewSignals,
     contextGovernanceMetrics: contextGovernance.metrics,
     generatedAt,
@@ -391,6 +413,90 @@ export async function generateCompletionReport(
   });
 }
 
+interface AcceptanceMatrixReportRow {
+  id: string;
+  text: string;
+  scenarioType: string;
+  status: string;
+  verificationMethod: string;
+  evidence: string[];
+  risk: string | null;
+}
+
+function latestAcceptanceMatrixSummary(artifacts: Artifact[]): { body: string; rows: AcceptanceMatrixReportRow[] } {
+  const artifact = artifacts
+    .filter((candidate) =>
+      candidate.metadata.schemaVersion === VERIFIER_AC_MATRIX_SCHEMA_VERSION ||
+      candidate.metadata.reportKind === 'verifier_ac_matrix' ||
+      candidate.metadata.verifierArtifactType === 'ac_matrix',
+    )
+    .at(-1) ?? null;
+  if (!artifact) return { body: '_no business acceptance matrix_', rows: [] };
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readArtifactContent(artifact).text);
+  } catch {
+    return {
+      body: `- Matrix artifact \`${artifact.id}\` could not be parsed.`,
+      rows: [],
+    };
+  }
+  const record = asRecord(parsed);
+  const rawRows = Array.isArray(record?.acceptanceCriteria)
+    ? record.acceptanceCriteria
+    : [];
+  const rows = rawRows
+    .map((raw): AcceptanceMatrixReportRow | null => {
+      const row = asRecord(raw);
+      if (!row || typeof row.id !== 'string') return null;
+      const evidenceRefs = Array.isArray(row.evidenceRefs) ? row.evidenceRefs : [];
+      return {
+        id: row.id,
+        text: typeof row.text === 'string' ? row.text : '',
+        scenarioType: typeof row.scenarioType === 'string' ? row.scenarioType : 'core',
+        status: typeof row.businessStatus === 'string'
+          ? row.businessStatus
+          : typeof row.status === 'string'
+            ? row.status
+            : 'missing',
+        verificationMethod: typeof row.verificationMethod === 'string' ? row.verificationMethod : '',
+        evidence: evidenceRefs
+          .map((ref) => {
+            const refRecord = asRecord(ref);
+            if (!refRecord) return null;
+            return typeof refRecord.claim === 'string'
+              ? refRecord.claim
+              : typeof refRecord.artifactId === 'string'
+                ? refRecord.artifactId
+                : null;
+          })
+          .filter((value): value is string => Boolean(value)),
+        risk: typeof row.risk === 'string'
+          ? row.risk
+          : typeof row.notes === 'string' && row.businessStatus !== 'passed'
+            ? row.notes
+            : null,
+      };
+    })
+    .filter((row): row is AcceptanceMatrixReportRow => Boolean(row));
+
+  if (rows.length === 0) {
+    return { body: `- Matrix artifact \`${artifact.id}\` has no AC rows.`, rows };
+  }
+
+  const body = [
+    `- Matrix artifact: \`${artifact.id}\``,
+    '',
+    '| AC | Scenario | Status | Verification | Evidence | Risk |',
+    '|---|---|---|---|---|---|',
+    ...rows.map((row) =>
+      `| ${row.id} | ${row.scenarioType} | ${row.status} | ${escapeTableCell(row.verificationMethod || row.text)} | ${escapeTableCell(row.evidence.join('; ') || '(none)')} | ${escapeTableCell(row.risk ?? '')} |`,
+    ),
+  ].join('\n');
+  return { body, rows };
+}
+
 /**
  * Knowledge Candidate — distilled from the completed run. Marked as a
  * candidate; only the human Knowledge Gate promotes it into long-term
@@ -401,6 +507,9 @@ export async function generateKnowledgeCandidate(
 ): Promise<GeneratedArtifactWithSidecar> {
   const run = store.workflowRuns.get(workflowRunId);
   if (!run) throw new Error(`workflow run not found: ${workflowRunId}`);
+  if (run.type === 'profile' || run.flowId === 'profile.bootstrap') {
+    return generateProfileKnowledgeCandidate(workflowRunId);
+  }
 
   const commands = store.commandRuns.byWorkflow(workflowRunId);
   const gates = store.gateRuns.byWorkflow(workflowRunId);
@@ -503,6 +612,117 @@ export async function generateKnowledgeCandidate(
       output: 'knowledge_candidate.json',
       structured: true,
       schemaVersion: 'ainp.knowledge_candidate.v1',
+    },
+  });
+}
+
+async function generateProfileKnowledgeCandidate(
+  workflowRunId: string,
+): Promise<GeneratedArtifactWithSidecar> {
+  const run = store.workflowRuns.get(workflowRunId);
+  if (!run) throw new Error(`workflow run not found: ${workflowRunId}`);
+
+  const profileArtifact = latestProfileJsonArtifact(workflowRunId);
+  if (!profileArtifact) {
+    throw new Error('profile knowledge candidate requires a project-profile.json artifact');
+  }
+
+  const profileText = readArtifactContent(profileArtifact).text;
+  const profile = parseProfileEnvelope(profileText);
+  const sourceRefsBase = [`workflow_run:${run.id}`, `artifact:${profileArtifact.id}`];
+  const { candidates, warnings } = normalizeProfileKnowledgeCandidates({
+    rawCandidates: Array.isArray(profile.knowledgeCandidates) ? profile.knowledgeCandidates : [],
+    workflowRunId: run.id,
+    profileArtifactId: profileArtifact.id,
+    sourceRefsBase,
+  });
+  const groupedCandidates = groupProfileCandidatesByKind(candidates);
+  const candidateSections = groupedCandidates.length === 0
+    ? ['_No profile knowledge candidates met the source and confidence threshold._']
+    : groupedCandidates.flatMap(([kind, items]) => [
+        `### ${kind}`,
+        ``,
+        ...items.map((candidate) => [
+          `- **${candidate.title}** (${candidate.knowledgeKind}${candidate.subtype ? `/${candidate.subtype}` : ''}, confidence=${candidate.confidence.toFixed(2)}, freshness=${candidate.freshness})`,
+          `  - ${candidate.body}`,
+          `  - Source refs: ${candidate.sourceRefs.join(', ')}`,
+          `  - Rationale: ${candidate.rationale || '(none provided)'}`,
+        ].join('\n')),
+        ``,
+      ]);
+  const warningLines = warnings.length === 0
+    ? ['_No candidates were dropped._']
+    : warnings.map((warning) => `- ${warning.reason}${warning.title ? `: ${warning.title}` : ''}`);
+  const suggestions = candidates.map(profileCandidateToSuggestion);
+
+  const md = [
+    `# Knowledge Candidate`,
+    ``,
+    `- **From workflow run:** \`${run.id}\``,
+    `- **Title:** ${run.title}`,
+    `- **Origin:** profile.bootstrap`,
+    `- **Profile artifact:** \`${profileArtifact.id}\``,
+    ``,
+    `## Status`,
+    `Candidate. Generated profile knowledge remains reviewable and is not`,
+    `accepted memory until a human approves it through the Knowledge Gate.`,
+    ``,
+    `## Profile-derived candidates`,
+    ``,
+    ...candidateSections,
+    `## Dropped candidates / warnings`,
+    ``,
+    ...warningLines,
+    ``,
+    `## Provenance`,
+    `Generated from project-profile.json suggested knowledge candidates.`,
+    `Source refs, confidence, freshness, and origin metadata are preserved in`,
+    `the JSON sidecar for human review and later promotion decisions.`,
+    ``,
+    `_Generated at ${nowIso()}._`,
+  ].join('\n');
+
+  const generatedAt = nowIso();
+  const json = {
+    schemaVersion: 'ainp.knowledge_candidate.v1',
+    workflowRunId: run.id,
+    title: 'Knowledge Candidate',
+    status: 'candidate',
+    origin: 'profile.bootstrap',
+    suggestions,
+    profileCandidates: candidates,
+    warnings,
+    provenance: {
+      runId: run.id,
+      title: run.title,
+      profileArtifactId: profileArtifact.id,
+      profileArtifactUri: profileArtifact.uri,
+      artifactIds: [profileArtifact.id],
+      sourceRefs: sourceRefsBase,
+    },
+    generatedAt,
+  };
+  return persistReportPair({
+    workflowRunId,
+    md,
+    json,
+    mdExt: '.md',
+    jsonExt: '.json',
+    auditKind: 'knowledge_candidate.generated',
+    artifactKind: 'knowledge_candidate',
+    mdMetadata: {
+      generatedAt,
+      output: 'knowledge_candidate.md',
+      origin: 'profile.bootstrap',
+      profileArtifactId: profileArtifact.id,
+    },
+    jsonMetadata: {
+      generatedAt,
+      output: 'knowledge_candidate.json',
+      structured: true,
+      schemaVersion: 'ainp.knowledge_candidate.v1',
+      origin: 'profile.bootstrap',
+      profileArtifactId: profileArtifact.id,
     },
   });
 }
@@ -803,11 +1023,189 @@ interface KnowledgeReviewSignalSummary {
 
 interface KnowledgeSuggestion {
   id: string;
-  kind: 'Pattern' | 'Decision' | 'Pitfall' | 'Review';
+  kind: 'Pattern' | 'Decision' | 'Pitfall' | 'Lesson' | 'Review';
   text: string;
   evidence: string;
   sourceRefs: string[];
   recommendedAction: string;
+}
+
+interface ProfileKnowledgeCandidateSummary {
+  id: string;
+  title: string;
+  knowledgeKind: KnowledgeArtifactKind;
+  kind: KnowledgeArtifactKind;
+  subtype: string | null;
+  body: string;
+  sourceRefs: string[];
+  confidence: number;
+  freshness: ContextFreshness;
+  rationale: string;
+  origin: 'profile.bootstrap';
+  workflowRunId: string;
+  profileArtifactId: string;
+  status: 'candidate';
+}
+
+interface ProfileKnowledgeCandidateWarning {
+  index: number;
+  title: string | null;
+  reason: string;
+}
+
+function latestProfileJsonArtifact(workflowRunId: string): Artifact | null {
+  return store.artifacts.byKind(workflowRunId, 'project_profile')
+    .filter((artifact) => {
+      const profileFormat = artifact.metadata.profileFormat;
+      return artifact.contentType === 'application/json'
+        || profileFormat === 'json'
+        || artifact.metadata.output === 'project-profile.json';
+    })
+    .at(-1) ?? null;
+}
+
+function parseProfileEnvelope(text: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    throw new Error(`profile knowledge candidate requires valid project-profile.json: ${(err as Error).message}`);
+  }
+  const profile = asRecord(parsed);
+  if (!profile || profile.schemaVersion !== 'ainp.project_profile.v1') {
+    throw new Error('profile knowledge candidate requires schemaVersion ainp.project_profile.v1');
+  }
+  return profile;
+}
+
+function normalizeProfileKnowledgeCandidates(input: {
+  rawCandidates: unknown[];
+  workflowRunId: string;
+  profileArtifactId: string;
+  sourceRefsBase: string[];
+}): {
+  candidates: ProfileKnowledgeCandidateSummary[];
+  warnings: ProfileKnowledgeCandidateWarning[];
+} {
+  const candidates: ProfileKnowledgeCandidateSummary[] = [];
+  const warnings: ProfileKnowledgeCandidateWarning[] = [];
+
+  input.rawCandidates.forEach((rawCandidate, index) => {
+    const record = asRecord(rawCandidate);
+    const title = typeof record?.title === 'string' && record.title.trim()
+      ? record.title.trim()
+      : null;
+    const warn = (reason: string): void => {
+      warnings.push({ index, title, reason });
+    };
+
+    if (!record) {
+      warn('candidate is not an object');
+      return;
+    }
+
+    if (!isKnowledgeArtifactKind(record.kind)) {
+      warn(`invalid knowledge kind '${String(record.kind)}'`);
+      return;
+    }
+    const subtype = typeof record.subtype === 'string' && record.subtype.trim()
+      ? record.subtype.trim()
+      : undefined;
+    if (!isValidKnowledgeSubtype(record.kind, subtype)) {
+      warn(`invalid subtype '${String(record.subtype)}' for ${record.kind}`);
+      return;
+    }
+
+    const confidence = typeof record.confidence === 'number' && Number.isFinite(record.confidence)
+      ? record.confidence
+      : NaN;
+    if (!Number.isFinite(confidence) || confidence < 0.7) {
+      warn(`confidence ${Number.isFinite(confidence) ? confidence.toFixed(2) : 'missing'} is below the 0.70 suggested threshold`);
+      return;
+    }
+
+    const sourceRefs = stringArray(record.sourceRefs);
+    if (sourceRefs.length === 0) {
+      warn('missing sourceRefs');
+      return;
+    }
+
+    const body = typeof record.body === 'string' && record.body.trim()
+      ? record.body.trim()
+      : '';
+    if (!body) {
+      warn('missing body');
+      return;
+    }
+
+    const freshness = isContextFreshness(record.freshness) ? record.freshness : 'possibly_stale';
+    const candidate: ProfileKnowledgeCandidateSummary = {
+      id: `KS-${String(candidates.length + 1).padStart(3, '0')}`,
+      title: title ?? `${record.kind} candidate ${index + 1}`,
+      knowledgeKind: record.kind,
+      kind: record.kind,
+      subtype: subtype ?? null,
+      body,
+      sourceRefs: [...new Set([...input.sourceRefsBase, ...sourceRefs])],
+      confidence,
+      freshness,
+      rationale: typeof record.rationale === 'string' ? record.rationale.trim() : '',
+      origin: 'profile.bootstrap',
+      workflowRunId: input.workflowRunId,
+      profileArtifactId: input.profileArtifactId,
+      status: 'candidate',
+    };
+    candidates.push(candidate);
+  });
+
+  return { candidates, warnings };
+}
+
+function groupProfileCandidatesByKind(
+  candidates: ProfileKnowledgeCandidateSummary[],
+): Array<[KnowledgeArtifactKind, ProfileKnowledgeCandidateSummary[]]> {
+  const groups = new Map<KnowledgeArtifactKind, ProfileKnowledgeCandidateSummary[]>();
+  for (const candidate of candidates) {
+    const group = groups.get(candidate.knowledgeKind) ?? [];
+    group.push(candidate);
+    groups.set(candidate.knowledgeKind, group);
+  }
+  return [...groups.entries()];
+}
+
+function profileCandidateToSuggestion(candidate: ProfileKnowledgeCandidateSummary): KnowledgeSuggestion & {
+  knowledgeKind: KnowledgeArtifactKind;
+  subtype: string | null;
+  title: string;
+  confidence: number;
+  freshness: ContextFreshness;
+  origin: 'profile.bootstrap';
+  profileArtifactId: string;
+} {
+  return {
+    id: candidate.id,
+    kind: displayKnowledgeSuggestionKind(candidate),
+    knowledgeKind: candidate.knowledgeKind,
+    subtype: candidate.subtype,
+    title: candidate.title,
+    text: `${candidate.title}: ${candidate.body}`,
+    evidence: candidate.sourceRefs.join(', '),
+    sourceRefs: candidate.sourceRefs,
+    confidence: candidate.confidence,
+    freshness: candidate.freshness,
+    origin: candidate.origin,
+    profileArtifactId: candidate.profileArtifactId,
+    recommendedAction: 'needs_review',
+  };
+}
+
+function displayKnowledgeSuggestionKind(
+  candidate: ProfileKnowledgeCandidateSummary,
+): KnowledgeSuggestion['kind'] {
+  if (candidate.knowledgeKind === 'decision') return 'Decision';
+  if (candidate.knowledgeKind === 'lesson' && candidate.subtype === 'pitfall') return 'Pitfall';
+  if (candidate.knowledgeKind === 'pattern' || candidate.knowledgeKind === 'architecture') return 'Pattern';
+  return 'Lesson';
 }
 
 function collectKnowledgeReviewSignals(input: {
@@ -1029,6 +1427,10 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0))];
+}
+
+function escapeTableCell(value: string): string {
+  return value.replace(/\|/g, '\\|').replace(/\n+/g, ' ').trim();
 }
 
 function stringField(record: Record<string, unknown>, key: string): string | null {
