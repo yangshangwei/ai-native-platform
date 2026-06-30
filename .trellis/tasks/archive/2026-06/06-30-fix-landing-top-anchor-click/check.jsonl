@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/06-30-fix-landing-top-anchor-click/prd.md", "reason": "Acceptance criteria and scope for verifying the landing-page anchor fix."}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Frontend spec index for validating the affected web package change."}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "Check DOM-event and navigation behavior against project frontend conventions."}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "Check targeted test and typecheck expectations for the web change."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking-guide index required by the Trellis workflow."}

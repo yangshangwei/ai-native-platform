@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "focused tests and typecheck gate"}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "reviewer action behavior validation"}

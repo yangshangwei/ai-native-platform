@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/06-30-fix-landing-top-anchor-click/prd.md", "reason": "Task requirements, acceptance criteria, and narrow implementation approach for the landing-page anchor fix."}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Entry point for web frontend conventions before editing landing-page assets."}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "DOM event handling and static-page interaction guidance for the landing-page script change."}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "Frontend quality gate, test expectations, and DOM safety rules for the fix."}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking-guide index required by the Trellis workflow."}

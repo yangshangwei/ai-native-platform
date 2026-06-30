@@ -1,0 +1,4 @@
+{"file":".trellis/tasks/06-29-workbench-self-evolution-design/prd.md","reason":"Design-only deliverable containing the architecture, data model, phases, and acceptance criteria."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Self-evolution design builds on ContextPack construction and context governance."}
+{"file":".trellis/spec/api/backend/workflow-requests.md","reason":"Future workflow evolution interacts with workflow request and run lifecycle contracts."}
+{"file":".trellis/spec/runner/backend/flow-registry.md","reason":"Pattern discovery and workflow evolution proposals must respect FLOW_REGISTRY boundaries."}

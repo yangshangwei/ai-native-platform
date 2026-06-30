@@ -1,0 +1,20 @@
+{"file":".trellis/tasks/06-30-legacy-project-profile-bootstrap-docs/prd.md","reason":"Verifier must check implementation against requirements, non-goals, acceptance criteria, and no-auto-promotion constraint."}
+{"file":".trellis/tasks/06-30-legacy-project-profile-bootstrap-docs/solution-design.md","reason":"Verifier must confirm the shipped shape reuses FLOW_REGISTRY, Workflow Engine, Runner, Artifact, Knowledge Gate, and ContextPack primitives."}
+{"file":".trellis/tasks/06-30-legacy-project-profile-bootstrap-docs/detailed-design.md","reason":"Verifier must validate shared contracts, artifact metadata, backend-unavailable behavior, and knowledge candidate rules."}
+{"file":".trellis/tasks/06-30-legacy-project-profile-bootstrap-docs/task-breakdown.md","reason":"Verifier should map implemented changes back to phased tasks and identify incomplete slices."}
+{"file":".trellis/tasks/06-30-legacy-project-profile-bootstrap-docs/regression-test-plan.md","reason":"Verifier must run/assess the focused and broad checks required by the regression plan."}
+{"file":".trellis/spec/guides/index.md","reason":"Shared thinking-guide index for reviewing reuse and cross-layer correctness."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Review should catch unnecessary duplicate systems or helpers where existing primitives should be reused."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Review should verify type/API/runner/web/context/knowledge data flow consistency."}
+{"file":".trellis/spec/shared/backend/index.md","reason":"Shared backend spec index for contract verification."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Check that accepted profile knowledge, draft candidates, source refs, freshness, and review status obey ContextPack governance."}
+{"file":".trellis/spec/shared/backend/evidence-verifier-protocol.md","reason":"Check artifact digest/evidence/report behavior and completion/knowledge evidence semantics."}
+{"file":".trellis/spec/runner/backend/index.md","reason":"Runner backend spec index for orchestrator and backend runtime verification."}
+{"file":".trellis/spec/runner/backend/flow-registry.md","reason":"Check flow registration, stage order, dispatch coverage, and trust-boundary guard behavior."}
+{"file":".trellis/spec/runner/backend/agent-backend-runtime.md","reason":"Check backend selection/preflight behavior and ensure no fake/native fallback profile generation."}
+{"file":".trellis/spec/api/backend/index.md","reason":"API backend spec index for request/store/report route verification."}
+{"file":".trellis/spec/api/backend/workflow-requests.md","reason":"Check request validation and ask isolation while allowing profile flow requests."}
+{"file":".trellis/spec/api/backend/database.md","reason":"Check persistence/migration discipline if storage changes were made."}
+{"file":".trellis/spec/web/frontend/index.md","reason":"Web frontend spec index for profile action/status/review UI verification."}
+{"file":".trellis/spec/web/frontend/agent-backend-ui.md","reason":"Check backend setup/preflight UX and stream/status behavior on project surfaces."}
+{"file":".trellis/spec/web/frontend/type-safety.md","reason":"Check frontend projections and guards handle profile run types without unsafe casts."}

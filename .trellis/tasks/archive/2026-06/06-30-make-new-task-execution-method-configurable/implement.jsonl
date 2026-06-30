@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "New Task execution backend UX contracts and required spec update for task-level override."}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "New Task form draft state must survive polling renders when adding the backend select."}
+{"file": ".trellis/spec/api/backend/database.md", "reason": "Adding workflow_requests.agent_backend requires numbered SQLite migration discipline."}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "Workflow request route validation must reject invalid backend input before DB writes."}
+{"file": ".trellis/spec/runner/backend/agent-backend-runtime.md", "reason": "Runner backend selection contract changes from project-only to request override with project fallback."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Feature crosses web, API, DB, shared types, and runner boundaries."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing backend display/preflight helpers instead of duplicating backend constants."}

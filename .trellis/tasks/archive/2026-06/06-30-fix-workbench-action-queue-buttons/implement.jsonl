@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "DOM renderer and event binding conventions"}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "SPA render state conventions"}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "web quality and test gate"}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "DTO and runtime boundary conventions"}
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "workbench/task detail reviewer UX contracts"}

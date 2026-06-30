@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/web/frontend/agent-backend-ui.md", "reason": "Check rendered New Task backend control and user-facing backend status copy."}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Check new backend draft state is captured/reset consistently across renders and project switches."}
+{"file": ".trellis/spec/api/backend/database.md", "reason": "Check migration versioning and row mapping for workflow_requests.agent_backend."}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "Check invalid agentBackend bodies fail as 400 before DB writes."}
+{"file": ".trellis/spec/runner/backend/agent-backend-runtime.md", "reason": "Check request-level backend override is honored without env fallback."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check data survives UI to API to DB to Runner flow."}

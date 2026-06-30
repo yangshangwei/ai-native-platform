@@ -1,0 +1,5 @@
+{"file":".trellis/tasks/06-30-core-business-flow-e2e/prd.md","reason":"Acceptance criteria for validating task completion."}
+{"file":".trellis/tasks/06-30-core-business-flow-e2e/test-report.md","reason":"Evidence report to check against the acceptance criteria."}
+{"file":".trellis/spec/api/backend/workflow-requests.md","reason":"Check workflow request/backend contract coverage."}
+{"file":".trellis/spec/runner/backend/agent-backend-runtime.md","reason":"Check Codex-only backend selection and runtime evidence."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Check context and accepted knowledge lifecycle coverage."}

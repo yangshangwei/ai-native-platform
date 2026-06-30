@@ -1,0 +1,5 @@
+{"file":".trellis/tasks/06-30-core-business-flow-e2e/prd.md","reason":"Defines the E2E verification scope and acceptance criteria."}
+{"file":".trellis/tasks/06-30-core-business-flow-e2e/test-report.md","reason":"Canonical evidence for the completed Codex backend E2E run."}
+{"file":".trellis/spec/api/backend/workflow-requests.md","reason":"Workflow request creation and backend selection contracts are part of the E2E path."}
+{"file":".trellis/spec/runner/backend/agent-backend-runtime.md","reason":"Codex backend runtime behavior is the primary E2E subject."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"ContextPack construction and accepted knowledge eligibility are verified by the E2E."}

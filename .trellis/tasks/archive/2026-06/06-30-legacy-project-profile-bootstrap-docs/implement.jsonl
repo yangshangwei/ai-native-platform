@@ -1,0 +1,24 @@
+{"file":".trellis/tasks/06-30-legacy-project-profile-bootstrap-docs/prd.md","reason":"Canonical requirements, scope, non-goals, acceptance criteria, and no-auto-promotion constraint for Legacy Project Profile Bootstrap."}
+{"file":".trellis/tasks/06-30-legacy-project-profile-bootstrap-docs/solution-design.md","reason":"Cross-layer architecture, flow definition, artifact metadata contract, backend-preflight behavior, and read-only runner design."}
+{"file":".trellis/tasks/06-30-legacy-project-profile-bootstrap-docs/detailed-design.md","reason":"Implementation-level shared contracts, inventory/profile schemas, orchestrator behavior, artifact selection rules, and knowledge candidate generation details."}
+{"file":".trellis/tasks/06-30-legacy-project-profile-bootstrap-docs/task-breakdown.md","reason":"Required implementation order and phase-specific done conditions, starting with shared contracts."}
+{"file":".trellis/tasks/06-30-legacy-project-profile-bootstrap-docs/regression-test-plan.md","reason":"Required unit, integration, E2E, and safety regression coverage for the implementation."}
+{"file":".trellis/spec/guides/index.md","reason":"Shared thinking-guide index; cross-layer/reuse triggers apply because this task spans shared, API, runner, and web."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Task modifies shared constants/contracts and must search/reuse existing primitives before adding helpers."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Flow, artifact, knowledge, context, runner, API, and UI behavior must remain coherent across layers."}
+{"file":".trellis/spec/shared/backend/index.md","reason":"Shared backend spec index for workflow, context, artifact, and knowledge contract changes."}
+{"file":".trellis/spec/shared/backend/agent-backend-contract.md","reason":"Profile flow must reuse project/request backend configuration and not introduce a separate backend path."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Accepted profile-derived knowledge must integrate through existing ContextPack governance and draft candidates must not become authoritative context."}
+{"file":".trellis/spec/shared/backend/evidence-verifier-protocol.md","reason":"Inventory/profile/completion/knowledge artifacts need digest-backed evidence and report semantics."}
+{"file":".trellis/spec/runner/backend/index.md","reason":"Runner backend spec index for orchestrator, flow registry, backend runtime, and inventory execution changes."}
+{"file":".trellis/spec/runner/backend/flow-registry.md","reason":"Adding profile.bootstrap must follow FLOW_REGISTRY, stage dispatch, flowId guard, and stage-order test contract."}
+{"file":".trellis/spec/runner/backend/agent-backend-runtime.md","reason":"Profile agent stage must use existing real CLI backend selection/preflight and fail closed when unavailable."}
+{"file":".trellis/spec/runner/backend/eval-harness.md","reason":"Tests should use deterministic fake backend fixtures where profile synthesis needs agent output."}
+{"file":".trellis/spec/api/backend/index.md","reason":"API backend spec index for workflow request validation, store, report, and route changes."}
+{"file":".trellis/spec/api/backend/workflow-requests.md","reason":"POST /workflow-requests must accept type=profile and flowId=profile.bootstrap without regressing ask isolation."}
+{"file":".trellis/spec/api/backend/database.md","reason":"API persistence changes must follow SQLite/migration discipline and avoid unnecessary new tables."}
+{"file":".trellis/spec/api/backend/build-commands.md","reason":"Profile bootstrap must not execute implementation/build_test project commands; build/test command handling must remain scoped to existing flows."}
+{"file":".trellis/spec/web/frontend/index.md","reason":"Web frontend spec index for project action/status/review UI changes."}
+{"file":".trellis/spec/web/frontend/agent-backend-ui.md","reason":"Profile action UI must respect backend setup/preflight messaging and existing task/run stream surfaces."}
+{"file":".trellis/spec/web/frontend/state-management.md","reason":"Project profile action/status card must fit existing local/server state management patterns."}
+{"file":".trellis/spec/web/frontend/type-safety.md","reason":"New profile run type/flow projections must stay typed and avoid stringly-typed UI regressions."}
