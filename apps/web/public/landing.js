@@ -4,7 +4,9 @@
  *   1. Theme toggle (light/dark) persisted to localStorage, honoring the
  *      system preference on first visit. Mirrors the [data-theme] convention
  *      the main app uses so the shared design tokens resolve correctly.
- *   2. Scroll-reveal via IntersectionObserver — the one piece the existing
+ *   2. In-page hash links with sticky-nav-safe scrolling. Native repeated
+ *      clicks on the current hash are no-ops, so #top needs explicit handling.
+ *   3. Scroll-reveal via IntersectionObserver — the one piece the existing
  *      animations.css layer doesn't provide. Reveals once, then unobserves.
  *      Falls back to showing everything if the API is unavailable or the user
  *      prefers reduced motion.
@@ -48,6 +50,72 @@
 
   var toggle = document.getElementById('theme-toggle');
   if (toggle) toggle.addEventListener('click', toggleTheme);
+
+  /* ---------- Hash scrolling ---------- */
+  function currentPath() {
+    return window.location.pathname.replace(/\/+$/, '');
+  }
+
+  function targetFromHash(hash) {
+    if (!hash || hash === '#') return null;
+    if (hash === '#top') return { hash: hash, top: 0 };
+
+    var id = hash.slice(1);
+    try {
+      id = decodeURIComponent(id);
+    } catch (e) {
+      return null;
+    }
+
+    var target = document.getElementById(id);
+    if (!target) return null;
+
+    var nav = document.querySelector('.nav');
+    var navHeight = nav ? nav.getBoundingClientRect().height : 0;
+    var top = target.getBoundingClientRect().top + window.scrollY - navHeight - 12;
+    return { hash: hash, top: Math.max(0, top) };
+  }
+
+  function samePageHash(anchor) {
+    var rawHref = anchor.getAttribute('href') || '';
+    if (rawHref.charAt(0) === '#') return rawHref;
+
+    try {
+      var url = new URL(rawHref, window.location.href);
+      if (url.origin !== window.location.origin) return null;
+      if (url.pathname.replace(/\/+$/, '') !== currentPath()) return null;
+      return url.hash || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function scrollToHash(hash) {
+    var target = targetFromHash(hash);
+    if (!target) return false;
+
+    if (window.location.hash !== target.hash) {
+      window.history.pushState(null, '', target.hash);
+    }
+
+    window.scrollTo({ top: target.top, left: 0, behavior: 'smooth' });
+    return true;
+  }
+
+  function initHashLinks() {
+    document.addEventListener('click', function (event) {
+      var anchor = event.target.closest ? event.target.closest('a[href]') : null;
+      if (!anchor) return;
+
+      var hash = samePageHash(anchor);
+      if (!hash || !targetFromHash(hash)) return;
+
+      event.preventDefault();
+      scrollToHash(hash);
+    });
+  }
+
+  initHashLinks();
 
   /* ---------- Scroll reveal ---------- */
   function revealAll(nodes) {
