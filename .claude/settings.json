@@ -1,73 +1,102 @@
 {
+  "enabledPlugins": {},
   "env": {
     "CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR": "1"
   },
   "hooks": {
-    "SessionStart": [
+    "PostToolUse": [
       {
-        "matcher": "startup",
         "hooks": [
           {
-            "type": "command",
-            "command": "python3 .claude/hooks/session-start.py",
-            "timeout": 10
+            "command": "/opt/homebrew/lib/node_modules/umadev/node_modules/@umacloud/cli-darwin-arm64/bin/umadev hook tool-audit",
+            "type": "command"
           }
-        ]
-      },
-      {
-        "matcher": "clear",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 .claude/hooks/session-start.py",
-            "timeout": 10
-          }
-        ]
-      },
-      {
-        "matcher": "compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 .claude/hooks/session-start.py",
-            "timeout": 10
-          }
-        ]
+        ],
+        "matcher": "Write|Edit|MultiEdit|Bash"
       }
     ],
     "PreToolUse": [
       {
-        "matcher": "Task",
         "hooks": [
           {
-            "type": "command",
             "command": "python3 .claude/hooks/inject-subagent-context.py",
-            "timeout": 30
+            "timeout": 30,
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "Task"
       },
       {
-        "matcher": "Agent",
         "hooks": [
           {
-            "type": "command",
             "command": "python3 .claude/hooks/inject-subagent-context.py",
-            "timeout": 30
+            "timeout": 30,
+            "type": "command"
           }
-        ]
+        ],
+        "matcher": "Agent"
+      },
+      {
+        "hooks": [
+          {
+            "command": "/opt/homebrew/lib/node_modules/umadev/node_modules/@umacloud/cli-darwin-arm64/bin/umadev hook pre-write",
+            "type": "command"
+          }
+        ],
+        "matcher": "Write|Edit|MultiEdit"
+      },
+      {
+        "hooks": [
+          {
+            "command": "/opt/homebrew/lib/node_modules/umadev/node_modules/@umacloud/cli-darwin-arm64/bin/umadev hook pre-bash",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "python3 .claude/hooks/session-start.py",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": "startup"
+      },
+      {
+        "hooks": [
+          {
+            "command": "python3 .claude/hooks/session-start.py",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": "clear"
+      },
+      {
+        "hooks": [
+          {
+            "command": "python3 .claude/hooks/session-start.py",
+            "timeout": 10,
+            "type": "command"
+          }
+        ],
+        "matcher": "compact"
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
-            "type": "command",
             "command": "python3 .claude/hooks/inject-workflow-state.py",
-            "timeout": 5
+            "timeout": 5,
+            "type": "command"
           }
         ]
       }
     ]
-  },
-  "enabledPlugins": {}
+  }
 }
