@@ -17,7 +17,7 @@
  */
 
 import { errorMessage } from '@ainp/shared/browser';
-import { latestArtifactOfKind } from './projection';
+import { latestArtifactOfKind, type ArtifactDto } from './projection';
 import type {
   AgentBackendPreflightDto,
   LocalDirectoryList,
@@ -30,6 +30,8 @@ import type {
   ProjectSourceKind,
   SourceDetectResult,
   StatusKind,
+  WorkflowRequestDto,
+  KnowledgeArtifactDto,
 } from './types';
 import { api } from './api';
 import {
@@ -40,6 +42,8 @@ import {
   panelHeader,
   pill,
   previewText,
+  shortId,
+  statusKind,
 } from './dom';
 import {
   agentBackendDisplayName,
@@ -51,16 +55,23 @@ import {
   data,
   latestRunner,
   normalizeBranchList,
+  openArtifactViewers,
   projectAvailability,
+  requestStatusLabel,
   sourceBranchesForProject,
   ui,
 } from './state';
 import { render } from './render-core';
-import { checkAgentBackend, formAgentBackendKey, loadData } from './data-loading';
+import { checkAgentBackend, ensureArtifactContent, formAgentBackendKey, loadData } from './data-loading';
+import { knowledgeArtifactsState, loadKnowledgeArtifacts } from './page-knowledge';
+import { setHash } from './router';
 import { showSuccessToast } from './toast';
 
 // Page-private mutable state (moved verbatim from state.ts, T2.3 page split).
 const projectActionInFlight = new Set<string>();
+const projectProfileActionInFlight = new Set<string>();
+const projectCapabilityActionInFlight = new Set<string>();
+const projectCapabilityCorrections = new Map<string, 'accepted' | 'renamed' | 'merged' | 'wrong'>();
 
 const localDirectoryPicker: LocalDirectoryPickerState = {
   open: false,
@@ -625,6 +636,21 @@ function renderProjectCard(project: ProjectDto): HTMLElement {
     event.stopPropagation();
     void checkAgentBackend(project.agentBackend ?? null, project.id);
   };
+  const profileRequest = latestProfileRequestForProject(project);
+  const profileRun = latestProfileRunForProject(project);
+  const profileBusy = projectProfileActionInFlight.has(project.id)
+    || Boolean(profileRequest && !isTerminalRequestStatus(profileRequest.status))
+    || Boolean(profileRun && !isTerminalRunStatus(profileRun.status));
+  const profileAction = el('button', {
+    class: 'btn btn-secondary btn-sm',
+    text: projectProfileActionInFlight.has(project.id) ? '生成中…' : 'Generate legacy profile',
+    attrs: { type: 'button' },
+  });
+  profileAction.disabled = status === 'archived' || profileBusy;
+  profileAction.onclick = (event) => {
+    event.stopPropagation();
+    void startProjectProfileBootstrap(project);
+  };
 
   const sourceValue = project.sourceUrl ?? project.localPath;
   const details = el('details', {
@@ -666,6 +692,7 @@ function renderProjectCard(project: ProjectDto): HTMLElement {
               projectSummaryItem('接入状态', pill(availability.label, availability.kind)),
             ],
           }),
+          renderProjectProfileStatus(project, profileRequest, profileRun),
         ],
       }),
       details,
@@ -673,7 +700,7 @@ function renderProjectCard(project: ProjectDto): HTMLElement {
         class: 'project-card-footer',
         children: [
           el('small', { class: 'muted', text: '点击编辑此项目' }),
-          el('div', { class: 'project-card-actions', children: [backendCheck, action] }),
+          el('div', { class: 'project-card-actions', children: [profileAction, backendCheck, action] }),
         ],
       }),
     ],
@@ -688,6 +715,769 @@ function renderProjectCard(project: ProjectDto): HTMLElement {
     }
   };
   return card;
+}
+
+function latestProfileRequestForProject(project: ProjectDto): WorkflowRequestDto | null {
+  return data.requests
+    .filter((request) => request.projectId === project.id && isProfileRequest(request))
+    .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt))
+    .at(-1) ?? null;
+}
+
+function latestProfileRunForProject(project: ProjectDto) {
+  return data.runs
+    .filter((run) => run.projectId === project.id && isProfileRun(run))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .at(-1) ?? null;
+}
+
+function isProfileRequest(request: WorkflowRequestDto): boolean {
+  return request.type === 'profile' || request.flowId === 'profile.bootstrap';
+}
+
+function isProfileRun(run: (typeof data.runs)[number]): boolean {
+  return run.type === 'profile' || run.flowId === 'profile.bootstrap';
+}
+
+function isTerminalRequestStatus(status: WorkflowRequestDto['status']): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled';
+}
+
+function isTerminalRunStatus(status: (typeof data.runs)[number]['status']): boolean {
+  return status === 'passed' || status === 'failed' || status === 'cancelled';
+}
+
+function renderProjectProfileStatus(
+  project: ProjectDto,
+  request: WorkflowRequestDto | null,
+  run: (typeof data.runs)[number] | null,
+): HTMLElement {
+  const requestForRun = run ? data.requests.find((candidate) => candidate.workflowRunId === run.id) ?? null : null;
+  const open = el('button', {
+    class: 'btn btn-ghost btn-sm',
+    text: '查看',
+    attrs: { type: 'button' },
+  });
+  open.disabled = !request && !run;
+  open.onclick = (event) => {
+    event.stopPropagation();
+    if (requestForRun ?? request) {
+      setHash('task', (requestForRun ?? request)!.id);
+      return;
+    }
+    if (run) setHash('workbench', run.id);
+  };
+
+  const statusNode = run
+    ? pill(run.status, statusKind(run.status))
+    : request
+      ? pill(requestStatusLabel(request.status), statusKind(request.status))
+      : pill('未生成', 'muted');
+  const meta = run
+    ? `${shortId(run.id)} · ${fmtTime(run.createdAt)}`
+    : request
+      ? `${shortId(request.id)} · ${fmtTime(request.updatedAt)}`
+      : '生成后会产生 inventory、project profile 和待审核知识候选。';
+  const activeDetail = data.activeDetail?.run.projectId === project.id && data.activeDetail?.run.flowId === 'profile.bootstrap'
+    ? data.activeDetail
+    : null;
+  const profileMarkdown = activeDetail
+    ? latestArtifactOfKind(activeDetail.artifacts, 'project_profile')
+    : null;
+  const inventory = activeDetail
+    ? activeDetail.artifacts.find((artifact) => artifact.metadata?.role === 'project_inventory') ?? null
+    : null;
+  const artifactLinks = [
+    renderProjectProfileArtifactLink(profileMarkdown, 'profile'),
+    renderProjectProfileArtifactLink(inventory, 'inventory'),
+  ];
+
+  return el('div', {
+    class: 'project-profile-status',
+    children: [
+      el('div', {
+        class: 'project-profile-summary-line',
+        children: [
+          el('span', { class: 'muted', text: '项目画像' }),
+          statusNode,
+          el('span', { class: 'muted', text: meta }),
+          ...artifactLinks,
+          open,
+        ],
+      }),
+      inventory ? renderProjectCapabilityMap(project, inventory) : null,
+    ],
+  });
+}
+
+function renderProjectProfileArtifactLink(
+  artifact: ArtifactDto | null,
+  label: 'profile' | 'inventory',
+): HTMLElement | null {
+  if (!artifact) return null;
+  const isOpen = openArtifactViewers.has(artifact.id);
+  const toggle = el('button', {
+    class: 'btn btn-ghost btn-sm',
+    text: `${label} ${shortId(artifact.id)}`,
+    attrs: { type: 'button' },
+  });
+  toggle.onclick = (event) => {
+    event.stopPropagation();
+    toggleProjectProfileArtifact(artifact);
+  };
+  const content = artifactContent.get(artifact.id);
+  return el('div', {
+    class: 'project-profile-artifact-link',
+    children: [
+      toggle,
+      isOpen
+        ? el('pre', {
+            class: 'doc-preview code',
+            text: content?.text ? previewText(content.text) : '正在加载文件内容...',
+          })
+        : null,
+    ],
+  });
+}
+
+function toggleProjectProfileArtifact(artifact: ArtifactDto): void {
+  if (openArtifactViewers.has(artifact.id)) {
+    openArtifactViewers.delete(artifact.id);
+    render();
+    return;
+  }
+  openArtifactViewers.add(artifact.id);
+  void ensureArtifactContent(artifact.id);
+  render();
+}
+
+interface ProjectInventoryView {
+  capabilities: InventoryViewRecord[];
+  entrypoints: InventoryViewRecord[];
+  symbols: InventoryViewRecord[];
+  testSurfaces: InventoryViewRecord[];
+  hotspots: InventoryViewRecord[];
+}
+
+interface InventoryViewRecord {
+  id: string;
+  [key: string]: unknown;
+}
+
+function renderProjectCapabilityMap(project: ProjectDto, inventoryArtifact: ArtifactDto): HTMLElement | null {
+  const content = artifactContent.get(inventoryArtifact.id);
+  const parsed = content?.text ? parseProjectInventoryView(content.text) : null;
+  if (!content) {
+    void ensureArtifactContent(inventoryArtifact.id);
+  }
+  if (!content) {
+    return el('section', {
+      class: 'project-capability-map',
+      children: [el('p', { class: 'muted compact', text: '能力地图加载中…' })],
+    });
+  }
+  if (!parsed) {
+    return el('section', {
+      class: 'project-capability-map',
+      children: [el('p', { class: 'muted compact', text: 'inventory 暂不可解析。' })],
+    });
+  }
+  ensureProjectCapabilityCorrectionArtifacts(project);
+  const capabilities = [...parsed.capabilities]
+    .sort((a, b) => inventoryNumberField(b, 'confidence') - inventoryNumberField(a, 'confidence') || a.id.localeCompare(b.id))
+    .slice(0, 8);
+  return el('section', {
+    class: 'project-capability-map',
+    children: [
+      el('div', {
+        class: 'project-capability-map-head',
+        children: [
+          el('strong', { text: '核心能力地图' }),
+          el('span', { class: 'muted compact', text: `${parsed.capabilities.length} 项` }),
+        ],
+      }),
+      capabilities.length
+        ? el('div', {
+            class: 'project-capability-list',
+            children: capabilities.map((capability) => renderProjectCapabilityRow(project, inventoryArtifact, parsed, capability)),
+          })
+        : el('p', { class: 'muted compact', text: '本次 inventory 没有识别出能力。' }),
+    ],
+  });
+}
+
+function renderProjectCapabilityRow(
+  project: ProjectDto,
+  inventoryArtifact: ArtifactDto,
+  inventory: ProjectInventoryView,
+  capability: InventoryViewRecord,
+): HTMLElement {
+  const entrypoints = inventoryRecordsByRefs(inventory.entrypoints, inventoryStringArrayField(capability, 'entrypointRefs'));
+  const symbols = inventoryRecordsByRefs(inventory.symbols, inventoryStringArrayField(capability, 'symbolRefs'));
+  const tests = inventoryRecordsByRefs(inventory.testSurfaces, inventoryStringArrayField(capability, 'testRefs'));
+  const hotspots = inventoryRecordsByRefs(inventory.hotspots, inventoryStringArrayField(capability, 'hotspotRefs'));
+  const label = inventoryStringField(capability, 'label') ?? capability.id;
+  const correctionKey = capabilityCorrectionKey(project.id, inventoryArtifact.id, capability.id);
+  const correctionSummaries = projectCapabilityCorrectionSummaries(project.id, capability.id);
+  const persistedCorrection = preferredCapabilityCorrection(correctionSummaries);
+  const savedCorrection = projectCapabilityCorrections.get(correctionKey) ?? persistedCorrection?.action;
+  const busy = projectCapabilityActionInFlight.has(correctionKey);
+
+  const accept = capabilityActionButton(savedCorrection === 'accepted' ? '已提交' : '确认', busy);
+  accept.onclick = (event) => {
+    event.stopPropagation();
+    void submitCapabilityCorrection({
+      project,
+      inventoryArtifact,
+      capability,
+      entrypoints,
+      symbols,
+      tests,
+      hotspots,
+      action: 'accepted',
+    });
+  };
+
+  const rename = capabilityActionButton(savedCorrection === 'renamed' ? '已改名' : '重命名', busy);
+  rename.onclick = (event) => {
+    event.stopPropagation();
+    const nextLabel = window.prompt('新的能力名称', label)?.trim();
+    if (!nextLabel || nextLabel === label) return;
+    void submitCapabilityCorrection({
+      project,
+      inventoryArtifact,
+      capability,
+      entrypoints,
+      symbols,
+      tests,
+      hotspots,
+      action: 'renamed',
+      correctedLabel: nextLabel,
+    });
+  };
+
+  const merge = capabilityActionButton(savedCorrection === 'merged' ? '已合并' : '合并', busy);
+  merge.onclick = (event) => {
+    event.stopPropagation();
+    const mergeTarget = window.prompt('合并到哪个能力', label)?.trim();
+    if (!mergeTarget || mergeTarget === label) return;
+    void submitCapabilityCorrection({
+      project,
+      inventoryArtifact,
+      capability,
+      entrypoints,
+      symbols,
+      tests,
+      hotspots,
+      action: 'merged',
+      mergeTarget,
+    });
+  };
+
+  const wrong = capabilityActionButton(savedCorrection === 'wrong' ? '已标错' : '标错', busy);
+  wrong.onclick = (event) => {
+    event.stopPropagation();
+    void submitCapabilityCorrection({
+      project,
+      inventoryArtifact,
+      capability,
+      entrypoints,
+      symbols,
+      tests,
+      hotspots,
+      action: 'wrong',
+    });
+  };
+
+  return el('article', {
+    class: `project-capability-row ${savedCorrection ?? ''}`,
+    children: [
+      el('div', {
+        class: 'project-capability-row-main',
+        children: [
+          el('div', {
+            class: 'project-capability-title-line',
+            children: [
+              el('strong', { text: label }),
+              pill(inventoryStringField(capability, 'kind') ?? 'unknown', 'info'),
+              pill(`conf ${formatConfidence(inventoryNumberField(capability, 'confidence'))}`, confidenceKind(inventoryNumberField(capability, 'confidence'))),
+            ],
+          }),
+          el('div', {
+            class: 'project-capability-evidence',
+            children: [
+              capabilityMetric('入口', entrypoints.length),
+              capabilityMetric('符号', symbols.length),
+              capabilityMetric('测试', tests.length),
+              capabilityMetric('热点', hotspots.length),
+            ],
+          }),
+          renderCapabilityEvidencePreview(entrypoints, symbols, tests, hotspots),
+          renderCapabilityCorrectionComparison(label, inventoryArtifact, correctionSummaries),
+        ],
+      }),
+      el('div', { class: 'project-capability-actions', children: [accept, rename, merge, wrong] }),
+    ],
+  });
+}
+
+type CapabilityCorrectionAction = 'accepted' | 'renamed' | 'merged' | 'wrong';
+
+interface ProjectCapabilityCorrectionSummary {
+  artifactId: string;
+  status: KnowledgeArtifactDto['status'];
+  action: CapabilityCorrectionAction;
+  originalLabel: string | null;
+  correctedLabel: string | null;
+  mergeTarget: string | null;
+  inventoryArtifactId: string | null;
+  reviewStatus: string | null;
+  updatedAt: string;
+}
+
+function ensureProjectCapabilityCorrectionArtifacts(project: ProjectDto): void {
+  const staleProject = knowledgeArtifactsState.projectId !== project.id;
+  const shouldLoad = staleProject || (!knowledgeArtifactsState.loadedOnce && !knowledgeArtifactsState.loading);
+  if (!shouldLoad) return;
+  void loadKnowledgeArtifacts(project.id, false).then(() => {
+    if (ui.activePage === 'projects') render();
+  });
+}
+
+function projectCapabilityCorrectionSummaries(
+  projectId: string,
+  capabilityId: string,
+): ProjectCapabilityCorrectionSummary[] {
+  if (knowledgeArtifactsState.projectId !== projectId) return [];
+  return knowledgeArtifactsState.artifacts
+    .map((artifact) => projectCapabilityCorrectionSummary(artifact, capabilityId))
+    .filter((summary): summary is ProjectCapabilityCorrectionSummary => Boolean(summary))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.artifactId.localeCompare(b.artifactId));
+}
+
+function projectCapabilityCorrectionSummary(
+  artifact: KnowledgeArtifactDto,
+  capabilityId: string,
+): ProjectCapabilityCorrectionSummary | null {
+  if (metadataString(artifact.metadata, 'correctionKind') !== 'project_capability_map') return null;
+  if (metadataString(artifact.metadata, 'capabilityId') !== capabilityId) return null;
+  const action = capabilityCorrectionAction(metadataString(artifact.metadata, 'correctionAction'));
+  if (!action) return null;
+  return {
+    artifactId: artifact.id,
+    status: artifact.status,
+    action,
+    originalLabel: metadataString(artifact.metadata, 'originalLabel'),
+    correctedLabel: metadataString(artifact.metadata, 'correctedLabel'),
+    mergeTarget: metadataString(artifact.metadata, 'mergeTarget'),
+    inventoryArtifactId: metadataString(artifact.metadata, 'inventoryArtifactId'),
+    reviewStatus: metadataString(artifact.metadata, 'reviewStatus'),
+    updatedAt: artifact.updatedAt,
+  };
+}
+
+function capabilityCorrectionAction(value: string | null): CapabilityCorrectionAction | null {
+  if (value === 'accepted' || value === 'renamed' || value === 'merged' || value === 'wrong') return value;
+  return null;
+}
+
+function preferredCapabilityCorrection(
+  corrections: readonly ProjectCapabilityCorrectionSummary[],
+): ProjectCapabilityCorrectionSummary | null {
+  return corrections.find((correction) => capabilityCorrectionIsGoverned(correction))
+    ?? corrections[0]
+    ?? null;
+}
+
+function capabilityCorrectionIsGoverned(correction: ProjectCapabilityCorrectionSummary): boolean {
+  return correction.status === 'accepted' && normalizedCapabilityReviewStatus(correction.reviewStatus) === null;
+}
+
+function normalizedCapabilityReviewStatus(value: string | null): string | null {
+  const normalized = value?.trim().toLowerCase().replace(/[\s-]+/g, '_') || null;
+  return normalized === 'none' ? null : normalized;
+}
+
+function renderCapabilityCorrectionComparison(
+  label: string,
+  inventoryArtifact: ArtifactDto,
+  corrections: readonly ProjectCapabilityCorrectionSummary[],
+): HTMLElement | null {
+  const correction = preferredCapabilityCorrection(corrections);
+  if (!correction) return null;
+  return el('div', {
+    class: 'project-capability-correction-note compact',
+    children: [
+      pill(capabilityCorrectionPillLabel(correction), capabilityCorrectionPillKind(correction)),
+      el('span', { class: 'muted', text: capabilityCorrectionComparisonText(label, inventoryArtifact, correction) }),
+    ],
+  });
+}
+
+function capabilityCorrectionPillLabel(correction: ProjectCapabilityCorrectionSummary): string {
+  const governed = capabilityCorrectionIsGoverned(correction);
+  if (correction.action === 'accepted') return governed ? '已确认' : '确认待复核';
+  if (correction.action === 'renamed') return governed ? '已改名' : '改名待复核';
+  if (correction.action === 'merged') return governed ? '已合并' : '合并待复核';
+  return governed ? '已标错' : '标错待复核';
+}
+
+function capabilityCorrectionPillKind(correction: ProjectCapabilityCorrectionSummary): StatusKind {
+  if (!capabilityCorrectionIsGoverned(correction)) return 'warn';
+  if (correction.action === 'wrong') return 'bad';
+  if (correction.action === 'accepted') return 'good';
+  return 'info';
+}
+
+function capabilityCorrectionComparisonText(
+  label: string,
+  inventoryArtifact: ArtifactDto,
+  correction: ProjectCapabilityCorrectionSummary,
+): string {
+  const scope = correction.inventoryArtifactId && correction.inventoryArtifactId !== inventoryArtifact.id
+    ? `历史 inventory ${shortId(correction.inventoryArtifactId)}`
+    : '本次 inventory';
+  const state = capabilityCorrectionIsGoverned(correction) ? '已生效' : '仍待知识库复核';
+  if (correction.action === 'renamed') {
+    return `${scope} 曾把 ${correction.originalLabel ?? label} 改名为 ${correction.correctedLabel ?? label}，${state}；当前扫描标签是 ${label}。`;
+  }
+  if (correction.action === 'merged') {
+    return `${scope} 曾把 ${correction.originalLabel ?? label} 合并到 ${correction.mergeTarget ?? '目标能力'}，${state}；当前扫描仍单独识别出 ${label}。`;
+  }
+  if (correction.action === 'wrong') {
+    return `${scope} 曾把 ${correction.originalLabel ?? label} 标为错误能力，${state}；当前扫描仍识别出 ${label}，后续上下文应只保留源码级证据。`;
+  }
+  return `${scope} 已确认 ${correction.originalLabel ?? label}，${state}；当前扫描仍匹配同一 capability。`;
+}
+
+function metadataString(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadata[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function capabilityActionButton(text: string, busy: boolean): HTMLButtonElement {
+  const button = el('button', { class: 'btn btn-secondary btn-sm', text: busy ? '提交中…' : text, attrs: { type: 'button' } });
+  button.disabled = busy;
+  return button;
+}
+
+function capabilityMetric(label: string, value: number): HTMLElement {
+  return el('span', { text: `${label} ${value}` });
+}
+
+function renderCapabilityEvidencePreview(
+  entrypoints: readonly InventoryViewRecord[],
+  symbols: readonly InventoryViewRecord[],
+  tests: readonly InventoryViewRecord[],
+  hotspots: readonly InventoryViewRecord[],
+): HTMLElement {
+  const evidence = [
+    ...entrypoints.slice(0, 2).map((entrypoint) => [
+      inventoryStringField(entrypoint, 'method'),
+      inventoryStringField(entrypoint, 'route') ?? inventoryStringField(entrypoint, 'label'),
+      inventoryStringField(entrypoint, 'path'),
+    ].filter(Boolean).join(' · ')),
+    ...symbols.slice(0, 2).map((symbol) => [
+      inventoryStringField(symbol, 'kind'),
+      inventoryStringField(symbol, 'name'),
+      inventoryStringField(symbol, 'path'),
+    ].filter(Boolean).join(' · ')),
+    ...tests.slice(0, 1).map((test) => inventoryStringField(test, 'path') ?? test.id),
+    ...hotspots.slice(0, 1).map((hotspot) => inventoryStringField(hotspot, 'path') ?? hotspot.id),
+  ].filter(Boolean);
+  return el('ul', {
+    class: 'project-capability-evidence-preview',
+    children: evidence.slice(0, 5).map((item) => el('li', { text: item })),
+  });
+}
+
+async function submitCapabilityCorrection(input: {
+  project: ProjectDto;
+  inventoryArtifact: ArtifactDto;
+  capability: InventoryViewRecord;
+  entrypoints: readonly InventoryViewRecord[];
+  symbols: readonly InventoryViewRecord[];
+  tests: readonly InventoryViewRecord[];
+  hotspots: readonly InventoryViewRecord[];
+  action: 'accepted' | 'renamed' | 'merged' | 'wrong';
+  correctedLabel?: string;
+  mergeTarget?: string;
+}): Promise<void> {
+  const key = capabilityCorrectionKey(input.project.id, input.inventoryArtifact.id, input.capability.id);
+  if (projectCapabilityActionInFlight.has(key)) return;
+  projectCapabilityActionInFlight.add(key);
+  render();
+  const body = capabilityCorrectionKnowledgeBody(input);
+  try {
+    await api(`/knowledge-artifacts/projects/${encodeURIComponent(input.project.id)}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    projectCapabilityCorrections.set(key, input.action);
+    ui.lastError = null;
+    void loadKnowledgeArtifacts(input.project.id, false).then(() => {
+      if (ui.activePage === 'projects') render();
+    });
+    showSuccessToast('能力纠偏已写入知识候选。');
+  } catch (err) {
+    ui.lastError = errorMessage(err);
+  } finally {
+    projectCapabilityActionInFlight.delete(key);
+    render();
+  }
+}
+
+function capabilityCorrectionKnowledgeBody(input: {
+  project: ProjectDto;
+  inventoryArtifact: ArtifactDto;
+  capability: InventoryViewRecord;
+  entrypoints: readonly InventoryViewRecord[];
+  symbols: readonly InventoryViewRecord[];
+  tests: readonly InventoryViewRecord[];
+  hotspots: readonly InventoryViewRecord[];
+  action: 'accepted' | 'renamed' | 'merged' | 'wrong';
+  correctedLabel?: string;
+  mergeTarget?: string;
+}): Record<string, unknown> {
+  const label = inventoryStringField(input.capability, 'label') ?? input.capability.id;
+  const title = input.correctedLabel ?? label;
+  const text = renderCapabilityCorrectionMarkdown(input);
+  return {
+    kind: 'explore',
+    uri: `mem://project-capability/${encodeURIComponent(input.project.id)}/${encodeURIComponent(input.capability.id)}-${input.action}.md`,
+    size: new TextEncoder().encode(text).byteLength,
+    contentType: 'text/markdown',
+    status: 'draft',
+    subtype: input.action === 'wrong' ? 'question' : 'module_overview',
+    entityId: `CAP-${slugForCapability(input.capability.id).toUpperCase()}`,
+    metadata: {
+      title: `Capability correction: ${title}`,
+      text,
+      knowledgeClass: 'recovered',
+      trustLevel: 'summary',
+      freshness: 'current',
+      confidence: input.action === 'accepted' ? 0.75 : 0.65,
+      memoryKind: 'semantic',
+      memoryScope: 'project',
+      memoryStatus: 'candidate',
+      reviewStatus: 'needs_review',
+      sourceRefs: capabilityCorrectionSourceRefs(input),
+      evidenceRefs: capabilityCorrectionEvidenceRefs(input),
+      inventoryRecordRefs: capabilityCorrectionInventoryRecordRefs(input),
+      correctionKind: 'project_capability_map',
+      correctionAction: input.action,
+      capabilityId: input.capability.id,
+      originalLabel: label,
+      correctedLabel: input.correctedLabel ?? null,
+      mergeTarget: input.mergeTarget ?? null,
+      inventoryArtifactId: input.inventoryArtifact.id,
+    },
+  };
+}
+
+function renderCapabilityCorrectionMarkdown(input: {
+  project: ProjectDto;
+  inventoryArtifact: ArtifactDto;
+  capability: InventoryViewRecord;
+  entrypoints: readonly InventoryViewRecord[];
+  symbols: readonly InventoryViewRecord[];
+  tests: readonly InventoryViewRecord[];
+  hotspots: readonly InventoryViewRecord[];
+  action: 'accepted' | 'renamed' | 'merged' | 'wrong';
+  correctedLabel?: string;
+  mergeTarget?: string;
+}): string {
+  const label = inventoryStringField(input.capability, 'label') ?? input.capability.id;
+  return [
+    `# Capability Correction: ${input.correctedLabel ?? label}`,
+    '',
+    `- Project: ${input.project.name}`,
+    `- Action: ${input.action}`,
+    `- Capability ID: ${input.capability.id}`,
+    `- Original label: ${label}`,
+    input.correctedLabel ? `- Corrected label: ${input.correctedLabel}` : '',
+    input.mergeTarget ? `- Merge target: ${input.mergeTarget}` : '',
+    `- Inventory artifact: ${input.inventoryArtifact.id}`,
+    '',
+    '## Evidence',
+    renderInventoryMarkdownList('Entrypoints', input.entrypoints, (item) => [
+      inventoryStringField(item, 'method'),
+      inventoryStringField(item, 'route') ?? inventoryStringField(item, 'label'),
+      inventoryStringField(item, 'path'),
+      inventoryStringField(item, 'handler') ? `handler=${inventoryStringField(item, 'handler')}` : '',
+    ].filter(Boolean).join(' | ')),
+    renderInventoryMarkdownList('Symbols', input.symbols, (item) => [
+      inventoryStringField(item, 'kind'),
+      inventoryStringField(item, 'name'),
+      inventoryStringField(item, 'path'),
+    ].filter(Boolean).join(' | ')),
+    renderInventoryMarkdownList('Tests', input.tests, (item) => inventoryStringField(item, 'path') ?? item.id),
+    renderInventoryMarkdownList('Hotspots', input.hotspots, (item) => [
+      inventoryStringField(item, 'reason'),
+      inventoryStringField(item, 'path'),
+    ].filter(Boolean).join(' | ')),
+  ].filter(Boolean).join('\n');
+}
+
+function renderInventoryMarkdownList(
+  title: string,
+  records: readonly InventoryViewRecord[],
+  lineFor: (record: InventoryViewRecord) => string,
+): string {
+  if (records.length === 0) return `### ${title}\n\n- none\n`;
+  return [`### ${title}`, '', ...records.slice(0, 12).map((record) => `- ${lineFor(record)}`), ''].join('\n');
+}
+
+function capabilityCorrectionSourceRefs(input: {
+  inventoryArtifact: ArtifactDto;
+  capability: InventoryViewRecord;
+  entrypoints: readonly InventoryViewRecord[];
+  symbols: readonly InventoryViewRecord[];
+  tests: readonly InventoryViewRecord[];
+  hotspots: readonly InventoryViewRecord[];
+}): string[] {
+  return [
+    `artifact:${input.inventoryArtifact.id}`,
+    `capability:${input.capability.id}`,
+    ...inventoryStringArrayField(input.capability, 'sourceRefs'),
+    ...input.entrypoints.flatMap((record) => inventoryStringArrayField(record, 'sourceRefs')),
+    ...input.symbols.flatMap((record) => inventoryStringArrayField(record, 'sourceRefs')),
+    ...input.tests.flatMap((record) => inventoryStringArrayField(record, 'sourceRefs')),
+    ...input.hotspots.flatMap((record) => inventoryStringArrayField(record, 'sourceRefs')),
+  ].filter((value, index, array) => value && array.indexOf(value) === index);
+}
+
+function capabilityCorrectionEvidenceRefs(input: {
+  inventoryArtifact: ArtifactDto;
+  capability: InventoryViewRecord;
+  entrypoints: readonly InventoryViewRecord[];
+  symbols: readonly InventoryViewRecord[];
+  tests: readonly InventoryViewRecord[];
+  hotspots: readonly InventoryViewRecord[];
+}): string[] {
+  return uniqueStrings([
+    `artifact:${input.inventoryArtifact.id}`,
+    `capability:${input.capability.id}`,
+    ...input.entrypoints.map((record) => `entrypoint:${record.id}`),
+    ...input.symbols.map((record) => `symbol:${record.id}`),
+    ...input.tests.map((record) => `test_surface:${record.id}`),
+    ...input.hotspots.map((record) => `hotspot:${record.id}`),
+    ...capabilityCorrectionSourceRefs(input),
+  ]);
+}
+
+function capabilityCorrectionInventoryRecordRefs(input: {
+  capability: InventoryViewRecord;
+  entrypoints: readonly InventoryViewRecord[];
+  symbols: readonly InventoryViewRecord[];
+  tests: readonly InventoryViewRecord[];
+  hotspots: readonly InventoryViewRecord[];
+}): Record<string, string[]> {
+  return {
+    capabilityRefs: [input.capability.id],
+    entrypointRefs: input.entrypoints.map((record) => record.id),
+    symbolRefs: input.symbols.map((record) => record.id),
+    testRefs: input.tests.map((record) => record.id),
+    hotspotRefs: input.hotspots.map((record) => record.id),
+  };
+}
+
+function parseProjectInventoryView(content: string): ProjectInventoryView | null {
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>;
+    if (parsed.schemaVersion !== 'ainp.project_inventory.v1') return null;
+    return {
+      capabilities: inventoryRecords(parsed.capabilities),
+      entrypoints: inventoryRecords(parsed.entrypoints),
+      symbols: inventoryRecords(parsed.symbols),
+      testSurfaces: inventoryRecords(parsed.testSurfaces),
+      hotspots: inventoryRecords(parsed.hotspots),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function inventoryRecords(value: unknown): InventoryViewRecord[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item))
+    .map((item) => ({ ...item, id: inventoryStringField(item, 'id') ?? '' }))
+    .filter((item) => item.id);
+}
+
+function inventoryRecordsByRefs(records: readonly InventoryViewRecord[], refs: readonly string[]): InventoryViewRecord[] {
+  const byId = new Map(records.map((record) => [record.id, record]));
+  return refs.map((ref) => byId.get(ref)).filter((record): record is InventoryViewRecord => Boolean(record));
+}
+
+function inventoryStringField(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return null;
+}
+
+function inventoryNumberField(record: Record<string, unknown>, key: string): number {
+  const value = record[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function inventoryStringArrayField(record: Record<string, unknown>, key: string): string[] {
+  const value = record[key];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function formatConfidence(value: number): string {
+  if (value <= 0) return '?';
+  return value.toFixed(2);
+}
+
+function confidenceKind(value: number): StatusKind {
+  if (value >= 0.75) return 'good';
+  if (value >= 0.45) return 'warn';
+  return 'muted';
+}
+
+function capabilityCorrectionKey(projectId: string, artifactId: string, capabilityId: string): string {
+  return `${projectId}:${artifactId}:${capabilityId}`;
+}
+
+function slugForCapability(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48) || 'capability';
+}
+
+async function startProjectProfileBootstrap(project: ProjectDto): Promise<void> {
+  projectProfileActionInFlight.add(project.id);
+  render();
+  try {
+    const request = await api<WorkflowRequestDto>('/workflow-requests', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        projectId: project.id,
+        title: 'Generate legacy project profile',
+        type: 'profile',
+        flowId: 'profile.bootstrap',
+      }),
+    });
+    ui.activeTaskRequestId = request.id;
+    ui.activeRunId = request.workflowRunId;
+    ui.lastError = null;
+    showSuccessToast(`项目"${project.name}"画像生成任务已创建。`);
+    await loadData({ render: false });
+    setHash('task', request.id);
+  } catch (err) {
+    ui.lastError = errorMessage(err);
+  } finally {
+    projectProfileActionInFlight.delete(project.id);
+    render();
+  }
 }
 
 function projectSummaryItem(label: string, value: Node | string): HTMLElement {

@@ -1,0 +1,227 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-rails-directory-corpus-e2e",
+  "title": "Legacy project understanding scans a directory-backed old Rails commerce corpus",
+  "description": "Runs the real scanner against a checked-in Rails-style old commerce fixture with routes, billing/orders/customers controller/service/repository layers, SQL schema/routine evidence, tests, credential-like config, and generated/vendor/log noise filtered by fixtureDir.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_rails_directory_corpus",
+    "title": "Update legacy Rails billing refund audit",
+    "stage": "implementation",
+    "taskBrief": "Fix the legacy Rails billing refund audit route and apply_refund_audit_entry SQL routine, then update billing refund audit tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 32,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072
+    },
+    "fixtureDir": {
+      "path": "../fixtures/legacy-directory-backed-rails-commerce",
+      "maxFiles": 24,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072,
+      "excludePaths": [
+        "tmp",
+        "vendor",
+        "log"
+      ]
+    }
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Orders API",
+      "Customers API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "POST /api/v1/billing/refunds/:refund_id/audit",
+      "PATCH /api/v1/orders/fulfillment/:order_id/reprice",
+      "GET /api/v1/customers/profile/:customer_id"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventorySymbolNamesInclude": [
+      "RefundsController",
+      "audit",
+      "RefundService",
+      "audit_refund",
+      "RefundRepository",
+      "FulfillmentController",
+      "FulfillmentService",
+      "ProfileController",
+      "ProfileService"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 9,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventorySourceChunkCountMin": 14,
+    "inventoryExclusionsInclude": [
+      "config/credentials.yml:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_domain_entities_billing_api",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_orders",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_domain_entities_billing_api",
+      "inventory_source_chunk_src_chunk_config_routes",
+      "inventory_source_chunk_src_chunk_app_controllers_billing",
+      "inventory_source_chunk_src_chunk_app_services_billing",
+      "inventory_source_chunk_src_chunk_app_repositories_billing",
+      "inventory_source_chunk_src_chunk_db_billing",
+      "inventory_source_chunk_src_chunk_test_controllers_billing"
+    ],
+    "irrelevantContextRatioMax": 0.16,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_rails_commerce_billing_refund_audit",
+      "file:config/routes.rb#L2",
+      "file:config/routes.rb#L3",
+      "file:app/controllers/billing/refunds_controller.rb#L1",
+      "file:app/controllers/billing/refunds_controller.rb#L4",
+      "file:app/controllers/billing/refunds_controller.rb#L5",
+      "file:app/controllers/billing/refunds_controller.rb#L6",
+      "file:app/services/billing/refund_service.rb#L1",
+      "file:app/services/billing/refund_service.rb#L4",
+      "file:app/repositories/billing/refund_repository.rb#L1",
+      "file:db/billing/schema.sql#L1",
+      "file:db/billing/routines.sql#L1",
+      "file:test/controllers/billing/refunds_controller_test.rb"
+    ],
+    "sourceRefsExclude": [
+      "file:config/routes.rb#L4",
+      "file:config/routes.rb#L5",
+      "file:app/controllers/orders/fulfillment_controller.rb#L1",
+      "file:app/controllers/customers/profile_controller.rb#L1",
+      "file:db/orders/schema.sql#L1",
+      "file:db/customers/schema.sql#L1",
+      "file:test/controllers/orders/fulfillment_controller_test.rb",
+      "file:test/controllers/customers/profile_controller_test.rb",
+      "file:vendor/generated_gateway_client.rb",
+      "file:tmp/cache/routes.rb",
+      "file:log/development.log"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary",
+      "inventory_domain_entities_billing_api": "summary"
+    },
+    "selectedCountMin": 5,
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:config/routes.rb#L2",
+          "file:config/routes.rb#L3",
+          "file:app/controllers/billing/refunds_controller.rb#L1",
+          "file:app/controllers/billing/refunds_controller.rb#L4",
+          "file:app/controllers/billing/refunds_controller.rb#L5",
+          "file:app/controllers/billing/refunds_controller.rb#L6",
+          "file:app/services/billing/refund_service.rb#L1",
+          "file:app/repositories/billing/refund_repository.rb#L1",
+          "file:test/controllers/billing/refunds_controller_test.rb"
+        ],
+        "sourceRefsExclude": [
+          "file:config/routes.rb#L4",
+          "file:config/routes.rb#L5",
+          "file:app/controllers/orders/fulfillment_controller.rb#L1",
+          "file:app/controllers/customers/profile_controller.rb#L1",
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1",
+          "file:test/controllers/orders/fulfillment_controller_test.rb",
+          "file:test/controllers/customers/profile_controller_test.rb",
+          "file:vendor/generated_gateway_client.rb",
+          "file:tmp/cache/routes.rb",
+          "file:log/development.log"
+        ]
+      },
+      {
+        "ref": "inventory_domain_entities_billing_api",
+        "contentIncludes": [
+          "Matched Domain Entities",
+          "routine | apply_refund_audit_entry | db/billing/routines.sql",
+          "table | refund_audit_entries | db/billing/schema.sql",
+          "refs=file:app/repositories/billing/refund_repository.rb#L3"
+        ],
+        "contentExcludes": [
+          "order_fulfillment_backlog",
+          "customer_profile_snapshots"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/schema.sql#L1",
+          "file:app/repositories/billing/refund_repository.rb#L3"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:config/routes.rb#L2",
+          "file:config/routes.rb#L3",
+          "file:app/controllers/billing/refunds_controller.rb#L1",
+          "file:app/controllers/billing/refunds_controller.rb#L4",
+          "file:app/services/billing/refund_service.rb#L1",
+          "file:app/services/billing/refund_service.rb#L4",
+          "file:app/repositories/billing/refund_repository.rb#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:config/routes.rb#L4",
+          "file:config/routes.rb#L5",
+          "file:app/controllers/orders/fulfillment_controller.rb#L1",
+          "file:app/controllers/customers/profile_controller.rb#L1",
+          "file:test/controllers/orders/fulfillment_controller_test.rb",
+          "file:test/controllers/customers/profile_controller_test.rb"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:test/controllers/billing/refunds_controller_test.rb"
+        ],
+        "sourceRefsExclude": [
+          "file:test/controllers/orders/fulfillment_controller_test.rb",
+          "file:test/controllers/customers/profile_controller_test.rb"
+        ]
+      }
+    ],
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.65,
+      "routeHandlerEdgeConfidenceMin": 0.78,
+      "sourceChunkContentSha256CoverageMin": 1,
+      "sourceChunkIndexCoverageMin": 1,
+      "sourceChunkLinkedRecordCoverageMin": 1,
+      "sourceFileExtensionCountMin": 3,
+      "sourcePathPatternCountMin": 5,
+      "sourceRecordKindCountMin": 7
+    }
+  },
+  "variants": [
+    {
+      "id": "rails-commerce-billing-refund-audit",
+      "label": "Legacy Rails commerce task stays focused on billing refund route, SQL routine, and tests"
+    }
+  ]
+}

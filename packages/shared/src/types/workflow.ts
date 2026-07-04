@@ -1,3 +1,4 @@
+import type { ProjectAgentBackendKind } from './agent';
 import type { Iso8601, ProjectId, WorkflowRunId, WorkflowRequestId, StepRunId } from './ids';
 
 export type WorkflowStage =
@@ -10,6 +11,9 @@ export type WorkflowStage =
   | 'review'
   | 'completion'
   | 'knowledge'
+  // Profile bootstrap flow stages (read-only inventory → profile synthesis).
+  | 'inventory'
+  | 'profile'
   // V2 W2-2a: issue.standard flow stages (report → analyze → fix=implementation reuse).
   | 'report'
   | 'analyze'
@@ -33,6 +37,8 @@ export const WORKFLOW_STAGES = [
   'review',
   'completion',
   'knowledge',
+  'inventory',
+  'profile',
   'report',
   'analyze',
   'scan',
@@ -57,7 +63,7 @@ export type WorkflowRunStatus =
   | 'failed'
   | 'cancelled';
 
-export type WorkflowRunType = 'feature' | 'bugfix' | 'smoke' | 'refactor' | 'ask';
+export type WorkflowRunType = 'feature' | 'bugfix' | 'smoke' | 'refactor' | 'ask' | 'profile';
 
 // ---------------------------------------------------------------------------
 // V2 W2-1: FLOW_REGISTRY contracts (shared types)
@@ -103,12 +109,20 @@ export type WorkflowRunType = 'feature' | 'bugfix' | 'smoke' | 'refactor' | 'ask
  *                                                 knowledge. 'plan' is a new
  *                                                 stage distinct from feature
  *                                                 'design' (no REQ-### tracing).
+ *   - `'profile.bootstrap'`             — read-only project profile bootstrap
+ *                                                 (inventory / profile /
+ *                                                 completion / knowledge).
  *
  * Kept as a string-literal union (not a free `string`) so that
  * `runWorkflow(run.flowId)` and FLOW_REGISTRY indexing are type-checked
  * end-to-end. New flows must add their FlowId to this union.
  */
-export type FlowId = 'feature.standard' | 'feature.fastforward' | 'issue.standard' | 'refactor.standard';
+export type FlowId =
+  | 'feature.standard'
+  | 'feature.fastforward'
+  | 'issue.standard'
+  | 'refactor.standard'
+  | 'profile.bootstrap';
 
 /**
  * Classification of how a single {@link StageStep} is executed.
@@ -221,6 +235,11 @@ export interface WorkflowRequest {
   error: string | null;
   createdAt: Iso8601;
   updatedAt: Iso8601;
+  /**
+   * Optional request-level execution backend override. Null means use the
+   * project's current `agentBackend` default.
+   */
+  agentBackend: ProjectAgentBackendKind | null;
   /**
    * Optional UI override pointing into `FLOW_REGISTRY`. When non-null the
    * runner watch loop bypasses Coordinator + Router and starts the run with

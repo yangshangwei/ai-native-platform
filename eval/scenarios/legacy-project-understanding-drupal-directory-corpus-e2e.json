@@ -1,0 +1,314 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-drupal-directory-corpus-e2e",
+  "title": "Legacy project understanding scans a directory-backed old Drupal commerce corpus",
+  "description": "Runs the real scanner against a checked-in Drupal 7 old commerce fixture with hook_menu and drupal_get_form routes, billing/orders/customers PHP service/repository layers, SQL schema/view/routine evidence, tests, credential-like config, and generated/vendor/tmp/log noise filtered by fixtureDir.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_drupal_directory_corpus",
+    "title": "Update legacy Drupal billing refund review",
+    "stage": "implementation",
+    "taskBrief": "Fix the legacy Drupal billing refund review form route, rebuild_drupal_refund_review SQL routine, drupal_refund_review_entries table, and tests/billing/RefundReviewDrupalTest.php.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 42,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072
+    },
+    "fixtureDir": {
+      "path": "../fixtures/legacy-directory-backed-drupal-commerce",
+      "maxFiles": 24,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072,
+      "excludePaths": [
+        "tmp",
+        "vendor",
+        "logs"
+      ]
+    }
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Orders API",
+      "Customers API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API",
+      "Php API",
+      "Drupal API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /billing/refunds/%/review-form",
+      "ANY /orders/fulfillment/reprice",
+      "ANY /customers/profile/risk"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventorySymbolNamesInclude": [
+      "commerce_billing_refund_review_form",
+      "BillingRefundService",
+      "rebuildDrupalRefundReview",
+      "BillingRefundRepository",
+      "writeDrupalRefundReviewEntry",
+      "commerce_orders_reprice_fulfillment",
+      "OrderFulfillmentService",
+      "commerce_customers_profile_risk",
+      "CustomerProfileService"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 12,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventorySourceChunkCountMin": 15,
+    "inventoryExclusionsInclude": [
+      "config/credentials.php:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_domain_entities_billing_api",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_orders",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_domain_entities_billing_api",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_sites_all_modules_commerce_billing",
+      "inventory_source_chunk_src_chunk_db_billing",
+      "inventory_source_chunk_src_chunk_tests_billing"
+    ],
+    "irrelevantContextRatioMax": 0.16,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_drupal_commerce_billing_refund_review",
+      "file:sites/all/modules/commerce_billing/commerce_billing.module#L3",
+      "file:sites/all/modules/commerce_billing/commerce_billing.module#L5",
+      "file:sites/all/modules/commerce_billing/commerce_billing.module#L6",
+      "file:sites/all/modules/commerce_billing/commerce_billing.module#L12",
+      "file:sites/all/modules/commerce_billing/commerce_billing.module#L13",
+      "file:sites/all/modules/commerce_billing/commerce_billing.module#L14",
+      "file:sites/all/modules/commerce_billing/src/BillingRefundService.php#L2",
+      "file:sites/all/modules/commerce_billing/src/BillingRefundService.php#L4",
+      "file:sites/all/modules/commerce_billing/src/BillingRefundService.php#L5",
+      "file:sites/all/modules/commerce_billing/src/BillingRefundService.php#L6",
+      "file:sites/all/modules/commerce_billing/src/BillingRefundRepository.php#L2",
+      "file:sites/all/modules/commerce_billing/src/BillingRefundRepository.php#L4",
+      "file:sites/all/modules/commerce_billing/src/BillingRefundRepository.php#L5",
+      "file:db/billing/schema.sql#L1",
+      "file:db/billing/schema.sql#L16",
+      "file:db/billing/routines.sql#L1",
+      "file:tests/billing/RefundReviewDrupalTest.php"
+    ],
+    "sourceRefsExclude": [
+      "file:sites/all/modules/commerce_orders/commerce_orders.module#L3",
+      "file:sites/all/modules/commerce_customers/commerce_customers.module#L3",
+      "file:db/orders/schema.sql#L1",
+      "file:db/customers/schema.sql#L1",
+      "file:tests/orders/FulfillmentRepriceDrupalTest.php",
+      "file:tests/customers/ProfileRiskDrupalTest.php",
+      "file:vendor/generated_gateway_client.php",
+      "file:tmp/cache/menu.inc",
+      "file:logs/watchdog.log"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary",
+      "inventory_domain_entities_billing_api": "summary"
+    },
+    "selectedCountMin": 5,
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "contentIncludes": [
+          "ANY /billing/refunds/%/review-form",
+          "Drupal:commerce_billing_refund_review_form"
+        ],
+        "contentExcludes": [
+          "ANY /orders/fulfillment/reprice",
+          "ANY /customers/profile/risk"
+        ],
+        "sourceRefsInclude": [
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L3",
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L5",
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L6",
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L12",
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L13",
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L14",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundService.php#L2",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundService.php#L4",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundRepository.php#L2",
+          "file:tests/billing/RefundReviewDrupalTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:sites/all/modules/commerce_orders/commerce_orders.module#L3",
+          "file:sites/all/modules/commerce_customers/commerce_customers.module#L3",
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1",
+          "file:tests/orders/FulfillmentRepriceDrupalTest.php",
+          "file:tests/customers/ProfileRiskDrupalTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_domain_entities_billing_api",
+        "contentIncludes": [
+          "Matched Domain Entities",
+          "routine | rebuild_drupal_refund_review | db/billing/routines.sql",
+          "table | drupal_refund_review_entries | db/billing/schema.sql",
+          "depended_on_by:drupal_refund_review_snapshot@file:db/billing/schema.sql#L16",
+          "refs=file:sites/all/modules/commerce_billing/src/BillingRefundRepository.php#L5"
+        ],
+        "contentExcludes": [
+          "drupal_order_fulfillment_backlog",
+          "drupal_customer_profile_snapshots"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/schema.sql#L1",
+          "file:db/billing/schema.sql#L16",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundRepository.php#L5"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L3",
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L5",
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L6",
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L12",
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L13",
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L14",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundService.php#L2",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundService.php#L4",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundService.php#L5",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundService.php#L6",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundRepository.php#L2",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundRepository.php#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:sites/all/modules/commerce_orders/commerce_orders.module#L3",
+          "file:sites/all/modules/commerce_customers/commerce_customers.module#L3",
+          "file:tests/orders/FulfillmentRepriceDrupalTest.php",
+          "file:tests/customers/ProfileRiskDrupalTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/billing/RefundReviewDrupalTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:tests/orders/FulfillmentRepriceDrupalTest.php",
+          "file:tests/customers/ProfileRiskDrupalTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_sites_all_modules_commerce_billing_commerce_billing_module_1_16",
+        "contentIncludes": [
+          "Source chunk: sites/all/modules/commerce_billing/commerce_billing.module:1-16",
+          "Pointed by inventory evidence",
+          "ANY /billing/refunds/%/review-form"
+        ],
+        "sourceRefsInclude": [
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L3",
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L5",
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L6",
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L12",
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L13",
+          "file:sites/all/modules/commerce_billing/commerce_billing.module#L14"
+        ],
+        "sourceRefsExclude": [
+          "file:sites/all/modules/commerce_orders/commerce_orders.module#L3",
+          "file:sites/all/modules/commerce_customers/commerce_customers.module#L3"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_sites_all_modules_commerce_billing_src_billingrefundservice_php_1_9",
+        "contentIncludes": [
+          "Source chunk: sites/all/modules/commerce_billing/src/BillingRefundService.php:1-9",
+          "calls_billingrefundservice_rebuilddrupalrefundreview"
+        ],
+        "sourceRefsInclude": [
+          "file:sites/all/modules/commerce_billing/src/BillingRefundService.php#L2",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundService.php#L4",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundService.php#L5",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundService.php#L6",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundRepository.php#L2",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundRepository.php#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:sites/all/modules/commerce_orders/src/OrderFulfillmentService.php#L2",
+          "file:sites/all/modules/commerce_customers/src/CustomerProfileService.php#L2"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_sites_all_modules_commerce_billing_src_billingrefundrepository_php_1_9",
+        "contentIncludes": [
+          "Source chunk: sites/all/modules/commerce_billing/src/BillingRefundRepository.php:1-9",
+          "drupal_refund_review_entries"
+        ],
+        "sourceRefsInclude": [
+          "file:sites/all/modules/commerce_billing/src/BillingRefundRepository.php#L2",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundRepository.php#L4",
+          "file:sites/all/modules/commerce_billing/src/BillingRefundRepository.php#L5",
+          "file:db/billing/schema.sql#L1",
+          "file:db/billing/routines.sql#L3"
+        ],
+        "sourceRefsExclude": [
+          "file:sites/all/modules/commerce_orders/src/OrderFulfillmentRepository.php#L2",
+          "file:sites/all/modules/commerce_customers/src/CustomerProfileRepository.php#L2",
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_db_billing_routines_sql_1_8",
+        "contentIncludes": [
+          "Source chunk: db/billing/routines.sql:1-8",
+          "rebuild_drupal_refund_review"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/routines.sql#L3",
+          "file:db/billing/routines.sql#L5",
+          "file:db/billing/schema.sql#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      }
+    ],
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.65,
+      "routeHandlerEdgeConfidenceMin": 0.78,
+      "sourceChunkContentSha256CoverageMin": 1,
+      "sourceChunkIndexCoverageMin": 1,
+      "sourceChunkLinkedRecordCoverageMin": 0.75,
+      "sourceFileExtensionCountMin": 3,
+      "sourcePathPatternCountMin": 5,
+      "sourceRecordKindCountMin": 7
+    }
+  },
+  "variants": [
+    {
+      "id": "drupal-commerce-billing-refund-review",
+      "label": "Legacy Drupal commerce task stays focused on billing refund form route, SQL routine, and tests"
+    }
+  ]
+}

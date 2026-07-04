@@ -1,0 +1,207 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-aspnet-routetable-e2e",
+  "title": "Legacy project understanding keeps old ASP.NET route table context focused",
+  "description": "Runs the real scanner against a small old ASP.NET MVC/Web API route-table fixture, then verifies ContextPack selects the billing route table and handler graph without leaking an unrelated customer route.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_aspnet_routetable",
+    "title": "Update old ASP.NET billing statement route",
+    "stage": "implementation",
+    "taskBrief": "Fix billing statement loading through the old ASP.NET MVC RouteConfig route and update billing statement tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 16,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "App_Start/RouteConfig.cs",
+        "content": "public class RouteConfig\n{\n  public static void RegisterRoutes(RouteCollection routes)\n  {\n    routes.MapRoute(\n      name: \"BillingStatement\",\n      url: \"billing/statements/{statementId}\",\n      defaults: new { controller = \"Billing\", action = \"Statement\" }\n    );\n    routes.MapRoute(\n      name: \"Default\",\n      url: \"{controller}/{action}/{id}\",\n      defaults: new { controller = \"Home\", action = \"Index\", id = UrlParameter.Optional }\n    );\n  }\n}\n"
+      },
+      {
+        "path": "App_Start/WebApiConfig.cs",
+        "content": "public static class WebApiConfig\n{\n  public static void Register(HttpConfiguration config)\n  {\n    config.Routes.MapHttpRoute(\n      name: \"CustomerProfileApi\",\n      routeTemplate: \"api/customers/profile/{customerId}\",\n      defaults: new { controller = \"Customers\", action = \"Profile\" }\n    );\n  }\n}\n"
+      },
+      {
+        "path": "Controllers/BillingController.cs",
+        "content": "public class BillingController : Controller\n{\n  private readonly BillingService _billingService = new BillingService();\n\n  public ActionResult Statement(string statementId)\n  {\n    return View(_billingService.LoadStatement(statementId));\n  }\n}\n"
+      },
+      {
+        "path": "Services/BillingService.cs",
+        "content": "public class BillingService\n{\n  private readonly BillingRepository _billingRepository = new BillingRepository();\n\n  public string LoadStatement(string statementId)\n  {\n    return _billingRepository.LoadStatement(statementId);\n  }\n}\n"
+      },
+      {
+        "path": "Repositories/BillingRepository.cs",
+        "content": "public class BillingRepository\n{\n  public string LoadStatement(string statementId)\n  {\n    return statementId;\n  }\n}\n"
+      },
+      {
+        "path": "Controllers/CustomersController.cs",
+        "content": "public class CustomersController : ApiController\n{\n  public IHttpActionResult Profile(string customerId)\n  {\n    return Ok(customerId);\n  }\n}\n"
+      },
+      {
+        "path": "tests/Billing/BillingStatementTests.cs",
+        "content": "public class BillingStatementTests\n{\n  public void LoadsStatementThroughRouteConfig() {}\n}\n"
+      },
+      {
+        "path": "tests/Customers/CustomerProfileTests.cs",
+        "content": "public class CustomerProfileTests\n{\n  public void LoadsProfileThroughWebApiConfig() {}\n}\n"
+      },
+      {
+        "path": ".env",
+        "content": "ConnectionStrings__Default=Server=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /billing/statements/{statementId}",
+      "ANY /api/customers/profile/{customerId}"
+    ],
+    "inventoryEntrypointRouteCountMin": 2,
+    "inventoryEntrypointRouteCountMax": 2,
+    "inventorySymbolNamesInclude": [
+      "BillingController",
+      "Statement",
+      "BillingService",
+      "LoadStatement",
+      "BillingRepository",
+      "CustomersController",
+      "Profile"
+    ],
+    "inventorySymbolCountMin": 7,
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 5,
+    "inventoryRouteHandlerEdgeCountMin": 2,
+    "inventorySourceChunkCountMin": 6,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_aspnet_routetable_billing_statement_primary",
+      "file:App_Start/RouteConfig.cs#L5",
+      "file:App_Start/RouteConfig.cs#L7",
+      "file:App_Start/RouteConfig.cs#L8",
+      "file:Controllers/BillingController.cs#L3",
+      "file:Controllers/BillingController.cs#L5",
+      "file:Controllers/BillingController.cs#L7",
+      "file:Services/BillingService.cs#L1",
+      "file:Services/BillingService.cs#L3",
+      "file:Services/BillingService.cs#L5",
+      "file:Services/BillingService.cs#L7",
+      "file:Repositories/BillingRepository.cs#L1",
+      "file:Repositories/BillingRepository.cs#L3",
+      "file:tests/Billing/BillingStatementTests.cs"
+    ],
+    "sourceRefsExclude": [
+      "file:App_Start/WebApiConfig.cs#L5",
+      "file:Controllers/CustomersController.cs#L3",
+      "file:tests/Customers/CustomerProfileTests.cs"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:App_Start/RouteConfig.cs#L5",
+          "file:App_Start/RouteConfig.cs#L7",
+          "file:App_Start/RouteConfig.cs#L8",
+          "file:Controllers/BillingController.cs#L1",
+          "file:Controllers/BillingController.cs#L3",
+          "file:Controllers/BillingController.cs#L5",
+          "file:Controllers/BillingController.cs#L7",
+          "file:Services/BillingService.cs#L1",
+          "file:Services/BillingService.cs#L3",
+          "file:Services/BillingService.cs#L5",
+          "file:Services/BillingService.cs#L7",
+          "file:Repositories/BillingRepository.cs#L1",
+          "file:Repositories/BillingRepository.cs#L3",
+          "file:tests/Billing/BillingStatementTests.cs"
+        ],
+        "sourceRefsExclude": [
+          "file:App_Start/WebApiConfig.cs#L5",
+          "file:Controllers/CustomersController.cs#L3",
+          "file:tests/Customers/CustomerProfileTests.cs"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:App_Start/RouteConfig.cs#L5",
+          "file:App_Start/RouteConfig.cs#L7",
+          "file:App_Start/RouteConfig.cs#L8",
+          "file:Controllers/BillingController.cs#L1",
+          "file:Controllers/BillingController.cs#L3",
+          "file:Controllers/BillingController.cs#L5",
+          "file:Controllers/BillingController.cs#L7",
+          "file:Services/BillingService.cs#L1",
+          "file:Services/BillingService.cs#L3",
+          "file:Services/BillingService.cs#L5",
+          "file:Services/BillingService.cs#L7",
+          "file:Repositories/BillingRepository.cs#L1",
+          "file:Repositories/BillingRepository.cs#L3"
+        ],
+        "sourceRefsExclude": [
+          "file:App_Start/WebApiConfig.cs#L5",
+          "file:Controllers/CustomersController.cs#L3",
+          "file:tests/Customers/CustomerProfileTests.cs"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/Billing/BillingStatementTests.cs"
+        ],
+        "sourceRefsExclude": [
+          "file:App_Start/WebApiConfig.cs#L5",
+          "file:Controllers/CustomersController.cs#L3",
+          "file:tests/Customers/CustomerProfileTests.cs"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 12,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_app_start_routeconfig",
+      "inventory_source_chunk_src_chunk_controllers_billing",
+      "inventory_source_chunk_src_chunk_services_billing",
+      "inventory_source_chunk_src_chunk_repositories_billing",
+      "inventory_source_chunk_src_chunk_tests_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13
+  },
+  "variants": [
+    {
+      "id": "aspnet-routetable-billing-statement-primary",
+      "label": "Old ASP.NET route table billing statement task stays focused on billing route and handler graph"
+    }
+  ]
+}

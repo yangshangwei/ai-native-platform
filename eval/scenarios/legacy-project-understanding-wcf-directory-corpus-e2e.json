@@ -1,0 +1,227 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-wcf-directory-corpus-e2e",
+  "title": "Legacy project understanding scans a directory-backed old WCF commerce corpus",
+  "description": "Runs the real scanner against a checked-in WCF-style old commerce fixture with .svc service hosts, service contracts, billing/orders/customers implementation/manager/repository layers, SQL schema/routine evidence, tests, credential-like config, and generated/bin/obj/log noise filtered by fixtureDir.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_wcf_directory_corpus",
+    "title": "Update legacy WCF billing refund audit",
+    "stage": "implementation",
+    "taskBrief": "Fix Services/BillingRefundService.svc for the legacy WCF BillingRefundService AuditRefund operation, rebuild_wcf_refund_audit SQL routine, wcf_refund_audit_entries table, and tests/Billing/BillingRefundServiceTest.cs.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 40,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072
+    },
+    "fixtureDir": {
+      "path": "../fixtures/legacy-directory-backed-wcf-commerce",
+      "maxFiles": 32,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072,
+      "excludePaths": [
+        "bin",
+        "obj",
+        "logs"
+      ]
+    }
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing Refund Service API",
+      "Order Fulfillment Service API",
+      "Customer Profile Service API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API",
+      "Service API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /Services/BillingRefundService.svc",
+      "ANY /Services/OrderFulfillmentService.svc",
+      "ANY /Services/CustomerProfileService.svc",
+      "ANY /wcf/billing_refund_service/audit_refund",
+      "ANY /wcf/order_fulfillment_service/reprice_fulfillment",
+      "ANY /wcf/customer_profile_service/review_profile_risk"
+    ],
+    "inventoryEntrypointRouteCountMin": 6,
+    "inventorySymbolNamesInclude": [
+      "BillingRefundService",
+      "AuditRefund",
+      "BillingRefundManager",
+      "RebuildRefundAudit",
+      "BillingRefundRepository",
+      "WriteRefundAuditEntry",
+      "OrderFulfillmentService",
+      "RepriceFulfillment",
+      "CustomerProfileService",
+      "ReviewProfileRisk"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 12,
+    "inventoryRouteHandlerEdgeCountMin": 6,
+    "inventorySourceChunkCountMin": 18,
+    "inventoryExclusionsInclude": [
+      "config/credentials.yml:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing_refund_service",
+      "inventory_symbols_billing_refund_service_api",
+      "inventory_source_chunk_src_chunk_services_billingrefundservice_svc_1_2",
+      "inventory_source_chunk_src_chunk_src_legacy_billing_ibillingrefundcontract_cs_1_11",
+      "inventory_source_chunk_src_chunk_src_legacy_billing_billingrefundrepository_cs_1_11"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_order_fulfillment_service",
+      "inventory_capability_cap_api_customer_profile_service"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing_refund_service",
+      "inventory_symbols_billing_refund_service_api",
+      "inventory_tests_billing_refund_service_api",
+      "inventory_hotspots_billing_refund_service_api",
+      "inventory_source_chunk_src_chunk_services_billingrefundservice",
+      "inventory_source_chunk_src_chunk_src_legacy_billing",
+      "inventory_source_chunk_src_chunk_db_billing",
+      "inventory_source_chunk_src_chunk_tests_billing"
+    ],
+    "irrelevantContextRatioMax": 0.16,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_wcf_commerce_billing_refund_audit",
+      "file:Services/BillingRefundService.svc#L1",
+      "file:src/Legacy/Billing/IBillingRefundContract.cs#L5",
+      "file:src/Legacy/Billing/IBillingRefundContract.cs#L8",
+      "file:src/Legacy/Billing/IBillingRefundContract.cs#L9",
+      "file:src/Legacy/Billing/BillingRefundService.cs#L3",
+      "file:src/Legacy/Billing/BillingRefundRepository.cs#L3",
+      "file:src/Legacy/Billing/BillingRefundRepository.cs#L5",
+      "file:src/Legacy/Billing/BillingRefundRepository.cs#L7"
+    ],
+    "sourceRefsExclude": [
+      "file:Services/OrderFulfillmentService.svc#L1",
+      "file:Services/CustomerProfileService.svc#L1",
+      "file:src/Legacy/Orders/IOrderFulfillmentContract.cs#L5",
+      "file:src/Legacy/Orders/IOrderFulfillmentContract.cs#L8",
+      "file:src/Legacy/Customers/ICustomerProfileContract.cs#L5",
+      "file:src/Legacy/Customers/ICustomerProfileContract.cs#L8",
+      "file:db/orders/schema.sql#L1",
+      "file:db/customers/schema.sql#L1",
+      "file:tests/Orders/OrderFulfillmentServiceTest.cs",
+      "file:tests/Customers/CustomerProfileServiceTest.cs",
+      "file:bin/Debug/GeneratedWcfClient.cs",
+      "file:obj/GeneratedContracts.cs",
+      "file:logs/application.log"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing_refund_service": "summary"
+    },
+    "selectedCountMin": 5,
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing_refund_service",
+        "mode": "summary",
+        "contentIncludes": [
+          "ANY /Services/BillingRefundService.svc"
+        ],
+        "contentExcludes": [
+          "ANY /Services/OrderFulfillmentService.svc",
+          "ANY /Services/CustomerProfileService.svc"
+        ],
+        "sourceRefsInclude": [
+          "file:Services/BillingRefundService.svc#L1",
+          "file:src/Legacy/Billing/BillingRefundService.cs#L3"
+        ],
+        "sourceRefsExclude": [
+          "file:Services/OrderFulfillmentService.svc#L1",
+          "file:Services/CustomerProfileService.svc#L1",
+          "file:src/Legacy/Orders/IOrderFulfillmentContract.cs#L5",
+          "file:src/Legacy/Orders/IOrderFulfillmentContract.cs#L8",
+          "file:src/Legacy/Customers/ICustomerProfileContract.cs#L5",
+          "file:src/Legacy/Customers/ICustomerProfileContract.cs#L8",
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1",
+          "file:tests/Orders/OrderFulfillmentServiceTest.cs",
+          "file:tests/Customers/CustomerProfileServiceTest.cs",
+          "file:bin/Debug/GeneratedWcfClient.cs",
+          "file:obj/GeneratedContracts.cs",
+          "file:logs/application.log"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_refund_service_api",
+        "sourceRefsInclude": [
+          "file:src/Legacy/Billing/BillingRefundService.cs#L3",
+          "file:Services/BillingRefundService.svc#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:src/Legacy/Orders/IOrderFulfillmentContract.cs#L5",
+          "file:src/Legacy/Orders/IOrderFulfillmentContract.cs#L8",
+          "file:src/Legacy/Customers/ICustomerProfileContract.cs#L5",
+          "file:src/Legacy/Customers/ICustomerProfileContract.cs#L8",
+          "file:tests/Orders/OrderFulfillmentServiceTest.cs",
+          "file:tests/Customers/CustomerProfileServiceTest.cs"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_src_legacy_billing_ibillingrefundcontract_cs_1_11",
+        "contentIncludes": [
+          "ServiceContract(Name = \"BillingRefundService\")",
+          "OperationContract(Name = \"AuditRefund\")",
+          "string AuditRefund(string refundId);"
+        ],
+        "sourceRefsInclude": [
+          "file:src/Legacy/Billing/IBillingRefundContract.cs#L5",
+          "file:src/Legacy/Billing/IBillingRefundContract.cs#L8",
+          "file:src/Legacy/Billing/IBillingRefundContract.cs#L9"
+        ],
+        "sourceRefsExclude": [
+          "file:src/Legacy/Orders/IOrderFulfillmentContract.cs#L5",
+          "file:src/Legacy/Customers/ICustomerProfileContract.cs#L5"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_src_legacy_billing_billingrefundrepository_cs_1_11",
+        "contentIncludes": [
+          "EXEC billing.rebuild_wcf_refund_audit",
+          "billing.wcf_refund_audit_entries"
+        ],
+        "contentExcludes": [
+          "wcf_order_fulfillment_backlog",
+          "wcf_customer_profile_snapshots"
+        ],
+        "sourceRefsInclude": [
+          "file:src/Legacy/Billing/BillingRefundRepository.cs#L7"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      }
+    ],
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.65,
+      "routeHandlerEdgeConfidenceMin": 0.78,
+      "sourceChunkContentSha256CoverageMin": 1,
+      "sourceChunkIndexCoverageMin": 1,
+      "sourceChunkLinkedRecordCoverageMin": 0.8,
+      "sourceFileExtensionCountMin": 4,
+      "sourcePathPatternCountMin": 5,
+      "sourceRecordKindCountMin": 7
+    }
+  },
+  "variants": [
+    {
+      "id": "wcf-commerce-billing-refund-audit",
+      "label": "Legacy WCF commerce task stays focused on billing refund service host, SQL routine, and tests"
+    }
+  ]
+}

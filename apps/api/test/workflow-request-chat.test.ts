@@ -39,6 +39,10 @@ async function seedRequest(): Promise<WorkflowRequest> {
     error: null,
     createdAt: nowIso(),
     updatedAt: nowIso(),
+    agentBackend: null,
+    flowId: null,
+    startStage: null,
+    kind: null,
   };
   store.workflowRequests.set(request.id, request);
   return request;

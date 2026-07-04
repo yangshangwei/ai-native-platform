@@ -1,0 +1,419 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-struts-e2e",
+  "title": "Legacy project understanding keeps Struts monolith context focused",
+  "description": "Runs the real scanner against a small old Struts Java monolith, then verifies ContextPack selects the requested action and tests without leaking unrelated domains.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_struts",
+    "title": "Update legacy Struts billing reconciliation",
+    "stage": "implementation",
+    "taskBrief": "Fix billing invoice reconciliation in the legacy Struts action and update billing tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 32,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "src/main/resources/struts.xml",
+        "content": "<!DOCTYPE struts PUBLIC \"-//Apache Software Foundation//DTD Struts Configuration 2.5//EN\" \"struts-2.5.dtd\">\n<struts>\n  <package name=\"billing\" namespace=\"/api/v1/billing\" extends=\"struts-default\">\n    <action name=\"invoices/reconcile\" class=\"com.acme.legacy.billing.ReconcileInvoiceAction\" method=\"execute\">\n      <result>/WEB-INF/jsp/billing.jsp</result>\n    </action>\n  </package>\n  <package name=\"reports\" namespace=\"/api/v1/reports\" extends=\"struts-default\">\n    <action name=\"daily\" class=\"com.acme.legacy.reports.DailyReportAction\">\n      <result>/WEB-INF/jsp/reports.jsp</result>\n    </action>\n  </package>\n</struts>\n"
+      },
+      {
+        "path": "src/main/webapp/WEB-INF/struts-config.xml",
+        "content": "<struts-config>\n  <action-mappings>\n    <action path=\"/api/v1/customers/profile\" type=\"com.acme.legacy.customers.CustomerProfileAction\" />\n  </action-mappings>\n</struts-config>\n"
+      },
+      {
+        "path": "src/main/java/com/acme/legacy/billing/ReconcileInvoiceAction.java",
+        "content": "package com.acme.legacy.billing;\n\npublic class ReconcileInvoiceAction extends ActionSupport {\n  private final BillingService billingService = new BillingService();\n\n  public String execute() {\n    billingService.reconcile(invoiceId);\n    return SUCCESS;\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/acme/legacy/billing/BillingService.java",
+        "content": "package com.acme.legacy.billing;\n\npublic class BillingService {\n  private final BillingRepository billingRepository = new BillingRepository();\n\n  public ReconciliationResult reconcile(String invoiceId) {\n    return billingRepository.markReconciled(invoiceId);\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/acme/legacy/billing/BillingRepository.java",
+        "content": "package com.acme.legacy.billing;\n\npublic class BillingRepository {\n  public ReconciliationResult markReconciled(String invoiceId) {\n    return new ReconciliationResult(invoiceId, \"reconciled\");\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/acme/legacy/customers/CustomerProfileAction.java",
+        "content": "package com.acme.legacy.customers;\n\npublic class CustomerProfileAction extends Action {\n  public ActionForward execute() {\n    return mapping.findForward(\"profile\");\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/acme/legacy/reports/DailyReportAction.java",
+        "content": "package com.acme.legacy.reports;\n\npublic class DailyReportAction extends ActionSupport {\n  public String execute() {\n    return SUCCESS;\n  }\n}\n"
+      },
+      {
+        "path": "src/test/java/com/acme/legacy/billing/ReconcileInvoiceActionTest.java",
+        "content": "package com.acme.legacy.billing;\n\nclass ReconcileInvoiceActionTest {\n  void reconcilesInvoicesThroughStrutsAction() {}\n}\n"
+      },
+      {
+        "path": "src/test/java/com/acme/legacy/customers/CustomerProfileActionTest.java",
+        "content": "package com.acme.legacy.customers;\n\nclass CustomerProfileActionTest {\n  void loadsCustomerProfile() {}\n}\n"
+      },
+      {
+        "path": "src/test/java/com/acme/legacy/reports/DailyReportActionTest.java",
+        "content": "package com.acme.legacy.reports;\n\nclass DailyReportActionTest {\n  void loadsDailyReports() {}\n}\n"
+      },
+      {
+        "path": ".env",
+        "content": "STRUTS_DATASOURCE_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API",
+      "Reports API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API",
+      "V1 API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryCapabilityCountMax": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /api/v1/billing/invoices/reconcile",
+      "ANY /api/v1/customers/profile",
+      "ANY /api/v1/reports/daily"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventorySymbolNamesInclude": [
+      "ReconcileInvoiceAction",
+      "execute",
+      "BillingService",
+      "reconcile",
+      "BillingRepository",
+      "markReconciled",
+      "CustomerProfileAction",
+      "DailyReportAction"
+    ],
+    "inventorySymbolCountMin": 10,
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 7,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventorySourceChunkCountMin": 8,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers",
+      "inventory_capability_cap_api_reports"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_struts_billing_reconciliation_primary",
+      "file:src/main/resources/struts.xml#L3",
+      "file:src/main/resources/struts.xml#L4",
+      "file:src/main/java/com/acme/legacy/billing/ReconcileInvoiceAction.java#L6",
+      "file:src/main/java/com/acme/legacy/billing/BillingService.java#L3",
+      "file:src/main/java/com/acme/legacy/billing/BillingService.java#L6",
+      "file:src/main/java/com/acme/legacy/billing/BillingRepository.java#L3",
+      "file:src/test/java/com/acme/legacy/billing/ReconcileInvoiceActionTest.java"
+    ],
+    "sourceRefsExclude": [
+      "file:src/main/webapp/WEB-INF/struts-config.xml#L3",
+      "file:src/main/resources/struts.xml#L8",
+      "file:src/main/resources/struts.xml#L9",
+      "file:src/test/java/com/acme/legacy/customers/CustomerProfileActionTest.java",
+      "file:src/test/java/com/acme/legacy/reports/DailyReportActionTest.java"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedCountMin": 4,
+    "selectedCountMax": 11,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_src_main_java_com_acme_legacy_billing",
+      "inventory_source_chunk_src_chunk_src_test_java_com_acme_legacy_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13
+  },
+  "variants": [
+    {
+      "id": "struts-billing-reconciliation-primary",
+      "label": "Struts billing reconciliation task stays focused on billing action and tests",
+      "expectations": {
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_billing",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:src/main/resources/struts.xml#L3",
+              "file:src/main/resources/struts.xml#L4",
+              "file:src/main/java/com/acme/legacy/billing/ReconcileInvoiceAction.java#L3",
+              "file:src/main/java/com/acme/legacy/billing/ReconcileInvoiceAction.java#L4",
+              "file:src/main/java/com/acme/legacy/billing/ReconcileInvoiceAction.java#L6",
+              "file:src/main/java/com/acme/legacy/billing/ReconcileInvoiceAction.java#L7",
+              "file:src/main/java/com/acme/legacy/billing/BillingService.java#L3",
+              "file:src/main/java/com/acme/legacy/billing/BillingService.java#L4",
+              "file:src/main/java/com/acme/legacy/billing/BillingService.java#L6",
+              "file:src/main/java/com/acme/legacy/billing/BillingService.java#L7",
+              "file:src/main/java/com/acme/legacy/billing/BillingRepository.java#L3",
+              "file:src/main/java/com/acme/legacy/billing/BillingRepository.java#L4",
+              "file:src/test/java/com/acme/legacy/billing/ReconcileInvoiceActionTest.java"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/webapp/WEB-INF/struts-config.xml#L3",
+              "file:src/main/resources/struts.xml#L8",
+              "file:src/main/resources/struts.xml#L9",
+              "file:src/test/java/com/acme/legacy/customers/CustomerProfileActionTest.java",
+              "file:src/test/java/com/acme/legacy/reports/DailyReportActionTest.java"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_billing_api",
+            "sourceRefsInclude": [
+              "file:src/main/resources/struts.xml#L3",
+              "file:src/main/resources/struts.xml#L4",
+              "file:src/main/java/com/acme/legacy/billing/ReconcileInvoiceAction.java#L3",
+              "file:src/main/java/com/acme/legacy/billing/ReconcileInvoiceAction.java#L4",
+              "file:src/main/java/com/acme/legacy/billing/ReconcileInvoiceAction.java#L6",
+              "file:src/main/java/com/acme/legacy/billing/ReconcileInvoiceAction.java#L7",
+              "file:src/main/java/com/acme/legacy/billing/BillingService.java#L3",
+              "file:src/main/java/com/acme/legacy/billing/BillingService.java#L4",
+              "file:src/main/java/com/acme/legacy/billing/BillingService.java#L6",
+              "file:src/main/java/com/acme/legacy/billing/BillingService.java#L7",
+              "file:src/main/java/com/acme/legacy/billing/BillingRepository.java#L3",
+              "file:src/main/java/com/acme/legacy/billing/BillingRepository.java#L4"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/webapp/WEB-INF/struts-config.xml#L3",
+              "file:src/main/resources/struts.xml#L8",
+              "file:src/main/resources/struts.xml#L9",
+              "file:src/test/java/com/acme/legacy/customers/CustomerProfileActionTest.java",
+              "file:src/test/java/com/acme/legacy/reports/DailyReportActionTest.java"
+            ]
+          },
+          {
+            "ref": "inventory_tests_billing_api",
+            "sourceRefsInclude": [
+              "file:src/test/java/com/acme/legacy/billing/ReconcileInvoiceActionTest.java"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/webapp/WEB-INF/struts-config.xml#L3",
+              "file:src/main/resources/struts.xml#L8",
+              "file:src/main/resources/struts.xml#L9",
+              "file:src/test/java/com/acme/legacy/customers/CustomerProfileActionTest.java",
+              "file:src/test/java/com/acme/legacy/reports/DailyReportActionTest.java"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "struts-customer-profile-primary",
+      "label": "Struts customer profile task selects customer action evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix customer profile loading in the legacy Struts action."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_customers",
+          "inventory_symbols_customers_api",
+          "inventory_tests_customers_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_billing",
+          "inventory_capability_cap_api_reports"
+        ],
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_struts_customer_profile_primary",
+          "file:src/main/webapp/WEB-INF/struts-config.xml#L3",
+          "file:src/main/java/com/acme/legacy/customers/CustomerProfileAction.java#L4",
+          "file:src/test/java/com/acme/legacy/customers/CustomerProfileActionTest.java"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/resources/struts.xml#L3",
+          "file:src/main/resources/struts.xml#L4",
+          "file:src/main/resources/struts.xml#L8",
+          "file:src/main/resources/struts.xml#L9",
+          "file:src/test/java/com/acme/legacy/billing/ReconcileInvoiceActionTest.java",
+          "file:src/test/java/com/acme/legacy/reports/DailyReportActionTest.java"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_customers": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_customers",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:src/main/webapp/WEB-INF/struts-config.xml#L3",
+              "file:src/main/java/com/acme/legacy/customers/CustomerProfileAction.java#L3",
+              "file:src/main/java/com/acme/legacy/customers/CustomerProfileAction.java#L4",
+              "file:src/test/java/com/acme/legacy/customers/CustomerProfileActionTest.java"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/resources/struts.xml#L3",
+              "file:src/main/resources/struts.xml#L4",
+              "file:src/main/resources/struts.xml#L8",
+              "file:src/main/resources/struts.xml#L9",
+              "file:src/test/java/com/acme/legacy/billing/ReconcileInvoiceActionTest.java",
+              "file:src/test/java/com/acme/legacy/reports/DailyReportActionTest.java"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_customers_api",
+            "sourceRefsInclude": [
+              "file:src/main/webapp/WEB-INF/struts-config.xml#L3",
+              "file:src/main/java/com/acme/legacy/customers/CustomerProfileAction.java#L3",
+              "file:src/main/java/com/acme/legacy/customers/CustomerProfileAction.java#L4"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/resources/struts.xml#L3",
+              "file:src/main/resources/struts.xml#L4",
+              "file:src/main/resources/struts.xml#L8",
+              "file:src/main/resources/struts.xml#L9",
+              "file:src/test/java/com/acme/legacy/billing/ReconcileInvoiceActionTest.java",
+              "file:src/test/java/com/acme/legacy/reports/DailyReportActionTest.java"
+            ]
+          },
+          {
+            "ref": "inventory_tests_customers_api",
+            "sourceRefsInclude": [
+              "file:src/test/java/com/acme/legacy/customers/CustomerProfileActionTest.java"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/resources/struts.xml#L3",
+              "file:src/main/resources/struts.xml#L4",
+              "file:src/main/resources/struts.xml#L8",
+              "file:src/main/resources/struts.xml#L9",
+              "file:src/test/java/com/acme/legacy/billing/ReconcileInvoiceActionTest.java",
+              "file:src/test/java/com/acme/legacy/reports/DailyReportActionTest.java"
+            ]
+          }
+        ],
+        "selectedCountMin": 4,
+        "selectedCountMax": 11,
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_customers",
+          "inventory_symbols_customers_api",
+          "inventory_tests_customers_api",
+          "inventory_hotspots_customers_api",
+          "inventory_source_chunk_src_chunk_src_main_java_com_acme_legacy_customers",
+          "inventory_source_chunk_src_chunk_src_test_java_com_acme_legacy_customers"
+        ],
+        "irrelevantContextRatioMax": 0.13
+      }
+    },
+    {
+      "id": "struts-reports-daily-primary",
+      "label": "Struts reports task selects report action evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix daily reports action in the legacy Struts project."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_reports",
+          "inventory_symbols_reports_api",
+          "inventory_tests_reports_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_billing",
+          "inventory_capability_cap_api_customers"
+        ],
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_struts_reports_daily_primary",
+          "file:src/main/resources/struts.xml#L8",
+          "file:src/main/resources/struts.xml#L9",
+          "file:src/main/java/com/acme/legacy/reports/DailyReportAction.java#L4",
+          "file:src/test/java/com/acme/legacy/reports/DailyReportActionTest.java"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/resources/struts.xml#L3",
+          "file:src/main/resources/struts.xml#L4",
+          "file:src/main/webapp/WEB-INF/struts-config.xml#L3",
+          "file:src/test/java/com/acme/legacy/billing/ReconcileInvoiceActionTest.java",
+          "file:src/test/java/com/acme/legacy/customers/CustomerProfileActionTest.java"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_reports": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_reports",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:src/main/resources/struts.xml#L8",
+              "file:src/main/resources/struts.xml#L9",
+              "file:src/main/java/com/acme/legacy/reports/DailyReportAction.java#L3",
+              "file:src/main/java/com/acme/legacy/reports/DailyReportAction.java#L4",
+              "file:src/test/java/com/acme/legacy/reports/DailyReportActionTest.java"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/resources/struts.xml#L3",
+              "file:src/main/resources/struts.xml#L4",
+              "file:src/main/webapp/WEB-INF/struts-config.xml#L3",
+              "file:src/test/java/com/acme/legacy/billing/ReconcileInvoiceActionTest.java",
+              "file:src/test/java/com/acme/legacy/customers/CustomerProfileActionTest.java"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_reports_api",
+            "sourceRefsInclude": [
+              "file:src/main/resources/struts.xml#L8",
+              "file:src/main/resources/struts.xml#L9",
+              "file:src/main/java/com/acme/legacy/reports/DailyReportAction.java#L3",
+              "file:src/main/java/com/acme/legacy/reports/DailyReportAction.java#L4"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/resources/struts.xml#L3",
+              "file:src/main/resources/struts.xml#L4",
+              "file:src/main/webapp/WEB-INF/struts-config.xml#L3",
+              "file:src/test/java/com/acme/legacy/billing/ReconcileInvoiceActionTest.java",
+              "file:src/test/java/com/acme/legacy/customers/CustomerProfileActionTest.java"
+            ]
+          },
+          {
+            "ref": "inventory_tests_reports_api",
+            "sourceRefsInclude": [
+              "file:src/test/java/com/acme/legacy/reports/DailyReportActionTest.java"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/resources/struts.xml#L3",
+              "file:src/main/resources/struts.xml#L4",
+              "file:src/main/webapp/WEB-INF/struts-config.xml#L3",
+              "file:src/test/java/com/acme/legacy/billing/ReconcileInvoiceActionTest.java",
+              "file:src/test/java/com/acme/legacy/customers/CustomerProfileActionTest.java"
+            ]
+          }
+        ],
+        "selectedCountMin": 4,
+        "selectedCountMax": 11,
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_reports",
+          "inventory_symbols_reports_api",
+          "inventory_tests_reports_api",
+          "inventory_hotspots_reports_api",
+          "inventory_source_chunk_src_chunk_src_main_java_com_acme_legacy_reports",
+          "inventory_source_chunk_src_chunk_src_test_java_com_acme_legacy_reports"
+        ],
+        "irrelevantContextRatioMax": 0.13
+      }
+    }
+  ]
+}

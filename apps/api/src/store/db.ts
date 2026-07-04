@@ -59,6 +59,14 @@ function hasTable(database: Database, table: string): boolean {
   );
 }
 
+function hasIndex(database: Database, index: string): boolean {
+  return Boolean(
+    database
+      .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = ?`)
+      .get(index),
+  );
+}
+
 /** Probe + ALTER pairs from the legacy module become one migration each. */
 function addColumn(
   version: number,
@@ -782,6 +790,60 @@ export const MIGRATIONS: Migration[] = [
       run(database, `CREATE INDEX IF NOT EXISTS idx_graph_events_workflow ON graph_events(workflow_run_id, created_at)`);
     },
   },
+  // 06-30 task-level agent backend override: nullable per-request backend.
+  // NULL means "use the current project default"; non-null pins this request
+  // to Claude Code or Codex without mutating project settings.
+  addColumn(30, 'workflow_requests', 'agent_backend', `agent_backend TEXT`),
+  {
+    // 07-01 legacy understanding V2: durable lexical catalog for the
+    // standalone source_chunk_index artifact. This stores index metadata only;
+    // bounded source chunks and source refs remain the evidence authority.
+    version: 31,
+    name: 'source_chunk_index_entries-create-table',
+    isApplied: (database) =>
+      hasTable(database, 'source_chunk_index_entries')
+      && hasIndex(database, 'idx_source_chunk_index_entries_project_created')
+      && hasIndex(database, 'idx_source_chunk_index_entries_artifact')
+      && hasIndex(database, 'idx_source_chunk_index_entries_project_hash')
+      && hasIndex(database, 'idx_source_chunk_index_entries_project_path'),
+    up: (database) => {
+      run(database, `CREATE TABLE IF NOT EXISTS source_chunk_index_entries (
+         id TEXT PRIMARY KEY,
+         project_id TEXT NOT NULL,
+         workflow_run_id TEXT NOT NULL,
+         source_chunk_index_artifact_id TEXT NOT NULL,
+         source_inventory_artifact_id TEXT,
+         source_chunk_ref TEXT NOT NULL,
+         content_sha256 TEXT NOT NULL,
+         path TEXT NOT NULL,
+         language TEXT,
+         start_line INTEGER NOT NULL,
+         end_line INTEGER NOT NULL,
+         lexical_tokens_json TEXT NOT NULL,
+         search_text TEXT NOT NULL,
+         linked_record_refs_json TEXT NOT NULL,
+         source_refs_json TEXT NOT NULL,
+         entrypoint_refs_json TEXT NOT NULL,
+         symbol_refs_json TEXT NOT NULL,
+         domain_entity_refs_json TEXT NOT NULL,
+         graph_edge_refs_json TEXT NOT NULL,
+         test_refs_json TEXT NOT NULL,
+         hotspot_refs_json TEXT NOT NULL,
+         capability_refs_json TEXT NOT NULL,
+         created_at TEXT NOT NULL
+       )`);
+      run(database, `CREATE INDEX IF NOT EXISTS idx_source_chunk_index_entries_project_created ON source_chunk_index_entries(project_id, created_at)`);
+      run(database, `CREATE INDEX IF NOT EXISTS idx_source_chunk_index_entries_artifact ON source_chunk_index_entries(source_chunk_index_artifact_id)`);
+      run(database, `CREATE INDEX IF NOT EXISTS idx_source_chunk_index_entries_project_hash ON source_chunk_index_entries(project_id, content_sha256)`);
+      run(database, `CREATE INDEX IF NOT EXISTS idx_source_chunk_index_entries_project_path ON source_chunk_index_entries(project_id, path)`);
+    },
+  },
+  // 07-01 legacy understanding V2: vector-ready catalog metadata. This is
+  // still metadata-only storage; no embedding provider or vector index is
+  // introduced by these migrations.
+  addColumn(32, 'source_chunk_index_entries', 'embedding_model', `embedding_model TEXT`),
+  addColumn(33, 'source_chunk_index_entries', 'embedding_dimensions', `embedding_dimensions INTEGER`),
+  addColumn(34, 'source_chunk_index_entries', 'embedding_vector_json', `embedding_vector_json TEXT`),
 ];
 
 // ---------------------------------------------------------------------------

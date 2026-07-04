@@ -1,0 +1,5 @@
+<struts-config>
+  <action-mappings>
+    <action path="/api/v8/customers/profiles/risk" type="com.acme.legacy.customers.CustomerProfileAction" />
+  </action-mappings>
+</struts-config>

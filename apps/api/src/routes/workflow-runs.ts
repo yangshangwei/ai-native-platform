@@ -94,8 +94,10 @@ workflowRuns.post('/', async (c) => {
     return jsonError(c, `project ${projectId} not registered`, 404);
   }
   if ((project.status ?? 'active') === 'archived') return jsonError(c, 'project is archived', 400);
-  const runType = body.type ?? 'smoke';
-  const backendError = runType === 'smoke' ? null : projectAgentBackendError(project);
+  const runType = body.type ?? (body.flowId === 'profile.bootstrap' ? 'profile' : 'smoke');
+  const backendError = runType === 'smoke' || runType === 'profile'
+    ? null
+    : projectAgentBackendError(project);
   if (backendError) return c.json({ error: backendError, needsAgentBackendSetup: true }, 400);
   if (!body.title) return jsonError(c, 'title required', 400);
 

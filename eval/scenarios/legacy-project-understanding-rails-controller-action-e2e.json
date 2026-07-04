@@ -1,0 +1,206 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-rails-controller-action-e2e",
+  "title": "Legacy project understanding keeps Rails controller/action option context focused",
+  "description": "Runs the real scanner against a small legacy Rails fixture, then verifies ContextPack selects the billing controller/action option route and tests without leaking sibling show, customer, or no-via match routes.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_rails_controller_action",
+    "title": "Update legacy Rails controller/action billing refunds",
+    "stage": "implementation",
+    "taskBrief": "Fix billing refund update behavior in the legacy Rails controller action option route and update billing refund controller action tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 18,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "config/routes.rb",
+        "content": "Rails.application.routes.draw do\n  scope \"/api/v1\" do\n    get \"/billing/refunds/:id\", controller: \"billing\", action: \"show_refund\"\n    patch \"/billing/refunds/:id\", :controller => \"billing\", :action => \"update_refund\"\n    match \"/billing/refunds/:id/no-via\", controller: \"billing\", action: \"show_refund\"\n    get \"/customers/profile\", controller: \"customer\", action: \"profile\"\n  end\nend\n"
+      },
+      {
+        "path": "app/controllers/billing_controller.rb",
+        "content": "class BillingController < ApplicationController\n  def show_refund\n    render json: params[:id]\n  end\n\n  def update_refund\n    service = BillingRefundService.new\n    service.update_refund(params[:id], params[:refund])\n  end\nend\n"
+      },
+      {
+        "path": "app/controllers/customer_controller.rb",
+        "content": "class CustomerController < ApplicationController\n  def profile\n    render json: {}\n  end\nend\n"
+      },
+      {
+        "path": "app/services/billing_refund_service.rb",
+        "content": "class BillingRefundService\n  def update_refund(refund_id, refund_params)\n    repository = BillingRefundRepository.new\n    repository.update_refund(refund_id, refund_params)\n  end\nend\n"
+      },
+      {
+        "path": "app/repositories/billing_refund_repository.rb",
+        "content": "class BillingRefundRepository\n  def update_refund(refund_id, refund_params)\n    refund_id\n  end\nend\n"
+      },
+      {
+        "path": "test/billing_refund_controller_action_test.rb",
+        "content": "def test_billing_refund_controller_action_updates_refund\nend\n"
+      },
+      {
+        "path": "test/customer_profile_controller_action_test.rb",
+        "content": "def test_customer_profile_controller_action_returns_profile\nend\n"
+      },
+      {
+        "path": ".env",
+        "content": "DB_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "GET /api/v1/billing/refunds/:id",
+      "PATCH /api/v1/billing/refunds/:id",
+      "GET /api/v1/customers/profile"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventoryEntrypointRouteCountMax": 3,
+    "inventorySymbolNamesInclude": [
+      "BillingController",
+      "update_refund",
+      "BillingRefundService",
+      "BillingRefundRepository",
+      "CustomerController",
+      "profile"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 6,
+    "inventoryGraphEdgeConfidenceMin": 0.68,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventoryRouteHandlerEdgeConfidenceMin": 0.78,
+    "inventorySourceChunkCountMin": 7,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_rails_controller_action_billing_update",
+      "file:config/routes.rb#L2",
+      "file:config/routes.rb#L4",
+      "file:app/controllers/billing_controller.rb#L1",
+      "file:app/controllers/billing_controller.rb#L6",
+      "file:app/controllers/billing_controller.rb#L7",
+      "file:app/controllers/billing_controller.rb#L8",
+      "file:app/services/billing_refund_service.rb#L1",
+      "file:app/services/billing_refund_service.rb#L2",
+      "file:app/repositories/billing_refund_repository.rb#L1",
+      "file:test/billing_refund_controller_action_test.rb"
+    ],
+    "sourceRefsExclude": [
+      "file:config/routes.rb#L3",
+      "file:config/routes.rb#L5",
+      "file:config/routes.rb#L6",
+      "file:app/controllers/customer_controller.rb#L1",
+      "file:app/controllers/customer_controller.rb#L2",
+      "file:test/customer_profile_controller_action_test.rb"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:config/routes.rb#L2",
+          "file:config/routes.rb#L4",
+          "file:app/controllers/billing_controller.rb#L1",
+          "file:app/controllers/billing_controller.rb#L6",
+          "file:app/controllers/billing_controller.rb#L7",
+          "file:app/controllers/billing_controller.rb#L8",
+          "file:app/services/billing_refund_service.rb#L1",
+          "file:app/repositories/billing_refund_repository.rb#L1",
+          "file:test/billing_refund_controller_action_test.rb"
+        ],
+        "sourceRefsExclude": [
+          "file:config/routes.rb#L3",
+          "file:config/routes.rb#L5",
+          "file:config/routes.rb#L6",
+          "file:app/controllers/customer_controller.rb#L1",
+          "file:app/controllers/customer_controller.rb#L2",
+          "file:test/customer_profile_controller_action_test.rb"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:config/routes.rb#L2",
+          "file:config/routes.rb#L4",
+          "file:app/controllers/billing_controller.rb#L1",
+          "file:app/controllers/billing_controller.rb#L6",
+          "file:app/controllers/billing_controller.rb#L7",
+          "file:app/controllers/billing_controller.rb#L8",
+          "file:app/services/billing_refund_service.rb#L1",
+          "file:app/services/billing_refund_service.rb#L2",
+          "file:app/repositories/billing_refund_repository.rb#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:config/routes.rb#L3",
+          "file:config/routes.rb#L5",
+          "file:config/routes.rb#L6",
+          "file:app/controllers/customer_controller.rb#L1",
+          "file:app/controllers/customer_controller.rb#L2",
+          "file:test/customer_profile_controller_action_test.rb"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:test/billing_refund_controller_action_test.rb"
+        ],
+        "sourceRefsExclude": [
+          "file:config/routes.rb#L3",
+          "file:app/controllers/customer_controller.rb#L1",
+          "file:test/customer_profile_controller_action_test.rb"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 11,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_config_routes",
+      "inventory_source_chunk_src_chunk_app_controllers_billing",
+      "inventory_source_chunk_src_chunk_app_services_billing",
+      "inventory_source_chunk_src_chunk_app_repositories_billing",
+      "inventory_source_chunk_src_chunk_test_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13,
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.68,
+      "routeHandlerEdgeConfidenceMin": 0.78
+    }
+  },
+  "variants": [
+    {
+      "id": "rails-controller-action-billing-update",
+      "label": "Legacy Rails controller/action option billing refund task stays focused on billing update route and tests"
+    }
+  ]
+}

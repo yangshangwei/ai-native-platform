@@ -38,6 +38,12 @@ function spyDeps() {
     executeKnowledgePromotion: vi.fn(async () => {
       calls.push('executeKnowledgePromotion');
     }),
+    executeInventory: vi.fn(async () => {
+      calls.push('executeInventory');
+    }),
+    executeProfileBootstrap: vi.fn(async () => {
+      calls.push('executeProfileBootstrap');
+    }),
     executeAgentMarkdownStage: vi.fn(async (stage) => {
       calls.push(`executeAgentMarkdownStage:${stage}`);
     }),
@@ -58,6 +64,8 @@ describe('dispatchStep single-point routing (de-closured)', () => {
     ['build_test', ['executeBuildTest']],
     ['completion', ['executeCompletion']],
     ['knowledge', ['executeKnowledgePromotion']],
+    ['inventory', ['executeInventory']],
+    ['profile', ['executeProfileBootstrap']],
     ['report', ['executeAgentMarkdownStage:report']],
     ['analyze', ['executeAgentMarkdownStage:analyze']],
     ['scan', ['executeAgentMarkdownStage:scan']],

@@ -74,6 +74,340 @@ test('detects a remote git source and returns normalized URL, branches, and prov
   });
 });
 
+test('lists constrained source chunk index catalog metadata for a project', async () => {
+  const repo = await makeGitRepo(['main']);
+  const createdRes = await app.request('/projects', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'catalog-read-project', sourceKind: 'local', localPath: repo }),
+  });
+  expect(createdRes.status).toBe(201);
+  const project = await createdRes.json() as { id: string };
+  const { SOURCE_CHUNK_INDEX_MAX_EMBEDDING_DIMENSIONS, store } = await import('../src/store/store');
+
+  store.sourceChunkIndexEntries.replaceForArtifact('art_source_index_catalog_route', [
+    {
+      id: 'art_source_index_catalog_route:src_chunk_idx_refund',
+      projectId: project.id,
+      workflowRunId: 'run_catalog_route',
+      sourceChunkIndexArtifactId: 'art_source_index_catalog_route',
+      sourceInventoryArtifactId: 'art_inventory_catalog_route',
+      sourceChunkRef: 'chunk_refund_policy',
+      contentSha256: 'a'.repeat(64),
+      path: 'apps/api/src/refunds.ts',
+      language: 'typescript/javascript',
+      startLine: 40,
+      endLine: 44,
+      lexicalTokens: ['refund', 'settlement', 'workflow'],
+      searchText: 'refund settlement workflow',
+      linkedRecordRefs: ['symbol:sym_refund_policy'],
+      sourceRefs: ['file:apps/api/src/refunds.ts#L40'],
+      entrypointRefs: [],
+      symbolRefs: ['sym_refund_policy'],
+      domainEntityRefs: [],
+      graphEdgeRefs: [],
+      testRefs: [],
+      hotspotRefs: [],
+      capabilityRefs: ['cap_billing_refunds'],
+      createdAt: '2026-07-04T00:00:00.000Z',
+    },
+    {
+      id: 'art_source_index_catalog_route:src_chunk_idx_customer',
+      projectId: project.id,
+      workflowRunId: 'run_catalog_route',
+      sourceChunkIndexArtifactId: 'art_source_index_catalog_route',
+      sourceInventoryArtifactId: 'art_inventory_catalog_route',
+      sourceChunkRef: 'chunk_customer_profile',
+      contentSha256: 'b'.repeat(64),
+      path: 'apps/api/src/customers.ts',
+      language: 'typescript/javascript',
+      startLine: 8,
+      endLine: 12,
+      lexicalTokens: ['customer', 'profile'],
+      searchText: 'customer profile',
+      linkedRecordRefs: ['symbol:sym_customer_profile'],
+      sourceRefs: ['file:apps/api/src/customers.ts#L8'],
+      entrypointRefs: [],
+      symbolRefs: ['sym_customer_profile'],
+      domainEntityRefs: [],
+      graphEdgeRefs: [],
+      testRefs: [],
+      hotspotRefs: [],
+      capabilityRefs: ['cap_customers'],
+      createdAt: '2026-07-04T00:00:00.000Z',
+    },
+    {
+      id: 'art_source_index_catalog_route:src_chunk_idx_refund_archive',
+      projectId: project.id,
+      workflowRunId: 'run_catalog_route',
+      sourceChunkIndexArtifactId: 'art_source_index_catalog_route',
+      sourceInventoryArtifactId: 'art_inventory_catalog_route',
+      sourceChunkRef: 'chunk_refund_archive',
+      contentSha256: 'c'.repeat(64),
+      path: 'apps/api/src/a-refund-archive.ts',
+      language: 'typescript/javascript',
+      startLine: 4,
+      endLine: 7,
+      lexicalTokens: ['refund', 'archive'],
+      searchText: 'refund archive',
+      linkedRecordRefs: ['symbol:sym_refund_archive'],
+      sourceRefs: ['file:apps/api/src/a-refund-archive.ts#L4'],
+      entrypointRefs: [],
+      symbolRefs: ['sym_refund_archive'],
+      domainEntityRefs: [],
+      graphEdgeRefs: [],
+      testRefs: [],
+      hotspotRefs: [],
+      capabilityRefs: ['cap_billing_refunds'],
+      createdAt: '2026-07-04T00:01:00.000Z',
+    },
+    {
+      id: 'art_source_index_catalog_route:src_chunk_idx_refund_verbose',
+      projectId: project.id,
+      workflowRunId: 'run_catalog_route',
+      sourceChunkIndexArtifactId: 'art_source_index_catalog_route',
+      sourceInventoryArtifactId: 'art_inventory_catalog_route',
+      sourceChunkRef: 'chunk_refund_verbose',
+      contentSha256: 'd'.repeat(64),
+      path: 'apps/api/src/aa-refund-settlement-verbose.ts',
+      language: 'typescript/javascript',
+      startLine: 20,
+      endLine: 28,
+      lexicalTokens: ['refund', 'settlement', 'workflow', 'customer', 'archive', 'report'],
+      searchText: 'refund settlement workflow customer archive report invoice reconciliation queue legacy',
+      linkedRecordRefs: ['symbol:sym_refund_verbose'],
+      sourceRefs: ['file:apps/api/src/aa-refund-settlement-verbose.ts#L20'],
+      entrypointRefs: [],
+      symbolRefs: ['sym_refund_verbose'],
+      domainEntityRefs: [],
+      graphEdgeRefs: [],
+      testRefs: [],
+      hotspotRefs: [],
+      capabilityRefs: ['cap_billing_refunds'],
+      createdAt: '2026-07-04T00:02:00.000Z',
+    },
+    {
+      id: 'art_source_index_catalog_route:src_chunk_idx_chargeback_hybrid',
+      projectId: project.id,
+      workflowRunId: 'run_catalog_route',
+      sourceChunkIndexArtifactId: 'art_source_index_catalog_route',
+      sourceInventoryArtifactId: 'art_inventory_catalog_route',
+      sourceChunkRef: 'chunk_chargeback_hybrid',
+      contentSha256: 'e'.repeat(64),
+      path: 'apps/api/src/chargebacks.ts',
+      language: 'typescript/javascript',
+      startLine: 30,
+      endLine: 34,
+      lexicalTokens: ['chargeback', 'workflow'],
+      searchText: 'chargeback workflow chargeback',
+      linkedRecordRefs: ['symbol:sym_chargeback_workflow'],
+      sourceRefs: ['file:apps/api/src/chargebacks.ts#L30'],
+      entrypointRefs: [],
+      symbolRefs: ['sym_chargeback_workflow'],
+      domainEntityRefs: [],
+      graphEdgeRefs: [],
+      testRefs: [],
+      hotspotRefs: [],
+      capabilityRefs: ['cap_billing_chargebacks'],
+      embeddingModel: 'fixture-cosine-v1',
+      embeddingDimensions: 2,
+      embeddingVector: [0.6, 0.8],
+      createdAt: '2026-07-04T00:03:00.000Z',
+    },
+    {
+      id: 'art_source_index_catalog_route:src_chunk_idx_customer_semantic',
+      projectId: project.id,
+      workflowRunId: 'run_catalog_route',
+      sourceChunkIndexArtifactId: 'art_source_index_catalog_route',
+      sourceInventoryArtifactId: 'art_inventory_catalog_route',
+      sourceChunkRef: 'chunk_customer_semantic',
+      contentSha256: 'f'.repeat(64),
+      path: 'apps/api/src/customer-semantic.ts',
+      language: 'typescript/javascript',
+      startLine: 30,
+      endLine: 34,
+      lexicalTokens: ['customer', 'profile'],
+      searchText: 'customer profile',
+      linkedRecordRefs: ['symbol:sym_customer_semantic'],
+      sourceRefs: ['file:apps/api/src/customer-semantic.ts#L30'],
+      entrypointRefs: [],
+      symbolRefs: ['sym_customer_semantic'],
+      domainEntityRefs: [],
+      graphEdgeRefs: [],
+      testRefs: [],
+      hotspotRefs: [],
+      capabilityRefs: ['cap_customer_semantic'],
+      embeddingModel: 'fixture-cosine-v1',
+      embeddingDimensions: 2,
+      embeddingVector: [1, 0],
+      createdAt: '2026-07-04T00:04:00.000Z',
+    },
+    {
+      id: 'art_source_index_catalog_route:src_chunk_idx_provider_model_compatible',
+      projectId: project.id,
+      workflowRunId: 'run_catalog_route',
+      sourceChunkIndexArtifactId: 'art_source_index_catalog_route',
+      sourceInventoryArtifactId: 'art_inventory_catalog_route',
+      sourceChunkRef: 'chunk_provider_model_compatible',
+      contentSha256: '2'.repeat(64),
+      path: 'apps/api/src/provider-model-compatible.ts',
+      language: 'typescript/javascript',
+      startLine: 30,
+      endLine: 34,
+      lexicalTokens: ['provider', 'model', 'mix'],
+      searchText: 'provider model mix provider',
+      linkedRecordRefs: ['symbol:sym_provider_model_compatible'],
+      sourceRefs: ['file:apps/api/src/provider-model-compatible.ts#L30'],
+      entrypointRefs: [],
+      symbolRefs: ['sym_provider_model_compatible'],
+      domainEntityRefs: [],
+      graphEdgeRefs: [],
+      testRefs: [],
+      hotspotRefs: [],
+      capabilityRefs: ['cap_provider_model_compatible'],
+      embeddingModel: 'fixture-cosine-v1',
+      embeddingDimensions: 2,
+      embeddingVector: [0.1, 0.99],
+      createdAt: '2026-07-04T00:05:00.000Z',
+    },
+    {
+      id: 'art_source_index_catalog_route:src_chunk_idx_other_model_semantic',
+      projectId: project.id,
+      workflowRunId: 'run_catalog_route',
+      sourceChunkIndexArtifactId: 'art_source_index_catalog_route',
+      sourceInventoryArtifactId: 'art_inventory_catalog_route',
+      sourceChunkRef: 'chunk_other_model_semantic',
+      contentSha256: '1'.repeat(64),
+      path: 'apps/api/src/other-model-semantic.ts',
+      language: 'typescript/javascript',
+      startLine: 30,
+      endLine: 34,
+      lexicalTokens: ['provider', 'model', 'mix'],
+      searchText: 'provider model mix provider',
+      linkedRecordRefs: ['symbol:sym_other_model_semantic'],
+      sourceRefs: ['file:apps/api/src/other-model-semantic.ts#L30'],
+      entrypointRefs: [],
+      symbolRefs: ['sym_other_model_semantic'],
+      domainEntityRefs: [],
+      graphEdgeRefs: [],
+      testRefs: [],
+      hotspotRefs: [],
+      capabilityRefs: ['cap_other_model_semantic'],
+      embeddingModel: 'fixture-other-cosine-v1',
+      embeddingDimensions: 2,
+      embeddingVector: [0, 1],
+      createdAt: '2026-07-04T00:06:00.000Z',
+    },
+  ]);
+
+  const res = await app.request(
+    `/projects/${project.id}/source-chunk-index?q=settlement&linkedRecordRef=${encodeURIComponent('symbol:sym_refund_policy')}&limit=10`,
+  );
+  expect(res.status).toBe(200);
+  const body = await res.json() as { items: Array<Record<string, unknown>> };
+  expect(body.items).toHaveLength(1);
+  expect(body.items[0]).toMatchObject({
+    sourceChunkRef: 'chunk_refund_policy',
+    contentSha256: 'a'.repeat(64),
+    path: 'apps/api/src/refunds.ts',
+    lexicalTokens: ['refund', 'settlement', 'workflow'],
+    sourceRefs: ['file:apps/api/src/refunds.ts#L40'],
+  });
+  expect(body.items[0]).not.toHaveProperty('content');
+  expect(body.items[0]).not.toHaveProperty('snippet');
+  expect(JSON.stringify(body.items)).not.toContain('Snippet:');
+
+  const ranked = await app.request(`/projects/${project.id}/source-chunk-index?q=refund%20settlement&limit=10`);
+  expect(ranked.status).toBe(200);
+  const rankedBody = await ranked.json() as { items: Array<Record<string, unknown>> };
+  expect(rankedBody.items.map((item) => item.sourceChunkRef)).toEqual([
+    'chunk_refund_policy',
+    'chunk_refund_verbose',
+    'chunk_refund_archive',
+  ]);
+
+  const partialToken = await app.request(`/projects/${project.id}/source-chunk-index?q=fund&limit=10`);
+  expect(partialToken.status).toBe(200);
+  const partialBody = await partialToken.json() as { items: Array<Record<string, unknown>> };
+  expect(partialBody.items).toEqual([]);
+
+  const modelLessVector = await app.request(
+    `/projects/${project.id}/source-chunk-index?embedding=${encodeURIComponent(JSON.stringify([1, 0]))}&limit=10`,
+  );
+  expect(modelLessVector.status).toBe(400);
+  expect(await modelLessVector.json()).toEqual({
+    error: 'embeddingModel is required when embedding is supplied',
+  });
+
+  const vectorRanked = await app.request(
+    `/projects/${project.id}/source-chunk-index?embedding=${encodeURIComponent(JSON.stringify([1, 0]))}&embeddingModel=fixture-cosine-v1&limit=10`,
+  );
+  expect(vectorRanked.status).toBe(200);
+  const vectorBody = await vectorRanked.json() as { items: Array<Record<string, unknown>> };
+  expect(vectorBody.items.map((item) => item.sourceChunkRef).slice(0, 2)).toEqual([
+    'chunk_customer_semantic',
+    'chunk_chargeback_hybrid',
+  ]);
+  expect(vectorBody.items[0]).toMatchObject({
+    sourceChunkRef: 'chunk_customer_semantic',
+    embeddingModel: 'fixture-cosine-v1',
+    embeddingDimensions: 2,
+    embeddingVector: [1, 0],
+  });
+
+  const modelFilteredVector = await app.request(
+    `/projects/${project.id}/source-chunk-index?embedding=${encodeURIComponent(JSON.stringify([0, 1]))}&embeddingModel=fixture-cosine-v1&limit=10`,
+  );
+  expect(modelFilteredVector.status).toBe(200);
+  const modelFilteredBody = await modelFilteredVector.json() as { items: Array<Record<string, unknown>> };
+  expect(modelFilteredBody.items.map((item) => item.sourceChunkRef)).toContain('chunk_chargeback_hybrid');
+  expect(modelFilteredBody.items.map((item) => item.sourceChunkRef)).not.toContain('chunk_other_model_semantic');
+
+  const modelFilteredHybrid = await app.request(
+    `/projects/${project.id}/source-chunk-index?q=provider%20model%20mix&embedding=${encodeURIComponent(JSON.stringify([0, 1]))}&embeddingModel=fixture-cosine-v1&limit=10`,
+  );
+  expect(modelFilteredHybrid.status).toBe(200);
+  const modelFilteredHybridBody = await modelFilteredHybrid.json() as { items: Array<Record<string, unknown>> };
+  const modelFilteredHybridRefs = modelFilteredHybridBody.items.map((item) => item.sourceChunkRef);
+  expect(modelFilteredHybridRefs[0]).toBe('chunk_provider_model_compatible');
+  expect(modelFilteredHybridRefs).toContain('chunk_other_model_semantic');
+
+  const hybridRanked = await app.request(
+    `/projects/${project.id}/source-chunk-index?q=chargeback&embedding=${encodeURIComponent(JSON.stringify([1, 0]))}&embeddingModel=fixture-cosine-v1&limit=10`,
+  );
+  expect(hybridRanked.status).toBe(200);
+  const hybridBody = await hybridRanked.json() as { items: Array<Record<string, unknown>> };
+  expect(hybridBody.items.map((item) => item.sourceChunkRef).slice(0, 2)).toEqual([
+    'chunk_chargeback_hybrid',
+    'chunk_customer_semantic',
+  ]);
+  expect(JSON.stringify(hybridBody.items)).not.toContain('Snippet:');
+  expect(hybridBody.items[0]).not.toHaveProperty('content');
+  expect(hybridBody.items[0]).not.toHaveProperty('snippet');
+  expect(hybridBody.items[0]).not.toHaveProperty('sourceIndexJson');
+
+  const badEmbedding = await app.request(
+    `/projects/${project.id}/source-chunk-index?embedding=${encodeURIComponent(JSON.stringify([1, 'bad']))}`,
+  );
+  expect(badEmbedding.status).toBe(400);
+
+  const zeroEmbedding = await app.request(
+    `/projects/${project.id}/source-chunk-index?embedding=${encodeURIComponent(JSON.stringify([0, 0]))}`,
+  );
+  expect(zeroEmbedding.status).toBe(400);
+
+  const excessiveEmbedding = await app.request(
+    `/projects/${project.id}/source-chunk-index?embedding=${Array.from(
+      { length: SOURCE_CHUNK_INDEX_MAX_EMBEDDING_DIMENSIONS + 1 },
+      () => '1',
+    ).join(',')}`,
+  );
+  expect(excessiveEmbedding.status).toBe(400);
+
+  const badHash = await app.request(`/projects/${project.id}/source-chunk-index?contentSha256=nope`);
+  expect(badHash.status).toBe(400);
+});
+
 test('returns a structured detect failure instead of registering incomplete remote input', async () => {
   const res = await app.request('/projects/detect-source', {
     method: 'POST',

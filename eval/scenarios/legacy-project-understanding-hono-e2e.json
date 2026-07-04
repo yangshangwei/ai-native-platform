@@ -1,0 +1,403 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-hono-e2e",
+  "title": "Legacy project understanding keeps Hono context focused",
+  "description": "Runs the real scanner against a small Hono service, then verifies ContextPack selects the requested route, service/repository graph evidence, and tests without leaking unrelated domains or raw inventory context.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_hono",
+    "title": "Update legacy Hono billing reconciliation",
+    "stage": "implementation",
+    "taskBrief": "Fix billing invoice reconciliation in the legacy Hono endpoint and update billing tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 24,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "src/routes/hono-server.ts",
+        "content": "import { Hono } from \"hono\";\nimport { reconcileInvoice, auditInvoice } from \"../billing/controller\";\nimport { showCustomer } from \"../customers/controller\";\nimport { dailyReport } from \"../reports/controller\";\nconst app = new Hono().basePath(\"/api/v1\");\napp.post(\"/billing/invoices/:invoiceId/reconcile\", reconcileInvoice);\napp.get(\"/billing/invoices/:invoiceId/audit\", auditInvoice);\napp.get(\"/customers/:customerId\", showCustomer);\napp.get(\"/reports/daily\", dailyReport);\n"
+      },
+      {
+        "path": "src/billing/controller.ts",
+        "content": "import { BillingService } from \"./service\";\n\nexport function reconcileInvoice(req: unknown) {\n  const service = new BillingService();\n  return service.reconcileInvoice(\"inv_1\");\n}\n\nexport function auditInvoice(req: unknown) {\n  const service = new BillingService();\n  return service.auditInvoice(\"inv_1\");\n}\n"
+      },
+      {
+        "path": "src/billing/service.ts",
+        "content": "import { BillingRepository } from \"./repository\";\n\nexport class BillingService {\n  reconcileInvoice(invoiceId: string) {\n    const repository = new BillingRepository();\n    return repository.markReconciled(invoiceId);\n  }\n\n  auditInvoice(invoiceId: string) {\n    const repository = new BillingRepository();\n    return repository.loadAudit(invoiceId);\n  }\n}\n"
+      },
+      {
+        "path": "src/billing/repository.ts",
+        "content": "export class BillingRepository {\n  markReconciled(invoiceId: string) {\n    return invoiceId;\n  }\n\n  loadAudit(invoiceId: string) {\n    return invoiceId;\n  }\n}\n"
+      },
+      {
+        "path": "src/customers/controller.ts",
+        "content": "export function showCustomer(req: unknown) {\n  return { customerId: \"cust_1\" };\n}\n"
+      },
+      {
+        "path": "src/reports/controller.ts",
+        "content": "export function dailyReport(req: unknown) {\n  return { status: \"ready\" };\n}\n"
+      },
+      {
+        "path": "test/billing-hono.test.ts",
+        "content": "import { describe, expect, it } from \"vitest\";\n\ndescribe(\"billing Hono route\", () => {\n  it(\"reconciles invoices through the billing endpoint\", () => expect(true).toBe(true));\n});\n"
+      },
+      {
+        "path": "test/customers-hono.test.ts",
+        "content": "import { describe, expect, it } from \"vitest\";\n\ndescribe(\"customer Hono route\", () => {\n  it(\"loads the customer profile endpoint\", () => expect(true).toBe(true));\n});\n"
+      },
+      {
+        "path": "test/reports-hono.test.ts",
+        "content": "import { describe, expect, it } from \"vitest\";\n\ndescribe(\"reports Hono route\", () => {\n  it(\"loads daily report endpoint\", () => expect(true).toBe(true));\n});\n"
+      },
+      {
+        "path": ".env",
+        "content": "HONO_SECRET=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API",
+      "Reports API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API",
+      "Hono API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryCapabilityCountMax": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "POST /api/v1/billing/invoices/:invoiceId/reconcile",
+      "GET /api/v1/billing/invoices/:invoiceId/audit",
+      "GET /api/v1/customers/:customerId",
+      "GET /api/v1/reports/daily"
+    ],
+    "inventoryEntrypointRouteCountMin": 4,
+    "inventoryEntrypointRouteCountMax": 4,
+    "inventorySymbolNamesInclude": [
+      "reconcileInvoice",
+      "auditInvoice",
+      "BillingService",
+      "BillingRepository",
+      "markReconciled",
+      "loadAudit",
+      "showCustomer",
+      "dailyReport"
+    ],
+    "inventorySymbolCountMin": 10,
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 8,
+    "inventoryRouteHandlerEdgeCountMin": 4,
+    "inventorySourceChunkCountMin": 7,
+    "inventorySourceChunkGraphEdgeRefsInclude": [
+      "edge_route_handler_entry_route_src_routes_hono_server_ts_post_api_v1_billing_invoices_invoiceid_reconcile_6_sym_src_billing_controller_ts_reconcileinvoice_3",
+      "edge_symbol_reference_sym_src_billing_controller_ts_reconcileinvoice_3_sym_src_billing_service_ts_reconcileinvoice_4_calls_billingservice_reconcileinvoice",
+      "edge_symbol_reference_sym_src_billing_service_ts_reconcileinvoice_4_sym_src_billing_repository_ts_markreconciled_2_calls_billingrepository_markreconciled"
+    ],
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers",
+      "inventory_capability_cap_api_reports"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_src_billing",
+      "inventory_source_chunk_src_chunk_src_routes_hono_server_ts",
+      "inventory_source_chunk_src_chunk_test_billing"
+    ],
+    "irrelevantContextRatioMax": 0.1,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_hono_billing_reconciliation_primary",
+      "file:src/routes/hono-server.ts#L5",
+      "file:src/routes/hono-server.ts#L6",
+      "file:src/billing/controller.ts#L3",
+      "file:src/billing/controller.ts#L4",
+      "file:src/billing/service.ts#L3",
+      "file:src/billing/service.ts#L4",
+      "file:src/billing/repository.ts#L1",
+      "file:test/billing-hono.test.ts"
+    ],
+    "sourceRefsExclude": [
+      "file:src/routes/hono-server.ts#L8",
+      "file:src/routes/hono-server.ts#L9",
+      "file:src/customers/controller.ts#L1",
+      "file:src/reports/controller.ts#L1",
+      "file:test/customers-hono.test.ts",
+      "file:test/reports-hono.test.ts"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedCountMin": 4,
+    "selectedCountMax": 11
+  },
+  "variants": [
+    {
+      "id": "hono-billing-reconciliation-primary",
+      "label": "Hono billing reconciliation task stays focused on billing handler and tests",
+      "expectations": {
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_billing",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:src/routes/hono-server.ts#L6",
+              "file:src/billing/controller.ts#L4",
+              "file:src/billing/service.ts#L4",
+              "file:test/billing-hono.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:src/routes/hono-server.ts#L8",
+              "file:src/routes/hono-server.ts#L9",
+              "file:src/customers/controller.ts#L1",
+              "file:src/reports/controller.ts#L1",
+              "file:test/customers-hono.test.ts",
+              "file:test/reports-hono.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_billing_api",
+            "sourceRefsInclude": [
+              "file:src/billing/controller.ts#L3",
+              "file:src/billing/service.ts#L4",
+              "file:src/billing/repository.ts#L1"
+            ],
+            "sourceRefsExclude": [
+              "file:src/routes/hono-server.ts#L8",
+              "file:src/routes/hono-server.ts#L9",
+              "file:src/customers/controller.ts#L1",
+              "file:src/reports/controller.ts#L1",
+              "file:test/customers-hono.test.ts",
+              "file:test/reports-hono.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_tests_billing_api",
+            "sourceRefsInclude": [
+              "file:test/billing-hono.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:src/routes/hono-server.ts#L8",
+              "file:src/routes/hono-server.ts#L9",
+              "file:src/customers/controller.ts#L1",
+              "file:src/reports/controller.ts#L1",
+              "file:test/customers-hono.test.ts",
+              "file:test/reports-hono.test.ts"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "hono-customer-profile-primary",
+      "label": "Hono customer task selects customer handler evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix customer profile response in the legacy customers endpoint."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_customers",
+          "inventory_symbols_customers_api",
+          "inventory_tests_customers_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_billing",
+          "inventory_capability_cap_api_reports"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_customers",
+          "inventory_symbols_customers_api",
+          "inventory_tests_customers_api",
+          "inventory_hotspots_customers_api",
+          "inventory_source_chunk_src_chunk_src_customers",
+          "inventory_source_chunk_src_chunk_src_routes_hono_server_ts",
+          "inventory_source_chunk_src_chunk_test_customers"
+        ],
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_hono_customer_profile_primary",
+          "file:src/routes/hono-server.ts#L8",
+          "file:src/customers/controller.ts#L1",
+          "file:test/customers-hono.test.ts"
+        ],
+        "sourceRefsExclude": [
+          "file:src/routes/hono-server.ts#L6",
+          "file:src/routes/hono-server.ts#L9",
+          "file:src/billing/controller.ts#L3",
+          "file:src/reports/controller.ts#L1",
+          "file:test/billing-hono.test.ts",
+          "file:test/reports-hono.test.ts"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_customers": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_customers",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:src/routes/hono-server.ts#L8",
+              "file:src/customers/controller.ts#L1",
+              "file:test/customers-hono.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:src/routes/hono-server.ts#L6",
+              "file:src/routes/hono-server.ts#L9",
+              "file:src/billing/controller.ts#L3",
+              "file:src/reports/controller.ts#L1",
+              "file:test/billing-hono.test.ts",
+              "file:test/reports-hono.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_customers_api",
+            "sourceRefsInclude": [
+              "file:src/routes/hono-server.ts#L8",
+              "file:src/customers/controller.ts#L1"
+            ],
+            "sourceRefsExclude": [
+              "file:src/routes/hono-server.ts#L6",
+              "file:src/routes/hono-server.ts#L9",
+              "file:src/billing/controller.ts#L3",
+              "file:src/reports/controller.ts#L1",
+              "file:test/billing-hono.test.ts",
+              "file:test/reports-hono.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_tests_customers_api",
+            "sourceRefsInclude": [
+              "file:test/customers-hono.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:src/routes/hono-server.ts#L6",
+              "file:src/routes/hono-server.ts#L9",
+              "file:test/billing-hono.test.ts",
+              "file:test/reports-hono.test.ts"
+            ]
+          }
+        ],
+        "selectedCountMin": 4,
+        "selectedCountMax": 11
+      }
+    },
+    {
+      "id": "hono-reports-daily-primary",
+      "label": "Hono reports task selects reports handler evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix daily reports response in the legacy reports endpoint."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_reports",
+          "inventory_symbols_reports_api",
+          "inventory_tests_reports_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_billing",
+          "inventory_capability_cap_api_customers"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_reports",
+          "inventory_symbols_reports_api",
+          "inventory_tests_reports_api",
+          "inventory_hotspots_reports_api",
+          "inventory_source_chunk_src_chunk_src_reports",
+          "inventory_source_chunk_src_chunk_src_routes_hono_server_ts",
+          "inventory_source_chunk_src_chunk_test_reports"
+        ],
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_hono_reports_daily_primary",
+          "file:src/routes/hono-server.ts#L9",
+          "file:src/reports/controller.ts#L1",
+          "file:test/reports-hono.test.ts"
+        ],
+        "sourceRefsExclude": [
+          "file:src/routes/hono-server.ts#L6",
+          "file:src/routes/hono-server.ts#L8",
+          "file:src/billing/controller.ts#L3",
+          "file:src/customers/controller.ts#L1",
+          "file:test/billing-hono.test.ts",
+          "file:test/customers-hono.test.ts"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_reports": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_reports",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:src/routes/hono-server.ts#L9",
+              "file:src/reports/controller.ts#L1",
+              "file:test/reports-hono.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:src/routes/hono-server.ts#L6",
+              "file:src/routes/hono-server.ts#L8",
+              "file:src/billing/controller.ts#L3",
+              "file:src/customers/controller.ts#L1",
+              "file:test/billing-hono.test.ts",
+              "file:test/customers-hono.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_reports_api",
+            "sourceRefsInclude": [
+              "file:src/routes/hono-server.ts#L9",
+              "file:src/reports/controller.ts#L1"
+            ],
+            "sourceRefsExclude": [
+              "file:src/routes/hono-server.ts#L6",
+              "file:src/routes/hono-server.ts#L8",
+              "file:src/billing/controller.ts#L3",
+              "file:src/customers/controller.ts#L1",
+              "file:test/billing-hono.test.ts",
+              "file:test/customers-hono.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_tests_reports_api",
+            "sourceRefsInclude": [
+              "file:test/reports-hono.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:src/routes/hono-server.ts#L6",
+              "file:src/routes/hono-server.ts#L8",
+              "file:test/billing-hono.test.ts",
+              "file:test/customers-hono.test.ts"
+            ]
+          }
+        ],
+        "selectedCountMin": 4,
+        "selectedCountMax": 11
+      }
+    }
+  ]
+}

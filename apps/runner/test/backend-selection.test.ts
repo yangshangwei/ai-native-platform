@@ -26,6 +26,17 @@ describe('runner backend selection', () => {
     expect(runtimeBin(backend)).toBe(bin);
   });
 
+  it('selects a request override backend when project default is missing', async () => {
+    const { selectAgentBackend } = await import('../src/backend-selection');
+    const bin = fakeCodexBin({ loginStatus: 'logged_in' });
+    process.env.AINP_CODEX_BIN = bin;
+
+    const backend = await selectAgentBackend(project({ agentBackend: null }), 'codex');
+
+    expect(backend.kind).toBe('codex');
+    expect(runtimeBin(backend)).toBe(bin);
+  });
+
   it('classifies Codex logged-out login status as needs_login without secret dumps', async () => {
     const { preflightAgentBackend } = await import('../src/agent-backend-preflight');
     process.env.AINP_CODEX_BIN = fakeCodexBin({ loginStatus: 'logged_out' });

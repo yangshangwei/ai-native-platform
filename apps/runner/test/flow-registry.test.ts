@@ -49,11 +49,12 @@ const V1_STAGE_ORDER: readonly WorkflowStage[] = [
 ] as const;
 
 describe('FLOW_REGISTRY', () => {
-  test('exposes V2 Wave 2 flows: feature.standard + feature.fastforward (W2-3) + issue.standard (W2-2a) + refactor.standard (W2-2b)', () => {
+  test('exposes V2 Wave 2 flows plus profile.bootstrap', () => {
     expect(Object.keys(FLOW_REGISTRY).sort()).toEqual([
       'feature.fastforward',
       'feature.standard',
       'issue.standard',
+      'profile.bootstrap',
       'refactor.standard',
     ]);
   });
@@ -372,6 +373,48 @@ describe('FLOW_REGISTRY', () => {
       for (const step of flow.stages) {
         expect(buckets.has(step.kind)).toBe(true);
       }
+    });
+  });
+
+  describe('profile.bootstrap', () => {
+    const flow = FLOW_REGISTRY['profile.bootstrap'];
+
+    const PROFILE_BOOTSTRAP_STAGE_ORDER: readonly WorkflowStage[] = [
+      'inventory',
+      'profile',
+      'completion',
+      'knowledge',
+    ] as const;
+
+    test('id matches its registry key', () => {
+      expect(flow.id).toBe('profile.bootstrap');
+    });
+
+    test('kind is "profile"', () => {
+      expect(flow.kind).toBe('profile');
+    });
+
+    test('description is non-empty', () => {
+      expect(typeof flow.description).toBe('string');
+      expect(flow.description.length).toBeGreaterThan(0);
+    });
+
+    test('stages.map(s => s.stage) strictly equals profile.bootstrap reference order', () => {
+      const order = flow.stages.map((s: StageStep) => s.stage);
+      expect(order).toEqual([...PROFILE_BOOTSTRAP_STAGE_ORDER]);
+    });
+
+    test('inventory, completion, and knowledge are runner-side engine stages', () => {
+      const byStage = Object.fromEntries(flow.stages.map((s) => [s.stage, s]));
+      expect(byStage.inventory.kind).toBe('engine');
+      expect(byStage.completion.kind).toBe('engine');
+      expect(byStage.knowledge.kind).toBe('engine');
+    });
+
+    test('profile is an agent stage using the project-profile-bootstrap skill', () => {
+      const byStage = Object.fromEntries(flow.stages.map((s) => [s.stage, s]));
+      expect(byStage.profile.kind).toBe('agent');
+      expect(byStage.profile.skillId).toBe('project-profile-bootstrap');
     });
   });
 });

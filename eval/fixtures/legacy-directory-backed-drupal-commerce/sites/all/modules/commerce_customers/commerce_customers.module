@@ -1,0 +1,14 @@
+<?php
+function commerce_customers_menu() {
+  $items['customers/profile/risk'] = array(
+    'title' => 'Profile risk',
+    'page callback' => 'commerce_customers_profile_risk',
+    'access callback' => TRUE,
+  );
+  return $items;
+}
+
+function commerce_customers_profile_risk() {
+  $service = new CustomerProfileService();
+  return $service->reviewDrupalProfileRisk();
+}

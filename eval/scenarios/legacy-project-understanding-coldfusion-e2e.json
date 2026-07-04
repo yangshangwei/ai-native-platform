@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-coldfusion-e2e",
+  "title": "Legacy project understanding keeps ColdFusion page context focused",
+  "description": "Runs the real scanner against a small ColdFusion fixture, then verifies ContextPack selects the billing page and tests without leaking an unrelated customer page.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_coldfusion",
+    "title": "Update legacy ColdFusion billing statement page",
+    "stage": "implementation",
+    "taskBrief": "Fix billing statement behavior in the legacy ColdFusion CFML page and update billing statement tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 12,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "wwwroot/Billing/Statement.cfm",
+        "content": "<cfsetting showdebugoutput=\"false\">\n<cfset service = createObject(\"component\", \"billing.StatementService\")>\n<cfset statement = service.loadStatement(url.statementId)>\n<cfoutput>#statement#</cfoutput>\n"
+      },
+      {
+        "path": "wwwroot/Customers/Profile.cfm",
+        "content": "<cfsetting showdebugoutput=\"false\">\n<cfoutput>profile</cfoutput>\n"
+      },
+      {
+        "path": "tests/BillingStatementColdFusion.test.js",
+        "content": "test('renders billing statement ColdFusion page', () => {});\n"
+      },
+      {
+        "path": "tests/CustomerProfileColdFusion.test.js",
+        "content": "test('renders customer profile ColdFusion page', () => {});\n"
+      },
+      {
+        "path": ".env",
+        "content": "DB_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /Billing/Statement.cfm",
+      "ANY /Customers/Profile.cfm"
+    ],
+    "inventoryEntrypointRouteCountMin": 2,
+    "inventoryEntrypointRouteCountMax": 2,
+    "inventorySourceChunkCountMin": 4,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_wwwroot_billing",
+      "inventory_source_chunk_src_chunk_tests_billingstatementcoldfusion"
+    ],
+    "irrelevantContextRatioMax": 0.15,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_coldfusion_billing_statement_primary",
+      "file:wwwroot/Billing/Statement.cfm#L1",
+      "file:tests/BillingStatementColdFusion.test.js"
+    ],
+    "sourceRefsExclude": [
+      "file:wwwroot/Customers/Profile.cfm#L1",
+      "file:tests/CustomerProfileColdFusion.test.js"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_source_chunk_src_chunk_wwwroot_billing_statement_cfm_1_5",
+        "sourceRefsInclude": [
+          "file:wwwroot/Billing/Statement.cfm#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:wwwroot/Customers/Profile.cfm#L1",
+          "file:tests/CustomerProfileColdFusion.test.js"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_tests_billingstatementcoldfusion_test_js_1_2",
+        "sourceRefsInclude": [
+          "file:tests/BillingStatementColdFusion.test.js"
+        ],
+        "sourceRefsExclude": [
+          "file:wwwroot/Customers/Profile.cfm#L1",
+          "file:tests/CustomerProfileColdFusion.test.js"
+        ]
+      },
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:wwwroot/Billing/Statement.cfm#L1",
+          "file:tests/BillingStatementColdFusion.test.js"
+        ],
+        "sourceRefsExclude": [
+          "file:wwwroot/Customers/Profile.cfm#L1",
+          "file:tests/CustomerProfileColdFusion.test.js"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/BillingStatementColdFusion.test.js"
+        ],
+        "sourceRefsExclude": [
+          "file:wwwroot/Customers/Profile.cfm#L1",
+          "file:tests/CustomerProfileColdFusion.test.js"
+        ]
+      }
+    ],
+    "selectedCountMin": 3,
+    "selectedCountMax": 10
+  },
+  "variants": [
+    {
+      "id": "coldfusion-billing-statement-primary",
+      "label": "Legacy ColdFusion billing statement task stays focused on billing page and tests"
+    }
+  ]
+}

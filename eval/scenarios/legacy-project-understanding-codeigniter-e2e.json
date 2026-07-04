@@ -1,0 +1,199 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-codeigniter-e2e",
+  "title": "Legacy project understanding keeps CodeIgniter route context focused",
+  "description": "Runs the real scanner against a small old CodeIgniter fixture, then verifies ContextPack selects the billing route and tests without leaking an unrelated customer route.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_codeigniter",
+    "title": "Update legacy CodeIgniter billing statements",
+    "stage": "implementation",
+    "taskBrief": "Fix billing statement behavior in the legacy CodeIgniter PHP route and update billing statement tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 16,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "application/config/routes.php",
+        "content": "<?php\n$route['default_controller'] = 'welcome';\n$route['billing/statements'] = 'billing/statements';\n$route['customers/profile'] = 'customers/profile';\n$route['billing/(:num)'] = 'billing/show/$1';\n"
+      },
+      {
+        "path": "application/controllers/Billing.php",
+        "content": "<?php\nclass Billing extends CI_Controller\n{\n  public function statements() {\n    $service = new BillingService();\n    return $service->statementList();\n  }\n}\n"
+      },
+      {
+        "path": "application/controllers/Customers.php",
+        "content": "<?php\nclass Customers extends CI_Controller\n{\n  public function profile() {\n    return null;\n  }\n}\n"
+      },
+      {
+        "path": "application/services/BillingService.php",
+        "content": "<?php\nclass BillingService\n{\n  public function statementList() {\n    $repository = new BillingRepository();\n    return $repository->fetchStatements();\n  }\n}\n"
+      },
+      {
+        "path": "application/repositories/BillingRepository.php",
+        "content": "<?php\nclass BillingRepository\n{\n  public function fetchStatements() {\n    return [];\n  }\n}\n"
+      },
+      {
+        "path": "tests/BillingStatementCodeIgniterTest.php",
+        "content": "<?php\nfunction test_billing_statement_route_returns_statement_list() {}\n"
+      },
+      {
+        "path": "tests/CustomerProfileCodeIgniterTest.php",
+        "content": "<?php\nfunction test_customer_profile_route_returns_customer_profile() {}\n"
+      },
+      {
+        "path": ".env",
+        "content": "DB_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /billing/statements",
+      "ANY /customers/profile"
+    ],
+    "inventoryEntrypointRouteCountMin": 2,
+    "inventoryEntrypointRouteCountMax": 2,
+    "inventorySymbolNamesInclude": [
+      "Billing",
+      "statements",
+      "BillingService",
+      "statementList",
+      "BillingRepository",
+      "fetchStatements",
+      "Customers",
+      "profile"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 6,
+    "inventoryRouteHandlerEdgeCountMin": 2,
+    "inventorySourceChunkCountMin": 7,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_codeigniter_billing_statements_primary",
+      "file:application/config/routes.php#L3",
+      "file:application/controllers/Billing.php#L2",
+      "file:application/controllers/Billing.php#L4",
+      "file:application/controllers/Billing.php#L5",
+      "file:application/controllers/Billing.php#L6",
+      "file:application/services/BillingService.php#L2",
+      "file:application/services/BillingService.php#L4",
+      "file:application/repositories/BillingRepository.php#L2",
+      "file:tests/BillingStatementCodeIgniterTest.php"
+    ],
+    "sourceRefsExclude": [
+      "file:application/config/routes.php#L4",
+      "file:application/controllers/Customers.php#L2",
+      "file:application/controllers/Customers.php#L4",
+      "file:tests/CustomerProfileCodeIgniterTest.php"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:application/config/routes.php#L3",
+          "file:application/controllers/Billing.php#L2",
+          "file:application/controllers/Billing.php#L4",
+          "file:application/controllers/Billing.php#L5",
+          "file:application/controllers/Billing.php#L6",
+          "file:application/services/BillingService.php#L2",
+          "file:application/services/BillingService.php#L4",
+          "file:application/services/BillingService.php#L5",
+          "file:application/services/BillingService.php#L6",
+          "file:application/repositories/BillingRepository.php#L2",
+          "file:application/repositories/BillingRepository.php#L4",
+          "file:tests/BillingStatementCodeIgniterTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:application/config/routes.php#L4",
+          "file:application/controllers/Customers.php#L2",
+          "file:application/controllers/Customers.php#L4",
+          "file:tests/CustomerProfileCodeIgniterTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:application/config/routes.php#L3",
+          "file:application/controllers/Billing.php#L2",
+          "file:application/controllers/Billing.php#L4",
+          "file:application/controllers/Billing.php#L5",
+          "file:application/controllers/Billing.php#L6",
+          "file:application/services/BillingService.php#L2",
+          "file:application/services/BillingService.php#L4",
+          "file:application/services/BillingService.php#L5",
+          "file:application/services/BillingService.php#L6",
+          "file:application/repositories/BillingRepository.php#L2",
+          "file:application/repositories/BillingRepository.php#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:application/config/routes.php#L4",
+          "file:application/controllers/Customers.php#L2",
+          "file:application/controllers/Customers.php#L4",
+          "file:tests/CustomerProfileCodeIgniterTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/BillingStatementCodeIgniterTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:application/config/routes.php#L4",
+          "file:application/controllers/Customers.php#L2",
+          "file:application/controllers/Customers.php#L4",
+          "file:tests/CustomerProfileCodeIgniterTest.php"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 11,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_application_config_routes",
+      "inventory_source_chunk_src_chunk_application_controllers_billing",
+      "inventory_source_chunk_src_chunk_application_services_billing",
+      "inventory_source_chunk_src_chunk_application_repositories_billing",
+      "inventory_source_chunk_src_chunk_tests_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13
+  },
+  "variants": [
+    {
+      "id": "codeigniter-billing-statements-primary",
+      "label": "Legacy CodeIgniter billing statement task stays focused on billing route and tests"
+    }
+  ]
+}

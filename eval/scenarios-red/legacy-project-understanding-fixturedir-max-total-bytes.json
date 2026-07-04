@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-fixturedir-max-total-bytes",
+  "title": "Legacy project understanding red fixture rejects fixtureDir maxTotalBytes overflow",
+  "description": "Intentionally sets fixtureDir.maxTotalBytes below the checked-in fixture corpus size; the harness must fail during fixtureDir validation before scanner-to-context generation runs.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_fixturedir_max_total_bytes_red",
+    "title": "Update legacy billing fixtureDir behavior",
+    "stage": "implementation",
+    "taskBrief": "Fix billing behavior in a directory-backed legacy fixture.",
+    "fixtureDir": {
+      "path": "../fixtures/legacy-fixturedir-billing",
+      "maxFiles": 8,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 100,
+      "excludePaths": [
+        "tmp"
+      ]
+    }
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API"
+    ]
+  }
+}

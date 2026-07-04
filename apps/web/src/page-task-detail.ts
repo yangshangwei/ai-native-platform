@@ -633,7 +633,7 @@ function renderContextSnapshotPanel(detail: RunDetail): HTMLElement {
   });
 }
 
-function renderContextGovernancePanel(detail: RunDetail): HTMLElement {
+export function renderContextGovernancePanel(detail: RunDetail): HTMLElement {
   const model = contextGovernanceByRun.get(detail.run.id) ?? null;
   if (!model) {
     return el('section', {
@@ -646,6 +646,7 @@ function renderContextGovernancePanel(detail: RunDetail): HTMLElement {
   }
 
   const metrics = model.metrics;
+  const calibrationSignals = model.contextPacks.flatMap((pack) => pack.calibrationSignals);
   return el('section', {
     class: 'panel doc-panel structured-panel diagnostic-panel',
     children: [
@@ -662,11 +663,13 @@ function renderContextGovernancePanel(detail: RunDetail): HTMLElement {
               metric('可追溯性', formatPercent(metrics.evidenceTraceability.value), `${metrics.evidenceTraceability.numerator}/${metrics.evidenceTraceability.denominator} manifest refs`, metrics.evidenceTraceability.value >= 0.8 ? 'good' : 'warn'),
               metric('低相关资料', formatPercent(metrics.irrelevantContextRatio.value), 'deterministic low-signal proxy', metrics.irrelevantContextRatio.value <= 0.2 ? 'good' : 'warn'),
               metric('补充请求', String(metrics.contextRequestCount.value), 'structured requests', metrics.contextRequestCount.value ? 'info' : 'muted'),
+              metric('校准信号', String(calibrationSignals.length), 'knowledge review signals', calibrationSignals.length ? 'warn' : 'good'),
               metric('返工信号', String(metrics.downstreamReworkSignal.value), 'rejects + failed gates/agents', metrics.downstreamReworkSignal.value ? 'warn' : 'good'),
             ],
           }),
           renderContextManifestSummary(model.manifest),
           renderContextBudgetSummary(model.budgetDecisions),
+          renderContextCalibrationSignals(model.contextPacks),
           renderContextRequestHistory(model.contextRequests),
           renderContextSourceRefs(model.sourceRefs),
         ],
@@ -1015,6 +1018,70 @@ function renderContextBudgetSummary(items: ContextGovernanceDto['budgetDecisions
         : el('p', { class: 'muted compact', text: 'No budget decisions recorded yet.' }),
     ],
   });
+}
+
+function renderContextCalibrationSignals(packs: ContextGovernanceDto['contextPacks']): HTMLElement {
+  const signals = packs.flatMap((pack) =>
+    pack.calibrationSignals.map((signal) => ({
+      ...signal,
+      contextPackId: pack.contextPackId,
+    })),
+  );
+  return el('details', {
+    class: 'raw-details',
+    children: [
+      el('summary', { text: `Knowledge Review Signals (${signals.length})` }),
+      signals.length
+        ? el('div', {
+            class: 'stack',
+            children: signals.slice(0, 20).map(renderContextCalibrationSignal),
+          })
+        : el('p', { class: 'muted compact', text: 'No knowledge review signals recorded.' }),
+    ],
+  });
+}
+
+function renderContextCalibrationSignal(
+  signal: ContextGovernanceDto['contextPacks'][number]['calibrationSignals'][number] & { contextPackId: string },
+): HTMLElement {
+  const id = calibrationSignalText(signal.id);
+  const kind = calibrationSignalText(signal.kind) ?? 'calibration';
+  const severity = calibrationSignalText(signal.severity) ?? 'unknown';
+  const recommendedAction = calibrationSignalText(signal.recommendedAction);
+  const message = calibrationSignalText(signal.message);
+  const subjectRefs = calibrationSignalRefs(signal.subjectRefs);
+  const evidenceRefs = calibrationSignalRefs(signal.evidenceRefs);
+  return el('article', {
+    class: 'evidence-row',
+    children: [
+      el('span', {
+        children: [
+          pill(severity, calibrationSignalKind(severity)),
+          document.createTextNode(` ${kind}`),
+        ],
+      }),
+      el('small', { text: `pack=${shortId(signal.contextPackId)} · id=${id ?? 'n/a'} · action=${recommendedAction ?? 'n/a'}` }),
+      message ? el('small', { text: message }) : null,
+      subjectRefs.length ? el('small', { text: `subjects: ${subjectRefs.join(' · ')}` }) : null,
+      evidenceRefs.length ? el('small', { text: `evidence: ${evidenceRefs.join(' · ')}` }) : null,
+    ],
+  });
+}
+
+function calibrationSignalText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value : null;
+}
+
+function calibrationSignalRefs(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function calibrationSignalKind(severity: string | undefined): StatusKind {
+  if (severity === 'review_required' || severity === 'conflict') return 'warn';
+  if (severity === 'error') return 'bad';
+  if (severity === 'info') return 'info';
+  return 'muted';
 }
 
 function renderContextRequestHistory(requests: ContextGovernanceDto['contextRequests']): HTMLElement {

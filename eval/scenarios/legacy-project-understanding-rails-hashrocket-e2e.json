@@ -1,0 +1,202 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-rails-hashrocket-e2e",
+  "title": "Legacy project understanding keeps Rails hashrocket route context focused",
+  "description": "Runs the real scanner against a small legacy Rails fixture, then verifies ContextPack selects the billing hashrocket route and tests without leaking customer or no-via match routes.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_rails_hashrocket",
+    "title": "Update legacy Rails hashrocket billing refunds",
+    "stage": "implementation",
+    "taskBrief": "Fix billing refund details in the legacy Rails hashrocket route and update billing refund hashrocket tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 18,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "config/routes.rb",
+        "content": "Rails.application.routes.draw do\n  scope \"/api/v1\" do\n    get \"/billing/refunds/:id\" => \"billing#show_refund\"\n    match \"/billing/refunds/:id/no-via\" => \"billing#show_refund\"\n    get \"/customers/profile\" => \"customer#profile\"\n  end\nend\n"
+      },
+      {
+        "path": "app/controllers/billing_controller.rb",
+        "content": "class BillingController < ApplicationController\n  def show_refund\n    service = BillingRefundService.new\n    service.load_refund(params[:id])\n  end\nend\n"
+      },
+      {
+        "path": "app/controllers/customer_controller.rb",
+        "content": "class CustomerController < ApplicationController\n  def profile\n    render json: {}\n  end\nend\n"
+      },
+      {
+        "path": "app/services/billing_refund_service.rb",
+        "content": "class BillingRefundService\n  def load_refund(refund_id)\n    repository = BillingRefundRepository.new\n    repository.load_refund(refund_id)\n  end\nend\n"
+      },
+      {
+        "path": "app/repositories/billing_refund_repository.rb",
+        "content": "class BillingRefundRepository\n  def load_refund(refund_id)\n    refund_id\n  end\nend\n"
+      },
+      {
+        "path": "test/billing_refund_hashrocket_test.rb",
+        "content": "def test_billing_refund_hashrocket_loads_details\nend\n"
+      },
+      {
+        "path": "test/customer_profile_hashrocket_test.rb",
+        "content": "def test_customer_profile_hashrocket_returns_profile\nend\n"
+      },
+      {
+        "path": ".env",
+        "content": "DB_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "GET /api/v1/billing/refunds/:id",
+      "GET /api/v1/customers/profile"
+    ],
+    "inventoryEntrypointRouteCountMin": 2,
+    "inventoryEntrypointRouteCountMax": 2,
+    "inventorySymbolNamesInclude": [
+      "BillingController",
+      "show_refund",
+      "BillingRefundService",
+      "BillingRefundRepository",
+      "CustomerController",
+      "profile"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 6,
+    "inventoryGraphEdgeConfidenceMin": 0.68,
+    "inventoryRouteHandlerEdgeCountMin": 2,
+    "inventoryRouteHandlerEdgeConfidenceMin": 0.78,
+    "inventorySourceChunkCountMin": 7,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_rails_hashrocket_billing_show",
+      "file:config/routes.rb#L2",
+      "file:config/routes.rb#L3",
+      "file:app/controllers/billing_controller.rb#L1",
+      "file:app/controllers/billing_controller.rb#L2",
+      "file:app/controllers/billing_controller.rb#L3",
+      "file:app/controllers/billing_controller.rb#L4",
+      "file:app/services/billing_refund_service.rb#L1",
+      "file:app/services/billing_refund_service.rb#L2",
+      "file:app/repositories/billing_refund_repository.rb#L1",
+      "file:test/billing_refund_hashrocket_test.rb"
+    ],
+    "sourceRefsExclude": [
+      "file:config/routes.rb#L4",
+      "file:config/routes.rb#L5",
+      "file:app/controllers/customer_controller.rb#L1",
+      "file:app/controllers/customer_controller.rb#L2",
+      "file:test/customer_profile_hashrocket_test.rb"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:config/routes.rb#L2",
+          "file:config/routes.rb#L3",
+          "file:app/controllers/billing_controller.rb#L1",
+          "file:app/controllers/billing_controller.rb#L2",
+          "file:app/controllers/billing_controller.rb#L3",
+          "file:app/controllers/billing_controller.rb#L4",
+          "file:app/services/billing_refund_service.rb#L1",
+          "file:app/repositories/billing_refund_repository.rb#L1",
+          "file:test/billing_refund_hashrocket_test.rb"
+        ],
+        "sourceRefsExclude": [
+          "file:config/routes.rb#L4",
+          "file:config/routes.rb#L5",
+          "file:app/controllers/customer_controller.rb#L1",
+          "file:app/controllers/customer_controller.rb#L2",
+          "file:test/customer_profile_hashrocket_test.rb"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:config/routes.rb#L2",
+          "file:config/routes.rb#L3",
+          "file:app/controllers/billing_controller.rb#L1",
+          "file:app/controllers/billing_controller.rb#L2",
+          "file:app/controllers/billing_controller.rb#L3",
+          "file:app/controllers/billing_controller.rb#L4",
+          "file:app/services/billing_refund_service.rb#L1",
+          "file:app/services/billing_refund_service.rb#L2",
+          "file:app/repositories/billing_refund_repository.rb#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:config/routes.rb#L4",
+          "file:config/routes.rb#L5",
+          "file:app/controllers/customer_controller.rb#L1",
+          "file:app/controllers/customer_controller.rb#L2",
+          "file:test/customer_profile_hashrocket_test.rb"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:test/billing_refund_hashrocket_test.rb"
+        ],
+        "sourceRefsExclude": [
+          "file:config/routes.rb#L4",
+          "file:app/controllers/customer_controller.rb#L1",
+          "file:test/customer_profile_hashrocket_test.rb"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 11,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_config_routes",
+      "inventory_source_chunk_src_chunk_app_controllers_billing",
+      "inventory_source_chunk_src_chunk_app_services_billing",
+      "inventory_source_chunk_src_chunk_app_repositories_billing",
+      "inventory_source_chunk_src_chunk_test_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13,
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.68,
+      "routeHandlerEdgeConfidenceMin": 0.78
+    }
+  },
+  "variants": [
+    {
+      "id": "rails-hashrocket-billing-show",
+      "label": "Legacy Rails hashrocket billing refund task stays focused on billing route and tests"
+    }
+  ]
+}

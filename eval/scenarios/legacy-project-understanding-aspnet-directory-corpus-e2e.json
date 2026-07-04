@@ -1,0 +1,225 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-aspnet-directory-corpus-e2e",
+  "title": "Legacy project understanding scans a directory-backed old ASP.NET commerce corpus",
+  "description": "Runs the real scanner against a checked-in ASP.NET-style old commerce fixture with attribute routes, billing/orders/customers controller/service/repository layers, SQL schema/routine evidence, tests, credential-like config, and generated/bin/obj/log noise filtered by fixtureDir.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_aspnet_directory_corpus",
+    "title": "Update legacy ASP.NET billing refund audit",
+    "stage": "implementation",
+    "taskBrief": "Fix the legacy ASP.NET billing refund audit route and rebuild_aspnet_refund_audit SQL routine, then update billing refund audit tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 36,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072
+    },
+    "fixtureDir": {
+      "path": "../fixtures/legacy-directory-backed-aspnet-commerce",
+      "maxFiles": 28,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072,
+      "excludePaths": [
+        "bin",
+        "obj",
+        "logs"
+      ]
+    }
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Orders API",
+      "Customers API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API",
+      "V6 API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "POST /api/v6/billing/refunds/{refundId}/audit",
+      "PATCH /api/v6/orders/fulfillment/{orderId}/reprice",
+      "GET /api/v6/customers/profiles/{customerId}/risk"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventorySymbolNamesInclude": [
+      "BillingRefundController",
+      "AuditRefund",
+      "BillingRefundService",
+      "RebuildRefundAudit",
+      "BillingRefundRepository",
+      "WriteRefundAuditEntry",
+      "OrderFulfillmentController",
+      "OrderFulfillmentService",
+      "CustomerProfileController",
+      "CustomerProfileService"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 9,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventorySourceChunkCountMin": 16,
+    "inventoryExclusionsInclude": [
+      "config/credentials.json:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_domain_entities_billing_api",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_orders",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_domain_entities_billing_api",
+      "inventory_source_chunk_src_chunk_src_legacy_billing",
+      "inventory_source_chunk_src_chunk_db_billing",
+      "inventory_source_chunk_src_chunk_tests_legacy_billing"
+    ],
+    "irrelevantContextRatioMax": 0.16,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_aspnet_commerce_billing_refund_audit",
+      "file:src/Legacy/Billing/BillingRefundController.cs#L5",
+      "file:src/Legacy/Billing/BillingRefundController.cs#L7",
+      "file:src/Legacy/Billing/BillingRefundController.cs#L9",
+      "file:src/Legacy/Billing/BillingRefundController.cs#L10",
+      "file:src/Legacy/Billing/BillingRefundController.cs#L12",
+      "file:src/Legacy/Billing/BillingRefundService.cs#L3",
+      "file:src/Legacy/Billing/BillingRefundService.cs#L5",
+      "file:src/Legacy/Billing/BillingRefundService.cs#L7",
+      "file:src/Legacy/Billing/BillingRefundService.cs#L9",
+      "file:src/Legacy/Billing/BillingRefundRepository.cs#L3",
+      "file:src/Legacy/Billing/BillingRefundRepository.cs#L5",
+      "file:src/Legacy/Billing/BillingRefundRepository.cs#L7",
+      "file:db/billing/schema.sql#L1",
+      "file:db/billing/routines.sql#L1",
+      "file:tests/Legacy/Billing/BillingRefundControllerTests.cs"
+    ],
+    "sourceRefsExclude": [
+      "file:src/Legacy/Orders/OrderFulfillmentController.cs#L3",
+      "file:src/Legacy/Customers/CustomerProfileController.cs#L3",
+      "file:db/orders/schema.sql#L1",
+      "file:db/customers/schema.sql#L1",
+      "file:tests/Legacy/Orders/OrderFulfillmentControllerTests.cs",
+      "file:tests/Legacy/Customers/CustomerProfileControllerTests.cs",
+      "file:bin/Debug/GeneratedBillingClient.cs",
+      "file:obj/GeneratedRoutes.cs",
+      "file:logs/application.log"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary",
+      "inventory_domain_entities_billing_api": "summary"
+    },
+    "selectedCountMin": 5,
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:src/Legacy/Billing/BillingRefundController.cs#L5",
+          "file:src/Legacy/Billing/BillingRefundController.cs#L7",
+          "file:src/Legacy/Billing/BillingRefundController.cs#L9",
+          "file:src/Legacy/Billing/BillingRefundController.cs#L10",
+          "file:src/Legacy/Billing/BillingRefundService.cs#L3",
+          "file:src/Legacy/Billing/BillingRefundService.cs#L7",
+          "file:src/Legacy/Billing/BillingRefundRepository.cs#L3",
+          "file:tests/Legacy/Billing/BillingRefundControllerTests.cs"
+        ],
+        "sourceRefsExclude": [
+          "file:src/Legacy/Orders/OrderFulfillmentController.cs#L3",
+          "file:src/Legacy/Customers/CustomerProfileController.cs#L3",
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1",
+          "file:tests/Legacy/Orders/OrderFulfillmentControllerTests.cs",
+          "file:tests/Legacy/Customers/CustomerProfileControllerTests.cs",
+          "file:bin/Debug/GeneratedBillingClient.cs",
+          "file:obj/GeneratedRoutes.cs",
+          "file:logs/application.log"
+        ]
+      },
+      {
+        "ref": "inventory_domain_entities_billing_api",
+        "contentIncludes": [
+          "Matched Domain Entities",
+          "routine | rebuild_aspnet_refund_audit | db/billing/routines.sql",
+          "table | aspnet_refund_audit_entries | db/billing/schema.sql",
+          "refs=file:src/Legacy/Billing/BillingRefundRepository.cs#L7"
+        ],
+        "contentExcludes": [
+          "aspnet_order_fulfillment_backlog",
+          "aspnet_customer_profile_snapshots"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/schema.sql#L1",
+          "file:src/Legacy/Billing/BillingRefundRepository.cs#L7"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:src/Legacy/Billing/BillingRefundController.cs#L5",
+          "file:src/Legacy/Billing/BillingRefundController.cs#L7",
+          "file:src/Legacy/Billing/BillingRefundController.cs#L9",
+          "file:src/Legacy/Billing/BillingRefundController.cs#L10",
+          "file:src/Legacy/Billing/BillingRefundController.cs#L12",
+          "file:src/Legacy/Billing/BillingRefundService.cs#L3",
+          "file:src/Legacy/Billing/BillingRefundService.cs#L5",
+          "file:src/Legacy/Billing/BillingRefundService.cs#L7",
+          "file:src/Legacy/Billing/BillingRefundRepository.cs#L3",
+          "file:src/Legacy/Billing/BillingRefundRepository.cs#L5"
+        ],
+        "sourceRefsExclude": [
+          "file:src/Legacy/Orders/OrderFulfillmentController.cs#L3",
+          "file:src/Legacy/Customers/CustomerProfileController.cs#L3",
+          "file:tests/Legacy/Orders/OrderFulfillmentControllerTests.cs",
+          "file:tests/Legacy/Customers/CustomerProfileControllerTests.cs"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/Legacy/Billing/BillingRefundControllerTests.cs"
+        ],
+        "sourceRefsExclude": [
+          "file:tests/Legacy/Orders/OrderFulfillmentControllerTests.cs",
+          "file:tests/Legacy/Customers/CustomerProfileControllerTests.cs"
+        ]
+      }
+    ],
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.65,
+      "routeHandlerEdgeConfidenceMin": 0.78,
+      "sourceChunkContentSha256CoverageMin": 1,
+      "sourceChunkIndexCoverageMin": 1,
+      "sourceChunkLinkedRecordCoverageMin": 1,
+      "sourceFileExtensionCountMin": 3,
+      "sourcePathPatternCountMin": 5,
+      "sourceRecordKindCountMin": 7
+    }
+  },
+  "variants": [
+    {
+      "id": "aspnet-commerce-billing-refund-audit",
+      "label": "Legacy ASP.NET commerce task stays focused on billing refund route, SQL routine, and tests"
+    }
+  ]
+}

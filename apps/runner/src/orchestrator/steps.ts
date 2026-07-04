@@ -32,7 +32,12 @@ import { runWhitelistedCommand } from '../command-runner';
 import { DEFAULT_MAX_LOG_BYTES, DEFAULT_TIMEOUT_MS, WORKTREES_DIR } from '../config';
 import { findSkillForStage } from '../skills';
 import { generateProjectProfile } from '../profile';
+import { validateProjectProfileJson } from '../project-profile-contract';
 import { buildProjectInventory } from '../project-inventory';
+import {
+  sourceChunkIndexConfiguredEmbeddingProvider,
+  type SourceChunkIndexEmbeddingProvider,
+} from '../source-chunk-embedding';
 import { selectAgentBackend } from '../backend-selection';
 import {
   collectAcceptedKnowledge,
@@ -122,6 +127,7 @@ export interface StepDeps {
   persistKnowledgeCandidate: typeof persistKnowledgeCandidate;
   buildProjectInventory: typeof buildProjectInventory;
   selectAgentBackend: typeof selectAgentBackend;
+  sourceChunkEmbeddingProvider?: SourceChunkIndexEmbeddingProvider | null;
 }
 
 export const DEFAULT_STEP_DEPS: StepDeps = {
@@ -941,11 +947,17 @@ export async function executeInventory(
     phase: 'start',
   });
 
-  const inventory = await deps.buildProjectInventory({
+  const sourceChunkEmbeddingProvider = deps.sourceChunkEmbeddingProvider
+    ?? sourceChunkIndexConfiguredEmbeddingProvider();
+  const inventoryInput: Parameters<typeof deps.buildProjectInventory>[0] = {
     projectId: c.project.id,
     workflowRunId: c.run.id,
     repoRoot: c.workspace.path,
-  });
+  };
+  if (sourceChunkEmbeddingProvider) {
+    inventoryInput.sourceChunkEmbeddingProvider = sourceChunkEmbeddingProvider;
+  }
+  const inventory = await deps.buildProjectInventory(inventoryInput);
   const body = `${JSON.stringify(inventory, null, 2)}\n`;
   const outDir = join(c.runArtifactsDir, 'inventory');
   await mkdir(outDir, { recursive: true });
@@ -970,11 +982,36 @@ export async function executeInventory(
   c.inputArtifactIds['project-inventory.json'] = artifact.id;
   console.log(`[runner] project_inventory artifact ${artifact.id}`);
 
+  const producedArtifactIds: Record<string, string> = { 'project-inventory.json': artifact.id };
+  const sourceChunkIndex = inventory.sourceChunkIndex;
+  if (sourceChunkIndex.entries.length > 0) {
+    const indexBody = `${JSON.stringify(sourceChunkIndex, null, 2)}\n`;
+    const indexOutPath = join(outDir, 'source-chunk-index.json');
+    await writeFile(indexOutPath, indexBody, 'utf8');
+    const indexArtifact = await deps.api.postArtifact({
+      workflowRunId: c.run.id,
+      stepRunId: stepId,
+      kind: 'other',
+      uri: pathToFileUri(indexOutPath),
+      size: Buffer.byteLength(indexBody, 'utf8'),
+      contentType: 'application/json',
+      metadata: {
+        role: 'source_chunk_index',
+        schemaVersion: sourceChunkIndex.schemaVersion,
+        output: 'source-chunk-index.json',
+        stage: 'inventory',
+        sourceInventoryArtifactId: artifact.id,
+      },
+    });
+    producedArtifactIds['source-chunk-index.json'] = indexArtifact.id;
+    console.log(`[runner] source_chunk_index artifact ${indexArtifact.id}`);
+  }
+
   await checkpointStageContext(c, deps, {
     stepRunId: stepId,
     stage: 'inventory',
     phase: 'finish',
-    producedArtifactIds: { 'project-inventory.json': artifact.id },
+    producedArtifactIds,
   });
   await deps.api.stepFinished({ stepRunId: stepId, status: 'passed' });
 }
@@ -1026,10 +1063,11 @@ export async function executeProfileBootstrap(
   }
 
   const jsonText = await Bun.file(jsonOut.path).text();
-  const schemaVersion = profileSchemaVersion(jsonText);
-  if (schemaVersion !== 'ainp.project_profile.v1') {
-    throw new Error('profile: project-profile.json must use schemaVersion ainp.project_profile.v1');
-  }
+  const schemaVersion = validateProjectProfileJson(jsonText, {
+    projectId: c.project.id,
+    workflowRunId: c.run.id,
+    inventoryArtifactId: c.inputArtifactIds['project-inventory.json'] ?? null,
+  });
 
   const artifactIds: string[] = [];
   const producedArtifactIds: Record<string, string> = {};
@@ -1564,14 +1602,6 @@ export async function mustSkill(
   return s;
 }
 
-function profileSchemaVersion(text: string): string | null {
-  try {
-    const parsed = JSON.parse(text) as { schemaVersion?: unknown };
-    return typeof parsed.schemaVersion === 'string' ? parsed.schemaVersion : null;
-  } catch {
-    return null;
-  }
-}
 
 function artifactKindForStageOutput(
   stage: 'requirement' | 'design' | 'review',

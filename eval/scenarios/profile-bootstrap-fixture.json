@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "profile-bootstrap-fixture",
+  "title": "Profile bootstrap fixture preserves inventory authority",
+  "description": "Runs profile.bootstrap through deterministic inventory/profile/completion/knowledge stages with a fake backend, without real Claude Code or Codex CLIs.",
+  "kind": "agent_backend_fixture",
+  "input": {
+    "projectId": "proj_eval_profile_bootstrap",
+    "workflowRunId": "run_eval_profile_bootstrap",
+    "title": "Generate deterministic legacy project profile",
+    "stage": "profile",
+    "behavior": "profile_bootstrap_success"
+  },
+  "expectations": {
+    "externalCliUsed": false,
+    "backendCalls": 1,
+    "outputCount": 2,
+    "profileBootstrapFlow": true,
+    "profileFlowStages": ["inventory", "profile", "completion", "knowledge"],
+    "inventoryArtifactPersisted": true,
+    "sourceChunkIndexArtifactPersisted": true,
+    "sourceChunkIndexNotInjectedAsInput": true,
+    "profileArtifactCount": 2,
+    "profileJsonContractValid": true,
+    "profileJsonProvenanceValid": true,
+    "rawInventoryExcludedFromProfileMarkdown": true,
+    "knowledgeCandidateReviewableOnly": true
+  }
+}

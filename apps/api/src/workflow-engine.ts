@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import {
   newId,
   nowIso,
@@ -50,9 +51,11 @@ import {
   type WorkflowRunStatus,
 } from '@ainp/shared';
 import {
+  SOURCE_CHUNK_INDEX_MAX_EMBEDDING_DIMENSIONS,
   store,
   type Approval,
   type RunnerRecord,
+  type SourceChunkIndexCatalogEntry,
   type WorkflowAction,
 } from './store/store';
 import { db } from './store/db';
@@ -158,6 +161,7 @@ export function createWorkflowRun(params: {
 function defaultFlowIdForType(type: WorkflowRunType): FlowId {
   if (type === 'bugfix') return 'issue.standard';
   if (type === 'refactor') return 'refactor.standard';
+  if (type === 'profile') return 'profile.bootstrap';
   return 'feature.standard';
 }
 
@@ -175,6 +179,8 @@ export function createWorkflowRequest(params: {
    * between request creation and the initial chat turn (PRD P0-2 / P0-3).
    */
   firstMessage?: { role: MessageRole; content: string };
+  /** Optional request-level backend override. Null means project default. */
+  agentBackend?: WorkflowRequest['agentBackend'];
   /** Optional UI override pinning the FLOW_REGISTRY entry (PRD 05-08). */
   flowId?: WorkflowRequest['flowId'];
   /** Optional UI override pinning the run's first stage (PRD 05-08). */
@@ -193,6 +199,7 @@ export function createWorkflowRequest(params: {
     claimedBy: null,
     workflowRunId: null,
     error: null,
+    agentBackend: params.agentBackend ?? null,
     createdAt: now,
     updatedAt: now,
     flowId: params.flowId ?? null,
@@ -791,7 +798,14 @@ export function createArtifact(input: CreateArtifactInput): Artifact {
     metadata: input.metadata ?? {},
   };
   store.artifacts.insert(a);
+  const catalogedSourceIndexEntries = catalogSourceChunkIndexArtifact(a);
   audit(input.workflowRunId, 'artifact.created', { artifactId: a.id, kind: a.kind });
+  if (catalogedSourceIndexEntries > 0) {
+    audit(input.workflowRunId, 'source_chunk_index.cataloged', {
+      artifactId: a.id,
+      entryCount: catalogedSourceIndexEntries,
+    });
+  }
   return a;
 }
 
@@ -801,6 +815,175 @@ function safeFileSha256(path: string): string | null {
   } catch {
     return null;
   }
+}
+
+function catalogSourceChunkIndexArtifact(artifact: Artifact): number {
+  if (!isSourceChunkIndexArtifactMetadata(artifact.metadata)) return 0;
+  const run = store.workflowRuns.get(artifact.workflowRunId);
+  if (!run || !artifact.uri.startsWith('file://')) return 0;
+
+  try {
+    const parsed = JSON.parse(readFileSync(artifact.uri.slice('file://'.length), 'utf8')) as unknown;
+    if (!isRecord(parsed) || parsed.schemaVersion !== 'ainp.source_chunk_index.v1') return 0;
+    const rawEntries = Array.isArray(parsed.entries) ? parsed.entries : [];
+    const sourceInventoryArtifactId = stringField(artifact.metadata.sourceInventoryArtifactId);
+    const entries = rawEntries.flatMap((raw): SourceChunkIndexCatalogEntry[] => {
+      if (!isRecord(raw)) return [];
+      const sourceChunkRef = stringField(raw.sourceChunkRef);
+      const contentSha256 = stringField(raw.contentSha256);
+      const path = stringField(raw.path);
+      const startLine = numberField(raw.startLine);
+      const endLine = numberField(raw.endLine);
+      if (!sourceChunkRef || !contentSha256 || !path || startLine === null || endLine === null) {
+        return [];
+      }
+      const embedding = sourceChunkIndexEmbeddingMetadata(raw);
+      const entryId = stringField(raw.id)
+        ?? `${sourceChunkRef}_${contentSha256.slice(0, 16)}_${path}_${startLine}_${endLine}`;
+      return [{
+        id: `${artifact.id}:${entryId}`,
+        projectId: run.projectId,
+        workflowRunId: artifact.workflowRunId,
+        sourceChunkIndexArtifactId: artifact.id,
+        sourceInventoryArtifactId,
+        sourceChunkRef,
+        contentSha256,
+        path,
+        language: stringField(raw.language),
+        startLine,
+        endLine,
+        lexicalTokens: stringArrayField(raw.lexicalTokens),
+        searchText: stringField(raw.searchText) ?? '',
+        linkedRecordRefs: stringArrayField(raw.linkedRecordRefs),
+        sourceRefs: stringArrayField(raw.sourceRefs),
+        entrypointRefs: stringArrayField(raw.entrypointRefs),
+        symbolRefs: stringArrayField(raw.symbolRefs),
+        domainEntityRefs: stringArrayField(raw.domainEntityRefs),
+        graphEdgeRefs: stringArrayField(raw.graphEdgeRefs),
+        testRefs: stringArrayField(raw.testRefs),
+        hotspotRefs: stringArrayField(raw.hotspotRefs),
+        capabilityRefs: stringArrayField(raw.capabilityRefs),
+        embeddingModel: embedding.embeddingModel,
+        embeddingDimensions: embedding.embeddingDimensions,
+        embeddingVector: embedding.embeddingVector,
+        createdAt: artifact.createdAt,
+      }];
+    });
+    store.sourceChunkIndexEntries.replaceForArtifact(artifact.id, entries);
+    return entries.length;
+  } catch {
+    return 0;
+  }
+}
+
+function sourceChunkIndexEmbeddingMetadata(raw: Record<string, unknown>): {
+  embeddingModel: string | null;
+  embeddingDimensions: number | null;
+  embeddingVector: number[] | null;
+} {
+  const nested = isRecord(raw.embedding) ? raw.embedding : null;
+  const embeddingVector = numberArrayField(
+    raw.embeddingVector
+      ?? raw.embeddingVectorJson
+      ?? raw.vector
+      ?? nested?.vector
+      ?? nested?.embeddingVector,
+  );
+  const declaredDimensions = integerField(
+    raw.embeddingDimensions
+      ?? raw.embeddingDimension
+      ?? raw.dimensions
+      ?? nested?.dimensions,
+  );
+  if (
+    embeddingVector
+    && declaredDimensions !== null
+    && declaredDimensions !== embeddingVector.length
+  ) {
+    return { embeddingModel: null, embeddingDimensions: null, embeddingVector: null };
+  }
+
+  return {
+    embeddingModel: boundedStringField(
+      raw.embeddingModel
+        ?? raw.embeddingModelId
+        ?? raw.embeddingId
+        ?? nested?.model
+        ?? nested?.modelId
+        ?? nested?.id,
+      120,
+    ),
+    embeddingDimensions: embeddingVector?.length ?? declaredDimensions,
+    embeddingVector,
+  };
+}
+
+function isSourceChunkIndexArtifactMetadata(metadata: Record<string, unknown>): boolean {
+  return metadata.role === 'source_chunk_index'
+    || metadata.output === 'source-chunk-index.json'
+    || metadata.schemaVersion === 'ainp.source_chunk_index.v1';
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stringField(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function numberField(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function integerField(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return null;
+  if (value < 1 || value > SOURCE_CHUNK_INDEX_MAX_EMBEDDING_DIMENSIONS) return null;
+  return value;
+}
+
+function numberArrayField(value: unknown): number[] | null {
+  const parsed = typeof value === 'string'
+    ? parseJson(value)
+    : value;
+  if (!Array.isArray(parsed)) return null;
+  if (parsed.length < 1 || parsed.length > SOURCE_CHUNK_INDEX_MAX_EMBEDDING_DIMENSIONS) {
+    return null;
+  }
+  const result: number[] = [];
+  let norm = 0;
+  for (const item of parsed) {
+    if (typeof item !== 'number' || !Number.isFinite(item)) return null;
+    result.push(item);
+    norm += item * item;
+  }
+  return norm > 0 ? result : null;
+}
+
+function boundedStringField(value: unknown, maxLength: number): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 && trimmed.length <= maxLength ? trimmed : null;
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function stringArrayField(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string' || seen.has(item)) continue;
+    seen.add(item);
+    result.push(item);
+  }
+  return result;
 }
 
 // ---- Knowledge artifact (V2 P0-1) ----------------------------------------

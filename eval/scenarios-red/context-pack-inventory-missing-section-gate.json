@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "context-pack-inventory-missing-section-gate",
+  "title": "ContextPack red fixture requires section-local inventory gates",
+  "description": "Intentionally declares inventory manifest expectations without selectedSectionsInclude; the harness must fail this inventory-backed ContextPack fixture so handcrafted inventory tests cannot rely on global-only source-ref checks.",
+  "kind": "context_pack_fixture",
+  "input": {
+    "projectId": "proj_eval_context_inventory_missing_section_gate",
+    "title": "Update inventory-backed Orders API behavior",
+    "stage": "implementation",
+    "taskBrief": "Implement deleting orders in the Orders API and update order tests.",
+    "inputArtifacts": [
+      {
+        "name": "project-inventory.json",
+        "artifactId": "art_eval_context_inventory_missing_section_gate",
+        "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[{\"id\":\"entry_orders_delete\",\"kind\":\"http_route\",\"label\":\"DELETE /api/orders/:id\",\"path\":\"apps/api/src/orders-route.ts\",\"method\":\"DELETE\",\"route\":\"/api/orders/:id\",\"handler\":\"deleteOrder\",\"sourceRefs\":[\"file:apps/api/src/orders-route.ts#L12\"],\"confidence\":0.9}],\"symbols\":[{\"id\":\"sym_delete_order\",\"kind\":\"function\",\"name\":\"deleteOrder\",\"path\":\"apps/api/src/orders-route.ts\",\"exported\":true,\"line\":10,\"signature\":\"export function deleteOrder()\",\"sourceRefs\":[\"file:apps/api/src/orders-route.ts#L10\"]}],\"testSurfaces\":[{\"id\":\"test_orders\",\"path\":\"apps/api/test/orders-route.test.ts\",\"frameworkHint\":\"vitest\",\"targetHints\":[\"orders-route\",\"orders\"],\"sourceRefs\":[\"file:apps/api/test/orders-route.test.ts\"]}],\"hotspots\":[],\"capabilities\":[{\"id\":\"cap_api_orders\",\"label\":\"Orders API\",\"kind\":\"api\",\"entrypointRefs\":[\"entry_orders_delete\"],\"moduleRefs\":[],\"symbolRefs\":[\"sym_delete_order\"],\"testRefs\":[\"test_orders\"],\"hotspotRefs\":[],\"sourceRefs\":[\"file:apps/api/src/orders-route.ts#L12\"],\"confidence\":0.95,\"openQuestions\":[]}]}"
+      }
+    ]
+  },
+  "expectations": {
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_orders",
+      "inventory_symbols_orders_api",
+      "inventory_tests_orders_api"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_context_inventory_missing_section_gate",
+      "file:apps/api/src/orders-route.ts#L12",
+      "file:apps/api/test/orders-route.test.ts"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_orders": "summary"
+    },
+    "selectedCountMin": 4
+  }
+}

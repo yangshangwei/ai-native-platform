@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-fixturedir-max-files",
+  "title": "Legacy project understanding red fixture rejects fixtureDir maxFiles overflow",
+  "description": "Intentionally sets fixtureDir.maxFiles below the checked-in fixture file count; the harness must fail during fixtureDir validation before scanner-to-context generation runs.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_fixturedir_max_files_red",
+    "title": "Update legacy billing fixtureDir behavior",
+    "stage": "implementation",
+    "taskBrief": "Fix billing behavior in a directory-backed legacy fixture.",
+    "fixtureDir": {
+      "path": "../fixtures/legacy-fixturedir-billing",
+      "maxFiles": 1,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536,
+      "excludePaths": [
+        "tmp"
+      ]
+    }
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API"
+    ]
+  }
+}

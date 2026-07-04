@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "context-pack-section-local-source-ref-bad-expectation",
+  "title": "ContextPack red fixture rejects globally present but section-wrong source refs",
+  "description": "Intentionally expects a source ref from one selected section to appear on another selected section; the fixture must fail because selectedSectionsInclude checks section-local source refs.",
+  "kind": "context_pack_fixture",
+  "input": {
+    "projectId": "proj_eval_context_section_red",
+    "title": "Use alpha and beta context evidence",
+    "stage": "implementation",
+    "taskBrief": "Implement alpha section-local context behavior while checking beta evidence is separate.",
+    "knowledgeArtifacts": [
+      {
+        "id": "kart_section_alpha",
+        "kind": "architecture",
+        "entityId": "DSN-SECTION-ALPHA",
+        "status": "accepted",
+        "metadata": {
+          "title": "Alpha context evidence",
+          "text": "Alpha context evidence explains section-local source-ref checks.",
+          "knowledgeClass": "confirmed",
+          "trustLevel": "accepted_knowledge",
+          "freshness": "current",
+          "sourceRefs": ["doc:section-alpha"],
+          "confidence": 0.95
+        }
+      },
+      {
+        "id": "kart_section_beta",
+        "kind": "architecture",
+        "entityId": "DSN-SECTION-BETA",
+        "status": "accepted",
+        "metadata": {
+          "title": "Beta context evidence",
+          "text": "Beta context evidence is selected separately from alpha.",
+          "knowledgeClass": "confirmed",
+          "trustLevel": "accepted_knowledge",
+          "freshness": "current",
+          "sourceRefs": ["doc:section-beta"],
+          "confidence": 0.95
+        }
+      }
+    ]
+  },
+  "expectations": {
+    "manifestRefsInclude": [
+      "knowledge_kart_section_alpha",
+      "knowledge_kart_section_beta"
+    ],
+    "sourceRefsInclude": ["doc:section-beta"],
+    "selectedSectionsInclude": [
+      {
+        "ref": "knowledge_kart_section_alpha",
+        "sourceRefsInclude": ["doc:section-beta"]
+      }
+    ]
+  }
+}

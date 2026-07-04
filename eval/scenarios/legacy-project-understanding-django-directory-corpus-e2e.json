@@ -1,0 +1,239 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-django-directory-corpus-e2e",
+  "title": "Legacy project understanding scans a directory-backed old Django commerce corpus",
+  "description": "Runs the real scanner against a checked-in Django-style old commerce fixture with project URLConf includes, billing/orders/customers view/service/repository layers, SQL schema/routine evidence, tests, credential-like config, and generated/vendor/log noise filtered by fixtureDir.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_django_directory_corpus",
+    "title": "Update legacy Django billing refund audit",
+    "stage": "implementation",
+    "taskBrief": "Fix the legacy Django billing refund audit URLConf and rebuild_refund_audit_entry SQL routine, then update billing refund audit tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 36,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072
+    },
+    "fixtureDir": {
+      "path": "../fixtures/legacy-directory-backed-django-commerce",
+      "maxFiles": 28,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072,
+      "excludePaths": [
+        "tmp",
+        "vendor",
+        "logs"
+      ]
+    }
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Orders API",
+      "Customers API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /api/v3/billing/refunds/<int:refund_id>/audit/",
+      "ANY /api/v3/orders/fulfillment/<int:order_id>/reprice/",
+      "ANY /api/v3/customers/profiles/<int:customer_id>/risk/"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventorySymbolNamesInclude": [
+      "refund_audit",
+      "BillingRefundService",
+      "rebuild_refund_audit",
+      "BillingRefundRepository",
+      "write_refund_audit_entry",
+      "reprice_fulfillment",
+      "OrderFulfillmentService",
+      "profile_risk_review",
+      "CustomerProfileService"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 9,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventorySourceChunkCountMin": 16,
+    "inventoryExclusionsInclude": [
+      "config/credentials.yml:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_domain_entities_billing_api",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_orders",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_domain_entities_billing_api",
+      "inventory_source_chunk_src_chunk_project_urls",
+      "inventory_source_chunk_src_chunk_billing",
+      "inventory_source_chunk_src_chunk_db_billing",
+      "inventory_source_chunk_src_chunk_tests_billing"
+    ],
+    "irrelevantContextRatioMax": 0.16,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_django_commerce_billing_refund_audit",
+      "file:project/urls.py#L4",
+      "file:billing/urls.py#L5",
+      "file:billing/views.py#L1",
+      "file:billing/views.py#L3",
+      "file:billing/views.py#L4",
+      "file:billing/views.py#L5",
+      "file:billing/services.py#L1",
+      "file:billing/services.py#L3",
+      "file:billing/services.py#L4",
+      "file:billing/services.py#L5",
+      "file:billing/repositories.py#L1",
+      "file:billing/repositories.py#L2",
+      "file:billing/repositories.py#L3",
+      "file:db/billing/schema.sql#L1",
+      "file:db/billing/routines.sql#L1",
+      "file:tests/billing/test_refund_audit.py"
+    ],
+    "sourceRefsExclude": [
+      "file:project/urls.py#L5",
+      "file:project/urls.py#L6",
+      "file:orders/urls.py#L5",
+      "file:customers/urls.py#L5",
+      "file:orders/views.py#L3",
+      "file:customers/views.py#L3",
+      "file:db/orders/schema.sql#L1",
+      "file:db/customers/schema.sql#L1",
+      "file:tests/orders/test_fulfillment_reprice.py",
+      "file:tests/customers/test_profile_risk.py",
+      "file:vendor/generated_payment_client.py",
+      "file:tmp/cache/generated_urls.py",
+      "file:logs/development.log"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary",
+      "inventory_domain_entities_billing_api": "summary"
+    },
+    "selectedCountMin": 5,
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:project/urls.py#L4",
+          "file:billing/urls.py#L5",
+          "file:billing/views.py#L1",
+          "file:billing/views.py#L3",
+          "file:billing/views.py#L4",
+          "file:billing/views.py#L5",
+          "file:billing/services.py#L1",
+          "file:billing/services.py#L3",
+          "file:billing/repositories.py#L1",
+          "file:tests/billing/test_refund_audit.py"
+        ],
+        "sourceRefsExclude": [
+          "file:project/urls.py#L5",
+          "file:project/urls.py#L6",
+          "file:orders/urls.py#L5",
+          "file:customers/urls.py#L5",
+          "file:orders/views.py#L3",
+          "file:customers/views.py#L3",
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1",
+          "file:tests/orders/test_fulfillment_reprice.py",
+          "file:tests/customers/test_profile_risk.py",
+          "file:vendor/generated_payment_client.py",
+          "file:tmp/cache/generated_urls.py",
+          "file:logs/development.log"
+        ]
+      },
+      {
+        "ref": "inventory_domain_entities_billing_api",
+        "contentIncludes": [
+          "Matched Domain Entities",
+          "routine | rebuild_refund_audit_entry | db/billing/routines.sql",
+          "table | refund_audit_entries | db/billing/schema.sql",
+          "refs=file:billing/repositories.py#L3"
+        ],
+        "contentExcludes": [
+          "order_fulfillment_backlog",
+          "customer_profile_snapshots"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/schema.sql#L1",
+          "file:billing/repositories.py#L3"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:project/urls.py#L4",
+          "file:billing/urls.py#L5",
+          "file:billing/views.py#L1",
+          "file:billing/views.py#L3",
+          "file:billing/views.py#L4",
+          "file:billing/services.py#L1",
+          "file:billing/services.py#L3",
+          "file:billing/services.py#L4",
+          "file:billing/repositories.py#L1",
+          "file:billing/repositories.py#L2"
+        ],
+        "sourceRefsExclude": [
+          "file:project/urls.py#L5",
+          "file:project/urls.py#L6",
+          "file:orders/urls.py#L5",
+          "file:customers/urls.py#L5",
+          "file:orders/views.py#L3",
+          "file:customers/views.py#L3",
+          "file:tests/orders/test_fulfillment_reprice.py",
+          "file:tests/customers/test_profile_risk.py"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/billing/test_refund_audit.py"
+        ],
+        "sourceRefsExclude": [
+          "file:tests/orders/test_fulfillment_reprice.py",
+          "file:tests/customers/test_profile_risk.py"
+        ]
+      }
+    ],
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.65,
+      "routeHandlerEdgeConfidenceMin": 0.78,
+      "sourceChunkContentSha256CoverageMin": 1,
+      "sourceChunkIndexCoverageMin": 1,
+      "sourceChunkLinkedRecordCoverageMin": 1,
+      "sourceFileExtensionCountMin": 3,
+      "sourcePathPatternCountMin": 5,
+      "sourceRecordKindCountMin": 7
+    }
+  },
+  "variants": [
+    {
+      "id": "django-commerce-billing-refund-audit",
+      "label": "Legacy Django commerce task stays focused on billing refund URLConf, SQL routine, and tests"
+    }
+  ]
+}

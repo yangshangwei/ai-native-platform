@@ -98,10 +98,170 @@
   knowledge class, trust level, freshness, score, source refs, and degradation
   metadata.
 - Phase 3 scoring must be pure and deterministic. Scores are derived from stage fit, source type, knowledge class, trust level, recency, keyword overlap, confidence, and required-item status; ties must have stable deterministic ordering.
+- `ContextSourceType='code_probe'` represents deterministic source-derived
+  code evidence selected from scans, inventory, or similar non-LLM probes. It
+  maps to manifest type `code_probe` and must carry source refs to both the
+  probe artifact and the underlying code/test evidence where available.
+- Current-run `project-inventory.json` input artifacts may be parsed into
+  task-time `code_probe` candidates. The builder should select capability,
+  symbol, test-surface, and hotspot evidence based on meaningful task tokens,
+  while filtering generic terms such as `api`, `test`, and `task` so unrelated
+  capabilities are not injected through framework vocabulary alone.
+- Capability matching should drop weaker capability matches whose matched task
+  tokens are fully covered by the strongest capability match, unless the weaker
+  match is selected by explicit source refs. This keeps incidental matches such
+  as package `start` scripts that point at the same route file from joining a
+  more specific API task context.
+- When a matched inventory capability contains multiple entrypoints, ContextPack
+  should narrow the rendered capability evidence to the task-focused entrypoint
+  and symbolGraph-reachable handler/service/repository chain where that graph
+  evidence exists. It should not inject same-domain sibling routes or methods
+  solely because they share the selected capability label.
+- When graph-reachable symbols exist for that selected entrypoint, they are the
+  authority for the capability's focused symbol set. Do not merge sibling
+  symbols back into the section merely because their names share broad task
+  tokens with the capability label.
+- Current-run inventory retrieval may add a deterministic BM25-style lexical
+  fallback over entrypoints, symbols, test surfaces, hotspots, and symbol graph
+  edges when capability matching alone would miss relevant evidence. The
+  fallback is an evidence supplement, not a source of truth: selected sections
+  still use `sourceType='code_probe'`, carry inventory/source-file refs, and
+  must not inject raw `project-inventory.json` as a normal input artifact.
+- Project inventory may include bounded `sourceChunks` derived only from files
+  that passed scanner filtering. Source chunks are source snippets, not raw
+  full-file context: ContextPack may select them only as supplemental
+  `sourceType='code_probe'` sections when task terms match the snippet or when
+  selected hybrid inventory evidence points to the chunk.
+- Inventory `sourceChunks` should carry a line-label-free `contentSha256`
+  alongside the legacy snippet `sha256`, so future cross-run source retrieval
+  and drift comparison can anchor on bounded source content even when line
+  numbers move. When a source chunk is selected into ContextPack content, the
+  probe may render this value as a `Content SHA-256` audit line; it must not be
+  used as search text or as a replacement for source refs.
+- Project inventory may include a bounded `sourceChunkIndex` manifest with
+  `schemaVersion='ainp.source_chunk_index.v1'`. Entries are metadata-only and
+  keyed by `contentSha256`, chunk path/window, optional language, source refs,
+  and linked inventory record refs (`entrypointRefs`, `symbolRefs`,
+  `graphEdgeRefs`, `testRefs`, `hotspotRefs`, `capabilityRefs`) plus bounded deterministic
+  lexical metadata (`lexicalTokens`, compact token-only `searchText`, and
+  combined `linkedRecordRefs`). Current-run and historical inventory consumers
+  may merge refs back onto matching `sourceChunks` before ContextPack
+  selection. Index entries without a paired bounded `sourceChunks` payload
+  must not render snippets or become authoritative context on their own.
+- Valid standalone `ainp.source_chunk_index.v1` artifacts are also copied into
+  the API `source_chunk_index_entries` catalog as metadata rows. The catalog
+  exists for durable discovery and hybrid lookup by project, artifact, content
+  hash, path/window, lexical/search text, optional bounded embedding metadata,
+  and linked/source refs; it must not be treated as a replacement for bounded
+  source chunks and source refs.
+- Source chunk index embedding metadata is a ranking signal only. Runner index
+  generation and task-time catalog `q` query vectors must share the same
+  embedding-provider abstraction, default to a local deterministic provider
+  with no network or dependency, use injected provider vectors only when valid
+  and compatible, and fall back to local deterministic vectors on invalid data
+  or provider failure. Embedding providers may receive only bounded lexical or
+  search text, never raw snippets, raw inventory JSON, or standalone source
+  index JSON. Catalog vector queries must carry the query embedding model when
+  known so vector scoring only uses rows from the same model and dimension;
+  lexical matches may still rank without vector credit. Exact linked-record
+  catalog fallback remains ref-only and must not send `q`, `queryEmbedding`, or
+  `queryEmbeddingModel`.
+- A task brief may contain an explicit 64-character `contentSha256` value from
+  prior source chunk evidence. ContextPack may use that exact hash as a source
+  chunk retrieval hint against current-run inventory and accepted historical
+  project inventory knowledge artifacts, and render a `Matched Content
+  SHA-256` audit line. The selected section must still be
+  `sourceType='code_probe'` with inventory artifact refs and underlying
+  source-file refs. The hash must not be emitted as a source ref or used as a
+  broad lexical search token.
+- When the same explicit `contentSha256` hint matches both a current-run
+  inventory source chunk and an accepted historical inventory source chunk,
+  ContextPack must prefer the current-run chunk and suppress the historical
+  duplicate for that hash. Historical inventory remains a fallback when no
+  current inventory chunk matches the hash.
+- When a current-run `project-inventory.json` and an accepted historical
+  project inventory knowledge artifact contain the same source chunk identity
+  but different valid `contentSha256` values, the builder must emit a bounded
+  `stale` review signal with both current and historical inventory/source refs.
+  Accepted standalone `ainp.source_chunk_index.v1` artifacts follow the same
+  drift-signal path as metadata fingerprints only; they must not render
+  snippets or become authoritative context without a paired bounded source
+  chunk.
+  Source chunk identity may be established by exact chunk id, exact
+  path/start/end window, or the same chunk path plus explicit linked inventory
+  refs such as `symbolRefs`, `graphEdgeRefs`, `entrypointRefs`, `testRefs`,
+  `hotspotRefs`, or `capabilityRefs`; it must not fall back to same-file
+  matching alone. This is drift evidence for human review only; it must not
+  overwrite the historical artifact, invent a replacement chunk, or treat the
+  hash as a source ref substitute.
+- Inventory records that are linked from source chunks should receive reverse
+  `sourceChunkRefs` where possible. This lets entrypoints, symbols, graph
+  edges, tests, hotspots, and capabilities navigate directly to bounded source
+  chunks without requiring consumers to infer links from path/line overlap.
+- Source chunk selection must preserve the capability map and symbol graph as
+  primary authority. Capability-map matches remain priority-1 evidence; source
+  chunks are bounded priority-2 support with source refs to the inventory
+  artifact and underlying source file lines. Unrelated or sensitive chunks must
+  be excluded, and chunks must not render as `knowledge_*` or `input_*`
+  sections.
+- Source chunks selected through focused inventory or graph pointers should
+  cite and render the pointed source lines before falling back to broad lexical
+  matched lines. This keeps a task like reconciliation from injecting adjacent
+  audit routes in the same file merely because both lines contain shared domain
+  words such as billing or invoice.
+- Source chunk graph-pointer matching must prefer explicit inventory refs
+  (`sourceChunkRefs`, `entrypointRefs`, `symbolRefs`, `graphEdgeRefs`, etc.)
+  and may use source-ref overlap only when the overlapping file refs belong to
+  the chunk's own path. Shared cross-file configuration refs such as a JAX-RS
+  `@ApplicationPath` line must not make a billing graph edge point to sibling
+  customer/report source chunks.
+- Source chunk graph-pointer rendering must deduplicate repeated pointing
+  records by inventory id and list the real pointing inventory record when
+  available. A hybrid match that reaches the same graph edge through multiple
+  paths should render one edge with its label, not repeated edge ids.
+- Historical project inventories may be supplied through project-scoped
+  `KnowledgeArtifact` rows when their metadata identifies
+  `role='project_inventory'`, `output='project-inventory.json'`, or embeds
+  `schemaVersion='ainp.project_inventory.v1'` JSON under
+  `projectInventory`, `inventory`, `projectInventoryJson`, `inventoryJson`,
+  `content`, or `text`. These artifacts are parsed through the same
+  capability/BM25 inventory path as current-run inputs, selected as
+  `sourceType='code_probe'`, and must be excluded from normal
+  `knowledge_*` section rendering so raw inventory JSON is never injected as
+  authoritative prose.
+- Accepted project-scoped capability-map corrections may influence inventory
+  selection only after governance has accepted them and their metadata has no
+  review-required status. Recognized corrections carry
+  `correctionKind='project_capability_map'` and a concrete `capabilityId`.
+  Rename/merge corrections may extend capability matching and annotate the
+  selected `code_probe`; mark-wrong corrections suppress the heuristic
+  capability section while preserving inventory/source refs and allowing
+  source-level hybrid retrieval. Draft or `needs_review` corrections must not
+  affect inventory selection.
+- When a current-run `project-inventory.json` is available and an accepted,
+  non-review-required capability-map correction points to a `capabilityId` that
+  no longer exists in the current inventory, the builder must emit a bounded
+  `stale` review signal instead of silently dropping the correction. This is a
+  drift signal only; it must not invent a replacement capability or apply the
+  correction to unrelated inventory records.
+- If that missing-id correction is a rename or merge and exactly one current
+  inventory capability display label exactly matches the correction's
+  normalized corrected label or merge target, the builder may emit a bounded
+  `superseded` review signal for scan convergence. If more than one current
+  capability display label matches that governed label, the builder must emit
+  a `conflict` review signal citing all matching current capability ids/source
+  refs instead of selecting the first match. In both cases, selected current
+  capability sections must not inherit the old correction artifact, source
+  refs, or review text.
 - Phase 3 dedupe must keep the highest-scoring duplicate by normalized content/source refs before budget decisions are applied.
 - Phase 3 budget decisions must record `mode`, `degradedFrom`, and `degradationReason` on selected sections and manifest items when context is degraded to a summary or retrieval hint.
 - Phase 5 calibration signals must be deterministic and bounded. They may flag stale/conflicted/superseded/upgrade/downgrade conditions, but must record workflow actions / report sidecars only; they must not directly overwrite confirmed knowledge.
 - Completion Report and Knowledge Candidate output must be assembled from persisted run evidence (artifacts, command runs, gate runs, context-request actions, approvals, and calibration/review signals), not fixed canned suggestions.
+- Completion Report stage timelines must derive their stage list from
+  `FLOW_REGISTRY[run.flowId].stages`. They must not hardcode the
+  `feature.standard` stages, because profile/issue/refactor runs need their
+  own dispatched stages (`inventory`/`profile`, `report`/`analyze`,
+  `scan`/`plan`) to remain visible in the audit handoff.
 - Router/context planning must ignore accepted knowledge whose metadata marks it as stale, conflicted, review-required, downgraded, superseded, or historical.
 - `freshness='possibly_stale'` memory may be selected for context, but only as
   summary/retrieval evidence. It must not be injected as `mode='full'`
@@ -115,6 +275,10 @@
   "why the agent knew this". It must be assembled from persisted artifacts,
   workflow actions, agent task prompt audits, gates, approvals, and agent
   results; it must not invent missing context or call an LLM.
+- When persisted ContextPack metadata contains calibration/review signals, the
+  context governance read model should expose those signals on the owning
+  context pack so UI and reports can audit drift without applying any
+  correction automatically.
 - P4 stage handoff records use existing `HandoffRecord.metadata.stageHandoff`
   plus an optional per-run `other` artifact for human-readable Markdown. The
   handoff is evidence/navigation only: it must not set workflow status, gate
@@ -145,6 +309,11 @@
   - `trustLevel: 'accepted_knowledge'`
   - `freshness: 'possibly_stale'`
   - `sourceRefs` including `knowledge:accepted`
+- Draft knowledge artifacts, including profile-derived candidates before
+  Knowledge Gate acceptance, must not be elevated to authoritative context even
+  if their metadata claims `knowledgeClass='confirmed'` or
+  `trustLevel='accepted_knowledge'`. They may appear only as recovered summary
+  evidence until promoted.
 - Knowledge metadata defaults are status-derived. If a row moves from
   `draft` to `accepted`, fields that still match the old default must be
   re-defaulted to accepted/confirmed values; explicit overrides such as
@@ -183,6 +352,9 @@
   ContextPack -> contract violation; keep it as summary/retrieval evidence and
   surface review signals/report sidecars instead.
 - Phase 5 implementation -> must not add Phase 6 UI dashboards, manifest browsing endpoints, metrics collection, or context policy controls.
+- Completion Report for a non-feature flow omits dispatched stages from the
+  stage timeline -> contract violation; fix the report assembly to read
+  `FLOW_REGISTRY` and add a run-type-specific report-sidecar regression test.
 - Phase 6 read endpoint receives a missing workflow run id -> HTTP 404; it must
   not fall back to another run or project.
 - Sensitive artifact names such as `.env*`, `.ssh/*`, private key files, and
@@ -212,6 +384,9 @@
 - Good: an implementation backend first emits `context_request`, then succeeds after the supplement retry; the base and retry AgentSessions are linked by `parentSessionId`, and the retry context pack has `supplement.retryIndex = 1`.
 - Good: confirmed/current memory without negative review status is selected as
   full context when relevant.
+- Good: a `profile.bootstrap` Completion Report timeline includes
+  `inventory -> profile -> completion -> knowledge` and its artifacts section
+  cites `project-inventory.json` plus `project-profile.json`.
 - Good: possibly-stale or conflict-marked memory is selected only as summary or
   retrieval evidence and carries manifest reasons/source refs explaining why.
 - Base: tests that construct a backend context without `contextPack` still run, and the renderer simply omits the Context Injection Layer.
@@ -222,6 +397,8 @@
 - Bad: required artifacts are silently dropped under budget pressure without a
   reference and audit warning.
 - Bad: repeated context_request output recursively retries until timeout.
+- Bad: Completion Report code uses a static array of feature stages; that
+  hides evidence for short or read-only flows.
 - Bad: implementing context request retries, calibration conflict closure, or UI manifest endpoints as part of Phase 3; those belong to later phases.
 
 ### 6. Tests Required
@@ -244,6 +421,46 @@
   artifact ids, and restore helper behavior.
 - Backend tests cover both Claude Code and Codex receiving the same shared ContextPack rendering.
 - Retriever tests cover deterministic scoring components, stable dedupe, and budget degradation through `full` → `summary` → `retrieval_hint`.
+- Builder tests cover task-time `project-inventory.json` selection into
+  `code_probe` capability/symbol/test/hotspot sections, including generic-token
+  filtering and covered weak capability-match suppression.
+- Builder tests cover BM25-style hybrid inventory retrieval for relevant
+  symbol/test/hotspot evidence when no capability directly matches, including
+  source refs and raw-inventory omission.
+- Builder tests cover inventory `sourceChunks` selected as bounded
+  source-ref-backed `code_probe` sections by snippet-term match and hybrid
+  evidence pointers, while excluding unrelated/sensitive chunks and preserving
+  raw-inventory omission.
+- Builder tests cover `sourceChunkIndex` metadata being consumed from current
+  or historical inventory JSON to recover missing chunk link refs before
+  source chunk selection, while keeping index-only metadata out of rendered
+  snippets and normal `knowledge_*` context.
+- Builder tests and default eval coverage must cover explicit
+  `contentSha256` task hints selecting only the matching bounded source chunk
+  from both current-run inventory and accepted historical inventory knowledge,
+  rendering `Matched Content SHA-256`, and keeping source refs grounded in the
+  inventory artifact plus source-file lines instead of the hash value.
+  Coverage must also prove current-run hash matches suppress historical
+  duplicate chunks while preserving historical fallback when no current match
+  exists.
+- Builder tests cover historical project inventory knowledge artifacts being
+  selected as `code_probe` sections, including `knowledge_artifact:*` /
+  original inventory source refs and raw-JSON omission from normal knowledge
+  sections.
+- Builder tests and default eval coverage must cover historical project
+  inventory source chunk hash drift: current inventory and accepted historical
+  inventory with the same source chunk identity, including linked-record
+  identities that survive shifted line windows, but different `contentSha256`
+  values emit a structured `stale` calibration signal with current artifact,
+  historical artifact, knowledge artifact, and source line evidence refs.
+  The same coverage must include accepted standalone `ainp.source_chunk_index.v1`
+  artifacts as metadata-only drift fingerprints that never render raw index
+  JSON or snippets by themselves.
+- Builder tests cover accepted/non-review-required capability-map corrections
+  feeding later inventory-driven `code_probe` selection, including rename
+  matching/annotation and mark-wrong heuristic suppression with source-backed
+  hybrid evidence preserved. They must also cover draft/review-required
+  corrections being ignored for inventory matching and suppression.
 - Builder tests cover minimal invocation packs for `feature.fastforward`, `issue.standard`, and `refactor.standard` flows that skip an explicit `context_pack` stage.
 - Renderer/audit tests cover source refs and degradation fields appearing in prompt-visible context and persisted audit metadata.
 - Calibration tests cover bounded deterministic review signals and code-fact-vs-confirmed-knowledge conflict signals.
@@ -252,6 +469,9 @@
   conflict-marked evidence-only selection, cross-project exclusion, and selected
   knowledge usage metadata updates.
 - API/report tests cover context request chains and knowledge review signals in Completion Report / Knowledge Candidate JSON sidecars.
+- API/report tests cover flow-aware Completion Report timelines for at least
+  one non-feature flow, including profile inventory/profile stages and
+  artifact evidence.
 - Runner invokeSkill tests cover same-step context_request retry success, retry-limit failure, and sensitive-only context_request no-retry behavior.
 - Runner invokeSkill tests cover base ContextPack artifact persistence,
   AgentSession context artifact metadata, and reuse of the supplement artifact

@@ -1,6 +1,7 @@
 import type {
   CoordinatorDecision,
   FlowDef,
+  ProjectAgentBackendKind,
   RequestMessage,
   WorkflowRequest,
   WorkflowRunType,
@@ -14,11 +15,11 @@ import { getConfig } from '../config-client';
 
 type PendingRequest = Pick<
   WorkflowRequest,
-  'id' | 'projectId' | 'title' | 'branch' | 'flowId' | 'startStage' | 'kind'
+  'id' | 'projectId' | 'title' | 'branch' | 'agentBackend' | 'flowId' | 'startStage' | 'kind'
 >;
 type ClaimedRequest = Pick<
   WorkflowRequest,
-  'id' | 'projectId' | 'title' | 'branch' | 'flowId' | 'startStage' | 'kind'
+  'id' | 'projectId' | 'title' | 'branch' | 'agentBackend' | 'flowId' | 'startStage' | 'kind'
 >;
 
 export type TriageOutcome =
@@ -160,10 +161,10 @@ export async function defaultTriage(req: PendingRequest): Promise<TriageOutcome>
     ? (messages.filter((m) => m.role === 'user').at(-1)?.content ?? req.title)
     : req.title;
 
-  let preferredBackend: LlmBackendKind | undefined;
+  let preferredBackend: LlmBackendKind | undefined = requestBackendPreference(req.agentBackend);
   try {
     const project = await api.getProject(req.projectId);
-    if (project.agentBackend === 'claude_code' || project.agentBackend === 'codex') {
+    if (!preferredBackend && (project.agentBackend === 'claude_code' || project.agentBackend === 'codex')) {
       preferredBackend = project.agentBackend;
     }
   } catch {
@@ -212,6 +213,12 @@ export async function defaultTriage(req: PendingRequest): Promise<TriageOutcome>
   return { action: 'aborted', decision };
 }
 
+function requestBackendPreference(
+  backend: ProjectAgentBackendKind | null | undefined,
+): LlmBackendKind | undefined {
+  return backend === 'claude_code' || backend === 'codex' ? backend : undefined;
+}
+
 export async function cmdWatch(opts: WatchOpts = {}): Promise<void> {
   const { runnerId } = await sendHeartbeat();
   const pollMs = opts.pollMs ?? (await getConfig('runner.watch.poll_ms'));
@@ -232,6 +239,7 @@ export async function cmdWatch(opts: WatchOpts = {}): Promise<void> {
           sourceBranch: request.branch,
           workflowRequestId: request.id,
           runType,
+          agentBackend: request.agentBackend,
           flowId: request.flowId ?? undefined,
           startStage: request.startStage ?? undefined,
           cleanup: !opts.keepWorktree,

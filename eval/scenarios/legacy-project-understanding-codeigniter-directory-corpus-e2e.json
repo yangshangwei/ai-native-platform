@@ -1,0 +1,320 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-codeigniter-directory-corpus-e2e",
+  "title": "Legacy project understanding scans a directory-backed old CodeIgniter commerce corpus",
+  "description": "Runs the real scanner against a checked-in CodeIgniter old commerce fixture with static routes, billing/orders/customers controller/service/repository layers, SQL schema/routine evidence, tests, credential-like config, and generated/vendor/tmp/log/cache noise filtered by fixtureDir.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_codeigniter_directory_corpus",
+    "title": "Update legacy CodeIgniter billing refund audit",
+    "stage": "implementation",
+    "taskBrief": "Fix the legacy CodeIgniter billing refund audit route, rebuild_codeigniter_refund_audit SQL routine, codeigniter_refund_audit_entries table, and tests/billing/RefundAuditCodeIgniterTest.php.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 42,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072
+    },
+    "fixtureDir": {
+      "path": "../fixtures/legacy-directory-backed-codeigniter-commerce",
+      "maxFiles": 23,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072,
+      "excludePaths": [
+        "application/cache",
+        "tmp",
+        "vendor",
+        "logs"
+      ]
+    }
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Orders API",
+      "Customers API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API",
+      "Php API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /billing/refunds/audit",
+      "ANY /orders/fulfillment/reprice",
+      "ANY /customers/profile/risk"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventorySymbolNamesInclude": [
+      "Billing",
+      "auditRefund",
+      "BillingRefundService",
+      "rebuildCodeIgniterRefundAudit",
+      "BillingRefundRepository",
+      "writeCodeIgniterRefundAuditEntry",
+      "Orders",
+      "OrderFulfillmentService",
+      "Customers",
+      "CustomerProfileService"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 9,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventorySourceChunkCountMin": 16,
+    "inventoryExclusionsInclude": [
+      "config/credentials.php:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_domain_entities_billing_api",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_orders",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_domain_entities_billing_api",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_application_config_routes",
+      "inventory_source_chunk_src_chunk_application_controllers_billing",
+      "inventory_source_chunk_src_chunk_application_services_billing",
+      "inventory_source_chunk_src_chunk_application_repositories_billing",
+      "inventory_source_chunk_src_chunk_db_billing",
+      "inventory_source_chunk_src_chunk_tests_billing"
+    ],
+    "irrelevantContextRatioMax": 0.16,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_codeigniter_commerce_billing_refund_audit",
+      "file:application/config/routes.php#L3",
+      "file:application/controllers/Billing.php#L2",
+      "file:application/controllers/Billing.php#L4",
+      "file:application/controllers/Billing.php#L5",
+      "file:application/controllers/Billing.php#L6",
+      "file:application/services/BillingRefundService.php#L2",
+      "file:application/services/BillingRefundService.php#L4",
+      "file:application/services/BillingRefundService.php#L5",
+      "file:application/services/BillingRefundService.php#L6",
+      "file:application/repositories/BillingRefundRepository.php#L2",
+      "file:application/repositories/BillingRefundRepository.php#L4",
+      "file:application/repositories/BillingRefundRepository.php#L5",
+      "file:db/billing/schema.sql#L1",
+      "file:db/billing/routines.sql#L1",
+      "file:tests/billing/RefundAuditCodeIgniterTest.php"
+    ],
+    "sourceRefsExclude": [
+      "file:application/config/routes.php#L4",
+      "file:application/config/routes.php#L5",
+      "file:application/controllers/Orders.php#L2",
+      "file:application/controllers/Customers.php#L2",
+      "file:db/orders/schema.sql#L1",
+      "file:db/customers/schema.sql#L1",
+      "file:tests/orders/FulfillmentRepriceCodeIgniterTest.php",
+      "file:tests/customers/ProfileRiskCodeIgniterTest.php",
+      "file:vendor/generated_gateway_client.php",
+      "file:tmp/cache/routes.php",
+      "file:application/cache/generated_routes.php",
+      "file:logs/application.log"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary",
+      "inventory_domain_entities_billing_api": "summary"
+    },
+    "selectedCountMin": 5,
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "contentIncludes": [
+          "ANY /billing/refunds/audit"
+        ],
+        "contentExcludes": [
+          "ANY /orders/fulfillment/reprice",
+          "ANY /customers/profile/risk"
+        ],
+        "sourceRefsInclude": [
+          "file:application/config/routes.php#L3",
+          "file:application/controllers/Billing.php#L2",
+          "file:application/controllers/Billing.php#L4",
+          "file:application/controllers/Billing.php#L5",
+          "file:application/controllers/Billing.php#L6",
+          "file:application/services/BillingRefundService.php#L2",
+          "file:application/services/BillingRefundService.php#L4",
+          "file:application/repositories/BillingRefundRepository.php#L2",
+          "file:tests/billing/RefundAuditCodeIgniterTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:application/config/routes.php#L4",
+          "file:application/config/routes.php#L5",
+          "file:application/controllers/Orders.php#L2",
+          "file:application/controllers/Customers.php#L2",
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1",
+          "file:tests/orders/FulfillmentRepriceCodeIgniterTest.php",
+          "file:tests/customers/ProfileRiskCodeIgniterTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_domain_entities_billing_api",
+        "contentIncludes": [
+          "Matched Domain Entities",
+          "routine | rebuild_codeigniter_refund_audit | db/billing/routines.sql",
+          "table | codeigniter_refund_audit_entries | db/billing/schema.sql",
+          "refs=file:application/repositories/BillingRefundRepository.php#L5"
+        ],
+        "contentExcludes": [
+          "codeigniter_order_fulfillment_backlog",
+          "codeigniter_customer_profile_snapshots"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/schema.sql#L1",
+          "file:application/repositories/BillingRefundRepository.php#L5"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:application/config/routes.php#L3",
+          "file:application/controllers/Billing.php#L2",
+          "file:application/controllers/Billing.php#L4",
+          "file:application/controllers/Billing.php#L5",
+          "file:application/controllers/Billing.php#L6",
+          "file:application/services/BillingRefundService.php#L2",
+          "file:application/services/BillingRefundService.php#L4",
+          "file:application/services/BillingRefundService.php#L5",
+          "file:application/services/BillingRefundService.php#L6",
+          "file:application/repositories/BillingRefundRepository.php#L2",
+          "file:application/repositories/BillingRefundRepository.php#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:application/config/routes.php#L4",
+          "file:application/config/routes.php#L5",
+          "file:application/controllers/Orders.php#L2",
+          "file:application/controllers/Customers.php#L2",
+          "file:tests/orders/FulfillmentRepriceCodeIgniterTest.php",
+          "file:tests/customers/ProfileRiskCodeIgniterTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/billing/RefundAuditCodeIgniterTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:tests/orders/FulfillmentRepriceCodeIgniterTest.php",
+          "file:tests/customers/ProfileRiskCodeIgniterTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_application_controllers_billing_php_1_9",
+        "contentIncludes": [
+          "Source chunk: application/controllers/Billing.php:1-9",
+          "Pointed by inventory evidence"
+        ],
+        "sourceRefsInclude": [
+          "file:application/config/routes.php#L3",
+          "file:application/controllers/Billing.php#L2",
+          "file:application/controllers/Billing.php#L4",
+          "file:application/controllers/Billing.php#L5",
+          "file:application/controllers/Billing.php#L6"
+        ],
+        "sourceRefsExclude": [
+          "file:application/config/routes.php#L4",
+          "file:application/config/routes.php#L5",
+          "file:application/controllers/Orders.php#L2",
+          "file:application/controllers/Customers.php#L2"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_application_services_billingrefundservice_php_1_9",
+        "contentIncludes": [
+          "Source chunk: application/services/BillingRefundService.php:1-9",
+          "calls_billingrefundservice_rebuildcodeigniterrefundaudit"
+        ],
+        "sourceRefsInclude": [
+          "file:application/services/BillingRefundService.php#L2",
+          "file:application/services/BillingRefundService.php#L4",
+          "file:application/services/BillingRefundService.php#L5",
+          "file:application/services/BillingRefundService.php#L6",
+          "file:application/repositories/BillingRefundRepository.php#L2",
+          "file:application/repositories/BillingRefundRepository.php#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:application/services/OrderFulfillmentService.php#L2",
+          "file:application/services/CustomerProfileService.php#L2",
+          "file:application/repositories/OrderFulfillmentRepository.php#L2",
+          "file:application/repositories/CustomerProfileRepository.php#L2"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_application_repositories_billingrefundrepository_php_1_9",
+        "contentIncludes": [
+          "Source chunk: application/repositories/BillingRefundRepository.php:1-9",
+          "codeigniter_refund_audit_entries"
+        ],
+        "sourceRefsInclude": [
+          "file:application/repositories/BillingRefundRepository.php#L2",
+          "file:application/repositories/BillingRefundRepository.php#L4",
+          "file:application/repositories/BillingRefundRepository.php#L5",
+          "file:db/billing/schema.sql#L1",
+          "file:db/billing/routines.sql#L3"
+        ],
+        "sourceRefsExclude": [
+          "file:application/repositories/OrderFulfillmentRepository.php#L2",
+          "file:application/repositories/CustomerProfileRepository.php#L2",
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_db_billing_routines_sql_1_8",
+        "contentIncludes": [
+          "Source chunk: db/billing/routines.sql:1-8",
+          "rebuild_codeigniter_refund_audit"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/routines.sql#L3",
+          "file:db/billing/routines.sql#L5",
+          "file:db/billing/schema.sql#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      }
+    ],
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.65,
+      "routeHandlerEdgeConfidenceMin": 0.78,
+      "sourceChunkContentSha256CoverageMin": 1,
+      "sourceChunkIndexCoverageMin": 1,
+      "sourceChunkLinkedRecordCoverageMin": 0.75,
+      "sourceFileExtensionCountMin": 3,
+      "sourcePathPatternCountMin": 5,
+      "sourceRecordKindCountMin": 7
+    }
+  },
+  "variants": [
+    {
+      "id": "codeigniter-commerce-billing-refund-audit",
+      "label": "Legacy CodeIgniter commerce task stays focused on billing refund route, SQL routine, and tests"
+    }
+  ]
+}

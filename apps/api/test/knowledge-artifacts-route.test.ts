@@ -81,6 +81,57 @@ test('POST accepts a lesson with valid subtype', async () => {
   expect((json.artifact.metadata as Record<string, unknown>).severity).toBe('high');
 });
 
+test('POST stores draft capability-map corrections as governed knowledge candidates', async () => {
+  const res = await postKnowledge({
+    kind: 'explore',
+    uri: 'mem://project-capability/proj-test-knowledge/cap-orders-accepted.md',
+    size: 256,
+    contentType: 'text/markdown',
+    status: 'draft',
+    subtype: 'module_overview',
+    entityId: 'CAP-ORDERS',
+    metadata: {
+      title: 'Capability correction: Orders API',
+      text: '# Capability Correction: Orders API',
+      knowledgeClass: 'recovered',
+      trustLevel: 'summary',
+      freshness: 'current',
+      confidence: 0.75,
+      memoryKind: 'semantic',
+      memoryScope: 'project',
+      memoryStatus: 'candidate',
+      reviewStatus: 'needs_review',
+      correctionKind: 'project_capability_map',
+      correctionAction: 'accepted',
+      capabilityId: 'cap_api_orders',
+      originalLabel: 'Orders API',
+      inventoryArtifactId: 'art_inventory',
+      sourceRefs: [
+        'artifact:art_inventory',
+        'capability:cap_api_orders',
+        'file:apps/api/src/orders-route.ts#L12',
+      ],
+    },
+  });
+
+  expect(res.status).toBe(201);
+  const json = (await res.json()) as { artifact: { id: string; status: string; metadata: Record<string, unknown> } };
+  expect(json.artifact.status).toBe('draft');
+  expect(json.artifact.metadata).toMatchObject({
+    correctionKind: 'project_capability_map',
+    correctionAction: 'accepted',
+    capabilityId: 'cap_api_orders',
+    knowledgeClass: 'recovered',
+    trustLevel: 'summary',
+    reviewStatus: 'needs_review',
+  });
+  expect(json.artifact.metadata.sourceRefs).toEqual(expect.arrayContaining([
+    'artifact:art_inventory',
+    'capability:cap_api_orders',
+  ]));
+  expect(store.knowledgeArtifacts.get(json.artifact.id)?.metadata.correctionKind).toBe('project_capability_map');
+});
+
 test('GET normalizes lifecycle metadata defaults for legacy rows', async () => {
   store.knowledgeArtifacts.insert({
     id: 'kart-legacy-lifecycle',

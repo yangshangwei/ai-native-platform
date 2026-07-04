@@ -16,7 +16,11 @@
 
 ### 3. Contracts
 
-- Backend selection source is `project.agentBackend`; do not add per-run overrides in MVP.
+- Backend selection source is `workflowRequest.agentBackend ?? project.agentBackend`
+  for watch-mode workflow requests. Direct CLI orchestration without a request
+  continues to use `project.agentBackend`.
+- Request-level overrides are one-off execution choices; they must not mutate
+  the project default backend.
 - `AINP_AGENT_BACKEND` must not control production orchestration.
 - Preflight is backend-specific:
   - `claude_code` checks local process/auth only: `claude --version` plus `claude auth status` JSON with `loggedIn === true`. It must not spend or hang on a model prompt just to check connection.

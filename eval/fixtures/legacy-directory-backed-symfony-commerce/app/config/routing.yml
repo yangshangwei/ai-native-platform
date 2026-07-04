@@ -1,0 +1,11 @@
+billing_settlement_reconcile:
+  path: /billing/settlements/reconcile
+  defaults: { _controller: AcmeBillingBundle:Settlement:reconcile }
+orders_backlog_reprice:
+  path: /orders/backlog/reprice
+  defaults: { _controller: AcmeOrderBundle:Backlog:reprice }
+customer_risk_review:
+  path: /customers/risk-review
+  defaults: { _controller: AcmeCustomerBundle:Risk:review }
+legacy_imported_routes:
+  resource: "@AcmeLegacyBundle/Resources/config/routing.yml"

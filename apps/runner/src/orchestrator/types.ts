@@ -4,6 +4,7 @@ import type {
   FlowId,
   KnowledgeArtifact,
   Project,
+  ProjectAgentBackendKind,
   WorkflowRun,
   WorkflowRunType,
   WorkflowStage,
@@ -11,6 +12,21 @@ import type {
 } from '@ainp/shared';
 import type { AgentBackend } from '../agents/types';
 import type { ProjectProfileResult } from '../profile';
+
+export interface HistoricalProjectInventoryInput {
+  name: 'project-inventory.json';
+  content: string;
+  artifactId: string | null;
+  createdAt?: string | null;
+  sourceChunkIndexArtifact?: HistoricalSourceChunkIndexInput | null;
+}
+
+export interface HistoricalSourceChunkIndexInput {
+  name: 'source-chunk-index.json';
+  content: string;
+  artifactId: string | null;
+  createdAt?: string | null;
+}
 
 export interface OrchestrateOpts {
   project: string;
@@ -21,6 +37,8 @@ export interface OrchestrateOpts {
   workflowRequestId?: string;
   /** Coordinator-decided run type. Defaults to 'feature' if omitted. */
   runType?: WorkflowRunType;
+  /** Optional request-level execution backend override. */
+  agentBackend?: ProjectAgentBackendKind | null;
   /**
    * V2 W2-3: optional flow id (e.g. 'feature.fastforward'). Forwarded to
    * `api.createWorkflowRun`; omitting it lets the API use the conservative
@@ -82,6 +100,8 @@ export interface RunCtx {
     acceptedKnowledge: string | null;
     knowledgeArtifacts: KnowledgeArtifact[] | null;
     runHistory: WorkflowRun[] | null;
+    historicalInventoryArtifact: HistoricalProjectInventoryInput | null;
+    historicalInventoryArtifactChecked: boolean;
   };
   contextPolicy: ContextPolicy;
   contextRequestChain: ContextRequestCapture[];

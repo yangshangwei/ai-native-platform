@@ -7,7 +7,7 @@ import type {
   WorkflowRunType,
   WorkflowStage,
 } from '../src';
-import { FLOW_REGISTRY, KNOWN_FLOW_IDS, isFlowId } from '../src';
+import { FLOW_REGISTRY, KNOWN_FLOW_IDS, isFlowId, isWorkflowStage } from '../src';
 
 // ---------------------------------------------------------------------------
 // V2 W2-1 / PR1: FlowId / FlowDef / StageStep type smoke
@@ -17,11 +17,26 @@ import { FLOW_REGISTRY, KNOWN_FLOW_IDS, isFlowId } from '../src';
 // assertions only touch the constructed values.
 // ---------------------------------------------------------------------------
 
-test('FlowId carries feature.standard (W2-1) + feature.fastforward (W2-3)', () => {
+test('FlowId carries registered flow ids', () => {
   const std: FlowId = 'feature.standard';
   const ff: FlowId = 'feature.fastforward';
+  const profile: FlowId = 'profile.bootstrap';
   expect(std).toBe('feature.standard');
   expect(ff).toBe('feature.fastforward');
+  expect(profile).toBe('profile.bootstrap');
+});
+
+test('WorkflowRunType carries profile runs', () => {
+  const runType: WorkflowRunType = 'profile';
+  expect(runType).toBe('profile');
+});
+
+test('isWorkflowStage accepts profile bootstrap stages', () => {
+  const inventory: WorkflowStage = 'inventory';
+  const profile: WorkflowStage = 'profile';
+  expect(isWorkflowStage(inventory)).toBe(true);
+  expect(isWorkflowStage(profile)).toBe(true);
+  expect(isWorkflowStage('not_a_stage')).toBe(false);
 });
 
 test('StageStepKind enumerates the four dispatch buckets', () => {
@@ -99,6 +114,7 @@ test('KNOWN_FLOW_IDS is derived from FLOW_REGISTRY keys in registration order', 
     'feature.fastforward',
     'issue.standard',
     'refactor.standard',
+    'profile.bootstrap',
   ]);
   expect(KNOWN_FLOW_IDS).toEqual(Object.keys(FLOW_REGISTRY));
 });

@@ -723,6 +723,28 @@
       .project-card-details summary { cursor: pointer; min-height: 30px; font-weight: 800; color: var(--text); }
       .project-card-detail-list { display: grid !important; gap: 4px; padding-top: 4px; }
       .project-detail-code { max-width: 100%; white-space: normal; word-break: break-all; overflow-wrap: anywhere; }
+      .project-profile-status { display: grid !important; gap: 8px; min-width: 0; width: 100%; }
+      .project-profile-summary-line { display: flex !important; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-start !important; min-width: 0; }
+      .project-profile-artifact-link { display: grid !important; gap: 6px; min-width: 0; width: 100%; }
+      .project-capability-map { display: grid !important; gap: 8px; min-width: 0; border-top: 1px dashed var(--line); padding-top: 8px; }
+      .project-capability-map-head { display: flex !important; justify-content: space-between; gap: 8px; align-items: center; }
+      .project-capability-list { display: grid !important; gap: 8px; min-width: 0; }
+      .project-capability-row {
+        display: grid !important; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start;
+        padding: 10px 0; border-top: 1px solid var(--line);
+      }
+      .project-capability-row:first-child { border-top: 0; padding-top: 0; }
+      .project-capability-row.accepted, .project-capability-row.renamed, .project-capability-row.merged { background: var(--good-bg); }
+      .project-capability-row.wrong { background: var(--warn-bg); }
+      .project-capability-row-main { display: grid !important; gap: 6px; min-width: 0; }
+      .project-capability-title-line { display: flex !important; flex-wrap: wrap; justify-content: flex-start !important; gap: 6px; align-items: center; min-width: 0; }
+      .project-capability-title-line strong { overflow-wrap: anywhere; min-width: 0; }
+      .project-capability-evidence { display: flex !important; flex-wrap: wrap; justify-content: flex-start !important; gap: 8px; color: var(--muted); font-size: 12px; }
+      .project-capability-evidence-preview { display: grid; gap: 3px; margin: 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
+      .project-capability-evidence-preview li { overflow-wrap: anywhere; }
+      .project-capability-correction-note { display: flex !important; flex-wrap: wrap; align-items: center; gap: 6px; line-height: 1.45; }
+      .project-capability-correction-note span:last-child { min-width: 0; overflow-wrap: anywhere; }
+      .project-capability-actions { display: flex !important; flex-wrap: wrap; justify-content: flex-end !important; gap: 6px; max-width: 260px; }
 
       .pill { display: inline-flex; align-items: center; min-height: 24px; border-radius: 999px; padding: 2px 9px; font-size: 12px; font-weight: 700; }
       .pill.good { background: var(--good-bg); color: var(--good); }
@@ -1085,6 +1107,8 @@
         .context-flow-stage-grid { grid-template-columns: 1fr; }
         .context-flow-artifact-label { max-width: 100%; white-space: normal; }
         .overview-grid, .config-grid, .coverage-row, .summary-list, .task-list-item, .workbench-primary-action, .project-summary-grid, .action-queue-head, .action-queue-item, .new-task-submit-guard { grid-template-columns: 1fr; }
+        .project-capability-row { grid-template-columns: 1fr; }
+        .project-capability-actions { justify-content: flex-start !important; max-width: none; }
         .action-queue-item .button { width: 100%; }
         .action-queue-copy strong, .action-queue-copy small { white-space: normal; overflow-wrap: anywhere; }
         .new-task-readiness { justify-content: flex-start; }

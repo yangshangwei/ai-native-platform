@@ -1,0 +1,231 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-sinatra-e2e",
+  "title": "Legacy project understanding keeps Sinatra route context focused",
+  "description": "Runs the real scanner against a small legacy Sinatra fixture, then verifies ContextPack selects the billing block route and tests without leaking customer, dynamic, or wildcard routes.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_sinatra",
+    "title": "Update legacy Sinatra billing refunds",
+    "stage": "implementation",
+    "taskBrief": "Fix billing refund cancellation behavior in the legacy Sinatra route block and update billing refund Sinatra tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 18,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "app.rb",
+        "content": "require \"sinatra/base\"\n\nclass BillingApp < Sinatra::Base\n  post \"/billing/refunds/:refund_id/cancel\" do\n    service = BillingRefundService.new\n    service.cancel_refund(params[:refund_id])\n  end\n\n  get \"/customers/profile\" do\n    \"ok\"\n  end\n\n  get dynamic_path do\n    \"dynamic\"\n  end\n\n  get \"/billing/*\" do\n    \"wildcard\"\n  end\nend\n"
+      },
+      {
+        "path": "app/services/billing_refund_service.rb",
+        "content": "class BillingRefundService\n  def cancel_refund(refund_id)\n    repository = BillingRefundRepository.new\n    repository.cancel_refund(refund_id)\n  end\nend\n"
+      },
+      {
+        "path": "app/services/billing_refund_repository.rb",
+        "content": "class BillingRefundRepository\n  def cancel_refund(refund_id)\n    refund_id\n  end\nend\n"
+      },
+      {
+        "path": "test/billing_refund_sinatra_test.rb",
+        "content": "def test_billing_refund_sinatra_cancels_refunds\nend\n"
+      },
+      {
+        "path": "test/customer_profile_sinatra_test.rb",
+        "content": "def test_customer_profile_sinatra_returns_profile\nend\n"
+      },
+      {
+        "path": ".env",
+        "content": "DB_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "POST /billing/refunds/:refund_id/cancel",
+      "GET /customers/profile"
+    ],
+    "inventoryEntrypointRouteCountMin": 2,
+    "inventoryEntrypointRouteCountMax": 2,
+    "inventorySymbolNamesInclude": [
+      "BillingApp",
+      "BillingRefundService",
+      "BillingRefundRepository",
+      "cancel_refund"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 2,
+    "inventoryGraphEdgeConfidenceMin": 0.68,
+    "inventorySourceChunkCountMin": 5,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_sinatra_billing_refund_primary",
+      "file:app.rb#L4",
+      "file:app.rb#L5",
+      "file:app.rb#L6",
+      "file:app.rb#L7",
+      "file:app/services/billing_refund_service.rb#L1",
+      "file:app/services/billing_refund_repository.rb#L1",
+      "file:test/billing_refund_sinatra_test.rb"
+    ],
+    "sourceRefsExclude": [
+      "file:app.rb#L9",
+      "file:app.rb#L10",
+      "file:app.rb#L11",
+      "file:app.rb#L13",
+      "file:app.rb#L17",
+      "file:test/customer_profile_sinatra_test.rb"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:app.rb#L4",
+          "file:app.rb#L5",
+          "file:app.rb#L6",
+          "file:app.rb#L7",
+          "file:app.rb#L3",
+          "file:app/services/billing_refund_service.rb#L1",
+          "file:app/services/billing_refund_repository.rb#L1",
+          "file:test/billing_refund_sinatra_test.rb"
+        ],
+        "sourceRefsExclude": [
+          "file:app.rb#L9",
+          "file:app.rb#L10",
+          "file:app.rb#L11",
+          "file:app.rb#L13",
+          "file:app.rb#L17",
+          "file:test/customer_profile_sinatra_test.rb"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_app_rb_1_21",
+        "contentIncludes": [
+          "post \"/billing/refunds/:refund_id/cancel\" do",
+          "service = BillingRefundService.new",
+          "service.cancel_refund(params[:refund_id])"
+        ],
+        "contentExcludes": [
+          "get \"/customers/profile\"",
+          "get dynamic_path",
+          "get \"/billing/*\""
+        ],
+        "sourceRefsInclude": [
+          "file:app.rb#L4",
+          "file:app.rb#L5",
+          "file:app.rb#L6",
+          "file:app.rb#L7"
+        ],
+        "sourceRefsExclude": [
+          "file:app.rb#L9",
+          "file:app.rb#L10",
+          "file:app.rb#L11",
+          "file:app.rb#L13",
+          "file:app.rb#L17"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:app.rb#L3",
+          "file:app/services/billing_refund_service.rb#L1",
+          "file:app/services/billing_refund_repository.rb#L1",
+          "file:test/billing_refund_sinatra_test.rb#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:app.rb#L9",
+          "file:app.rb#L10",
+          "file:app.rb#L11",
+          "file:app.rb#L13",
+          "file:app.rb#L17",
+          "file:test/customer_profile_sinatra_test.rb"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_app_services_billing_refund_service_rb_1_7",
+        "contentIncludes": [
+          "BillingRefundService",
+          "symbol_graph_edge"
+        ],
+        "sourceRefsInclude": [
+          "file:app/services/billing_refund_service.rb#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:test/customer_profile_sinatra_test.rb"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_app_services_billing_refund_repository_rb_1_6",
+        "contentIncludes": [
+          "BillingRefundRepository",
+          "symbol_graph_edge"
+        ],
+        "sourceRefsInclude": [
+          "file:app/services/billing_refund_repository.rb#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:test/customer_profile_sinatra_test.rb"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:test/billing_refund_sinatra_test.rb"
+        ],
+        "sourceRefsExclude": [
+          "file:app.rb#L9",
+          "file:test/customer_profile_sinatra_test.rb"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 11,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_app_rb",
+      "inventory_source_chunk_src_chunk_app_services_billing",
+      "inventory_source_chunk_src_chunk_test_billing"
+    ],
+    "irrelevantContextRatioMax": 0.15,
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.68
+    }
+  },
+  "variants": [
+    {
+      "id": "sinatra-billing-refund-primary",
+      "label": "Legacy Sinatra billing refund task stays focused on billing route block and tests"
+    }
+  ]
+}

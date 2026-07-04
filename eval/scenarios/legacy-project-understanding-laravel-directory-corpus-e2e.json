@@ -1,0 +1,243 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-laravel-directory-corpus-e2e",
+  "title": "Legacy project understanding scans a directory-backed old Laravel commerce corpus",
+  "description": "Runs the real scanner against a checked-in Laravel-style old commerce fixture with static controller route groups, billing/orders/customers controller/service/repository layers, SQL schema/routine evidence, tests, credential-like config, and generated/vendor/log noise filtered by fixtureDir.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_laravel_directory_corpus",
+    "title": "Update legacy Laravel billing refund audit",
+    "stage": "implementation",
+    "taskBrief": "Fix the legacy Laravel billing refund audit route and rebuild_laravel_refund_audit SQL routine, then update billing refund audit tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 36,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072
+    },
+    "fixtureDir": {
+      "path": "../fixtures/legacy-directory-backed-laravel-commerce",
+      "maxFiles": 28,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072,
+      "excludePaths": [
+        "tmp",
+        "vendor",
+        "storage"
+      ]
+    }
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Orders API",
+      "Customers API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "POST /api/v4/billing/refunds/{refund}/audit",
+      "PATCH /api/v4/orders/fulfillment/{order}/reprice",
+      "GET /api/v4/customers/profiles/{customer}/risk"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventorySymbolNamesInclude": [
+      "BillingRefundController",
+      "auditRefund",
+      "BillingRefundService",
+      "rebuildRefundAudit",
+      "BillingRefundRepository",
+      "writeRefundAuditEntry",
+      "OrderFulfillmentController",
+      "OrderFulfillmentService",
+      "CustomerProfileController",
+      "CustomerProfileService"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 9,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventorySourceChunkCountMin": 16,
+    "inventoryExclusionsInclude": [
+      "config/credentials.yml:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_domain_entities_billing_api",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_orders",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_domain_entities_billing_api",
+      "inventory_source_chunk_src_chunk_routes_web",
+      "inventory_source_chunk_src_chunk_app_http_controllers_billing",
+      "inventory_source_chunk_src_chunk_app_services_billing",
+      "inventory_source_chunk_src_chunk_app_repositories_billing",
+      "inventory_source_chunk_src_chunk_db_billing",
+      "inventory_source_chunk_src_chunk_tests_feature_billing"
+    ],
+    "irrelevantContextRatioMax": 0.16,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_laravel_commerce_billing_refund_audit",
+      "file:routes/web.php#L3",
+      "file:routes/web.php#L4",
+      "file:app/Http/Controllers/BillingRefundController.php#L3",
+      "file:app/Http/Controllers/BillingRefundController.php#L5",
+      "file:app/Http/Controllers/BillingRefundController.php#L6",
+      "file:app/Http/Controllers/BillingRefundController.php#L7",
+      "file:app/Services/BillingRefundService.php#L5",
+      "file:app/Services/BillingRefundService.php#L7",
+      "file:app/Services/BillingRefundService.php#L9",
+      "file:app/Services/BillingRefundService.php#L10",
+      "file:app/Services/BillingRefundService.php#L11",
+      "file:app/Repositories/BillingRefundRepository.php#L5",
+      "file:app/Repositories/BillingRefundRepository.php#L7",
+      "file:app/Repositories/BillingRefundRepository.php#L8",
+      "file:db/billing/schema.sql#L1",
+      "file:db/billing/routines.sql#L1",
+      "file:tests/Feature/Billing/RefundAuditTest.php"
+    ],
+    "sourceRefsExclude": [
+      "file:routes/web.php#L7",
+      "file:routes/web.php#L8",
+      "file:routes/web.php#L11",
+      "file:routes/web.php#L12",
+      "file:app/Http/Controllers/OrderFulfillmentController.php#L3",
+      "file:app/Http/Controllers/CustomerProfileController.php#L3",
+      "file:db/orders/schema.sql#L1",
+      "file:db/customers/schema.sql#L1",
+      "file:tests/Feature/Orders/FulfillmentRepriceTest.php",
+      "file:tests/Feature/Customers/ProfileRiskTest.php",
+      "file:vendor/generated_gateway_client.php",
+      "file:tmp/cache/routes.php",
+      "file:storage/logs/laravel.log"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary",
+      "inventory_domain_entities_billing_api": "summary"
+    },
+    "selectedCountMin": 5,
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:routes/web.php#L3",
+          "file:routes/web.php#L4",
+          "file:app/Http/Controllers/BillingRefundController.php#L3",
+          "file:app/Http/Controllers/BillingRefundController.php#L5",
+          "file:app/Http/Controllers/BillingRefundController.php#L6",
+          "file:app/Http/Controllers/BillingRefundController.php#L7",
+          "file:app/Services/BillingRefundService.php#L5",
+          "file:app/Services/BillingRefundService.php#L7",
+          "file:app/Repositories/BillingRefundRepository.php#L5",
+          "file:tests/Feature/Billing/RefundAuditTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:routes/web.php#L7",
+          "file:routes/web.php#L8",
+          "file:routes/web.php#L11",
+          "file:routes/web.php#L12",
+          "file:app/Http/Controllers/OrderFulfillmentController.php#L3",
+          "file:app/Http/Controllers/CustomerProfileController.php#L3",
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1",
+          "file:tests/Feature/Orders/FulfillmentRepriceTest.php",
+          "file:tests/Feature/Customers/ProfileRiskTest.php",
+          "file:vendor/generated_gateway_client.php",
+          "file:tmp/cache/routes.php",
+          "file:storage/logs/laravel.log"
+        ]
+      },
+      {
+        "ref": "inventory_domain_entities_billing_api",
+        "contentIncludes": [
+          "Matched Domain Entities",
+          "routine | rebuild_laravel_refund_audit | db/billing/routines.sql",
+          "table | laravel_refund_audit_entries | db/billing/schema.sql",
+          "refs=file:app/Repositories/BillingRefundRepository.php#L8"
+        ],
+        "contentExcludes": [
+          "laravel_order_fulfillment_backlog",
+          "laravel_customer_profile_snapshots"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/schema.sql#L1",
+          "file:app/Repositories/BillingRefundRepository.php#L8"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:routes/web.php#L3",
+          "file:routes/web.php#L4",
+          "file:app/Http/Controllers/BillingRefundController.php#L3",
+          "file:app/Http/Controllers/BillingRefundController.php#L5",
+          "file:app/Http/Controllers/BillingRefundController.php#L6",
+          "file:app/Services/BillingRefundService.php#L5",
+          "file:app/Services/BillingRefundService.php#L7",
+          "file:app/Services/BillingRefundService.php#L9",
+          "file:app/Repositories/BillingRefundRepository.php#L5",
+          "file:app/Repositories/BillingRefundRepository.php#L7"
+        ],
+        "sourceRefsExclude": [
+          "file:routes/web.php#L7",
+          "file:routes/web.php#L8",
+          "file:routes/web.php#L11",
+          "file:routes/web.php#L12",
+          "file:app/Http/Controllers/OrderFulfillmentController.php#L3",
+          "file:app/Http/Controllers/CustomerProfileController.php#L3",
+          "file:tests/Feature/Orders/FulfillmentRepriceTest.php",
+          "file:tests/Feature/Customers/ProfileRiskTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/Feature/Billing/RefundAuditTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:tests/Feature/Orders/FulfillmentRepriceTest.php",
+          "file:tests/Feature/Customers/ProfileRiskTest.php"
+        ]
+      }
+    ],
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.65,
+      "routeHandlerEdgeConfidenceMin": 0.78,
+      "sourceChunkContentSha256CoverageMin": 1,
+      "sourceChunkIndexCoverageMin": 1,
+      "sourceChunkLinkedRecordCoverageMin": 1,
+      "sourceFileExtensionCountMin": 3,
+      "sourcePathPatternCountMin": 5,
+      "sourceRecordKindCountMin": 7
+    }
+  },
+  "variants": [
+    {
+      "id": "laravel-commerce-billing-refund-audit",
+      "label": "Legacy Laravel commerce task stays focused on billing refund route, SQL routine, and tests"
+    }
+  ]
+}

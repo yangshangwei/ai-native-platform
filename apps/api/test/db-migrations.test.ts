@@ -101,6 +101,88 @@ test('fresh DB records every migration in version order', () => {
   database.close();
 });
 
+test('fresh DB includes source chunk index catalog table and lookup indexes', () => {
+  const database = openMigrated(tmpDbPath('ainp-mig-source-index-'));
+  const objects = schemaDump(database).objects;
+  expect(objects.some((object) => object.type === 'table' && object.name === 'source_chunk_index_entries'))
+    .toBe(true);
+  expect(objects.some((object) => object.type === 'index' && object.name === 'idx_source_chunk_index_entries_project_hash'))
+    .toBe(true);
+  expect(objects.some((object) => object.type === 'index' && object.name === 'idx_source_chunk_index_entries_artifact'))
+    .toBe(true);
+  const columns = schemaDump(database).columns.source_chunk_index_entries as Array<{ name: string }>;
+  expect(columns.map((column) => column.name)).toEqual(expect.arrayContaining([
+    'embedding_model',
+    'embedding_dimensions',
+    'embedding_vector_json',
+  ]));
+  database.close();
+});
+
+test('source chunk index catalog migration repairs a partial table without indexes', () => {
+  const database = new Database(tmpDbPath('ainp-mig-source-index-partial-'));
+  database.prepare(
+    `CREATE TABLE schema_migrations (
+       version INTEGER PRIMARY KEY,
+       name TEXT,
+       applied_at TEXT
+     )`,
+  ).run();
+  const record = database.prepare(
+    'INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)',
+  );
+  for (const migration of MIGRATIONS.filter((m) => m.version < 31)) {
+    record.run(migration.version, migration.name, '2026-07-04T00:00:00.000Z');
+  }
+  database.prepare(
+    `CREATE TABLE source_chunk_index_entries (
+       id TEXT PRIMARY KEY,
+       project_id TEXT NOT NULL,
+       workflow_run_id TEXT NOT NULL,
+       source_chunk_index_artifact_id TEXT NOT NULL,
+       source_inventory_artifact_id TEXT,
+       source_chunk_ref TEXT NOT NULL,
+       content_sha256 TEXT NOT NULL,
+       path TEXT NOT NULL,
+       language TEXT,
+       start_line INTEGER NOT NULL,
+       end_line INTEGER NOT NULL,
+       lexical_tokens_json TEXT NOT NULL,
+       search_text TEXT NOT NULL,
+       linked_record_refs_json TEXT NOT NULL,
+       source_refs_json TEXT NOT NULL,
+       entrypoint_refs_json TEXT NOT NULL,
+       symbol_refs_json TEXT NOT NULL,
+       domain_entity_refs_json TEXT NOT NULL,
+       graph_edge_refs_json TEXT NOT NULL,
+       test_refs_json TEXT NOT NULL,
+       hotspot_refs_json TEXT NOT NULL,
+       capability_refs_json TEXT NOT NULL,
+       created_at TEXT NOT NULL
+     )`,
+  ).run();
+
+  runMigrations(database);
+
+  const objects = schemaDump(database).objects;
+  expect(objects.some((object) => object.type === 'index' && object.name === 'idx_source_chunk_index_entries_project_created'))
+    .toBe(true);
+  expect(objects.some((object) => object.type === 'index' && object.name === 'idx_source_chunk_index_entries_artifact'))
+    .toBe(true);
+  expect(objects.some((object) => object.type === 'index' && object.name === 'idx_source_chunk_index_entries_project_hash'))
+    .toBe(true);
+  expect(objects.some((object) => object.type === 'index' && object.name === 'idx_source_chunk_index_entries_project_path'))
+    .toBe(true);
+  const columns = schemaDump(database).columns.source_chunk_index_entries as Array<{ name: string }>;
+  expect(columns.map((column) => column.name)).toEqual(expect.arrayContaining([
+    'embedding_model',
+    'embedding_dimensions',
+    'embedding_vector_json',
+  ]));
+  expect(recordedVersions(database)).toEqual(ALL_VERSIONS);
+  database.close();
+});
+
 // ---------------------------------------------------------------------------
 // PRD #4: idempotence — two consecutive opens of the same file
 // ---------------------------------------------------------------------------

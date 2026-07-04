@@ -5,13 +5,18 @@
 ### 1. Scope / Trigger
 
 - Trigger: changes to `apps/api/src/routes/workflow-requests.ts` (POST/GET/PATCH handlers), `apps/api/src/workflow-engine.ts` (`createWorkflowRequest`), or `packages/shared/src/types/workflow.ts` (`WorkflowRequest` schema).
-- Adding a new `kind` value: update this spec's contracts section + validation matrix + test cases.
+- Adding a new `kind`, `type`, or explicit `flowId` value accepted at this
+  trust boundary: update this spec's contracts section + validation matrix +
+  test cases.
 - Schema change touching `WorkflowRequest` fields: rebuild this spec + update migrations.
 
 ### 2. Signatures
 
-- `POST /workflow-requests` — creates a new workflow request with optional `kind` field
-  - Body: `{ projectId, title, branch?, details?, type?, flowId?, startStage?, kind?, firstMessage }` (all fields except `projectId`, `title`, `firstMessage` are optional)
+- `POST /workflow-requests` — creates a new workflow request with optional `kind`, `flowId`, and `startStage` fields
+  - Body: `{ projectId, title, branch?, details?, type?, flowId?, startStage?, kind?, firstMessage? }` (all fields except `projectId`, `title` are optional)
+  - Returns: 201 with `WorkflowRequestDto`
+- `POST /projects/:id/profile-bootstrap` — convenience route that creates the same profile bootstrap workflow request for a project
+  - Body: `{ title?, branch?, agentBackend? }` (all optional)
   - Returns: 201 with `WorkflowRequestDto`
 - `GET /workflow-requests` — lists all workflow requests (with filtering)
   - Query: `?status=pending|claimed|...` (optional)
@@ -27,15 +32,15 @@
 
 | Field | Type | Required | Constraints | Purpose |
 |-------|------|----------|-------------|---------|
-| `projectId` | string | ✅ | must exist, not archived, has agentBackend | target project |
+| `projectId` | string | ✅ | must exist and not be archived; normally needs an agent backend unless creating a profile bootstrap request | target project |
 | `title` | string | ✅ | non-empty, trimmed | task goal |
 | `branch` | string | ❌ | defaults to project.defaultBranch | git base branch |
 | `details` | string | ❌ | trimmed | additional context |
-| `type` | `'feature' \| 'bugfix' \| 'smoke' \| 'refactor' \| 'ask'` | ❌ | from `WorkflowRunType` enum | explicit runType override (skips Coordinator if set) |
+| `type` | `'feature' \| 'bugfix' \| 'smoke' \| 'refactor' \| 'ask' \| 'profile'` | ❌ | from `WorkflowRunType` enum; `flowId='profile.bootstrap'` derives `type='profile'` when omitted | explicit runType override (skips Coordinator if set) |
 | `flowId` | `FlowId` | ❌ | from `FLOW_REGISTRY` | explicit flow override (skips Coordinator + Router if set) |
 | `startStage` | `WorkflowStage` | ❌ | only meaningful for `feature.standard` | where to enter the flow |
 | `kind` | `'ask' \| null` | ❌ | defaults to `null` | *(2026-06-25 added)* `'ask'` = read-only Q&A, won't enter runner watch loop |
-| `firstMessage` | `{ role: 'user' \| 'coordinator', content: string }` | ✅ | role ∈ {user, coordinator}, content non-empty | atomic intake: request + first message in same transaction |
+| `firstMessage` | `{ role: 'user' \| 'coordinator', content: string }` | ❌ | when present, role ∈ {user, coordinator}, content non-empty | atomic intake: request + first message in same transaction |
 
 #### Response fields (`WorkflowRequestDto`)
 
@@ -63,10 +68,11 @@
 | `projectId` not found | `"Project not found"` | 404 |
 | Project archived | `"Project is archived"` | 400 |
 | Project missing `agentBackend` | `"Project has no agent backend configured"` | 400 |
+| Project missing `agentBackend` and request is `type='profile'` or `flowId='profile.bootstrap'` | allowed; inventory can run before profile-stage backend preflight | 201 |
 | `kind` not in `['ask', null]` | `"Invalid kind value"` | 400 |
 | `type` not in `WorkflowRunType` | `"Invalid type value"` | 400 |
 | `flowId` not in `FLOW_REGISTRY` | `"Invalid flowId value"` | 400 |
-| Missing `firstMessage` | `"firstMessage is required"` | 400 |
+| `startStage` sent without `flowId='feature.standard'` | `"startStage requires flowId='feature.standard'"` or `"startStage is only allowed when flowId is 'feature.standard'"` | 400 |
 | `firstMessage.role` not in `['user', 'coordinator']` | `"Invalid message role"` | 400 |
 | Empty `firstMessage.content` | `"Message content cannot be empty"` | 400 |
 
@@ -107,6 +113,33 @@ POST /workflow-requests
 → 201, kind=null, type='refactor', Coordinator sees explicit type and doesn't re-classify
 ```
 
+#### Good: Profile bootstrap request
+```bash
+POST /workflow-requests
+{
+  "projectId": "proj_abc123",
+  "title": "Generate legacy project profile",
+  "type": "profile",
+  "flowId": "profile.bootstrap"
+}
+→ 201, type='profile', flowId='profile.bootstrap', status='pending'
+```
+
+Profile bootstrap is the only normal workflow request allowed to queue without
+a configured project/request backend. The runner still resolves and preflights a
+real backend at the `profile` agent stage; when unavailable it must fail there
+after preserving the read-only inventory artifact.
+
+The project-scoped shortcut is equivalent:
+
+```bash
+POST /projects/proj_abc123/profile-bootstrap
+{
+  "title": "Map the old billing system"
+}
+→ 201, type='profile', flowId='profile.bootstrap', status='pending'
+```
+
 #### Bad: Missing required fields
 ```bash
 POST /workflow-requests
@@ -136,6 +169,10 @@ POST /workflow-requests
 - **GET**: default query excludes `kind='ask'` → only normal tasks returned
 - **GET**: explicit `?status=...` filter works
 - **PATCH**: upgrade ask to normal task (`kind=null`, `status='pending'`) → runner picks it up
+- **POST**: create profile bootstrap with no project backend → 201, `type='profile'`, `flowId='profile.bootstrap'`
+- **POST /projects/:id/profile-bootstrap**: creates a pending profile request with `flowId='profile.bootstrap'`
+- **POST**: create with `flowId='profile.bootstrap'` and omitted `type` → derives `type='profile'`
+- **POST**: invalid `flowId` → 400 before DB write
 
 #### Assertion points
 - Assert `response.kind === 'ask'` when created with `kind='ask'`
@@ -143,6 +180,8 @@ POST /workflow-requests
 - Assert `response.workflowRunId === null` for ask requests
 - Assert GET default list excludes ask requests
 - Assert runner watch loop only queries `status='pending'` (mock or integration test with runner)
+- Assert profile bootstrap request creation does not require `project.agentBackend`
+- Assert non-profile workflow requests still require a configured backend or request-level backend override
 
 ### 7. Wrong vs Correct
 
@@ -178,6 +217,21 @@ const taskCount = allRequests.items.length; // ❌ includes ask requests
 // Do this — defense-in-depth filtering
 const allRequests = await api('/workflow-requests'); // API already filters by default
 const taskCount = allRequests.items.filter(r => r.kind !== 'ask').length; // ✅ extra safety
+```
+
+#### Wrong: Blocking profile bootstrap at request creation because backend is missing
+```ts
+// Don't do this — it prevents the read-only inventory stage from producing
+// inspectable evidence.
+if (!project.agentBackend) throw new Error('Project has no agent backend configured');
+```
+
+#### Correct: Defer profile backend preflight to the profile stage
+```ts
+// Do this — request queues, runner inventory runs, profile stage fails closed
+// if selectAgentBackend() cannot resolve a real backend.
+const requestType = body.type ?? (flowId ? FLOW_REGISTRY[flowId].kind : 'feature');
+projectAgentBackendError(project, requestBackend, requestType, flowId);
 ```
 
 ---

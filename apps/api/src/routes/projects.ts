@@ -14,8 +14,9 @@ import {
   type ProjectSourceAuthKind,
   type ProjectSourceKind,
 } from '@ainp/shared';
-import { store } from '../store/store';
+import { SOURCE_CHUNK_INDEX_MAX_EMBEDDING_DIMENSIONS, store } from '../store/store';
 import { preflightAgentBackend } from '@ainp/shared/node';
+import { createWorkflowRequest } from '../workflow-engine';
 
 export const projects = new Hono();
 
@@ -51,6 +52,12 @@ interface DetectSourceBody {
 interface AgentBackendBody {
   agentBackend?: string | null;
   backend?: string | null;
+}
+
+interface ProfileBootstrapBody {
+  title?: string;
+  branch?: string | null;
+  agentBackend?: string | null;
 }
 
 interface PublicProject extends Omit<Project, 'sourceCredential'> {
@@ -175,6 +182,55 @@ projects.post('/:id/archive', (c) => {
   const archived: Project = { ...project, status: 'archived', archivedAt: project.archivedAt ?? nowIso() };
   store.projects.set(archived.id, archived);
   return c.json(publicProject(archived));
+});
+
+projects.post('/:id/profile-bootstrap', async (c) => {
+  const project = projectByIdOrName(c.req.param('id'));
+  if (!project) return c.json({ error: 'not found' }, 404);
+  if ((project.status ?? 'active') === 'archived') return c.json({ error: 'project is archived' }, 400);
+
+  const body = (await c.req.json().catch(() => ({}))) as ProfileBootstrapBody;
+  const normalizedBackend = normalizeAgentBackend(body.agentBackend ?? null);
+  if ('error' in normalizedBackend) return c.json({ error: normalizedBackend.error }, 400);
+  const request = createWorkflowRequest({
+    projectId: project.id,
+    type: 'profile',
+    title: body.title?.trim() || 'Generate legacy project profile',
+    branch: body.branch?.trim() || project.defaultBranch,
+    agentBackend: normalizedBackend.backend,
+    flowId: 'profile.bootstrap',
+    startStage: null,
+    kind: null,
+  });
+  return c.json(request, 201);
+});
+
+projects.get('/:id/source-chunk-index', (c) => {
+  const project = projectByIdOrName(c.req.param('id'));
+  if (!project) return c.json({ error: 'not found' }, 404);
+
+  const normalized = normalizeSourceChunkIndexQuery({
+    q: c.req.query('q') ?? c.req.query('search') ?? null,
+    embedding: c.req.query('embedding') ?? c.req.query('queryEmbedding') ?? c.req.query('queryEmbeddingVector') ?? null,
+    embeddingModel: c.req.query('embeddingModel') ?? c.req.query('queryEmbeddingModel') ?? null,
+    contentSha256: c.req.query('contentSha256') ?? null,
+    path: c.req.query('path') ?? null,
+    linkedRecordRef: c.req.query('linkedRecordRef') ?? null,
+    sourceChunkIndexArtifactId: c.req.query('sourceChunkIndexArtifactId') ?? c.req.query('artifactId') ?? null,
+    sourceInventoryArtifactId: c.req.query('sourceInventoryArtifactId') ?? null,
+    limit: c.req.query('limit') ?? null,
+  });
+  if ('error' in normalized) return c.json({ error: normalized.error }, 400);
+
+  const items = store.sourceChunkIndexEntries.queryProject({
+    projectId: project.id,
+    ...normalized.query,
+  });
+  return c.json({
+    ok: true,
+    items,
+    limit: normalized.query.limit,
+  });
 });
 
 projects.delete('/:id', async (c) => {
@@ -506,6 +562,108 @@ async function detectRegisteredProjectBranches(project: Project): Promise<
 
 function projectByIdOrName(idOrName: string): Project | undefined {
   return store.projects.get(idOrName) ?? store.projectByName(idOrName);
+}
+
+function normalizeSourceChunkIndexQuery(input: {
+  q: string | null;
+  embedding: string | null;
+  embeddingModel: string | null;
+  contentSha256: string | null;
+  path: string | null;
+  linkedRecordRef: string | null;
+  sourceChunkIndexArtifactId: string | null;
+  sourceInventoryArtifactId: string | null;
+  limit: string | null;
+}): { query: {
+  search: string | null;
+  queryEmbedding: number[] | null;
+  queryEmbeddingModel: string | null;
+  contentSha256: string | null;
+  path: string | null;
+  linkedRecordRef: string | null;
+  sourceChunkIndexArtifactId: string | null;
+  sourceInventoryArtifactId: string | null;
+  limit: number;
+} } | { error: string } {
+  const contentSha256 = normalizeOptional(input.contentSha256);
+  if (contentSha256 && !/^[a-f0-9]{64}$/i.test(contentSha256)) {
+    return { error: 'contentSha256 must be a 64-character hex string' };
+  }
+  const limit = input.limit === null || input.limit.trim() === ''
+    ? 50
+    : Number(input.limit);
+  if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+    return { error: 'limit must be an integer between 1 and 500' };
+  }
+  const search = normalizeOptional(input.q);
+  if (search && search.length > 200) return { error: 'q must be 200 characters or fewer' };
+  const embedding = normalizeSourceChunkIndexEmbeddingParam(input.embedding);
+  if ('error' in embedding) return { error: embedding.error };
+  const embeddingModel = normalizeOptional(input.embeddingModel);
+  if (embeddingModel && embeddingModel.length > 120) {
+    return { error: 'embeddingModel must be 120 characters or fewer' };
+  }
+  if (embedding.vector && !embeddingModel) {
+    return { error: 'embeddingModel is required when embedding is supplied' };
+  }
+  const path = normalizeOptional(input.path);
+  if (path && path.length > 512) return { error: 'path must be 512 characters or fewer' };
+  const linkedRecordRef = normalizeOptional(input.linkedRecordRef);
+  if (linkedRecordRef && linkedRecordRef.length > 256) {
+    return { error: 'linkedRecordRef must be 256 characters or fewer' };
+  }
+  return {
+    query: {
+      search,
+      queryEmbedding: embedding.vector,
+      queryEmbeddingModel: embeddingModel,
+      contentSha256: contentSha256?.toLowerCase() ?? null,
+      path,
+      linkedRecordRef,
+      sourceChunkIndexArtifactId: normalizeOptional(input.sourceChunkIndexArtifactId),
+      sourceInventoryArtifactId: normalizeOptional(input.sourceInventoryArtifactId),
+      limit,
+    },
+  };
+}
+
+function normalizeSourceChunkIndexEmbeddingParam(
+  value: string | null,
+): { vector: number[] | null } | { error: string } {
+  const raw = normalizeOptional(value);
+  if (!raw) return { vector: null };
+  if (raw.length > 50000) return { error: 'embedding must be 50000 characters or fewer' };
+  const parsed = raw.trim().startsWith('[')
+    ? parseJson(raw)
+    : raw.split(',').map((part) => Number(part.trim()));
+  if (!Array.isArray(parsed)) return { error: 'embedding must be a JSON array or comma-delimited number list' };
+  if (parsed.length < 1 || parsed.length > SOURCE_CHUNK_INDEX_MAX_EMBEDDING_DIMENSIONS) {
+    return { error: `embedding must contain between 1 and ${SOURCE_CHUNK_INDEX_MAX_EMBEDDING_DIMENSIONS} dimensions` };
+  }
+  const vector: number[] = [];
+  let norm = 0;
+  for (const item of parsed) {
+    if (typeof item !== 'number' || !Number.isFinite(item)) {
+      return { error: 'embedding must contain only finite numbers' };
+    }
+    vector.push(item);
+    norm += item * item;
+  }
+  if (norm <= 0) return { error: 'embedding must not be a zero vector' };
+  return { vector };
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeOptional(value: string | null): string | null {
+  const trimmed = value?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function deletePreview(project: Project): DeletePreview {

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "context-pack-section-content-bad-expectation",
+  "title": "ContextPack red fixture rejects missing selected-section content",
+  "description": "Intentionally expects a selected section to contain text it does not contain; the fixture must fail on section-local content checks.",
+  "kind": "context_pack_fixture",
+  "input": {
+    "projectId": "proj_eval_context_section_content_red",
+    "title": "Use section-local content checks",
+    "stage": "implementation",
+    "taskBrief": "Implement alpha section-local content behavior.",
+    "knowledgeArtifacts": [
+      {
+        "id": "kart_section_content_alpha",
+        "kind": "architecture",
+        "entityId": "DSN-SECTION-CONTENT-ALPHA",
+        "status": "accepted",
+        "metadata": {
+          "title": "Alpha content evidence",
+          "text": "Alpha content evidence explains section-local content checks.",
+          "knowledgeClass": "confirmed",
+          "trustLevel": "accepted_knowledge",
+          "freshness": "current",
+          "sourceRefs": ["doc:section-content-alpha"],
+          "confidence": 0.95
+        }
+      }
+    ]
+  },
+  "expectations": {
+    "manifestRefsInclude": [
+      "knowledge_kart_section_content_alpha"
+    ],
+    "selectedSectionsInclude": [
+      {
+        "ref": "knowledge_kart_section_content_alpha",
+        "contentIncludes": [
+          "this text is intentionally absent"
+        ]
+      }
+    ]
+  }
+}

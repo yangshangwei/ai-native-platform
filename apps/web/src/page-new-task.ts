@@ -23,6 +23,7 @@ import { errorMessage } from '@ainp/shared/browser';
 import type {
   ProjectBranchListResult,
   ProjectDto,
+  ProjectAgentBackendKind,
   StatusKind,
   WorkflowRequestDto,
 } from './types';
@@ -31,14 +32,12 @@ import { button, el, normalizeSelectionDirection, panelHeader, pill, statusKind 
 import {
   activeProjects,
   agentBackendDisplayName,
-  agentBackendLabelForProject,
+  agentBackendPreflight,
   agentBackendPreflightInFlight,
-  agentBackendStatusForProject,
   backendStatusText,
   data,
   latestRunner,
   normalizeBranchList,
-  preflightForProjectBackend,
   runnerAutoStartAttemptedForRequest,
   sourceBranchesForProject,
   ui,
@@ -65,6 +64,7 @@ export const newTaskFormDraft: {
   title: string;
   details: string;
   branch: string;
+  agentBackend: '' | ProjectAgentBackendKind;
   flowId: '' | 'feature.standard' | 'feature.fastforward' | 'issue.standard' | 'refactor.standard';
   startStage:
     | ''
@@ -76,7 +76,7 @@ export const newTaskFormDraft: {
     | 'review'
     | 'completion'
     | 'knowledge';
-} = { projectId: '', type: '', title: '', details: '', branch: '', flowId: '', startStage: '' };
+} = { projectId: '', type: '', title: '', details: '', branch: '', agentBackend: '', flowId: '', startStage: '' };
 
 const NEW_TASK_TITLE_SELECTOR = '[data-new-task-title]';
 const NEW_TASK_DETAILS_SELECTOR = '[data-new-task-details]';
@@ -320,9 +320,16 @@ export function renderNewTaskPage(): HTMLElement {
   const branchSelect = el('select', { attrs: { name: 'branch' } });
   const branchRefresh = el('button', { class: 'btn btn-secondary btn-sm', text: '刷新分支', attrs: { type: 'button' } });
   const branchHint = el('p', { class: 'muted compact' });
+  const backendSelect = el('select', { attrs: { name: 'agentBackend' } });
+  backendSelect.appendChild(el('option', { text: '请选择执行方式', attrs: { value: '' } }));
+  for (const option of [
+    { value: 'claude_code' as const, label: 'Claude Code' },
+    { value: 'codex' as const, label: 'Codex' },
+  ]) {
+    backendSelect.appendChild(el('option', { text: option.label, attrs: { value: option.value } }));
+  }
   const backendHint = el('p', { class: 'muted compact' });
   const backendCheck = el('button', { class: 'btn btn-secondary btn-sm', text: '检测连接', attrs: { type: 'button' } });
-  const backendLabel = el('strong', { text: '未选择项目' });
   const clickedBranchProjects = new Set<string>();
   const submit = el('button', { class: 'btn btn-primary', text: '创建任务', attrs: { type: 'submit' } });
   const submitHint = el('p', { class: 'compact muted' });
@@ -515,13 +522,14 @@ export function renderNewTaskPage(): HTMLElement {
   });
   const updateSubmitState = () => {
     const project = projects.find((p) => p.id === projectSelect.value) ?? projects[0] ?? null;
-    const preflight = preflightForProjectBackend(project);
+    const selectedBackend = selectedTaskAgentBackend();
+    const preflight = preflightForTaskBackend(project, selectedBackend);
     const runner = latestRunner();
     let blocker: string | null = null;
     if (ui.projectsLoadError) blocker = '项目列表加载失败，重试成功后才能创建任务。';
     else if (!project) blocker = '请先连接项目。';
     else if (!title.value.trim()) blocker = '请填写任务目标。';
-    else if (!project.agentBackend) blocker = '请先为这个项目配置执行方式。';
+    else if (!selectedBackend) blocker = '请选择本次任务的执行方式。';
     else if (preflight && !preflight.runnable) blocker = '执行方式连接检测未通过，请处理后重试。';
 
     submit.disabled = Boolean(blocker);
@@ -530,21 +538,48 @@ export function renderNewTaskPage(): HTMLElement {
     submitHint.className = `compact ${blocker ? 'warn' : runner ? 'good' : 'muted'}`;
     readiness.replaceChildren(
       pill(project ? '项目已选择' : ui.projectsLoadError ? '项目加载失败' : '等待项目', project ? 'good' : ui.projectsLoadError ? 'bad' : 'warn'),
-      pill(project?.agentBackend ? '执行方式已配置' : '执行方式待配置', project?.agentBackend ? 'good' : 'warn'),
+      pill(selectedBackend ? '执行方式已选择' : '执行方式待选择', selectedBackend ? 'good' : 'warn'),
       pill(runner ? '执行器在线' : '执行器待启动', runner ? statusKind(runner.status) : 'warn'),
     );
   };
+  const selectedTaskAgentBackend = (): ProjectAgentBackendKind | null => {
+    return backendSelect.value === 'claude_code' || backendSelect.value === 'codex'
+      ? backendSelect.value
+      : null;
+  };
+  const preflightForTaskBackend = (
+    project: ProjectDto | null,
+    backend: ProjectAgentBackendKind | null,
+  ) => {
+    if (!backend) return null;
+    const projectScoped = project ? agentBackendPreflight.get(project.id) : null;
+    if (projectScoped?.backend === backend) return projectScoped;
+    const backendScoped = agentBackendPreflight.get(`backend:${backend}`);
+    return backendScoped?.backend === backend ? backendScoped : null;
+  };
+  const backendStatusForTaskSelection = (
+    project: ProjectDto | null,
+    backend: ProjectAgentBackendKind | null,
+  ): { label: string; kind: StatusKind } => {
+    if (!backend) return { label: '待选择', kind: 'warn' };
+    const check = preflightForTaskBackend(project, backend);
+    if (!check) return { label: '未检测', kind: 'muted' };
+    if (check.runnable) return { label: '已连接', kind: 'good' };
+    if (check.status === 'needs_login') return { label: '需要登录', kind: 'warn' };
+    if (check.status === 'missing_cli') return { label: '缺少 CLI', kind: 'bad' };
+    return { label: '检测失败', kind: 'bad' };
+  };
   const updateBackendHint = (projectId: string) => {
     const project = projects.find((p) => p.id === projectId) ?? projects[0] ?? null;
-    const status = agentBackendStatusForProject(project);
-    backendHint.textContent = project?.agentBackend
-      ? `${agentBackendDisplayName(project.agentBackend)} · ${backendStatusText(status.label)}。创建时会自动检测本机 CLI 连接。`
-      : '这个项目还没有选择执行方式。请到“项目接入”编辑项目，选择 Claude Code 或 Codex。';
-    backendLabel.textContent = project?.agentBackend
-      ? `${agentBackendLabelForProject(project)} · ${backendStatusText(status.label)}`
-      : agentBackendLabelForProject(project);
+    const selectedBackend = selectedTaskAgentBackend();
+    const status = backendStatusForTaskSelection(project, selectedBackend);
+    backendHint.textContent = selectedBackend
+      ? `${agentBackendDisplayName(selectedBackend)} · ${backendStatusText(status.label)}。本次任务会使用该执行方式，不会修改项目默认。`
+      : project?.agentBackend
+        ? `默认使用 ${agentBackendDisplayName(project.agentBackend)}；也可以为本次任务切换到另一种执行方式。`
+        : '请选择本次任务执行方式。项目默认仍可稍后到“项目接入”里配置。';
     backendHint.className = `muted compact ${status.kind}`;
-    backendCheck.disabled = !project?.agentBackend || agentBackendPreflightInFlight.has(project.id);
+    backendCheck.disabled = !project || !selectedBackend || agentBackendPreflightInFlight.has(project.id);
     backendCheck.textContent = project && agentBackendPreflightInFlight.has(project.id) ? '检测中…' : '检测连接';
     updateSubmitState();
   };
@@ -574,6 +609,13 @@ export function renderNewTaskPage(): HTMLElement {
       : '请先连接项目。';
     updateBackendHint(projectId);
   };
+  const updateBackendSelectForProject = (projectId: string) => {
+    const project = projects.find((p) => p.id === projectId) ?? projects[0] ?? null;
+    const nextBackend = project?.agentBackend ?? '';
+    backendSelect.value = nextBackend;
+    newTaskFormDraft.agentBackend = nextBackend;
+    updateBackendHint(projectId);
+  };
   const refreshBranches = (projectId: string, force = false) => {
     const project = projects.find((p) => p.id === projectId);
     if (!project || (!force && sourceBranchesForProject(project).length > 1)) return;
@@ -581,6 +623,7 @@ export function renderNewTaskPage(): HTMLElement {
   };
   projectSelect.onchange = () => {
     updateBranchSelect(projectSelect.value, null);
+    updateBackendSelectForProject(projectSelect.value);
     refreshBranches(projectSelect.value);
   };
   branchSelect.onchange = () => {
@@ -598,13 +641,24 @@ export function renderNewTaskPage(): HTMLElement {
   branchRefresh.onclick = () => refreshBranches(projectSelect.value, true);
   backendCheck.onclick = () => {
     const project = projects.find((p) => p.id === projectSelect.value);
-    if (!project?.agentBackend) return;
-    void checkAgentBackend(project.agentBackend, project.id).then(() => updateBackendHint(projectSelect.value));
+    const selectedBackend = selectedTaskAgentBackend();
+    if (!project || !selectedBackend) return;
+    void checkAgentBackend(selectedBackend, project.id).then(() => updateBackendHint(projectSelect.value));
+  };
+  backendSelect.onchange = () => {
+    newTaskFormDraft.agentBackend = selectedTaskAgentBackend() ?? '';
+    updateBackendHint(projectSelect.value);
   };
   // Initial mount: honor the saved draft branch when it still exists for the
   // current project (otherwise updateBranchSelect falls back to the project
   // default). This is the path that survives render() rebuilds.
   updateBranchSelect(projectSelect.value, newTaskFormDraft.branch || null);
+  if (newTaskFormDraft.agentBackend) {
+    backendSelect.value = newTaskFormDraft.agentBackend;
+    updateBackendHint(projectSelect.value);
+  } else {
+    updateBackendSelectForProject(projectSelect.value);
+  }
   refreshBranches(projectSelect.value);
   updateSubmitState();
   // 2026-05-06 router advisory defaults: Type is no longer prominent in the
@@ -633,7 +687,7 @@ export function renderNewTaskPage(): HTMLElement {
       class: 'input-block',
       children: [
         el('span', { text: '执行方式' }),
-        el('div', { class: 'branch-select-row', children: [backendLabel, backendCheck] }),
+        el('div', { class: 'branch-select-row', children: [backendSelect, backendCheck] }),
         backendHint,
       ],
     }),
@@ -725,7 +779,8 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
   try {
     if (!project) throw new Error('请选择一个已接入项目。');
     if (!title) throw new Error('请先填写任务目标。');
-    const ready = await ensureProjectAgentBackendReady(project);
+    const agentBackendOverride = String(fd.get('agentBackend') ?? '').trim() as ProjectAgentBackendKind | '';
+    const ready = await ensureProjectAgentBackendReady(project, agentBackendOverride || null);
     if (!ready) return;
     const firstMessage = buildNewTaskFirstMessage(title, details);
     // 2026-05-06: omit `type` when user left it as "(让 AI 自动判定)" so the
@@ -742,6 +797,7 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         projectId,
+        ...(agentBackendOverride && { agentBackend: agentBackendOverride }),
         ...(typeOverride && { type: typeOverride }),
         ...(flowOverride && { flowId: flowOverride }),
         ...(startStageOverride && { startStage: startStageOverride }),
@@ -778,15 +834,18 @@ async function submitWorkflowRequest(event: SubmitEvent, form: HTMLFormElement):
   }
 }
 
-async function ensureProjectAgentBackendReady(project: ProjectDto): Promise<boolean> {
-  if (!project.agentBackend) {
-    ui.lastError = '这个项目还没有配置执行方式。请先到“项目接入”编辑项目，选择 Claude Code 或 Codex。';
+async function ensureProjectAgentBackendReady(
+  project: ProjectDto,
+  selectedBackend: ProjectAgentBackendKind | null,
+): Promise<boolean> {
+  if (!selectedBackend) {
+    ui.lastError = '请选择本次任务的执行方式。';
     render();
     return false;
   }
-  const cached = preflightForProjectBackend(project);
-  if (cached?.runnable) return true;
-  const checked = await checkAgentBackend(project.agentBackend, project.id);
+  const cached = agentBackendPreflight.get(project.id);
+  if (cached?.backend === selectedBackend && cached.runnable) return true;
+  const checked = await checkAgentBackend(selectedBackend, project.id);
   if (checked?.runnable) return true;
   if (!checked) {
     ui.lastError = '执行方式连接检测未完成，任务不会入队。';
@@ -847,6 +906,7 @@ function clearNewTaskFormDraft(): void {
   newTaskFormDraft.title = '';
   newTaskFormDraft.details = '';
   newTaskFormDraft.branch = '';
+  newTaskFormDraft.agentBackend = '';
   newTaskFormDraft.flowId = '';
   newTaskFormDraft.startStage = '';
   newTaskTitleFocus = null;

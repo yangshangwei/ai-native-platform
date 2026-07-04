@@ -1,0 +1,283 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-springxml-e2e",
+  "title": "Legacy project understanding keeps Spring XML MVC context focused",
+  "description": "Runs the real scanner against a small static Spring XML MVC fixture, then verifies ContextPack selects the billing XML-mapped controller without leaking an unrelated XML-mapped controller.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_springxml",
+    "title": "Update legacy Spring XML billing controller",
+    "stage": "implementation",
+    "taskBrief": "Fix billing invoice reconciliation in the legacy Spring XML MVC mapping and update billing tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 16,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "src/main/webapp/WEB-INF/spring/billing-servlet.xml",
+        "content": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<beans>\n  <bean id=\"urlMapping\" class=\"org.springframework.web.servlet.handler.SimpleUrlHandlerMapping\">\n    <property name=\"mappings\">\n      <props>\n        <prop key=\"/billing/invoices/reconcile.htm\">billingController</prop>\n        <prop key=\"/customers/profile.htm\">customerController</prop>\n      </props>\n    </property>\n  </bean>\n  <bean id=\"billingController\" class=\"com.acme.legacy.billing.BillingController\" />\n  <bean id=\"customerController\" class=\"com.acme.legacy.customers.CustomerController\" />\n  <bean name=\"/billing/statements.htm statementController\" class=\"com.acme.legacy.billing.StatementController\" />\n</beans>\n"
+      },
+      {
+        "path": "src/main/java/com/acme/legacy/billing/BillingController.java",
+        "content": "package com.acme.legacy.billing;\n\npublic class BillingController {\n  private final BillingService billingService = new BillingService();\n\n  public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response) {\n    return new ModelAndView(\"billing\", \"result\", billingService.reconcile(request.getParameter(\"invoiceId\")));\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/acme/legacy/billing/BillingService.java",
+        "content": "package com.acme.legacy.billing;\n\npublic class BillingService {\n  private final BillingRepository billingRepository = new BillingRepository();\n\n  public ReconciliationResult reconcile(String invoiceId) {\n    return billingRepository.markReconciled(invoiceId);\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/acme/legacy/billing/BillingRepository.java",
+        "content": "package com.acme.legacy.billing;\n\npublic class BillingRepository {\n  public ReconciliationResult markReconciled(String invoiceId) {\n    return new ReconciliationResult(invoiceId);\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/acme/legacy/customers/CustomerController.java",
+        "content": "package com.acme.legacy.customers;\n\npublic class CustomerController {\n  public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response) {\n    return new ModelAndView(\"customer\");\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/acme/legacy/billing/StatementController.java",
+        "content": "package com.acme.legacy.billing;\n\npublic class StatementController {\n  private final StatementService statementService = new StatementService();\n\n  public ModelAndView handleRequest(HttpServletRequest request, HttpServletResponse response) {\n    return new ModelAndView(\"statement\", \"result\", statementService.generate(request.getParameter(\"accountId\")));\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/acme/legacy/billing/StatementService.java",
+        "content": "package com.acme.legacy.billing;\n\npublic class StatementService {\n  private final StatementRepository statementRepository = new StatementRepository();\n\n  public Statement generate(String accountId) {\n    return statementRepository.loadStatement(accountId);\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/acme/legacy/billing/StatementRepository.java",
+        "content": "package com.acme.legacy.billing;\n\npublic class StatementRepository {\n  public Statement loadStatement(String accountId) {\n    return new Statement(accountId);\n  }\n}\n"
+      },
+      {
+        "path": "src/test/java/billingTest.java",
+        "content": "import org.junit.Test;\n\npublic class billingTest {\n  @Test\n  public void reconcilesInvoiceThroughXmlMappedController() {}\n}\n"
+      },
+      {
+        "path": "src/test/java/billingStatementTest.java",
+        "content": "import org.junit.Test;\n\npublic class billingStatementTest {\n  @Test\n  public void generatesStatementThroughBeanNameUrlMapping() {}\n}\n"
+      },
+      {
+        "path": ".env",
+        "content": "SECRET_TOKEN=do-not-capture\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /billing/invoices/reconcile.htm",
+      "ANY /billing/statements.htm",
+      "ANY /customers/profile.htm"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventoryEntrypointRouteCountMax": 3,
+    "inventorySymbolNamesInclude": [
+      "BillingController",
+      "handleRequest",
+      "BillingService",
+      "reconcile",
+      "BillingRepository",
+      "markReconciled",
+      "StatementController",
+      "StatementService",
+      "generate",
+      "StatementRepository",
+      "loadStatement",
+      "CustomerController"
+    ],
+    "inventorySymbolCountMin": 12,
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 9,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventorySourceChunkCountMin": 7,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_spring_xml_billing_primary",
+      "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L3",
+      "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L6",
+      "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L11",
+      "file:src/main/java/com/acme/legacy/billing/BillingController.java#L3",
+      "file:src/main/java/com/acme/legacy/billing/BillingController.java#L4",
+      "file:src/main/java/com/acme/legacy/billing/BillingController.java#L6",
+      "file:src/main/java/com/acme/legacy/billing/BillingController.java#L7",
+      "file:src/main/java/com/acme/legacy/billing/BillingService.java#L3",
+      "file:src/main/java/com/acme/legacy/billing/BillingService.java#L4",
+      "file:src/main/java/com/acme/legacy/billing/BillingService.java#L6",
+      "file:src/main/java/com/acme/legacy/billing/BillingService.java#L7",
+      "file:src/main/java/com/acme/legacy/billing/BillingRepository.java#L3",
+      "file:src/main/java/com/acme/legacy/billing/BillingRepository.java#L4",
+      "file:src/test/java/billingTest.java"
+    ],
+    "sourceRefsExclude": [
+      "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L7",
+      "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L12",
+      "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L13",
+      "file:src/main/java/com/acme/legacy/billing/StatementController.java#L3",
+      "file:src/main/java/com/acme/legacy/billing/StatementController.java#L4",
+      "file:src/main/java/com/acme/legacy/billing/StatementController.java#L6",
+      "file:src/main/java/com/acme/legacy/billing/StatementController.java#L7",
+      "file:src/main/java/com/acme/legacy/billing/StatementService.java#L3",
+      "file:src/main/java/com/acme/legacy/billing/StatementService.java#L4",
+      "file:src/main/java/com/acme/legacy/billing/StatementService.java#L6",
+      "file:src/main/java/com/acme/legacy/billing/StatementService.java#L7",
+      "file:src/main/java/com/acme/legacy/billing/StatementRepository.java#L3",
+      "file:src/main/java/com/acme/legacy/billing/StatementRepository.java#L4",
+      "file:src/main/java/com/acme/legacy/customers/CustomerController.java#L3",
+      "file:src/main/java/com/acme/legacy/customers/CustomerController.java#L4"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedCountMin": 4,
+    "selectedCountMax": 12,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_src_main_java_com_acme_legacy_billing_billing",
+      "inventory_source_chunk_src_chunk_src_test_java_billingtest"
+    ],
+    "irrelevantContextRatioMax": 0.13
+  },
+  "variants": [
+    {
+      "id": "spring-xml-billing-primary",
+      "label": "Scanner-generated Spring XML billing controller is primary context",
+      "expectations": {
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_billing",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L6",
+              "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L11"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L7",
+              "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L13"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_billing_api",
+            "sourceRefsInclude": [
+              "file:src/main/java/com/acme/legacy/billing/BillingController.java#L6",
+              "file:src/main/java/com/acme/legacy/billing/BillingService.java#L6",
+              "file:src/main/java/com/acme/legacy/billing/BillingRepository.java#L3"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/java/com/acme/legacy/billing/StatementController.java#L6",
+              "file:src/main/java/com/acme/legacy/customers/CustomerController.java#L3"
+            ]
+          },
+          {
+            "ref": "inventory_tests_billing_api",
+            "sourceRefsInclude": [
+              "file:src/test/java/billingTest.java"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "spring-xml-bean-name-billing-statement",
+      "label": "Scanner-generated Spring XML bean-name billing controller is primary context",
+      "inputOverrides": {
+        "title": "Update legacy Spring XML statement controller",
+        "taskBrief": "Fix billing statement generation through legacy Spring XML bean-name URL mapping and update statement tests."
+      },
+      "expectations": {
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_spring_xml_bean_name_billing_statement",
+          "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L13",
+          "file:src/main/java/com/acme/legacy/billing/StatementController.java#L3",
+          "file:src/main/java/com/acme/legacy/billing/StatementController.java#L4",
+          "file:src/main/java/com/acme/legacy/billing/StatementController.java#L6",
+          "file:src/main/java/com/acme/legacy/billing/StatementController.java#L7",
+          "file:src/main/java/com/acme/legacy/billing/StatementService.java#L3",
+          "file:src/main/java/com/acme/legacy/billing/StatementService.java#L4",
+          "file:src/main/java/com/acme/legacy/billing/StatementService.java#L6",
+          "file:src/main/java/com/acme/legacy/billing/StatementService.java#L7",
+          "file:src/main/java/com/acme/legacy/billing/StatementRepository.java#L3",
+          "file:src/main/java/com/acme/legacy/billing/StatementRepository.java#L4",
+          "file:src/test/java/billingStatementTest.java"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L6",
+          "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L7",
+          "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L11",
+          "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L12",
+          "file:src/main/java/com/acme/legacy/billing/BillingController.java#L3",
+          "file:src/main/java/com/acme/legacy/billing/BillingController.java#L4",
+          "file:src/main/java/com/acme/legacy/billing/BillingController.java#L6",
+          "file:src/main/java/com/acme/legacy/billing/BillingController.java#L7",
+          "file:src/main/java/com/acme/legacy/customers/CustomerController.java#L3",
+          "file:src/main/java/com/acme/legacy/customers/CustomerController.java#L4"
+        ],
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_billing",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L13"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L6",
+              "file:src/main/webapp/WEB-INF/spring/billing-servlet.xml#L7"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_billing_api",
+            "sourceRefsInclude": [
+              "file:src/main/java/com/acme/legacy/billing/StatementController.java#L6",
+              "file:src/main/java/com/acme/legacy/billing/StatementService.java#L6",
+              "file:src/main/java/com/acme/legacy/billing/StatementRepository.java#L3"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/java/com/acme/legacy/billing/BillingController.java#L6",
+              "file:src/main/java/com/acme/legacy/customers/CustomerController.java#L3"
+            ]
+          },
+          {
+            "ref": "inventory_tests_billing_api",
+            "sourceRefsInclude": [
+              "file:src/test/java/billingStatementTest.java"
+            ]
+          }
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_billing",
+          "inventory_symbols_billing_api",
+          "inventory_tests_billing_api",
+          "inventory_hotspots_billing_api",
+          "inventory_source_chunk_src_chunk_src_main_java_com_acme_legacy_billing_statement",
+          "inventory_source_chunk_src_chunk_src_test_java_billingstatementtest"
+        ],
+        "irrelevantContextRatioMax": 0.13
+      }
+    }
+  ]
+}

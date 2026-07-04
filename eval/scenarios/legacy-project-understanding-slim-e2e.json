@@ -1,0 +1,210 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-slim-e2e",
+  "title": "Legacy project understanding keeps Slim route context focused",
+  "description": "Runs the real scanner against a small old Slim/Silex-style PHP fixture, then verifies ContextPack selects the billing route and tests without leaking an unrelated customer route.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_slim",
+    "title": "Update legacy Slim billing refunds",
+    "stage": "implementation",
+    "taskBrief": "Fix billing refund approval behavior in the legacy Slim PHP route and update billing refund tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 18,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "public/index.php",
+        "content": "<?php\n$app->post('/billing/refunds/{refundId}/approve', [BillingController::class, 'approveRefund']);\n$app->get('/customers/{customerId}/profile', 'CustomerController:profile');\n$client->post('/external/refunds', [BillingController::class, 'approveRefund']);\n$app->get('/health', function () { return 'ok'; });\n"
+      },
+      {
+        "path": "src/Controller/BillingController.php",
+        "content": "<?php\nclass BillingController\n{\n  public function approveRefund($request, $response, $args) {\n    $service = new BillingService();\n    return $service->approveRefund($args['refundId']);\n  }\n}\n"
+      },
+      {
+        "path": "src/Controller/CustomerController.php",
+        "content": "<?php\nclass CustomerController\n{\n  public function profile($request, $response, $args) {\n    return $args['customerId'];\n  }\n}\n"
+      },
+      {
+        "path": "src/Service/BillingService.php",
+        "content": "<?php\nclass BillingService\n{\n  public function approveRefund($refundId) {\n    $repository = new BillingRepository();\n    return $repository->approveRefund($refundId);\n  }\n}\n"
+      },
+      {
+        "path": "src/Repository/BillingRepository.php",
+        "content": "<?php\nclass BillingRepository\n{\n  public function approveRefund($refundId) {\n    return $refundId;\n  }\n}\n"
+      },
+      {
+        "path": "tests/BillingRefundSlimTest.php",
+        "content": "<?php\nfunction test_billing_refund_slim_route_approves_refunds() {}\n"
+      },
+      {
+        "path": "tests/CustomerProfileSlimTest.php",
+        "content": "<?php\nfunction test_customer_profile_slim_route_returns_customer_profile() {}\n"
+      },
+      {
+        "path": ".env",
+        "content": "DB_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "POST /billing/refunds/{refundId}/approve",
+      "GET /customers/{customerId}/profile"
+    ],
+    "inventoryEntrypointRouteCountMin": 2,
+    "inventoryEntrypointRouteCountMax": 2,
+    "inventorySymbolNamesInclude": [
+      "BillingController",
+      "approveRefund",
+      "BillingService",
+      "BillingRepository",
+      "CustomerController",
+      "profile"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 6,
+    "inventoryGraphEdgeConfidenceMin": 0.68,
+    "inventoryRouteHandlerEdgeCountMin": 2,
+    "inventoryRouteHandlerEdgeConfidenceMin": 0.78,
+    "inventorySourceChunkCountMin": 7,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_slim_billing_refund_primary",
+      "file:public/index.php#L2",
+      "file:src/Controller/BillingController.php#L2",
+      "file:src/Controller/BillingController.php#L4",
+      "file:src/Controller/BillingController.php#L5",
+      "file:src/Controller/BillingController.php#L6",
+      "file:src/Service/BillingService.php#L2",
+      "file:src/Service/BillingService.php#L4",
+      "file:src/Repository/BillingRepository.php#L2",
+      "file:tests/BillingRefundSlimTest.php"
+    ],
+    "sourceRefsExclude": [
+      "file:public/index.php#L3",
+      "file:public/index.php#L4",
+      "file:public/index.php#L5",
+      "file:src/Controller/CustomerController.php#L2",
+      "file:src/Controller/CustomerController.php#L4",
+      "file:tests/CustomerProfileSlimTest.php"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:public/index.php#L2",
+          "file:src/Controller/BillingController.php#L2",
+          "file:src/Controller/BillingController.php#L4",
+          "file:src/Controller/BillingController.php#L5",
+          "file:src/Controller/BillingController.php#L6",
+          "file:src/Service/BillingService.php#L2",
+          "file:src/Service/BillingService.php#L4",
+          "file:src/Service/BillingService.php#L5",
+          "file:src/Service/BillingService.php#L6",
+          "file:src/Repository/BillingRepository.php#L2",
+          "file:src/Repository/BillingRepository.php#L4",
+          "file:tests/BillingRefundSlimTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:public/index.php#L3",
+          "file:public/index.php#L4",
+          "file:public/index.php#L5",
+          "file:src/Controller/CustomerController.php#L2",
+          "file:src/Controller/CustomerController.php#L4",
+          "file:tests/CustomerProfileSlimTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:public/index.php#L2",
+          "file:src/Controller/BillingController.php#L2",
+          "file:src/Controller/BillingController.php#L4",
+          "file:src/Controller/BillingController.php#L5",
+          "file:src/Controller/BillingController.php#L6",
+          "file:src/Service/BillingService.php#L2",
+          "file:src/Service/BillingService.php#L4",
+          "file:src/Service/BillingService.php#L5",
+          "file:src/Service/BillingService.php#L6",
+          "file:src/Repository/BillingRepository.php#L2",
+          "file:src/Repository/BillingRepository.php#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:public/index.php#L3",
+          "file:public/index.php#L4",
+          "file:public/index.php#L5",
+          "file:src/Controller/CustomerController.php#L2",
+          "file:src/Controller/CustomerController.php#L4",
+          "file:tests/CustomerProfileSlimTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/BillingRefundSlimTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:public/index.php#L3",
+          "file:src/Controller/CustomerController.php#L2",
+          "file:src/Controller/CustomerController.php#L4",
+          "file:tests/CustomerProfileSlimTest.php"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 11,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_public_index",
+      "inventory_source_chunk_src_chunk_src_controller_billing",
+      "inventory_source_chunk_src_chunk_src_service_billing",
+      "inventory_source_chunk_src_chunk_src_repository_billing",
+      "inventory_source_chunk_src_chunk_tests_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13,
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.68,
+      "routeHandlerEdgeConfidenceMin": 0.9
+    }
+  },
+  "variants": [
+    {
+      "id": "slim-billing-refund-primary",
+      "label": "Legacy Slim billing refund task stays focused on billing route and tests"
+    }
+  ]
+}

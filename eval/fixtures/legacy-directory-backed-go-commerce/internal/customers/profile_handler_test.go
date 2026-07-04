@@ -1,0 +1,3 @@
+package customers
+
+func TestGoCustomerProfileLoadsRiskSnapshot() {}

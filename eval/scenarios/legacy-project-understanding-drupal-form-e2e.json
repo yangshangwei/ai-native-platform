@@ -1,0 +1,211 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-drupal-form-e2e",
+  "title": "Legacy project understanding keeps Drupal drupal_get_form route context focused",
+  "description": "Runs the real scanner against a small Drupal 7 hook_menu drupal_get_form fixture, then verifies ContextPack selects the billing refund form callback and tests without leaking an unrelated customer form route.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_drupal_form",
+    "title": "Update legacy Drupal billing refund form",
+    "stage": "implementation",
+    "taskBrief": "Fix billing refund approval form behavior in the legacy Drupal hook_menu drupal_get_form route and update billing refund form tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 18,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "sites/all/modules/billing/billing.module",
+        "content": "<?php\nfunction billing_menu() {\n  $items['billing/refunds/%/approve-form'] = array(\n    'title' => 'Approve refund form',\n    'page callback' => 'drupal_get_form',\n    'page arguments' => array('billing_refund_approve_form', 2),\n    'access callback' => TRUE,\n  );\n  $items['customers/profile-form'] = array(\n    'page callback' => 'drupal_get_form',\n    'page arguments' => array('customer_profile_form'),\n    'access callback' => TRUE,\n  );\n  $items['billing/dynamic-form'] = array(\n    'page callback' => 'drupal_get_form',\n    'page arguments' => array($dynamic_form_id),\n    'access callback' => TRUE,\n  );\n  return $items;\n}\n\nfunction billing_refund_approve_form($form, &$form_state, $refund_id) {\n  $service = new BillingRefundService();\n  return $service->approveRefund($refund_id);\n}\n\nfunction customer_profile_form() {\n  return array();\n}\n"
+      },
+      {
+        "path": "sites/all/modules/billing/src/BillingRefundService.php",
+        "content": "<?php\nclass BillingRefundService\n{\n  public function approveRefund($refundId) {\n    $repository = new BillingRefundRepository();\n    return $repository->approveRefund($refundId);\n  }\n}\n"
+      },
+      {
+        "path": "sites/all/modules/billing/src/BillingRefundRepository.php",
+        "content": "<?php\nclass BillingRefundRepository\n{\n  public function approveRefund($refundId) {\n    return $refundId;\n  }\n}\n"
+      },
+      {
+        "path": "tests/BillingRefundDrupalFormTest.php",
+        "content": "<?php\nfunction test_billing_refund_drupal_form_approves_refunds() {}\n"
+      },
+      {
+        "path": "tests/CustomerProfileDrupalFormTest.php",
+        "content": "<?php\nfunction test_customer_profile_drupal_form_returns_customer_profile() {}\n"
+      },
+      {
+        "path": ".env",
+        "content": "DB_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /billing/refunds/%/approve-form",
+      "ANY /customers/profile-form"
+    ],
+    "inventoryEntrypointRouteCountMin": 2,
+    "inventoryEntrypointRouteCountMax": 2,
+    "inventorySymbolNamesInclude": [
+      "billing_menu",
+      "billing_refund_approve_form",
+      "customer_profile_form",
+      "BillingRefundService",
+      "approveRefund",
+      "BillingRefundRepository"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 6,
+    "inventoryGraphEdgeConfidenceMin": 0.68,
+    "inventoryRouteHandlerEdgeCountMin": 2,
+    "inventoryRouteHandlerEdgeConfidenceMin": 0.78,
+    "inventorySourceChunkCountMin": 5,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_drupal_billing_form_primary",
+      "file:sites/all/modules/billing/billing.module#L3",
+      "file:sites/all/modules/billing/billing.module#L5",
+      "file:sites/all/modules/billing/billing.module#L6",
+      "file:sites/all/modules/billing/billing.module#L22",
+      "file:sites/all/modules/billing/billing.module#L23",
+      "file:sites/all/modules/billing/billing.module#L24",
+      "file:sites/all/modules/billing/src/BillingRefundService.php#L2",
+      "file:sites/all/modules/billing/src/BillingRefundService.php#L4",
+      "file:sites/all/modules/billing/src/BillingRefundService.php#L5",
+      "file:sites/all/modules/billing/src/BillingRefundRepository.php#L2",
+      "file:tests/BillingRefundDrupalFormTest.php"
+    ],
+    "sourceRefsExclude": [
+      "file:sites/all/modules/billing/billing.module#L9",
+      "file:sites/all/modules/billing/billing.module#L10",
+      "file:sites/all/modules/billing/billing.module#L11",
+      "file:sites/all/modules/billing/billing.module#L14",
+      "file:sites/all/modules/billing/billing.module#L15",
+      "file:sites/all/modules/billing/billing.module#L16",
+      "file:sites/all/modules/billing/billing.module#L27",
+      "file:tests/CustomerProfileDrupalFormTest.php"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:sites/all/modules/billing/billing.module#L3",
+          "file:sites/all/modules/billing/billing.module#L5",
+          "file:sites/all/modules/billing/billing.module#L6",
+          "file:sites/all/modules/billing/billing.module#L22",
+          "file:sites/all/modules/billing/billing.module#L23",
+          "file:sites/all/modules/billing/billing.module#L24",
+          "file:sites/all/modules/billing/src/BillingRefundService.php#L2",
+          "file:sites/all/modules/billing/src/BillingRefundService.php#L4",
+          "file:sites/all/modules/billing/src/BillingRefundService.php#L5",
+          "file:sites/all/modules/billing/src/BillingRefundService.php#L6",
+          "file:sites/all/modules/billing/src/BillingRefundRepository.php#L2",
+          "file:sites/all/modules/billing/src/BillingRefundRepository.php#L4",
+          "file:tests/BillingRefundDrupalFormTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:sites/all/modules/billing/billing.module#L9",
+          "file:sites/all/modules/billing/billing.module#L10",
+          "file:sites/all/modules/billing/billing.module#L11",
+          "file:sites/all/modules/billing/billing.module#L14",
+          "file:sites/all/modules/billing/billing.module#L15",
+          "file:sites/all/modules/billing/billing.module#L16",
+          "file:sites/all/modules/billing/billing.module#L27",
+          "file:tests/CustomerProfileDrupalFormTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:sites/all/modules/billing/billing.module#L3",
+          "file:sites/all/modules/billing/billing.module#L5",
+          "file:sites/all/modules/billing/billing.module#L6",
+          "file:sites/all/modules/billing/billing.module#L22",
+          "file:sites/all/modules/billing/billing.module#L23",
+          "file:sites/all/modules/billing/billing.module#L24",
+          "file:sites/all/modules/billing/src/BillingRefundService.php#L2",
+          "file:sites/all/modules/billing/src/BillingRefundService.php#L4",
+          "file:sites/all/modules/billing/src/BillingRefundService.php#L5",
+          "file:sites/all/modules/billing/src/BillingRefundService.php#L6",
+          "file:sites/all/modules/billing/src/BillingRefundRepository.php#L2",
+          "file:sites/all/modules/billing/src/BillingRefundRepository.php#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:sites/all/modules/billing/billing.module#L9",
+          "file:sites/all/modules/billing/billing.module#L10",
+          "file:sites/all/modules/billing/billing.module#L11",
+          "file:sites/all/modules/billing/billing.module#L14",
+          "file:sites/all/modules/billing/billing.module#L15",
+          "file:sites/all/modules/billing/billing.module#L16",
+          "file:sites/all/modules/billing/billing.module#L27",
+          "file:tests/CustomerProfileDrupalFormTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/BillingRefundDrupalFormTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:sites/all/modules/billing/billing.module#L9",
+          "file:sites/all/modules/billing/billing.module#L10",
+          "file:sites/all/modules/billing/billing.module#L11",
+          "file:sites/all/modules/billing/billing.module#L27",
+          "file:tests/CustomerProfileDrupalFormTest.php"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 11,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_sites_all_modules_billing_billing",
+      "inventory_source_chunk_src_chunk_sites_all_modules_billing_src_billingrefund",
+      "inventory_source_chunk_src_chunk_tests_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13,
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.68,
+      "routeHandlerEdgeConfidenceMin": 0.78
+    }
+  },
+  "variants": [
+    {
+      "id": "drupal-billing-form-primary",
+      "label": "Legacy Drupal drupal_get_form billing task stays focused on billing form route and tests"
+    }
+  ]
+}

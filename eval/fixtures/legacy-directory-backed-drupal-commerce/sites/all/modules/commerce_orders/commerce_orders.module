@@ -1,0 +1,14 @@
+<?php
+function commerce_orders_menu() {
+  $items['orders/fulfillment/reprice'] = array(
+    'title' => 'Reprice fulfillment',
+    'page callback' => 'commerce_orders_reprice_fulfillment',
+    'access callback' => TRUE,
+  );
+  return $items;
+}
+
+function commerce_orders_reprice_fulfillment() {
+  $service = new OrderFulfillmentService();
+  return $service->repriceDrupalFulfillment();
+}

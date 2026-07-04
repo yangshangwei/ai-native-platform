@@ -1,0 +1,9 @@
+{"file":".trellis/tasks/archive/2026-07/07-01-legacy-project-understanding-evolution-roadmap/prd.md","reason":"Canonical V1.1 scope, roadmap boundaries, and acceptance criteria."}
+{"file":".trellis/tasks/archive/2026-07/07-01-legacy-project-understanding-evolution-roadmap/roadmap.md","reason":"V1.1-V2 sequencing and deferred milestone definitions."}
+{"file":".trellis/tasks/archive/2026-07/07-01-legacy-project-understanding-evolution-roadmap/task-breakdown.md","reason":"Implementation phases and done conditions for V1.1."}
+{"file":".trellis/tasks/archive/2026-07/07-01-legacy-project-understanding-evolution-roadmap/regression-test-plan.md","reason":"Focused/profile/typecheck validation commands and coverage expectations."}
+{"file":".trellis/tasks/archive/2026-07/07-01-legacy-project-capability-map-bootstrap/prd.md","reason":"Prior capability-map MVP contract and scope."}
+{"file":".trellis/tasks/archive/2026-07/07-01-legacy-project-capability-map-bootstrap/solution-design.md","reason":"Existing inventory capability-map design and safety rules."}
+{"file":".trellis/spec/runner/backend/flow-registry.md","reason":"Profile bootstrap inventory/profile flow invariants."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Context and source-ref governance constraints for later roadmap phases."}
+{"file": ".trellis/tasks/archive/2026-07/07-01-legacy-project-understanding-evolution-roadmap/research/github-codebase-understanding-patterns.md", "reason": "GitHub reference patterns for codebase understanding evolution and hybrid retrieval sequencing."}

@@ -9,9 +9,9 @@
  */
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
-import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
   AgentResult,
@@ -36,6 +36,7 @@ import type {
   SkillSpec,
   StepCheckpoint,
   StepRun,
+  ToolInvocation,
   WorkflowRun,
   WorkflowRunType,
   WorkflowStage,
@@ -48,7 +49,9 @@ import {
 import { branchFanOutGraphDefinition } from '../packages/shared/src/flows/graph-fixtures';
 import { VERIFIER_AC_MATRIX_SCHEMA_VERSION } from '../packages/shared/src/types/artifact';
 import type { AgentBackend, AgentRunResult } from '../apps/runner/src/agents/types';
+import type { InventoryLimits, ProjectInventoryEnvelope } from '../apps/runner/src/project-inventory';
 import type { InvokeSkillDeps } from '../apps/runner/src/orchestrator/invoke-skill';
+import type { StepDeps } from '../apps/runner/src/orchestrator/steps';
 import type { RunCtx } from '../apps/runner/src/orchestrator/types';
 import type { ProjectProfile } from '../apps/runner/src/profile';
 
@@ -57,14 +60,16 @@ type ScenarioKind =
   | 'agent_backend_fixture'
   | 'context_pack_fixture'
   | 'workflow_fixture'
-  | 'graph_runtime_fixture';
+  | 'graph_runtime_fixture'
+  | 'legacy_project_understanding_fixture';
 
 type EvalScenario =
   | RouterEvalScenario
   | AgentBackendEvalScenario
   | ContextPackEvalScenario
   | WorkflowEvalScenario
-  | GraphRuntimeEvalScenario;
+  | GraphRuntimeEvalScenario
+  | LegacyProjectUnderstandingEvalScenario;
 
 interface BaseEvalScenario {
   schemaVersion: 'ainp.eval.scenario.v1';
@@ -72,6 +77,7 @@ interface BaseEvalScenario {
   title: string;
   description?: string;
   kind: ScenarioKind;
+  sourcePath?: string;
 }
 
 interface RouterEvalScenario extends BaseEvalScenario {
@@ -109,6 +115,13 @@ interface GraphRuntimeEvalScenario extends BaseEvalScenario {
   variants?: GraphRuntimeEvalVariant[];
 }
 
+interface LegacyProjectUnderstandingEvalScenario extends BaseEvalScenario {
+  kind: 'legacy_project_understanding_fixture';
+  input: LegacyProjectUnderstandingEvalInput;
+  expectations?: LegacyProjectUnderstandingExpectations;
+  variants?: LegacyProjectUnderstandingEvalVariant[];
+}
+
 interface EvalVariant<Input, Expectations> {
   id: string;
   label?: string;
@@ -124,6 +137,10 @@ type AgentBackendEvalVariant = EvalVariant<AgentBackendEvalInput, AgentBackendEx
 type ContextPackEvalVariant = EvalVariant<ContextPackEvalInput, ContextPackExpectations>;
 type WorkflowEvalVariant = EvalVariant<WorkflowEvalInput, WorkflowExpectations>;
 type GraphRuntimeEvalVariant = EvalVariant<GraphRuntimeEvalInput, GraphRuntimeExpectations>;
+type LegacyProjectUnderstandingEvalVariant = EvalVariant<
+  LegacyProjectUnderstandingEvalInput,
+  LegacyProjectUnderstandingExpectations
+>;
 
 interface RouterEvalInput {
   projectId: string;
@@ -150,7 +167,7 @@ interface RouterExpectations {
   rulesFiredIncludes?: string[];
 }
 
-type AgentBackendBehavior = 'success' | 'failure' | 'context_request';
+type AgentBackendBehavior = 'success' | 'failure' | 'context_request' | 'profile_bootstrap_success';
 
 interface AgentBackendEvalInput {
   projectId?: string;
@@ -179,6 +196,16 @@ interface AgentBackendExpectations {
   outputCount?: number;
   backendCalls?: number;
   externalCliUsed?: boolean;
+  profileBootstrapFlow?: boolean;
+  profileFlowStages?: WorkflowStage[];
+  inventoryArtifactPersisted?: boolean;
+  sourceChunkIndexArtifactPersisted?: boolean;
+  sourceChunkIndexNotInjectedAsInput?: boolean;
+  profileArtifactCount?: number;
+  profileJsonContractValid?: boolean;
+  profileJsonProvenanceValid?: boolean;
+  rawInventoryExcludedFromProfileMarkdown?: boolean;
+  knowledgeCandidateReviewableOnly?: boolean;
 }
 
 interface ContextPackEvalInput {
@@ -204,14 +231,107 @@ interface ContextPackExpectations {
   mode?: ContextPack['mode'];
   manifestRefsInclude?: string[];
   manifestRefsExclude?: string[];
+  selectedSectionsInclude?: SelectedSectionExpectation[];
+  relevantManifestRefPrefixes?: string[];
+  irrelevantContextRatioMax?: number;
+  contextQualityGates?: ContextQualityScenarioGates;
   sourceRefsInclude?: string[];
   sourceRefsExclude?: string[];
   authoritativeSourceRefsExclude?: string[];
   sectionModes?: Record<string, ContextInclusionMode>;
   retrievalHintsMin?: number;
   calibrationSignalsMin?: number;
+  calibrationSignalsInclude?: CalibrationSignalExpectation[];
   selectedCountMin?: number;
   selectedCountMax?: number;
+}
+
+interface CalibrationSignalExpectation {
+  id?: string;
+  kind?: string;
+  severity?: string;
+  recommendedAction?: string;
+  messageIncludes?: string[];
+  messageExcludes?: string[];
+  subjectRefsInclude?: string[];
+  subjectRefsExclude?: string[];
+  evidenceRefsInclude?: string[];
+  evidenceRefsExclude?: string[];
+}
+
+interface SelectedSectionExpectation {
+  ref: string;
+  mode?: ContextInclusionMode;
+  contentIncludes?: string[];
+  contentExcludes?: string[];
+  reasonIncludes?: string[];
+  reasonExcludes?: string[];
+  sourceRefsInclude?: string[];
+  sourceRefsExclude?: string[];
+}
+
+interface ContextQualityScenarioGates {
+  measuredVariantsMin?: number;
+  irrelevantContextRatioAverageMax?: number;
+  irrelevantContextRatioMax?: number;
+}
+
+interface LegacyInventoryQualityScenarioGates {
+  measuredVariantsMin?: number;
+  graphEdgeConfidenceMin?: number;
+  routeHandlerEdgeConfidenceMin?: number;
+  sourceChunkContentSha256CoverageMin?: number;
+  sourceChunkIndexCoverageMin?: number;
+  sourceChunkLinkedRecordCoverageMin?: number;
+  sourceFileExtensionCountMin?: number;
+  sourcePathPatternCountMin?: number;
+  sourceRecordKindCountMin?: number;
+}
+
+interface LegacyProjectUnderstandingEvalInput {
+  projectId?: string;
+  workflowRunId?: string;
+  title: string;
+  stage?: WorkflowStage;
+  taskBrief?: string;
+  files?: Array<{
+    path: string;
+    content: string;
+  }>;
+  fixtureDir?: LegacyProjectUnderstandingFixtureDirInput;
+  inventoryLimits?: Partial<InventoryLimits>;
+  budget?: Partial<ContextPackBudget>;
+  sensitivePathPatterns?: string[];
+}
+
+interface LegacyProjectUnderstandingFixtureDirInput {
+  path: string;
+  maxFiles?: number;
+  maxFileBytes?: number;
+  maxTotalBytes?: number;
+  excludePaths?: string[];
+}
+
+interface LegacyProjectUnderstandingExpectations extends ContextPackExpectations {
+  inventoryQualityGates?: LegacyInventoryQualityScenarioGates;
+  inventoryCapabilityLabelsInclude?: string[];
+  inventoryCapabilityLabelsExclude?: string[];
+  inventoryCapabilityCountMin?: number;
+  inventoryCapabilityCountMax?: number;
+  inventoryEntrypointRoutesInclude?: string[];
+  inventoryEntrypointRouteCountMin?: number;
+  inventoryEntrypointRouteCountMax?: number;
+  inventorySymbolNamesInclude?: string[];
+  inventorySymbolCountMin?: number;
+  inventoryGraphEdgeKindsInclude?: string[];
+  inventoryGraphEdgeCountMin?: number;
+  inventoryGraphEdgeConfidenceMin?: number;
+  inventoryRouteHandlerEdgeCountMin?: number;
+  inventoryRouteHandlerEdgeConfidenceMin?: number;
+  inventorySourceChunkGraphEdgeRefsInclude?: string[];
+  inventorySourceChunkCountMin?: number;
+  inventoryExclusionsInclude?: string[];
+  inventoryExclusionCountMin?: number;
 }
 
 type WorkflowFixtureProfile =
@@ -286,7 +406,12 @@ interface EvalReport {
     variantRuns: number;
     passed: number;
     failed: number;
+    scenarioChecks: {
+      passed: number;
+      failed: number;
+    };
   };
+  legacyInventorySummary: LegacyInventoryEvalSummary | null;
   results: EvalScenarioResult[];
 }
 
@@ -295,6 +420,7 @@ interface EvalScenarioResult {
   title: string;
   kind: ScenarioKind;
   variants: EvalVariantResult[];
+  scenarioChecks?: EvalCheck[];
 }
 
 interface EvalVariantResult {
@@ -315,7 +441,68 @@ interface EvalCheck {
   actual: unknown;
 }
 
+interface ContextQualityMetrics {
+  relevantManifestRefPrefixes: string[];
+  selectedCount: number;
+  relevantCount: number;
+  irrelevantCount: number;
+  irrelevantRatio: number;
+  irrelevantRefs: string[];
+}
+
+interface LegacyInventoryStats {
+  capabilityCount: number;
+  entrypointRouteCount: number;
+  symbolCount: number;
+  graphEdgeCount: number;
+  routeHandlerEdgeCount: number;
+  sourceChunkCount: number;
+  sourceChunkContentSha256Count: number;
+  sourceChunkIndexEntryCount: number;
+  sourceChunkIndexedCount: number;
+  sourceChunkLinkedRecordCount: number;
+  sourceFileExtensionCount: number;
+  sourcePathPatternCount: number;
+  sourceRecordKindCount: number;
+  exclusionCount: number;
+}
+
+interface LegacyInventoryEvalSummaryVariant {
+  scenarioId: string;
+  variantId: string;
+  status: 'pass' | 'fail';
+  selectedContextSections: number;
+  irrelevantContextRatio: number | null;
+  stats: LegacyInventoryStats;
+}
+
+interface LegacyInventoryEvalSummary {
+  scenarioCount: number;
+  variantRuns: number;
+  totals: LegacyInventoryStats;
+  averages: LegacyInventoryStats;
+  min: LegacyInventoryStats;
+  max: LegacyInventoryStats;
+  selectedContextSections: {
+    total: number;
+    average: number;
+    min: number;
+    max: number;
+  };
+  contextQuality: {
+    measuredVariants: number;
+    irrelevantContextRatioAverage: number | null;
+    irrelevantContextRatioMax: number | null;
+  };
+  variants: LegacyInventoryEvalSummaryVariant[];
+}
+
 const repoRoot = resolve(import.meta.dir, '..');
+const DEFAULT_LEGACY_GRAPH_EDGE_CONFIDENCE_MIN = 0.65;
+const DEFAULT_LEGACY_ROUTE_HANDLER_EDGE_CONFIDENCE_MIN = 0.78;
+const DEFAULT_LEGACY_FIXTURE_DIR_MAX_FILES = 256;
+const DEFAULT_LEGACY_FIXTURE_DIR_MAX_FILE_BYTES = 128 * 1024;
+const DEFAULT_LEGACY_FIXTURE_DIR_MAX_TOTAL_BYTES = 2 * 1024 * 1024;
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
@@ -333,7 +520,11 @@ async function main(): Promise<void> {
   }
 
   const variantResults = results.flatMap((result) => result.variants);
+  const scenarioChecks = results.flatMap((result) => result.scenarioChecks ?? []);
   const passed = variantResults.filter((result) => result.status === 'pass').length;
+  const failed = variantResults.length - passed;
+  const passedScenarioChecks = scenarioChecks.filter((check) => check.status === 'pass').length;
+  const failedScenarioChecks = scenarioChecks.length - passedScenarioChecks;
   const report: EvalReport = {
     schemaVersion: 'ainp.eval.result.v1',
     generatedAt: new Date().toISOString(),
@@ -342,8 +533,13 @@ async function main(): Promise<void> {
       scenarios: scenarios.length,
       variantRuns: variantResults.length,
       passed,
-      failed: variantResults.length - passed,
+      failed: failed + failedScenarioChecks,
+      scenarioChecks: {
+        passed: passedScenarioChecks,
+        failed: failedScenarioChecks,
+      },
     },
+    legacyInventorySummary: buildLegacyInventorySummary(results),
     results,
   };
 
@@ -354,7 +550,7 @@ async function main(): Promise<void> {
   await writeFile(jsonPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
   await writeFile(htmlPath, renderHtml(report), 'utf8');
 
-  console.log(`[eval] scenarios=${report.summary.scenarios} variants=${report.summary.variantRuns} passed=${report.summary.passed} failed=${report.summary.failed}`);
+  console.log(`[eval] scenarios=${report.summary.scenarios} variants=${report.summary.variantRuns} passed=${report.summary.passed} failed=${report.summary.failed} scenarioChecks=${report.summary.scenarioChecks.passed}/${report.summary.scenarioChecks.failed}`);
   console.log(`[eval] json=${jsonPath}`);
   console.log(`[eval] html=${htmlPath}`);
   if (report.summary.failed > 0) process.exit(1);
@@ -369,7 +565,7 @@ async function readScenarios(dir: string): Promise<EvalScenario[]> {
     const path = join(dir, file);
     const parsed = JSON.parse(await readFile(path, 'utf8')) as EvalScenario;
     validateScenario(parsed, basename(path));
-    scenarios.push(parsed);
+    scenarios.push({ ...parsed, sourcePath: path });
   }
   return scenarios;
 }
@@ -386,6 +582,9 @@ async function runScenario(scenario: EvalScenario): Promise<EvalScenarioResult> 
   }
   if (scenario.kind === 'graph_runtime_fixture') {
     return runGraphRuntimeScenario(scenario);
+  }
+  if (scenario.kind === 'legacy_project_understanding_fixture') {
+    return runLegacyProjectUnderstandingScenario(scenario);
   }
   return runRouterScenario(scenario);
 }
@@ -436,11 +635,16 @@ async function runContextPackScenario(scenario: ContextPackEvalScenario): Promis
     const expectations = { ...(scenario.expectations ?? {}), ...(variant.expectations ?? {}) };
     variantResults.push(await runContextPackVariant(scenario, variant, input, expectations));
   }
+  const scenarioChecks = [
+    ...checkScenarioContextQuality(variantResults, scenario.expectations?.contextQualityGates),
+    ...checkInventorySectionGateCoverage(scenario),
+  ];
   return {
     scenarioId: scenario.id,
     title: scenario.title,
     kind: scenario.kind,
     variants: variantResults,
+    scenarioChecks,
   };
 }
 
@@ -477,6 +681,32 @@ async function runGraphRuntimeScenario(scenario: GraphRuntimeEvalScenario): Prom
     title: scenario.title,
     kind: scenario.kind,
     variants: variantResults,
+  };
+}
+
+async function runLegacyProjectUnderstandingScenario(
+  scenario: LegacyProjectUnderstandingEvalScenario,
+): Promise<EvalScenarioResult> {
+  const variants = scenario.variants?.length
+    ? scenario.variants
+    : [{ id: 'default', label: 'Default' } satisfies LegacyProjectUnderstandingEvalVariant];
+  const variantResults: EvalVariantResult[] = [];
+  for (const variant of variants) {
+    const input = mergeInput(scenario.input, variant.inputOverrides);
+    const expectations = { ...(scenario.expectations ?? {}), ...(variant.expectations ?? {}) };
+    variantResults.push(await runLegacyProjectUnderstandingVariant(scenario, variant, input, expectations));
+  }
+  const scenarioChecks = [
+    ...checkScenarioContextQuality(variantResults, scenario.expectations?.contextQualityGates),
+    ...checkScenarioLegacyInventoryQuality(variantResults, scenario.expectations?.inventoryQualityGates),
+    ...checkInventorySectionGateCoverage(scenario),
+  ];
+  return {
+    scenarioId: scenario.id,
+    title: scenario.title,
+    kind: scenario.kind,
+    variants: variantResults,
+    scenarioChecks,
   };
 }
 
@@ -537,6 +767,25 @@ interface AgentBackendFixtureOutput {
   backendCalls: number;
   errorObserved: boolean;
   externalCliUsed: false;
+  profileBootstrap: ProfileBootstrapFixtureOutput | null;
+}
+
+interface ProfileBootstrapFixtureOutput {
+  flowId: FlowId;
+  stages: WorkflowStage[];
+  artifactKinds: string[];
+  artifactOutputs: string[];
+  inventoryArtifactId: string | null;
+  sourceChunkIndexArtifactId: string | null;
+  profileArtifactCount: number;
+  profileJsonContractValid: boolean;
+  profileJsonProvenanceValid: boolean;
+  sourceChunkIndexInjectedAsInput: boolean;
+  rawInventoryInProfileMarkdown: boolean;
+  knowledgeCandidateGenerated: boolean;
+  knowledgeCandidateReviewable: boolean;
+  knowledgePersisted: boolean;
+  ok: boolean;
 }
 
 async function runAgentBackendVariant(
@@ -545,6 +794,10 @@ async function runAgentBackendVariant(
   input: AgentBackendEvalInput,
   expectations: AgentBackendExpectations,
 ): Promise<EvalVariantResult> {
+  if (input.behavior === 'profile_bootstrap_success') {
+    return runProfileBootstrapAgentBackendVariant(scenario, variant, input, expectations);
+  }
+
   const { finishAgentSuccess, invokeSkill } = await import('../apps/runner/src/orchestrator/invoke-skill');
   const workDir = mkdtempSync(join(tmpdir(), `ainp-eval-agent-${safeId(scenario.id)}-${safeId(variant.id)}-`));
   const artifactsDir = join(workDir, 'artifacts');
@@ -595,6 +848,7 @@ async function runAgentBackendVariant(
     backendCalls: trace.backendCalls,
     errorObserved: trace.errorObserved,
     externalCliUsed: false,
+    profileBootstrap: null,
   };
   const checks = checkAgentBackendOutput(output, expectations);
   return {
@@ -602,6 +856,176 @@ async function runAgentBackendVariant(
     label: variant.label ?? variant.id,
     backend: variant.backend ?? 'fake',
     skillVariant: variant.skillVariant ?? `${skill.id}@${skill.version}`,
+    knowledgeVariant: variant.knowledgeVariant ?? null,
+    status: checks.every((check) => check.status === 'pass') ? 'pass' : 'fail',
+    checks,
+    output,
+  };
+}
+
+async function runProfileBootstrapAgentBackendVariant(
+  scenario: AgentBackendEvalScenario,
+  variant: AgentBackendEvalVariant,
+  input: AgentBackendEvalInput,
+  expectations: AgentBackendExpectations,
+): Promise<EvalVariantResult> {
+  const { dispatchStep } = await import('../apps/runner/src/orchestrator');
+  const { finishAgentSuccess, invokeSkill } = await import('../apps/runner/src/orchestrator/invoke-skill');
+  const {
+    executeCompletion,
+    executeInventory,
+    executeKnowledgePromotion,
+    executeProfileBootstrap,
+  } = await import('../apps/runner/src/orchestrator/steps');
+  const { buildProjectInventory } = await import('../apps/runner/src/project-inventory');
+  const { validateProjectProfileJson } = await import('../apps/runner/src/project-profile-contract');
+  const { SKILLS } = await import('../apps/runner/src/skills');
+
+  const workDir = mkdtempSync(join(tmpdir(), `ainp-eval-profile-${safeId(scenario.id)}-${safeId(variant.id)}-`));
+  const artifactsDir = join(workDir, 'artifacts');
+  await mkdir(join(workDir, 'src'), { recursive: true });
+  await mkdir(artifactsDir, { recursive: true });
+  await writeFile(join(workDir, 'README.md'), '# Legacy Billing App\n\nSource-ref backed onboarding fixture.\n', 'utf8');
+  await writeFile(
+    join(workDir, 'src', 'billing.ts'),
+    [
+      'export function approveRefund() {',
+      '  return "billing refund approved";',
+      '}',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  await writeFile(join(workDir, '.env'), 'SECRET_TOKEN=do-not-capture\n', 'utf8');
+
+  const trace = createAgentFixtureTrace();
+  const invokeDeps = agentFixtureDeps(trace);
+  const stageTrace = createProfileBootstrapStageTrace();
+  const profileSkill = SKILLS.find((skill) => skill.id === 'project-profile-bootstrap');
+  if (!profileSkill) throw new Error('missing project-profile-bootstrap skill');
+  const ctx = runCtxFixture({
+    projectId: input.projectId ?? `proj_${safeId(scenario.id)}`,
+    workflowRunId: input.workflowRunId ?? `run_${safeId(scenario.id)}_${safeId(variant.id)}`,
+    title: input.title,
+    workspacePath: workDir,
+    artifactsDir,
+    backend: fakeAgentBackend(input, trace, artifactsDir),
+    runType: 'profile',
+    flowId: 'profile.bootstrap',
+    currentStage: 'inventory',
+  });
+
+  const stepDeps: StepDeps = {
+    ...emptyStepDeps(),
+    api: profileBootstrapStepApi(stageTrace),
+    mustSkill: async () => profileSkill,
+    buildProjectInventory,
+    selectAgentBackend: async () => ctx.backend,
+    invokeSkill: (c, skill, skillCtx) => invokeSkill(c, skill, skillCtx, invokeDeps),
+    finishAgentSuccess: (agent, outputArtifactIds, summary) =>
+      finishAgentSuccess(
+        agent,
+        outputArtifactIds,
+        summary,
+        invokeDeps.agentTaskFinished,
+        invokeDeps.agentSessionFinished,
+      ),
+    awaitApproval: async () => ({ approved: false }),
+    persistKnowledgeCandidate: async () => {
+      stageTrace.knowledgePersisted += 1;
+      return 'knowledge_should_not_persist';
+    },
+  };
+
+  const blocked = async () => {
+    throw new Error('profile.bootstrap eval fixture must not dispatch mutable feature stages');
+  };
+  const dispatchDeps = {
+    runContextPack: blocked,
+    runStage: blocked,
+    executeImplementation: blocked,
+    executeBuildTest: blocked,
+    executeVerifier: blocked,
+    executeAcceptance: blocked,
+    executeCompletion: (c: RunCtx) => executeCompletion(c, stepDeps),
+    executeKnowledgePromotion: (c: RunCtx) => executeKnowledgePromotion(c, stepDeps),
+    executeInventory: (c: RunCtx) => executeInventory(c, stepDeps),
+    executeProfileBootstrap: (c: RunCtx) => executeProfileBootstrap(c, stepDeps),
+    executeAgentMarkdownStage: blocked,
+  };
+
+  try {
+    for (const step of FLOW_REGISTRY['profile.bootstrap'].stages) {
+      await dispatchStep(step, ctx, dispatchDeps);
+    }
+  } catch (err) {
+    trace.errorObserved = true;
+    if (!String(err).includes('knowledge_gate')) throw err;
+  }
+
+  const profileJsonText = ctx.inputs['project-profile.json'] ?? '';
+  let profileJsonContractValid = false;
+  try {
+    validateProjectProfileJson(profileJsonText, {
+      projectId: ctx.project.id,
+      workflowRunId: ctx.run.id,
+      inventoryArtifactId: ctx.inputArtifactIds['project-inventory.json'] ?? null,
+    });
+    profileJsonContractValid = true;
+  } catch {
+    profileJsonContractValid = false;
+  }
+  const parsedProfileJson = safeJsonObject(profileJsonText);
+  const inventoryArtifactId = ctx.inputArtifactIds['project-inventory.json'] ?? null;
+  const profileJsonProvenanceValid = parsedProfileJson?.schemaVersion === 'ainp.project_profile.v1'
+    && parsedProfileJson.projectId === ctx.project.id
+    && parsedProfileJson.workflowRunId === ctx.run.id
+    && parsedProfileJson.inventoryArtifactId === inventoryArtifactId;
+  const profileMarkdown = ctx.inputs['project-profile.md'] ?? '';
+  const profileOutput: ProfileBootstrapFixtureOutput = {
+    flowId: ctx.run.flowId,
+    stages: stageTrace.stages,
+    artifactKinds: stageTrace.artifacts.map((artifact) => artifact.kind),
+    artifactOutputs: stageTrace.artifacts.map((artifact) =>
+      typeof artifact.metadata.output === 'string' ? artifact.metadata.output : '',
+    ),
+    inventoryArtifactId,
+    sourceChunkIndexArtifactId: stageTrace.artifacts.find((artifact) =>
+      artifact.metadata.output === 'source-chunk-index.json'
+    )?.id ?? null,
+    profileArtifactCount: stageTrace.artifacts.filter((artifact) => artifact.kind === 'project_profile').length,
+    profileJsonContractValid,
+    profileJsonProvenanceValid,
+    sourceChunkIndexInjectedAsInput: Boolean(ctx.inputs['source-chunk-index.json'])
+      || Boolean(ctx.inputArtifactIds['source-chunk-index.json']),
+    rawInventoryInProfileMarkdown: profileMarkdown.includes('"schemaVersion"')
+      || profileMarkdown.includes('sourceChunkIndex')
+      || profileMarkdown.includes('SECRET_TOKEN'),
+    knowledgeCandidateGenerated: stageTrace.knowledgeCandidateGenerated,
+    knowledgeCandidateReviewable: stageTrace.knowledgeCandidateArtifact?.kind === 'knowledge_candidate'
+      && stageTrace.knowledgeCandidateArtifact.metadata.reviewStatus === 'needs_review',
+    knowledgePersisted: stageTrace.knowledgePersisted > 0,
+    ok: ctx.ok.value,
+  };
+  const output: AgentBackendFixtureOutput = {
+    behavior: input.behavior,
+    taskIds: trace.tasks.map((task) => task.id),
+    resultIds: trace.results.map((result) => result.id),
+    sessionIds: trace.sessionsStarted.map((session) => session.id),
+    sessionFinishes: trace.sessionsFinished,
+    contextRequestIds: trace.contextRequests.map((entry) => entry.request.id),
+    outputCount: profileOutput.profileArtifactCount,
+    backendCalls: trace.backendCalls,
+    errorObserved: trace.errorObserved,
+    externalCliUsed: false,
+    profileBootstrap: profileOutput,
+  };
+  const checks = checkAgentBackendOutput(output, expectations);
+  return {
+    variantId: variant.id,
+    label: variant.label ?? variant.id,
+    backend: variant.backend ?? 'fake',
+    skillVariant: variant.skillVariant ?? 'project-profile-bootstrap@1.0.0',
     knowledgeVariant: variant.knowledgeVariant ?? null,
     status: checks.every((check) => check.status === 'pass') ? 'pass' : 'fail',
     checks,
@@ -620,12 +1044,24 @@ interface ContextPackFixtureOutput {
     trustLevel: string;
     freshness: string;
     knowledgeClass: string;
+    reason: string;
+    content: string;
     sourceRefs: string[];
     degradationReason: string | null;
   }>;
   authoritativeSourceRefs: string[];
   retrievalHints: string[];
   calibrationSignalCount: number;
+  calibrationSignals: Array<{
+    id: string;
+    kind: string;
+    severity: string;
+    message: string;
+    subjectRefs: string[];
+    evidenceRefs: string[];
+    recommendedAction: string;
+  }>;
+  contextQuality: ContextQualityMetrics | null;
 }
 
 async function runContextPackVariant(
@@ -671,7 +1107,7 @@ async function runContextPackVariant(
     sensitivePathPatterns: input.sensitivePathPatterns,
     createdAt: now,
   });
-  const output = contextPackFixtureOutput(pack);
+  const output = contextPackFixtureOutput(pack, expectations.relevantManifestRefPrefixes);
   const checks = checkContextPackOutput(output, expectations);
   return {
     variantId: variant.id,
@@ -867,6 +1303,450 @@ async function runGraphRuntimeVariant(
     checks,
     output,
   };
+}
+
+interface LegacyProjectUnderstandingFixtureOutput {
+  inventory: {
+    stats: LegacyInventoryStats;
+    capabilityLabels: string[];
+    entrypointRoutes: string[];
+    symbolNames: string[];
+    graphEdgeKinds: string[];
+    graphEdgeConfidenceMin: number | null;
+    routeHandlerEdgeConfidenceMin: number | null;
+    sourceChunkContentSha256Coverage: number | null;
+    sourceChunkIndexCoverage: number | null;
+    sourceChunkLinkedRecordCoverage: number | null;
+    sourceChunkGraphEdgeRefs: string[];
+    sourceFileExtensions: string[];
+    sourcePathPatterns: string[];
+    sourceRecordKinds: string[];
+    exclusions: string[];
+  };
+  context: ContextPackFixtureOutput;
+}
+
+async function runLegacyProjectUnderstandingVariant(
+  scenario: LegacyProjectUnderstandingEvalScenario,
+  variant: LegacyProjectUnderstandingEvalVariant,
+  input: LegacyProjectUnderstandingEvalInput,
+  expectations: LegacyProjectUnderstandingExpectations,
+): Promise<EvalVariantResult> {
+  const { buildContextPack } = await import('../apps/runner/src/context/builder');
+  const { buildProjectInventory } = await import('../apps/runner/src/project-inventory');
+  const projectId = input.projectId ?? `proj_${safeId(scenario.id)}`;
+  const workflowRunId = input.workflowRunId ?? `run_${safeId(scenario.id)}_${safeId(variant.id)}`;
+  const workspacePath = mkdtempSync(join(tmpdir(), `ainp-eval-legacy-${safeId(scenario.id)}-${safeId(variant.id)}-`));
+  const now = new Date().toISOString();
+  const files = await resolveLegacyProjectUnderstandingFiles(input, scenario.sourcePath ?? repoRoot);
+
+  for (const file of files) {
+    const normalizedPath = normalizeFixtureRelativePath(file.path, 'legacy fixture file path');
+    const absolute = resolve(workspacePath, normalizedPath);
+    if (!isPathInside(workspacePath, absolute)) {
+      throw new Error(`legacy fixture file path escapes temp workspace: ${file.path}`);
+    }
+    await mkdir(dirname(absolute), { recursive: true });
+    await writeFile(absolute, file.content, 'utf8');
+  }
+
+  const inventory = await buildProjectInventory({
+    projectId,
+    workflowRunId,
+    repoRoot: workspacePath,
+    generatedAt: now,
+    git: false,
+    limits: input.inventoryLimits,
+  });
+  const project = projectFixture(projectId, workspacePath, now);
+  const run = workflowRunFixture({
+    id: workflowRunId,
+    projectId,
+    title: input.title,
+    workspacePath,
+    now,
+  });
+  const inventoryBody = `${JSON.stringify(inventory, null, 2)}\n`;
+  const pack = buildContextPack({
+    project,
+    run,
+    stage: input.stage ?? 'implementation',
+    stepRunId: `step_${safeId(variant.id)}`,
+    workspacePath,
+    branch: run.branch,
+    taskBrief: input.taskBrief ?? input.title,
+    projectProfile: projectProfileFixture(project, now),
+    projectProfileMarkdown: '# Project Profile\n\n- Source: legacy project understanding eval fixture',
+    acceptedKnowledgeMarkdown: null,
+    inputArtifacts: [{
+      name: 'project-inventory.json',
+      artifactId: `art_eval_legacy_inventory_${safeId(variant.id)}`,
+      content: inventoryBody,
+    }],
+    budget: input.budget,
+    sensitivePathPatterns: input.sensitivePathPatterns,
+    createdAt: now,
+  });
+  const sourceRagReadiness = legacySourceRagReadinessStats(inventory);
+  const corpusCoverage = legacyCorpusCoverageStats(inventory);
+
+  const output: LegacyProjectUnderstandingFixtureOutput = {
+    inventory: {
+      stats: {
+        capabilityCount: inventory.capabilities.length,
+        entrypointRouteCount: inventory.entrypoints.filter((entrypoint) => entrypoint.route).length,
+        symbolCount: inventory.symbols.length,
+        graphEdgeCount: inventory.symbolGraph.edges.length,
+        routeHandlerEdgeCount: inventory.symbolGraph.edges.filter((edge) => edge.kind === 'route_handler').length,
+        sourceChunkCount: inventory.sourceChunks.length,
+        sourceChunkContentSha256Count: sourceRagReadiness.contentSha256Count,
+        sourceChunkIndexEntryCount: sourceRagReadiness.indexEntryCount,
+        sourceChunkIndexedCount: sourceRagReadiness.indexedChunkCount,
+        sourceChunkLinkedRecordCount: sourceRagReadiness.linkedRecordChunkCount,
+        sourceFileExtensionCount: corpusCoverage.sourceFileExtensions.length,
+        sourcePathPatternCount: corpusCoverage.sourcePathPatterns.length,
+        sourceRecordKindCount: corpusCoverage.sourceRecordKinds.length,
+        exclusionCount: inventory.exclusions.length,
+      },
+      capabilityLabels: inventory.capabilities.map((capability) => capability.label),
+      entrypointRoutes: inventory.entrypoints
+        .filter((entrypoint) => entrypoint.route)
+        .map((entrypoint) => `${entrypoint.method ?? 'ANY'} ${entrypoint.route}`),
+      symbolNames: inventory.symbols.map((symbol) => symbol.name),
+      graphEdgeKinds: inventory.symbolGraph.edges.map((edge) => edge.kind),
+      graphEdgeConfidenceMin: minConfidence(inventory.symbolGraph.edges),
+      routeHandlerEdgeConfidenceMin: minConfidence(
+        inventory.symbolGraph.edges.filter((edge) => edge.kind === 'route_handler'),
+      ),
+      sourceChunkContentSha256Coverage: sourceRagReadiness.contentSha256Coverage,
+      sourceChunkIndexCoverage: sourceRagReadiness.indexCoverage,
+      sourceChunkLinkedRecordCoverage: sourceRagReadiness.linkedRecordCoverage,
+      sourceChunkGraphEdgeRefs: inventory.sourceChunks.flatMap((chunk) => chunk.graphEdgeRefs),
+      sourceFileExtensions: corpusCoverage.sourceFileExtensions,
+      sourcePathPatterns: corpusCoverage.sourcePathPatterns,
+      sourceRecordKinds: corpusCoverage.sourceRecordKinds,
+      exclusions: inventory.exclusions.map((exclusion) => `${exclusion.path}:${exclusion.reason}`),
+    },
+    context: contextPackFixtureOutput(pack, expectations.relevantManifestRefPrefixes),
+  };
+  const checks = checkLegacyProjectUnderstandingOutput(output, expectations);
+  return {
+    variantId: variant.id,
+    label: variant.label ?? variant.id,
+    backend: variant.backend ?? 'fixture',
+    skillVariant: variant.skillVariant ?? null,
+    knowledgeVariant: variant.knowledgeVariant ?? null,
+    status: checks.every((check) => check.status === 'pass') ? 'pass' : 'fail',
+    checks,
+    output,
+  };
+}
+
+async function resolveLegacyProjectUnderstandingFiles(
+  input: LegacyProjectUnderstandingEvalInput,
+  scenarioSourcePath: string,
+): Promise<Array<{ path: string; content: string }>> {
+  const fixtureFiles = input.fixtureDir
+    ? await readLegacyProjectUnderstandingFixtureDir(input.fixtureDir, scenarioSourcePath)
+    : [];
+  return [
+    ...fixtureFiles,
+    ...(input.files ?? []),
+  ];
+}
+
+async function readLegacyProjectUnderstandingFixtureDir(
+  fixtureDir: LegacyProjectUnderstandingFixtureDirInput,
+  scenarioSourcePath: string,
+): Promise<Array<{ path: string; content: string }>> {
+  if (!fixtureDir.path || typeof fixtureDir.path !== 'string') {
+    throw new Error('legacy fixtureDir.path is required');
+  }
+
+  const scenarioDir = dirname(scenarioSourcePath);
+  const requestedPath = resolve(scenarioDir, fixtureDir.path);
+  const [realRepoRoot, realFixtureRoot] = await Promise.all([
+    realpath(repoRoot),
+    realpath(requestedPath).catch((error: unknown) => {
+      throw new Error(`legacy fixtureDir.path does not exist: ${fixtureDir.path}`, { cause: error });
+    }),
+  ]);
+  if (!isPathInside(realRepoRoot, realFixtureRoot)) {
+    throw new Error(`legacy fixtureDir.path escapes repository root: ${fixtureDir.path}`);
+  }
+  const rootStat = await lstat(realFixtureRoot);
+  if (!rootStat.isDirectory()) {
+    throw new Error(`legacy fixtureDir.path must be a directory: ${fixtureDir.path}`);
+  }
+
+  const maxFiles = positiveIntegerOrDefault(
+    fixtureDir.maxFiles,
+    DEFAULT_LEGACY_FIXTURE_DIR_MAX_FILES,
+    'fixtureDir.maxFiles',
+  );
+  const maxFileBytes = positiveIntegerOrDefault(
+    fixtureDir.maxFileBytes,
+    DEFAULT_LEGACY_FIXTURE_DIR_MAX_FILE_BYTES,
+    'fixtureDir.maxFileBytes',
+  );
+  const maxTotalBytes = positiveIntegerOrDefault(
+    fixtureDir.maxTotalBytes,
+    DEFAULT_LEGACY_FIXTURE_DIR_MAX_TOTAL_BYTES,
+    'fixtureDir.maxTotalBytes',
+  );
+  const excludedPaths = (fixtureDir.excludePaths ?? [])
+    .map((path) => normalizeFixtureRelativePath(path, 'fixtureDir.excludePaths[]'));
+  const discovered: Array<{ absolutePath: string; relativePath: string }> = [];
+  let totalBytes = 0;
+
+  const visit = async (directory: string): Promise<void> => {
+    const entries = (await readdir(directory)).sort();
+    for (const entry of entries) {
+      const absolutePath = join(directory, entry);
+      const relativePath = normalizeFixtureRelativePath(
+        relative(realFixtureRoot, absolutePath),
+        'fixtureDir file path',
+      );
+      if (isExcludedFixturePath(relativePath, excludedPaths)) continue;
+      const entryStat = await lstat(absolutePath);
+      if (entryStat.isDirectory()) {
+        await visit(absolutePath);
+        continue;
+      }
+      if (!entryStat.isFile()) continue;
+      if (entryStat.size > maxFileBytes) {
+        throw new Error(
+          `legacy fixtureDir file exceeds maxFileBytes (${entryStat.size} > ${maxFileBytes}): ${relativePath}`,
+        );
+      }
+      if (discovered.length + 1 > maxFiles) {
+        throw new Error(`legacy fixtureDir exceeds maxFiles (${maxFiles}): ${fixtureDir.path}`);
+      }
+      totalBytes += entryStat.size;
+      if (totalBytes > maxTotalBytes) {
+        throw new Error(`legacy fixtureDir exceeds maxTotalBytes (${maxTotalBytes}): ${fixtureDir.path}`);
+      }
+      discovered.push({ absolutePath, relativePath });
+    }
+  };
+
+  await visit(realFixtureRoot);
+  discovered.sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+  const files: Array<{ path: string; content: string }> = [];
+  for (const file of discovered) {
+    files.push({
+      path: file.relativePath,
+      content: await readFile(file.absolutePath, 'utf8'),
+    });
+  }
+  return files;
+}
+
+function positiveIntegerOrDefault(value: unknown, fallback: number, field: string): number {
+  if (value === undefined) return fallback;
+  if (!Number.isInteger(value) || typeof value !== 'number' || value <= 0) {
+    throw new Error(`${field} must be a positive integer`);
+  }
+  return value;
+}
+
+function normalizeFixtureRelativePath(value: string, field: string): string {
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new Error(`${field} must be a non-empty relative path`);
+  }
+  const normalized = value.replace(/\\/g, '/').replace(/^\.\/+/, '');
+  if (
+    normalized.startsWith('/')
+    || normalized === '..'
+    || normalized.startsWith('../')
+    || normalized.endsWith('/..')
+    || normalized.includes('/../')
+  ) {
+    throw new Error(`${field} must stay inside the fixture workspace: ${value}`);
+  }
+  return normalized;
+}
+
+function isExcludedFixturePath(path: string, excludedPaths: readonly string[]): boolean {
+  return excludedPaths.some((excludedPath) => path === excludedPath || path.startsWith(`${excludedPath}/`));
+}
+
+function isPathInside(parent: string, child: string): boolean {
+  const relation = relative(parent, child);
+  return relation === '' || (relation !== '..' && !relation.startsWith(`..${sep}`) && !isAbsolute(relation));
+}
+
+function legacySourceRagReadinessStats(inventory: {
+  sourceChunks: Array<Record<string, unknown>>;
+  sourceChunkIndex?: { entries?: Array<Record<string, unknown>> };
+}): {
+  contentSha256Count: number;
+  indexEntryCount: number;
+  indexedChunkCount: number;
+  linkedRecordChunkCount: number;
+  contentSha256Coverage: number | null;
+  indexCoverage: number | null;
+  linkedRecordCoverage: number | null;
+} {
+  const chunks = inventory.sourceChunks;
+  const chunkCount = chunks.length;
+  const validContentSha256 = /^[a-f0-9]{64}$/;
+  const indexEntries = Array.isArray(inventory.sourceChunkIndex?.entries)
+    ? inventory.sourceChunkIndex.entries
+    : [];
+  const indexedSourceChunkRefs = new Set(
+    indexEntries
+      .map((entry) => stringValue(entry.sourceChunkRef))
+      .filter((ref): ref is string => Boolean(ref)),
+  );
+  const contentSha256Count = chunks.filter((chunk) => (
+    validContentSha256.test(stringValue(chunk.contentSha256) ?? '')
+  )).length;
+  const indexedChunkCount = chunks.filter((chunk) => {
+    const id = stringValue(chunk.id);
+    return id ? indexedSourceChunkRefs.has(id) : false;
+  }).length;
+  const linkedRecordChunkCount = chunks.filter(sourceChunkHasLinkedInventoryRecord).length;
+  return {
+    contentSha256Count,
+    indexEntryCount: indexEntries.length,
+    indexedChunkCount,
+    linkedRecordChunkCount,
+    contentSha256Coverage: ratioOrNull(contentSha256Count, chunkCount),
+    indexCoverage: ratioOrNull(indexedChunkCount, chunkCount),
+    linkedRecordCoverage: ratioOrNull(linkedRecordChunkCount, chunkCount),
+  };
+}
+
+function sourceChunkHasLinkedInventoryRecord(chunk: Record<string, unknown>): boolean {
+  return [
+    'entrypointRefs',
+    'symbolRefs',
+    'graphEdgeRefs',
+    'testRefs',
+    'hotspotRefs',
+    'capabilityRefs',
+  ].some((key) => Array.isArray(chunk[key]) && chunk[key].length > 0);
+}
+
+function legacyCorpusCoverageStats(inventory: ProjectInventoryEnvelope): {
+  sourceFileExtensions: string[];
+  sourcePathPatterns: string[];
+  sourceRecordKinds: string[];
+} {
+  const sourcePaths = new Set<string>();
+  const recordKinds = new Set<string>();
+  const addPath = (path: string | undefined): void => {
+    if (path) sourcePaths.add(path.replace(/\\/g, '/'));
+  };
+  const addRefs = (refs: readonly string[] | undefined): void => {
+    for (const ref of refs ?? []) {
+      const path = sourceRefPath(ref);
+      if (path) addPath(path);
+    }
+  };
+
+  for (const source of inventory.sources) {
+    recordKinds.add(`source:${source.kind}`);
+    addPath(source.path);
+    addRefs([source.ref]);
+  }
+  for (const command of inventory.commands) {
+    recordKinds.add('command');
+    addRefs(command.sourceRefs);
+  }
+  for (const entrypoint of inventory.entrypoints) {
+    recordKinds.add(`entrypoint:${entrypoint.kind}`);
+    addPath(entrypoint.path);
+    addRefs(entrypoint.sourceRefs);
+  }
+  for (const symbol of inventory.symbols) {
+    recordKinds.add(`symbol:${symbol.kind}`);
+    addPath(symbol.path);
+    addRefs(symbol.sourceRefs);
+  }
+  for (const item of inventory.imports) {
+    recordKinds.add('import');
+    addPath(item.path);
+    addPath(item.targetPath);
+    for (const targetPath of item.targetPaths ?? []) addPath(targetPath);
+    addRefs(item.sourceRefs);
+  }
+  for (const item of inventory.exports) {
+    recordKinds.add(`export:${item.kind}`);
+    addPath(item.path);
+    addRefs(item.sourceRefs);
+  }
+  for (const node of inventory.symbolGraph.nodes) {
+    recordKinds.add(`graph_node:${node.kind}`);
+    addPath(node.path);
+    addRefs(node.sourceRefs);
+  }
+  for (const edge of inventory.symbolGraph.edges) {
+    recordKinds.add(`graph_edge:${edge.kind}`);
+    addRefs(edge.sourceRefs);
+  }
+  for (const chunk of inventory.sourceChunks) {
+    recordKinds.add(`source_chunk:${chunk.language ?? 'unknown'}`);
+    addPath(chunk.path);
+    addRefs(chunk.sourceRefs);
+  }
+  for (const entity of inventory.domainEntities) {
+    recordKinds.add(`domain_entity:${entity.kind}`);
+    addPath(entity.path);
+    addRefs(entity.sourceRefs);
+  }
+  for (const test of inventory.testSurfaces) {
+    recordKinds.add('test_surface');
+    addPath(test.path);
+    addRefs(test.sourceRefs);
+  }
+  for (const hotspot of inventory.hotspots) {
+    recordKinds.add(`hotspot:${hotspot.reason}`);
+    addPath(hotspot.path);
+    addRefs(hotspot.sourceRefs);
+  }
+
+  const paths = [...sourcePaths].sort();
+  return {
+    sourceFileExtensions: uniqueStrings(paths.map(sourceFileExtension)).sort(),
+    sourcePathPatterns: uniqueStrings(paths.map(sourcePathPattern)).sort(),
+    sourceRecordKinds: [...recordKinds].sort(),
+  };
+}
+
+function sourceRefPath(ref: string): string | null {
+  const match = /^file:([^#]+)(?:#L\d+)?$/.exec(ref);
+  return match?.[1] ?? null;
+}
+
+function sourceFileExtension(path: string): string {
+  const normalized = path.replace(/\\/g, '/');
+  const name = basename(normalized).toLowerCase();
+  if (name.startsWith('.') && !name.slice(1).includes('.')) return name;
+  return extname(name) || '<none>';
+}
+
+function sourcePathPattern(path: string): string {
+  const normalized = path.replace(/\\/g, '/').replace(/^\.\/+/, '');
+  const parts = normalized.split('/').filter(Boolean);
+  const extension = sourceFileExtension(normalized);
+  if (parts.length <= 1) return `<root>/*${extension}`;
+  const first = parts[0]!;
+  if (first === 'test' || first === 'tests' || first === 'spec' || first === '__tests__') {
+    return `tests/**/*${extension}`;
+  }
+  if (first.startsWith('legacy_')) return `legacy_*/**/*${extension}`;
+  return `${first}/**/*${extension}`;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function ratioOrNull(numerator: number, denominator: number): number | null {
+  if (denominator <= 0) return null;
+  return Number((numerator / denominator).toFixed(4));
 }
 
 async function runGraphRuntimeResumeFixture(
@@ -1210,6 +2090,141 @@ function createAgentFixtureTrace(): AgentBackendFixtureTrace {
   };
 }
 
+interface ProfileBootstrapStageTrace {
+  artifacts: Artifact[];
+  stages: WorkflowStage[];
+  knowledgeCandidateGenerated: boolean;
+  knowledgeCandidateArtifact: Artifact | null;
+  knowledgePersisted: number;
+}
+
+function createProfileBootstrapStageTrace(): ProfileBootstrapStageTrace {
+  return {
+    artifacts: [],
+    stages: [],
+    knowledgeCandidateGenerated: false,
+    knowledgeCandidateArtifact: null,
+    knowledgePersisted: 0,
+  };
+}
+
+function recordProfileBootstrapStage(trace: ProfileBootstrapStageTrace, stage: WorkflowStage): void {
+  if (trace.stages.at(-1) !== stage) trace.stages.push(stage);
+}
+
+function profileBootstrapStepApi(trace: ProfileBootstrapStageTrace): StepDeps['api'] {
+  return {
+    stepStarted: async (params) => {
+      recordProfileBootstrapStage(trace, params.stage);
+      return {
+        step: {
+          id: `step_${params.stage}`,
+          workflowRunId: params.workflowRunId,
+          stage: params.stage,
+          name: params.name,
+          status: 'running',
+          startedAt: new Date().toISOString(),
+          completedAt: null,
+          failureReason: null,
+        } as StepRun,
+      };
+    },
+    stepFinished: async () => ({}),
+    postArtifact: async (params) => {
+      const output = typeof params.metadata?.output === 'string'
+        ? params.metadata.output
+        : typeof params.metadata?.role === 'string'
+          ? params.metadata.role
+          : `artifact_${trace.artifacts.length + 1}`;
+      const artifact: Artifact = {
+        id: `art_profile_${safeId(output)}`,
+        workflowRunId: params.workflowRunId,
+        stepRunId: params.stepRunId,
+        kind: params.kind,
+        uri: params.uri,
+        size: params.size,
+        contentType: params.contentType,
+        sha256: null,
+        createdAt: new Date().toISOString(),
+        metadata: params.metadata ?? {},
+      };
+      trace.artifacts.push(artifact);
+      return artifact;
+    },
+    stepCheckpoint: async () => ({ checkpoint: { id: `scp_profile_${Date.now()}` } as StepCheckpoint }),
+    runGate: async () => ({ gate: { status: 'pass' } as GateRun }),
+    awaitHuman: async () => ({}),
+    commandRun: async () => ({ command: {} as CommandRun }),
+    toolInvocation: async () => ({ toolInvocation: {} as ToolInvocation }),
+    recordHandoff: async () => ({ handoff: { id: 'handoff_profile_eval' } }),
+    mavenBuild: async () => ({ command: {} as CommandRun }),
+    stageTransition: async (params) => {
+      recordProfileBootstrapStage(trace, params.stage);
+      return {};
+    },
+    generateCompletionReport: async (workflowRunId) => ({
+      artifact: {
+        id: 'art_profile_completion_report',
+        workflowRunId,
+        stepRunId: null,
+        kind: 'completion_report',
+        uri: 'file:///tmp/profile-completion-report.md',
+        size: 0,
+        contentType: 'text/markdown',
+        sha256: null,
+        createdAt: new Date().toISOString(),
+        metadata: { output: 'completion_report.md' },
+      } as Artifact,
+    }),
+    generateKnowledgeCandidate: async (workflowRunId) => {
+      trace.knowledgeCandidateGenerated = true;
+      const artifact = {
+        id: 'art_profile_knowledge_candidate',
+        workflowRunId,
+        stepRunId: null,
+        kind: 'knowledge_candidate',
+        uri: 'file:///tmp/profile-knowledge-candidate.md',
+        size: 0,
+        contentType: 'text/markdown',
+        sha256: null,
+        createdAt: new Date().toISOString(),
+        metadata: { output: 'knowledge-candidate.md', reviewStatus: 'needs_review' },
+      } as Artifact;
+      trace.knowledgeCandidateArtifact = artifact;
+      trace.artifacts.push(artifact);
+      return {
+        artifact,
+      };
+    },
+    getWorkflowRun: async () => ({ actions: [] }),
+  };
+}
+
+function emptyStepDeps(): StepDeps {
+  const unused = async (): Promise<never> => {
+    throw new Error('unexpected profile bootstrap eval dependency');
+  };
+  return {
+    api: profileBootstrapStepApi(createProfileBootstrapStageTrace()),
+    mustSkill: unused as StepDeps['mustSkill'],
+    findSkillForStage: unused as StepDeps['findSkillForStage'],
+    invokeSkill: unused as StepDeps['invokeSkill'],
+    finishAgentSuccess: unused as StepDeps['finishAgentSuccess'],
+    awaitApproval: unused as StepDeps['awaitApproval'],
+    postRejectionFeedback: unused as StepDeps['postRejectionFeedback'],
+    enforceSensitiveChangeCheckpoint: unused as StepDeps['enforceSensitiveChangeCheckpoint'],
+    promoteAcceptedDraftToKnowledge: unused as StepDeps['promoteAcceptedDraftToKnowledge'],
+    runWhitelistedCommand: unused as StepDeps['runWhitelistedCommand'],
+    collectReports: async () => [],
+    persistVerifierMediaArtifacts: async () => [],
+    generateProjectProfile: unused as StepDeps['generateProjectProfile'],
+    collectAcceptedKnowledge: unused as StepDeps['collectAcceptedKnowledge'],
+    persistKnowledgeCandidate: unused as StepDeps['persistKnowledgeCandidate'],
+    buildProjectInventory: unused as StepDeps['buildProjectInventory'],
+    selectAgentBackend: unused as StepDeps['selectAgentBackend'],
+  };
+}
+
 function agentFixtureDeps(trace: AgentBackendFixtureTrace): InvokeSkillDeps {
   return {
     agentTaskStarted: async (params) => {
@@ -1297,6 +2312,9 @@ function agentFixtureDeps(trace: AgentBackendFixtureTrace): InvokeSkillDeps {
       trace.artifacts.push(artifact);
       return artifact;
     },
+    getWorkflowRun: async () => ({ actions: [] }),
+    getArtifactContent: async () => ({ content: '' }),
+    listSourceChunkIndexEntries: async () => [],
     recordContextRequest: async (params) => {
       trace.contextRequests.push(params);
       return { ok: true };
@@ -1317,6 +2335,77 @@ function fakeAgentBackend(
       trace.backendCalls += 1;
       if (input.behavior === 'failure') {
         throw new Error(input.errorMessage ?? 'eval fixture backend failure');
+      }
+      if (input.behavior === 'profile_bootstrap_success') {
+        const markdown = [
+          '# Project Profile',
+          '',
+          '## What this project is',
+          'Legacy Billing App profile synthesized from scanner evidence.',
+          '',
+          '## Architecture map',
+          '- Billing source evidence: `file:src/billing.ts#L1`.',
+          '',
+          '## Suggested knowledge candidates',
+          '- Reviewable candidate only; not accepted memory.',
+          '',
+        ].join('\n');
+        const markdownPath = join(ctx.artifactsDir, 'project-profile.md');
+        await writeFile(markdownPath, markdown, 'utf8');
+        const profileJson = {
+          schemaVersion: 'ainp.project_profile.v1',
+          projectId: ctx.workflowRunId.startsWith('run_') ? input.projectId ?? 'proj_eval_profile_bootstrap' : input.projectId,
+          workflowRunId: ctx.workflowRunId,
+          generatedAt: '2026-07-04T00:00:00.000Z',
+          inventoryArtifactId: ctx.inputArtifactIds?.['project-inventory.json'] ?? null,
+          repo: { root: ctx.workspacePath },
+          summary: 'Legacy Billing App profile synthesized from scanner evidence.',
+          architecture: {
+            body: 'Billing has source-backed code evidence.',
+            sourceRefs: ['file:src/billing.ts#L1'],
+            confidence: 0.9,
+            freshness: 'current',
+            scope: 'repo',
+          },
+          commands: [],
+          modules: [],
+          businessFlows: [],
+          riskAreas: [],
+          conventions: [],
+          domainVocabulary: [],
+          openQuestions: [],
+          knowledgeCandidates: [
+            {
+              kind: 'explore',
+              reviewStatus: 'needs_review',
+              body: 'Billing source evidence should be reviewed before promotion.',
+              sourceRefs: [
+                `artifact:${ctx.inputArtifactIds?.['project-inventory.json'] ?? 'unknown'}`,
+                'file:src/billing.ts#L1',
+              ],
+            },
+          ],
+        };
+        const jsonText = `${JSON.stringify(profileJson, null, 2)}\n`;
+        const jsonPath = join(ctx.artifactsDir, 'project-profile.json');
+        await writeFile(jsonPath, jsonText, 'utf8');
+        return {
+          outputs: [
+            {
+              name: 'project-profile.md',
+              path: markdownPath,
+              contentType: 'text/markdown',
+              size: Buffer.byteLength(markdown, 'utf8'),
+            },
+            {
+              name: 'project-profile.json',
+              path: jsonPath,
+              contentType: 'application/json',
+              size: Buffer.byteLength(jsonText, 'utf8'),
+            },
+          ],
+          lastMessage: 'profile bootstrap fixture completed',
+        };
       }
       const outputName = input.outputName ?? 'eval-output.md';
       const outputPath = join(artifactsDir, outputName);
@@ -1354,6 +2443,16 @@ function contextRequestMessage(input: AgentBackendEvalInput): string {
   ].join('\n');
 }
 
+function safeJsonObject(text: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
 function skillFixture(stage: WorkflowStage): SkillSpec {
   return {
     id: `skill.${stage}`,
@@ -1375,6 +2474,9 @@ function runCtxFixture(input: {
   workspacePath: string;
   artifactsDir: string;
   backend: AgentBackend;
+  runType?: WorkflowRunType;
+  flowId?: FlowId;
+  currentStage?: WorkflowStage;
 }): RunCtx {
   const now = new Date().toISOString();
   const project: Project = {
@@ -1390,10 +2492,10 @@ function runCtxFixture(input: {
   const run: WorkflowRun = {
     id: input.workflowRunId,
     projectId: project.id,
-    type: 'feature',
+    type: input.runType ?? 'feature',
     status: 'running',
-    currentStage: 'implementation',
-    flowId: 'feature.standard',
+    currentStage: input.currentStage ?? 'implementation',
+    flowId: input.flowId ?? 'feature.standard',
     startStage: null,
     configSnapshotId: null,
     sourceBranch: 'main',
@@ -1507,15 +2609,20 @@ function projectProfileFixture(project: Project, now: string): ProjectProfile {
   };
 }
 
-function contextPackFixtureOutput(pack: ContextPack): ContextPackFixtureOutput {
+function contextPackFixtureOutput(
+  pack: ContextPack,
+  relevantManifestRefPrefixes: readonly string[] | undefined,
+): ContextPackFixtureOutput {
   const sourceRefs = uniqueStrings(pack.manifest.flatMap((item) => item.sourceRefs));
   const authoritativeSourceRefs = uniqueStrings(pack.manifest
     .filter((item) => item.mode === 'full' && item.trustLevel === 'accepted_knowledge')
     .flatMap((item) => item.sourceRefs));
+  const manifestRefs = pack.manifest.map((item) => item.ref);
+  const sectionsById = new Map(pack.sections.map((section) => [section.id, section]));
   return {
     contextPackId: pack.id,
     mode: pack.mode,
-    manifestRefs: pack.manifest.map((item) => item.ref),
+    manifestRefs,
     sourceRefs,
     selected: pack.manifest.map((item) => ({
       ref: item.ref,
@@ -1523,12 +2630,43 @@ function contextPackFixtureOutput(pack: ContextPack): ContextPackFixtureOutput {
       trustLevel: item.trustLevel,
       freshness: item.freshness,
       knowledgeClass: item.knowledgeClass,
+      reason: sectionsById.get(item.ref)?.reason ?? item.reason,
+      content: sectionsById.get(item.ref)?.content ?? '',
       sourceRefs: item.sourceRefs,
       degradationReason: item.degradationReason ?? null,
     })),
     authoritativeSourceRefs,
     retrievalHints: pack.retrievalHints.map((hint) => hint.id),
     calibrationSignalCount: pack.calibrationSignals?.length ?? 0,
+    calibrationSignals: (pack.calibrationSignals ?? []).map((signal) => ({
+      id: signal.id,
+      kind: signal.kind,
+      severity: signal.severity,
+      message: signal.message,
+      subjectRefs: signal.subjectRefs,
+      evidenceRefs: signal.evidenceRefs,
+      recommendedAction: signal.recommendedAction,
+    })),
+    contextQuality: contextQualityMetrics(manifestRefs, relevantManifestRefPrefixes),
+  };
+}
+
+function contextQualityMetrics(
+  manifestRefs: readonly string[],
+  relevantManifestRefPrefixes: readonly string[] | undefined,
+): ContextQualityMetrics | null {
+  const prefixes = uniqueStrings((relevantManifestRefPrefixes ?? []).map((prefix) => prefix.trim()));
+  if (prefixes.length === 0) return null;
+  const irrelevantRefs = manifestRefs.filter((ref) => !prefixes.some((prefix) => ref === prefix || ref.startsWith(prefix)));
+  const selectedCount = manifestRefs.length;
+  const irrelevantCount = irrelevantRefs.length;
+  return {
+    relevantManifestRefPrefixes: prefixes,
+    selectedCount,
+    relevantCount: selectedCount - irrelevantCount,
+    irrelevantCount,
+    irrelevantRatio: selectedCount === 0 ? 0 : Number((irrelevantCount / selectedCount).toFixed(4)),
+    irrelevantRefs,
   };
 }
 
@@ -1953,6 +3091,81 @@ function checkAgentBackendOutput(
   if (expectations.externalCliUsed !== undefined) {
     checks.push(check('externalCliUsed', expectations.externalCliUsed, output.externalCliUsed));
   }
+  if (expectations.profileBootstrapFlow !== undefined) {
+    checks.push(check('profileBootstrapFlow', expectations.profileBootstrapFlow, Boolean(output.profileBootstrap)));
+  }
+  if (expectations.profileFlowStages !== undefined) {
+    checks.push({
+      name: 'profileFlowStages',
+      expected: expectations.profileFlowStages,
+      actual: output.profileBootstrap?.stages ?? null,
+      status: output.profileBootstrap && arraysEqual(expectations.profileFlowStages, output.profileBootstrap.stages)
+        ? 'pass'
+        : 'fail',
+    });
+  }
+  if (expectations.inventoryArtifactPersisted !== undefined) {
+    checks.push(check(
+      'inventoryArtifactPersisted',
+      expectations.inventoryArtifactPersisted,
+      Boolean(output.profileBootstrap?.inventoryArtifactId)
+        && (output.profileBootstrap?.artifactOutputs.includes('project-inventory.json') ?? false),
+    ));
+  }
+  if (expectations.sourceChunkIndexArtifactPersisted !== undefined) {
+    checks.push(check(
+      'sourceChunkIndexArtifactPersisted',
+      expectations.sourceChunkIndexArtifactPersisted,
+      Boolean(output.profileBootstrap?.sourceChunkIndexArtifactId)
+        && (output.profileBootstrap?.artifactOutputs.includes('source-chunk-index.json') ?? false),
+    ));
+  }
+  if (expectations.sourceChunkIndexNotInjectedAsInput !== undefined) {
+    checks.push(check(
+      'sourceChunkIndexNotInjectedAsInput',
+      expectations.sourceChunkIndexNotInjectedAsInput,
+      output.profileBootstrap ? !output.profileBootstrap.sourceChunkIndexInjectedAsInput : null,
+    ));
+  }
+  if (expectations.profileArtifactCount !== undefined) {
+    checks.push(check(
+      'profileArtifactCount',
+      expectations.profileArtifactCount,
+      output.profileBootstrap?.profileArtifactCount ?? null,
+    ));
+  }
+  if (expectations.profileJsonContractValid !== undefined) {
+    checks.push(check(
+      'profileJsonContractValid',
+      expectations.profileJsonContractValid,
+      output.profileBootstrap?.profileJsonContractValid ?? null,
+    ));
+  }
+  if (expectations.profileJsonProvenanceValid !== undefined) {
+    checks.push(check(
+      'profileJsonProvenanceValid',
+      expectations.profileJsonProvenanceValid,
+      output.profileBootstrap?.profileJsonProvenanceValid ?? null,
+    ));
+  }
+  if (expectations.rawInventoryExcludedFromProfileMarkdown !== undefined) {
+    checks.push(check(
+      'rawInventoryExcludedFromProfileMarkdown',
+      expectations.rawInventoryExcludedFromProfileMarkdown,
+      output.profileBootstrap ? !output.profileBootstrap.rawInventoryInProfileMarkdown : null,
+    ));
+  }
+  if (expectations.knowledgeCandidateReviewableOnly !== undefined) {
+    checks.push(check(
+      'knowledgeCandidateReviewableOnly',
+      expectations.knowledgeCandidateReviewableOnly,
+      output.profileBootstrap
+        ? output.profileBootstrap.knowledgeCandidateGenerated
+          && output.profileBootstrap.knowledgeCandidateReviewable
+          && !output.profileBootstrap.knowledgePersisted
+        : null,
+    ));
+  }
   return checks;
 }
 
@@ -1969,6 +3182,75 @@ function checkContextPackOutput(
   }
   for (const ref of expectations.manifestRefsExclude ?? []) {
     checks.push(includesCheck(`manifestRefsExclude:${ref}`, output.manifestRefs, ref, false));
+  }
+  for (const sectionExpectation of expectations.selectedSectionsInclude ?? []) {
+    const section = output.selected.find((item) => item.ref === sectionExpectation.ref) ?? null;
+    checks.push({
+      name: `selectedSectionsInclude:${sectionExpectation.ref}`,
+      expected: true,
+      actual: Boolean(section),
+      status: section ? 'pass' : 'fail',
+    });
+    if (sectionExpectation.mode !== undefined) {
+      checks.push(check(`selectedSectionMode:${sectionExpectation.ref}`, sectionExpectation.mode, section?.mode ?? null));
+    }
+    for (const text of sectionExpectation.contentIncludes ?? []) {
+      checks.push(textIncludesCheck(
+        `selectedSectionContentIncludes:${sectionExpectation.ref}:${text}`,
+        section?.content ?? '',
+        text,
+        true,
+      ));
+    }
+    for (const text of sectionExpectation.contentExcludes ?? []) {
+      checks.push(textIncludesCheck(
+        `selectedSectionContentExcludes:${sectionExpectation.ref}:${text}`,
+        section?.content ?? '',
+        text,
+        false,
+      ));
+    }
+    for (const text of sectionExpectation.reasonIncludes ?? []) {
+      checks.push(textIncludesCheck(
+        `selectedSectionReasonIncludes:${sectionExpectation.ref}:${text}`,
+        section?.reason ?? '',
+        text,
+        true,
+      ));
+    }
+    for (const text of sectionExpectation.reasonExcludes ?? []) {
+      checks.push(textIncludesCheck(
+        `selectedSectionReasonExcludes:${sectionExpectation.ref}:${text}`,
+        section?.reason ?? '',
+        text,
+        false,
+      ));
+    }
+    for (const sourceRef of sectionExpectation.sourceRefsInclude ?? []) {
+      checks.push(includesCheck(
+        `selectedSectionSourceRefsInclude:${sectionExpectation.ref}:${sourceRef}`,
+        section?.sourceRefs ?? [],
+        sourceRef,
+        true,
+      ));
+    }
+    for (const sourceRef of sectionExpectation.sourceRefsExclude ?? []) {
+      checks.push(includesCheck(
+        `selectedSectionSourceRefsExclude:${sectionExpectation.ref}:${sourceRef}`,
+        section?.sourceRefs ?? [],
+        sourceRef,
+        false,
+      ));
+    }
+  }
+  if (expectations.irrelevantContextRatioMax !== undefined) {
+    const metrics = output.contextQuality;
+    checks.push({
+      name: 'irrelevantContextRatioMax',
+      expected: expectations.irrelevantContextRatioMax,
+      actual: metrics?.irrelevantRatio ?? null,
+      status: metrics && metrics.irrelevantRatio <= expectations.irrelevantContextRatioMax ? 'pass' : 'fail',
+    });
   }
   for (const ref of expectations.sourceRefsInclude ?? []) {
     checks.push(includesCheck(`sourceRefsInclude:${ref}`, output.sourceRefs, ref, true));
@@ -1998,6 +3280,16 @@ function checkContextPackOutput(
       status: output.calibrationSignalCount >= expectations.calibrationSignalsMin ? 'pass' : 'fail',
     });
   }
+  for (const signalExpectation of expectations.calibrationSignalsInclude ?? []) {
+    const signal = output.calibrationSignals.find((item) => calibrationSignalMatches(item, signalExpectation)) ?? null;
+    const expectedSummary = calibrationSignalExpectationSummary(signalExpectation);
+    checks.push({
+      name: `calibrationSignalsInclude:${expectedSummary}`,
+      expected: true,
+      actual: signal ?? output.calibrationSignals,
+      status: signal ? 'pass' : 'fail',
+    });
+  }
   if (expectations.selectedCountMin !== undefined) {
     checks.push({
       name: 'selectedCountMin',
@@ -2015,6 +3307,493 @@ function checkContextPackOutput(
     });
   }
   return checks;
+}
+
+function calibrationSignalMatches(
+  signal: ContextPackFixtureOutput['calibrationSignals'][number],
+  expectation: CalibrationSignalExpectation,
+): boolean {
+  if (expectation.id !== undefined && signal.id !== expectation.id) return false;
+  if (expectation.kind !== undefined && signal.kind !== expectation.kind) return false;
+  if (expectation.severity !== undefined && signal.severity !== expectation.severity) return false;
+  if (expectation.recommendedAction !== undefined && signal.recommendedAction !== expectation.recommendedAction) return false;
+  for (const text of expectation.messageIncludes ?? []) {
+    if (!signal.message.includes(text)) return false;
+  }
+  for (const text of expectation.messageExcludes ?? []) {
+    if (signal.message.includes(text)) return false;
+  }
+  for (const ref of expectation.subjectRefsInclude ?? []) {
+    if (!signal.subjectRefs.includes(ref)) return false;
+  }
+  for (const ref of expectation.subjectRefsExclude ?? []) {
+    if (signal.subjectRefs.includes(ref)) return false;
+  }
+  for (const ref of expectation.evidenceRefsInclude ?? []) {
+    if (!signal.evidenceRefs.includes(ref)) return false;
+  }
+  for (const ref of expectation.evidenceRefsExclude ?? []) {
+    if (signal.evidenceRefs.includes(ref)) return false;
+  }
+  return true;
+}
+
+function calibrationSignalExpectationSummary(expectation: CalibrationSignalExpectation): string {
+  return [
+    expectation.id,
+    expectation.kind ? `kind=${expectation.kind}` : null,
+    expectation.severity ? `severity=${expectation.severity}` : null,
+    expectation.recommendedAction ? `action=${expectation.recommendedAction}` : null,
+    ...(expectation.messageIncludes ?? []).map((text) => `message~${text}`),
+    ...(expectation.subjectRefsInclude ?? []).map((ref) => `subject=${ref}`),
+    ...(expectation.evidenceRefsInclude ?? []).map((ref) => `evidence=${ref}`),
+  ].filter((item): item is string => Boolean(item)).join('|') || 'signal';
+}
+
+function checkLegacyProjectUnderstandingOutput(
+  output: LegacyProjectUnderstandingFixtureOutput,
+  expectations: LegacyProjectUnderstandingExpectations,
+): EvalCheck[] {
+  const checks = checkContextPackOutput(output.context, expectations);
+  addMinCheck(checks, 'inventoryCapabilityCountMin', expectations.inventoryCapabilityCountMin, output.inventory.stats.capabilityCount);
+  addMaxCheck(checks, 'inventoryCapabilityCountMax', expectations.inventoryCapabilityCountMax, output.inventory.stats.capabilityCount);
+  addMinCheck(checks, 'inventoryEntrypointRouteCountMin', expectations.inventoryEntrypointRouteCountMin, output.inventory.stats.entrypointRouteCount);
+  addMaxCheck(checks, 'inventoryEntrypointRouteCountMax', expectations.inventoryEntrypointRouteCountMax, output.inventory.stats.entrypointRouteCount);
+  addMinCheck(checks, 'inventorySymbolCountMin', expectations.inventorySymbolCountMin, output.inventory.stats.symbolCount);
+  addMinCheck(checks, 'inventoryGraphEdgeCountMin', expectations.inventoryGraphEdgeCountMin, output.inventory.stats.graphEdgeCount);
+  addNullableMinCheck(
+    checks,
+    'inventoryGraphEdgeConfidenceMin',
+    expectations.inventoryGraphEdgeConfidenceMin,
+    output.inventory.graphEdgeConfidenceMin,
+  );
+  addMinCheck(checks, 'inventoryRouteHandlerEdgeCountMin', expectations.inventoryRouteHandlerEdgeCountMin, output.inventory.stats.routeHandlerEdgeCount);
+  addNullableMinCheck(
+    checks,
+    'inventoryRouteHandlerEdgeConfidenceMin',
+    expectations.inventoryRouteHandlerEdgeConfidenceMin,
+    output.inventory.routeHandlerEdgeConfidenceMin,
+  );
+  addMinCheck(checks, 'inventorySourceChunkCountMin', expectations.inventorySourceChunkCountMin, output.inventory.stats.sourceChunkCount);
+  addMinCheck(checks, 'inventoryExclusionCountMin', expectations.inventoryExclusionCountMin, output.inventory.stats.exclusionCount);
+  for (const label of expectations.inventoryCapabilityLabelsInclude ?? []) {
+    checks.push(includesCheck(`inventoryCapabilityLabelsInclude:${label}`, output.inventory.capabilityLabels, label, true));
+  }
+  for (const label of expectations.inventoryCapabilityLabelsExclude ?? []) {
+    checks.push(includesCheck(`inventoryCapabilityLabelsExclude:${label}`, output.inventory.capabilityLabels, label, false));
+  }
+  for (const route of expectations.inventoryEntrypointRoutesInclude ?? []) {
+    checks.push(includesCheck(`inventoryEntrypointRoutesInclude:${route}`, output.inventory.entrypointRoutes, route, true));
+  }
+  for (const symbol of expectations.inventorySymbolNamesInclude ?? []) {
+    checks.push(includesCheck(`inventorySymbolNamesInclude:${symbol}`, output.inventory.symbolNames, symbol, true));
+  }
+  for (const kind of expectations.inventoryGraphEdgeKindsInclude ?? []) {
+    checks.push(includesCheck(`inventoryGraphEdgeKindsInclude:${kind}`, output.inventory.graphEdgeKinds, kind, true));
+  }
+  for (const ref of expectations.inventorySourceChunkGraphEdgeRefsInclude ?? []) {
+    checks.push(includesCheck(
+      `inventorySourceChunkGraphEdgeRefsInclude:${ref}`,
+      output.inventory.sourceChunkGraphEdgeRefs,
+      ref,
+      true,
+    ));
+  }
+  for (const exclusion of expectations.inventoryExclusionsInclude ?? []) {
+    checks.push(includesCheck(`inventoryExclusionsInclude:${exclusion}`, output.inventory.exclusions, exclusion, true));
+  }
+  return checks;
+}
+
+function checkScenarioContextQuality(
+  variants: readonly EvalVariantResult[],
+  gates: ContextQualityScenarioGates | undefined,
+): EvalCheck[] {
+  if (!gates) return [];
+  const metrics = variants
+    .map((variant) => contextQualityFromVariantOutput(variant.output))
+    .filter((metric): metric is ContextQualityMetrics => metric !== null);
+  const ratios = metrics.map((metric) => metric.irrelevantRatio);
+  const measuredVariants = ratios.length;
+  const irrelevantContextRatioAverage = measuredVariants === 0
+    ? null
+    : Number((ratios.reduce((sum, ratio) => sum + ratio, 0) / measuredVariants).toFixed(4));
+  const irrelevantContextRatioMax = measuredVariants === 0
+    ? null
+    : Number(Math.max(...ratios).toFixed(4));
+  const checks: EvalCheck[] = [];
+  addMinCheck(checks, 'contextQualityGates.measuredVariantsMin', gates.measuredVariantsMin, measuredVariants);
+  if (gates.irrelevantContextRatioAverageMax !== undefined) {
+    checks.push({
+      name: 'contextQualityGates.irrelevantContextRatioAverageMax',
+      expected: gates.irrelevantContextRatioAverageMax,
+      actual: irrelevantContextRatioAverage,
+      status: irrelevantContextRatioAverage !== null
+        && irrelevantContextRatioAverage <= gates.irrelevantContextRatioAverageMax
+        ? 'pass'
+        : 'fail',
+    });
+  }
+  if (gates.irrelevantContextRatioMax !== undefined) {
+    checks.push({
+      name: 'contextQualityGates.irrelevantContextRatioMax',
+      expected: gates.irrelevantContextRatioMax,
+      actual: irrelevantContextRatioMax,
+      status: irrelevantContextRatioMax !== null
+        && irrelevantContextRatioMax <= gates.irrelevantContextRatioMax
+        ? 'pass'
+        : 'fail',
+    });
+  }
+  return checks;
+}
+
+function checkScenarioLegacyInventoryQuality(
+  variants: readonly EvalVariantResult[],
+  gates: LegacyInventoryQualityScenarioGates | undefined,
+): EvalCheck[] {
+  const outputs = variants
+    .map((variant) => legacyProjectUnderstandingOutput(variant.output))
+    .filter((output): output is LegacyProjectUnderstandingFixtureOutput => output !== null);
+  const graphEdgeConfidenceValues = outputs
+    .map((output) => output.inventory.graphEdgeConfidenceMin)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const routeHandlerEdgeConfidenceValues = outputs
+    .map((output) => output.inventory.routeHandlerEdgeConfidenceMin)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const sourceChunkContentSha256CoverageValues = outputs
+    .map((output) => output.inventory.sourceChunkContentSha256Coverage)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const sourceChunkIndexCoverageValues = outputs
+    .map((output) => output.inventory.sourceChunkIndexCoverage)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const sourceChunkLinkedRecordCoverageValues = outputs
+    .map((output) => output.inventory.sourceChunkLinkedRecordCoverage)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  const sourceFileExtensions = uniqueStrings(outputs.flatMap((output) => output.inventory.sourceFileExtensions)).sort();
+  const sourcePathPatterns = uniqueStrings(outputs.flatMap((output) => output.inventory.sourcePathPatterns)).sort();
+  const sourceRecordKinds = uniqueStrings(outputs.flatMap((output) => output.inventory.sourceRecordKinds)).sort();
+  const graphEdgeConfidenceMin = minFiniteNumber(graphEdgeConfidenceValues);
+  const routeHandlerEdgeConfidenceMin = minFiniteNumber(routeHandlerEdgeConfidenceValues);
+  const sourceChunkContentSha256CoverageMin = minFiniteNumber(sourceChunkContentSha256CoverageValues);
+  const sourceChunkIndexCoverageMin = minFiniteNumber(sourceChunkIndexCoverageValues);
+  const sourceChunkLinkedRecordCoverageMin = minFiniteNumber(sourceChunkLinkedRecordCoverageValues);
+  const graphEdgeFloor = gates?.graphEdgeConfidenceMin
+    ?? (graphEdgeConfidenceValues.length > 0 ? DEFAULT_LEGACY_GRAPH_EDGE_CONFIDENCE_MIN : undefined);
+  const routeHandlerEdgeFloor = gates?.routeHandlerEdgeConfidenceMin
+    ?? (routeHandlerEdgeConfidenceValues.length > 0 ? DEFAULT_LEGACY_ROUTE_HANDLER_EDGE_CONFIDENCE_MIN : undefined);
+  const checks: EvalCheck[] = [];
+  addMinCheck(
+    checks,
+    'inventoryQualityGates.measuredVariantsMin',
+    gates?.measuredVariantsMin,
+    outputs.length,
+  );
+  addNullableMinCheck(
+    checks,
+    gates?.graphEdgeConfidenceMin === undefined
+      ? 'inventoryQualityDefaults.graphEdgeConfidenceMin'
+      : 'inventoryQualityGates.graphEdgeConfidenceMin',
+    graphEdgeFloor,
+    graphEdgeConfidenceMin,
+  );
+  addNullableMinCheck(
+    checks,
+    gates?.routeHandlerEdgeConfidenceMin === undefined
+      ? 'inventoryQualityDefaults.routeHandlerEdgeConfidenceMin'
+      : 'inventoryQualityGates.routeHandlerEdgeConfidenceMin',
+    routeHandlerEdgeFloor,
+    routeHandlerEdgeConfidenceMin,
+  );
+  addNullableMinCheck(
+    checks,
+    'inventoryQualityGates.sourceChunkContentSha256CoverageMin',
+    gates?.sourceChunkContentSha256CoverageMin,
+    sourceChunkContentSha256CoverageMin,
+  );
+  addNullableMinCheck(
+    checks,
+    'inventoryQualityGates.sourceChunkIndexCoverageMin',
+    gates?.sourceChunkIndexCoverageMin,
+    sourceChunkIndexCoverageMin,
+  );
+  addNullableMinCheck(
+    checks,
+    'inventoryQualityGates.sourceChunkLinkedRecordCoverageMin',
+    gates?.sourceChunkLinkedRecordCoverageMin,
+    sourceChunkLinkedRecordCoverageMin,
+  );
+  addCountMinCheck(
+    checks,
+    'inventoryQualityGates.sourceFileExtensionCountMin',
+    gates?.sourceFileExtensionCountMin,
+    sourceFileExtensions,
+  );
+  addCountMinCheck(
+    checks,
+    'inventoryQualityGates.sourcePathPatternCountMin',
+    gates?.sourcePathPatternCountMin,
+    sourcePathPatterns,
+  );
+  addCountMinCheck(
+    checks,
+    'inventoryQualityGates.sourceRecordKindCountMin',
+    gates?.sourceRecordKindCountMin,
+    sourceRecordKinds,
+  );
+  return checks;
+}
+
+function checkInventorySectionGateCoverage(
+  scenario: ContextPackEvalScenario | LegacyProjectUnderstandingEvalScenario,
+): EvalCheck[] {
+  const variants = (scenario.variants?.length
+    ? scenario.variants
+    : [{ id: 'default', label: 'Default' }]) as readonly Array<{
+      id: string;
+      expectations?: ContextPackExpectations;
+    }>;
+  const baseExpectations = scenario.expectations as ContextPackExpectations | undefined;
+  const checks: EvalCheck[] = [];
+  for (const variant of variants) {
+    const expectations = { ...(baseExpectations ?? {}), ...(variant.expectations ?? {}) };
+    const inventoryManifestRefs = (expectations.manifestRefsInclude ?? [])
+      .filter((ref) => ref.startsWith('inventory_'));
+    if (inventoryManifestRefs.length === 0) continue;
+    const selectedSectionGateCount = expectations.selectedSectionsInclude?.length ?? 0;
+    if (selectedSectionGateCount > 0) continue;
+    checks.push({
+      name: `inventorySelectedSectionsIncludeRequired:${variant.id}`,
+      expected: 'selectedSectionsInclude when manifestRefsInclude contains inventory_* refs',
+      actual: {
+        manifestRefsInclude: inventoryManifestRefs,
+        selectedSectionsInclude: selectedSectionGateCount,
+      },
+      status: 'fail',
+    });
+  }
+  return checks;
+}
+
+function contextQualityFromVariantOutput(output: unknown): ContextQualityMetrics | null {
+  if (isRecord(output) && isContextQualityMetrics(output.contextQuality)) {
+    return output.contextQuality;
+  }
+  return legacyProjectUnderstandingOutput(output)?.context.contextQuality ?? null;
+}
+
+function isContextQualityMetrics(value: unknown): value is ContextQualityMetrics {
+  return isRecord(value)
+    && Array.isArray(value.relevantManifestRefPrefixes)
+    && typeof value.selectedCount === 'number'
+    && typeof value.relevantCount === 'number'
+    && typeof value.irrelevantCount === 'number'
+    && typeof value.irrelevantRatio === 'number'
+    && Array.isArray(value.irrelevantRefs);
+}
+
+function addMinCheck(
+  checks: EvalCheck[],
+  name: string,
+  expected: number | undefined,
+  actual: number,
+): void {
+  if (expected === undefined) return;
+  checks.push({
+    name,
+    expected,
+    actual,
+    status: actual >= expected ? 'pass' : 'fail',
+  });
+}
+
+function addCountMinCheck(
+  checks: EvalCheck[],
+  name: string,
+  expected: number | undefined,
+  values: readonly string[],
+): void {
+  if (expected === undefined) return;
+  checks.push({
+    name,
+    expected,
+    actual: {
+      count: values.length,
+      values,
+    },
+    status: values.length >= expected ? 'pass' : 'fail',
+  });
+}
+
+function addNullableMinCheck(
+  checks: EvalCheck[],
+  name: string,
+  expected: number | undefined,
+  actual: number | null,
+): void {
+  if (expected === undefined) return;
+  checks.push({
+    name,
+    expected,
+    actual,
+    status: actual !== null && actual >= expected ? 'pass' : 'fail',
+  });
+}
+
+function addMaxCheck(
+  checks: EvalCheck[],
+  name: string,
+  expected: number | undefined,
+  actual: number,
+): void {
+  if (expected === undefined) return;
+  checks.push({
+    name,
+    expected,
+    actual,
+    status: actual <= expected ? 'pass' : 'fail',
+  });
+}
+
+const LEGACY_INVENTORY_STAT_KEYS = [
+  'capabilityCount',
+  'entrypointRouteCount',
+  'symbolCount',
+  'graphEdgeCount',
+  'routeHandlerEdgeCount',
+  'sourceChunkCount',
+  'sourceChunkContentSha256Count',
+  'sourceChunkIndexEntryCount',
+  'sourceChunkIndexedCount',
+  'sourceChunkLinkedRecordCount',
+  'sourceFileExtensionCount',
+  'sourcePathPatternCount',
+  'sourceRecordKindCount',
+  'exclusionCount',
+] as const satisfies readonly (keyof LegacyInventoryStats)[];
+
+function buildLegacyInventorySummary(
+  results: readonly EvalScenarioResult[],
+): LegacyInventoryEvalSummary | null {
+  const variants: LegacyInventoryEvalSummaryVariant[] = [];
+  const scenarioIds = new Set<string>();
+  for (const scenario of results) {
+    if (scenario.kind !== 'legacy_project_understanding_fixture') continue;
+    scenarioIds.add(scenario.scenarioId);
+    for (const variant of scenario.variants) {
+      const output = legacyProjectUnderstandingOutput(variant.output);
+      if (!output) continue;
+      variants.push({
+        scenarioId: scenario.scenarioId,
+        variantId: variant.variantId,
+        status: variant.status,
+        selectedContextSections: output.context.selected.length,
+        irrelevantContextRatio: output.context.contextQuality?.irrelevantRatio ?? null,
+        stats: output.inventory.stats,
+      });
+    }
+  }
+
+  if (variants.length === 0) return null;
+
+  const totals = zeroLegacyInventoryStats();
+  const min = { ...variants[0]!.stats };
+  const max = { ...variants[0]!.stats };
+  let selectedTotal = 0;
+  let selectedMin = variants[0]!.selectedContextSections;
+  let selectedMax = variants[0]!.selectedContextSections;
+  let measuredContextQualityCount = 0;
+  let irrelevantRatioTotal = 0;
+  let irrelevantRatioMax = 0;
+  for (const variant of variants) {
+    selectedTotal += variant.selectedContextSections;
+    selectedMin = Math.min(selectedMin, variant.selectedContextSections);
+    selectedMax = Math.max(selectedMax, variant.selectedContextSections);
+    if (variant.irrelevantContextRatio !== null) {
+      measuredContextQualityCount += 1;
+      irrelevantRatioTotal += variant.irrelevantContextRatio;
+      irrelevantRatioMax = Math.max(irrelevantRatioMax, variant.irrelevantContextRatio);
+    }
+    for (const key of LEGACY_INVENTORY_STAT_KEYS) {
+      totals[key] += variant.stats[key];
+      min[key] = Math.min(min[key], variant.stats[key]);
+      max[key] = Math.max(max[key], variant.stats[key]);
+    }
+  }
+
+  const averages = zeroLegacyInventoryStats();
+  for (const key of LEGACY_INVENTORY_STAT_KEYS) {
+    averages[key] = Number((totals[key] / variants.length).toFixed(2));
+  }
+
+  return {
+    scenarioCount: scenarioIds.size,
+    variantRuns: variants.length,
+    totals,
+    averages,
+    min,
+    max,
+    selectedContextSections: {
+      total: selectedTotal,
+      average: Number((selectedTotal / variants.length).toFixed(2)),
+      min: selectedMin,
+      max: selectedMax,
+    },
+    contextQuality: {
+      measuredVariants: measuredContextQualityCount,
+      irrelevantContextRatioAverage: measuredContextQualityCount === 0
+        ? null
+        : Number((irrelevantRatioTotal / measuredContextQualityCount).toFixed(4)),
+      irrelevantContextRatioMax: measuredContextQualityCount === 0
+        ? null
+        : Number(irrelevantRatioMax.toFixed(4)),
+    },
+    variants,
+  };
+}
+
+function legacyProjectUnderstandingOutput(output: unknown): LegacyProjectUnderstandingFixtureOutput | null {
+  if (!isRecord(output) || !isRecord(output.inventory) || !isRecord(output.context)) return null;
+  if (!isLegacyInventoryStats(output.inventory.stats)) return null;
+  const selected = Array.isArray(output.context.selected) ? output.context.selected : null;
+  if (!selected) return null;
+  return output as unknown as LegacyProjectUnderstandingFixtureOutput;
+}
+
+function isLegacyInventoryStats(value: unknown): value is LegacyInventoryStats {
+  if (!isRecord(value)) return false;
+  return LEGACY_INVENTORY_STAT_KEYS.every((key) => typeof value[key] === 'number');
+}
+
+function zeroLegacyInventoryStats(): LegacyInventoryStats {
+  return {
+    capabilityCount: 0,
+    entrypointRouteCount: 0,
+    symbolCount: 0,
+    graphEdgeCount: 0,
+    routeHandlerEdgeCount: 0,
+    sourceChunkCount: 0,
+    sourceChunkContentSha256Count: 0,
+    sourceChunkIndexEntryCount: 0,
+    sourceChunkIndexedCount: 0,
+    sourceChunkLinkedRecordCount: 0,
+    sourceFileExtensionCount: 0,
+    sourcePathPatternCount: 0,
+    sourceRecordKindCount: 0,
+    exclusionCount: 0,
+  };
+}
+
+function minConfidence(records: readonly { confidence?: number }[]): number | null {
+  const values = records
+    .map((record) => record.confidence)
+    .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+  return minFiniteNumber(values);
+}
+
+function minFiniteNumber(values: readonly number[]): number | null {
+  if (values.length === 0) return null;
+  return Number(Math.min(...values).toFixed(4));
 }
 
 function checkWorkflowOutput(
@@ -2173,6 +3952,20 @@ function includesCheck(name: string, actual: readonly string[], value: string, e
   };
 }
 
+function textIncludesCheck(name: string, actual: string, value: string, expected: boolean): EvalCheck {
+  const includes = actual.includes(value);
+  return {
+    name,
+    expected,
+    actual,
+    status: includes === expected ? 'pass' : 'fail',
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function knowledgeArtifactFixture(
   args: KnowledgeArtifactFixture & { id: string; projectId: string },
 ): KnowledgeArtifact {
@@ -2222,8 +4015,9 @@ function validateScenario(scenario: EvalScenario, source: string): void {
     && scenario.kind !== 'context_pack_fixture'
     && scenario.kind !== 'workflow_fixture'
     && scenario.kind !== 'graph_runtime_fixture'
+    && scenario.kind !== 'legacy_project_understanding_fixture'
   ) {
-    throw new Error(`${source}: unsupported kind ${String(scenario.kind)}`);
+    throw new Error(`${source}: unsupported kind ${String((scenario as { kind?: unknown }).kind)}`);
   }
   if (scenario.kind === 'router_recommendation' && (!scenario.input?.projectId || !scenario.input.title || !scenario.input.runType)) {
     throw new Error(`${source}: input.projectId, input.title, and input.runType are required`);
@@ -2239,6 +4033,13 @@ function validateScenario(scenario: EvalScenario, source: string): void {
   }
   if (scenario.kind === 'graph_runtime_fixture' && (!scenario.input?.title || !scenario.input.flowId || !scenario.input.profile)) {
     throw new Error(`${source}: input.title, input.flowId, and input.profile are required`);
+  }
+  if (scenario.kind === 'legacy_project_understanding_fixture') {
+    const hasInlineFiles = Array.isArray(scenario.input?.files) && scenario.input.files.length > 0;
+    const hasFixtureDir = typeof scenario.input?.fixtureDir?.path === 'string' && scenario.input.fixtureDir.path.length > 0;
+    if (!scenario.input?.title || (!hasInlineFiles && !hasFixtureDir)) {
+      throw new Error(`${source}: input.title and either input.files or input.fixtureDir are required`);
+    }
   }
 }
 
@@ -2275,6 +4076,8 @@ function sha256Text(content: string | Buffer): string {
 }
 
 function renderHtml(report: EvalReport): string {
+  const legacyInventorySummary = renderLegacyInventorySummaryHtml(report.legacyInventorySummary);
+  const scenarioChecks = renderScenarioChecksHtml(report.results);
   const rows = report.results.flatMap((scenario) =>
     scenario.variants.map((variant) => `
       <tr class="${variant.status}">
@@ -2301,12 +4104,15 @@ function renderHtml(report: EvalReport): string {
     th { background: #f3f6f8; }
     tr.pass td:nth-child(7) { color: #147a3d; font-weight: 700; }
     tr.fail td:nth-child(7) { color: #b42318; font-weight: 700; }
+    .summary-table { margin: 16px 0 24px; max-width: 920px; }
     pre { margin: 0; max-width: 420px; white-space: pre-wrap; font-size: 12px; }
   </style>
 </head>
 <body>
   <h1>AINP Eval Report</h1>
-  <p>Generated at ${escapeHtml(report.generatedAt)}. Scenarios: ${report.summary.scenarios}; variants: ${report.summary.variantRuns}; passed: ${report.summary.passed}; failed: ${report.summary.failed}.</p>
+  <p>Generated at ${escapeHtml(report.generatedAt)}. Scenarios: ${report.summary.scenarios}; variants: ${report.summary.variantRuns}; passed: ${report.summary.passed}; failed: ${report.summary.failed}; scenario checks passed/failed: ${report.summary.scenarioChecks.passed}/${report.summary.scenarioChecks.failed}.</p>
+  ${legacyInventorySummary}
+  ${scenarioChecks}
   <table>
     <thead>
       <tr><th>Scenario</th><th>Kind</th><th>Variant</th><th>Backend</th><th>Knowledge</th><th>Skill</th><th>Status</th><th>Output</th><th>Checks</th></tr>
@@ -2316,6 +4122,53 @@ function renderHtml(report: EvalReport): string {
 </body>
 </html>
 `;
+}
+
+function renderScenarioChecksHtml(results: readonly EvalScenarioResult[]): string {
+  const rows = results.flatMap((scenario) =>
+    (scenario.scenarioChecks ?? []).map((check) => `
+      <tr class="${check.status}">
+        <td>${escapeHtml(scenario.scenarioId)}</td>
+        <td>${escapeHtml(check.name)}</td>
+        <td>${check.status}</td>
+        <td><pre>${escapeHtml(JSON.stringify(check.expected, null, 2))}</pre></td>
+        <td><pre>${escapeHtml(JSON.stringify(check.actual, null, 2))}</pre></td>
+      </tr>`),
+  ).join('\n');
+  if (!rows) return '';
+  return `
+  <h2>Scenario Checks</h2>
+  <table class="summary-table">
+    <thead>
+      <tr><th>Scenario</th><th>Check</th><th>Status</th><th>Expected</th><th>Actual</th></tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function renderLegacyInventorySummaryHtml(summary: LegacyInventoryEvalSummary | null): string {
+  if (!summary) return '';
+  const rows = LEGACY_INVENTORY_STAT_KEYS.map((key) => `
+      <tr>
+        <td>${escapeHtml(key)}</td>
+        <td>${summary.totals[key]}</td>
+        <td>${summary.averages[key]}</td>
+        <td>${summary.min[key]}</td>
+        <td>${summary.max[key]}</td>
+      </tr>`).join('\n');
+  return `
+  <h2>Legacy Inventory Summary</h2>
+  <p>Legacy scenarios: ${summary.scenarioCount}; variants: ${summary.variantRuns}; selected context sections avg/min/max: ${summary.selectedContextSections.average}/${summary.selectedContextSections.min}/${summary.selectedContextSections.max}; irrelevant-context ratio measured variants: ${summary.contextQuality.measuredVariants}; avg/max: ${formatNullableRatio(summary.contextQuality.irrelevantContextRatioAverage)}/${formatNullableRatio(summary.contextQuality.irrelevantContextRatioMax)}.</p>
+  <table class="summary-table">
+    <thead>
+      <tr><th>Metric</th><th>Total</th><th>Average</th><th>Min</th><th>Max</th></tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function formatNullableRatio(value: number | null): string {
+  return value === null ? '-' : `${Math.round(value * 100)}%`;
 }
 
 function escapeHtml(value: string): string {

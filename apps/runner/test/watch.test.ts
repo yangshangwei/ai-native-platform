@@ -12,6 +12,7 @@ function testRequest(overrides: Partial<TestWorkflowRequest> = {}): TestWorkflow
     projectId: 'proj_1',
     title: 'build UI workbench',
     branch: 'main',
+    agentBackend: null,
     flowId: null,
     startStage: null,
     kind: null,
@@ -93,6 +94,28 @@ describe('runner watch workflow request processing', () => {
       'orchestrate:proj_1:build UI workbench:develop:feature',
       'complete:wreq_1:run_1:true',
     ]);
+  });
+
+  it('passes request-level backend override through to orchestration', async () => {
+    const { processNextWorkflowRequest } = await import('../src/cmd/watch');
+    const captured: string[] = [];
+
+    const result = await processNextWorkflowRequest({
+      runnerId: 'runner@test',
+      listPending: async () => [
+        testRequest({ id: 'wreq_backend', agentBackend: 'claude_code' }),
+      ],
+      triage: async () => ({ action: 'proceed', runType: 'feature', decision: fakeDecision() }),
+      claim: async (requestId) => testRequest({ id: requestId, agentBackend: 'claude_code' }),
+      orchestrate: async (request) => {
+        captured.push(request.agentBackend ?? 'none');
+        return { workflowRunId: 'run_backend', ok: true };
+      },
+      complete: async () => {},
+    });
+
+    expect(result).toBe('processed');
+    expect(captured).toEqual(['claude_code']);
   });
 
   it('passes a clarified brief to orchestration while preserving the request title', async () => {
@@ -338,6 +361,49 @@ describe('runner watch workflow request processing', () => {
     // runType must come from FLOW_REGISTRY['refactor.standard'].kind = 'refactor'.
     expect(calls).toContain('orchestrate:proj_1:refactor.standard:null:refactor');
     expect(calls).toContain('complete:wreq_pinned:true');
+  });
+
+  it('claims profile.bootstrap requests as profile runs without Coordinator triage', async () => {
+    const { processNextWorkflowRequest } = await import('../src/cmd/watch');
+    const calls: string[] = [];
+
+    const result = await processNextWorkflowRequest({
+      runnerId: 'runner@test',
+      listPending: async () => [
+        testRequest({
+          id: 'wreq_profile',
+          title: 'Generate legacy project profile',
+          flowId: 'profile.bootstrap',
+        }),
+      ],
+      triage: async () => {
+        calls.push('triage:should-not-run');
+        return { action: 'proceed', runType: 'feature', decision: fakeDecision() };
+      },
+      claim: async (requestId, runnerId) => {
+        calls.push(`claim:${requestId}:${runnerId}`);
+        return testRequest({
+          id: requestId,
+          title: 'Generate legacy project profile',
+          flowId: 'profile.bootstrap',
+        });
+      },
+      orchestrate: async (request, runType) => {
+        calls.push(`orchestrate:${request.flowId}:${request.startStage}:${runType}`);
+        return { workflowRunId: 'run_profile', ok: true };
+      },
+      complete: async (requestId, completion) => {
+        calls.push(`complete:${requestId}:${completion.workflowRunId}:${completion.ok}`);
+      },
+    });
+
+    expect(result).toBe('processed');
+    expect(calls).not.toContain('triage:should-not-run');
+    expect(calls).toEqual([
+      'claim:wreq_profile:runner@test',
+      'orchestrate:profile.bootstrap:null:profile',
+      'complete:wreq_profile:run_profile:true',
+    ]);
   });
 
   it('forwards both flowId and startStage from a pinned feature.standard request', async () => {

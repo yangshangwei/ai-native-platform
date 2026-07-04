@@ -1,0 +1,2755 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding",
+  "title": "Legacy project understanding selects inventory-backed code evidence",
+  "description": "Evaluates the legacy-project inventory path used before broader RAG: capability-map matches stay primary, BM25 fallback supplements misses, and raw project-inventory.json is not injected.",
+  "kind": "context_pack_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_understanding",
+    "title": "Update a legacy project capability",
+    "stage": "implementation",
+    "taskBrief": "Implement deleting orders in the Orders API and update order tests.",
+    "inputArtifacts": [
+      {
+        "name": "project-inventory.json",
+        "artifactId": "art_eval_legacy_inventory",
+        "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[{\"id\":\"entry_orders_delete\",\"kind\":\"http_route\",\"label\":\"DELETE /api/orders/:id\",\"path\":\"apps/api/src/orders-route.ts\",\"method\":\"DELETE\",\"route\":\"/api/orders/:id\",\"handler\":\"deleteOrder\",\"sourceRefs\":[\"file:apps/api/src/orders-route.ts#L12\"],\"confidence\":0.9},{\"id\":\"entry_payments_get\",\"kind\":\"http_route\",\"label\":\"GET /api/payments\",\"path\":\"apps/api/src/payments-route.ts\",\"method\":\"GET\",\"route\":\"/api/payments\",\"handler\":\"listPayments\",\"sourceRefs\":[\"file:apps/api/src/payments-route.ts#L8\"],\"confidence\":0.9}],\"symbols\":[{\"id\":\"sym_delete_order\",\"kind\":\"function\",\"name\":\"deleteOrder\",\"path\":\"apps/api/src/orders-route.ts\",\"exported\":true,\"line\":10,\"signature\":\"export function deleteOrder()\",\"sourceRefs\":[\"file:apps/api/src/orders-route.ts#L10\"]},{\"id\":\"sym_order_service\",\"kind\":\"class\",\"name\":\"OrderService\",\"path\":\"apps/api/src/order-service.ts\",\"exported\":true,\"line\":1,\"signature\":\"export class OrderService\",\"sourceRefs\":[\"file:apps/api/src/order-service.ts#L1\"]},{\"id\":\"sym_list_payments\",\"kind\":\"function\",\"name\":\"listPayments\",\"path\":\"apps/api/src/payments-route.ts\",\"exported\":true,\"line\":6,\"signature\":\"export function listPayments()\",\"sourceRefs\":[\"file:apps/api/src/payments-route.ts#L6\"]},{\"id\":\"sym_refund_reconciliation\",\"kind\":\"class\",\"name\":\"RefundReconciliationService\",\"path\":\"apps/api/src/refund-reconciliation.ts\",\"exported\":true,\"line\":4,\"signature\":\"export class RefundReconciliationService\",\"sourceRefs\":[\"file:apps/api/src/refund-reconciliation.ts#L4\"]}],\"testSurfaces\":[{\"id\":\"test_orders\",\"path\":\"apps/api/test/orders-route.test.ts\",\"frameworkHint\":\"vitest\",\"targetHints\":[\"orders-route\",\"orders\"],\"sourceRefs\":[\"file:apps/api/test/orders-route.test.ts\"]},{\"id\":\"test_refunds\",\"path\":\"apps/api/test/refund-reconciliation.test.ts\",\"frameworkHint\":\"vitest\",\"targetHints\":[\"refund\",\"reconciliation\"],\"sourceRefs\":[\"file:apps/api/test/refund-reconciliation.test.ts\"]}],\"hotspots\":[{\"id\":\"hot_orders\",\"path\":\"apps/api/src/orders-route.ts\",\"reason\":\"entrypoint_dense\",\"score\":0.8,\"sourceRefs\":[\"file:apps/api/src/orders-route.ts\"]}],\"capabilities\":[{\"id\":\"cap_api_orders\",\"label\":\"Orders API\",\"kind\":\"api\",\"entrypointRefs\":[\"entry_orders_delete\"],\"moduleRefs\":[],\"symbolRefs\":[\"sym_delete_order\",\"sym_order_service\"],\"testRefs\":[\"test_orders\"],\"hotspotRefs\":[\"hot_orders\"],\"sourceRefs\":[\"file:apps/api/src/orders-route.ts#L12\"],\"confidence\":0.95,\"openQuestions\":[]},{\"id\":\"cap_api_payments\",\"label\":\"Payments API\",\"kind\":\"api\",\"entrypointRefs\":[\"entry_payments_get\"],\"moduleRefs\":[],\"symbolRefs\":[\"sym_list_payments\"],\"testRefs\":[],\"hotspotRefs\":[],\"sourceRefs\":[\"file:apps/api/src/payments-route.ts#L8\"],\"confidence\":0.9,\"openQuestions\":[]}],\"symbolGraph\":{\"parser\":\"typescript_ast\",\"nodes\":[],\"edges\":[{\"id\":\"edge_refund_repo\",\"kind\":\"symbol_reference\",\"from\":\"node_symbol_sym_refund_reconciliation\",\"to\":\"node_symbol_sym_refund_repository\",\"label\":\"uses RefundRepository\",\"sourceRefs\":[\"file:apps/api/src/refund-reconciliation.ts#L8\"],\"confidence\":0.7}]},\"sourceChunks\":[{\"id\":\"chunk_refund_repository_call_site\",\"path\":\"apps/api/src/refund-reconciliation.ts\",\"startLine\":9,\"endLine\":11,\"snippet\":\"L9:     return repository.loadLedger();\\nL10:   }\",\"graphEdgeRefs\":[\"edge_refund_repo\"],\"sourceRefs\":[\"file:apps/api/src/refund-reconciliation.ts#L9\"],\"confidence\":0.72}]}"
+      }
+    ]
+  },
+  "expectations": {
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_orders",
+      "inventory_symbols_orders_api",
+      "inventory_tests_orders_api",
+      "inventory_hotspots_orders_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_payments"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_orders",
+      "inventory_symbols_orders_api",
+      "inventory_tests_orders_api",
+      "inventory_hotspots_orders_api"
+    ],
+    "irrelevantContextRatioMax": 0.15,
+    "contextQualityGates": {
+      "measuredVariantsMin": 18,
+      "irrelevantContextRatioAverageMax": 0.15,
+      "irrelevantContextRatioMax": 0.17
+    },
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory",
+      "file:apps/api/src/orders-route.ts#L12",
+      "file:apps/api/test/orders-route.test.ts"
+    ],
+    "sourceRefsExclude": [
+      "file:apps/api/src/payments-route.ts#L8"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_orders": "summary"
+    },
+    "selectedCountMin": 5
+  },
+  "variants": [
+    {
+      "id": "capability-map-primary",
+      "label": "Capability map selects Orders API evidence",
+      "expectations": {
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_orders",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/orders-route.ts#L10",
+              "file:apps/api/test/orders-route.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_orders_api",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts#L10",
+              "file:apps/api/src/order-service.ts#L1"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_tests_orders_api",
+            "sourceRefsInclude": [
+              "file:apps/api/test/orders-route.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_hotspots_orders_api",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "source-ref-focused-same-file-capability",
+      "label": "Line-scoped source refs select the targeted same-file capability",
+      "inputOverrides": {
+        "taskBrief": "Fix the failure at file:apps/api/src/routes.ts#L20.",
+        "inputArtifacts": [
+          {
+            "name": "project-inventory.json",
+            "artifactId": "art_eval_same_file_source_ref_inventory",
+            "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[{\"id\":\"entry_billing_reconcile\",\"kind\":\"http_route\",\"label\":\"POST /api/billing/reconcile\",\"path\":\"apps/api/src/routes.ts\",\"method\":\"POST\",\"route\":\"/api/billing/reconcile\",\"handler\":\"reconcileBilling\",\"sourceRefs\":[\"file:apps/api/src/routes.ts#L10\"],\"confidence\":0.9},{\"id\":\"entry_customers_profile\",\"kind\":\"http_route\",\"label\":\"GET /api/customers/profile\",\"path\":\"apps/api/src/routes.ts\",\"method\":\"GET\",\"route\":\"/api/customers/profile\",\"handler\":\"showCustomerProfile\",\"sourceRefs\":[\"file:apps/api/src/routes.ts#L20\"],\"confidence\":0.9}],\"symbols\":[{\"id\":\"sym_reconcile_billing\",\"kind\":\"function\",\"name\":\"reconcileBilling\",\"path\":\"apps/api/src/routes.ts\",\"exported\":true,\"line\":9,\"signature\":\"export function reconcileBilling()\",\"sourceRefs\":[\"file:apps/api/src/routes.ts#L9\"]},{\"id\":\"sym_show_customer_profile\",\"kind\":\"function\",\"name\":\"showCustomerProfile\",\"path\":\"apps/api/src/routes.ts\",\"exported\":true,\"line\":19,\"signature\":\"export function showCustomerProfile()\",\"sourceRefs\":[\"file:apps/api/src/routes.ts#L19\"]}],\"testSurfaces\":[{\"id\":\"test_customer_profile\",\"path\":\"apps/api/test/customer-profile.test.ts\",\"frameworkHint\":\"vitest\",\"targetHints\":[\"customer\",\"profile\"],\"sourceRefs\":[\"file:apps/api/test/customer-profile.test.ts\"]}],\"hotspots\":[],\"capabilities\":[{\"id\":\"cap_api_billing\",\"label\":\"Billing API\",\"kind\":\"api\",\"entrypointRefs\":[\"entry_billing_reconcile\"],\"moduleRefs\":[],\"symbolRefs\":[\"sym_reconcile_billing\"],\"testRefs\":[],\"hotspotRefs\":[],\"sourceRefs\":[\"file:apps/api/src/routes.ts#L10\"],\"confidence\":0.9,\"openQuestions\":[]},{\"id\":\"cap_api_customers\",\"label\":\"Customers API\",\"kind\":\"api\",\"entrypointRefs\":[\"entry_customers_profile\"],\"moduleRefs\":[],\"symbolRefs\":[\"sym_show_customer_profile\"],\"testRefs\":[\"test_customer_profile\"],\"hotspotRefs\":[],\"sourceRefs\":[\"file:apps/api/src/routes.ts#L20\"],\"confidence\":0.9,\"openQuestions\":[]}],\"symbolGraph\":{\"parser\":\"typescript_ast\",\"nodes\":[],\"edges\":[]},\"sourceChunks\":[]}"
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_customers",
+          "inventory_symbols_customers_api",
+          "inventory_tests_customers_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_billing"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_customers",
+          "inventory_symbols_customers_api",
+          "inventory_tests_customers_api"
+        ],
+        "irrelevantContextRatioMax": 0.17,
+        "sourceRefsInclude": [
+          "artifact:art_eval_same_file_source_ref_inventory",
+          "file:apps/api/src/routes.ts#L20",
+          "file:apps/api/src/routes.ts#L19",
+          "file:apps/api/test/customer-profile.test.ts"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/routes.ts#L10",
+          "file:apps/api/src/routes.ts#L9"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_customers": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_customers",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:apps/api/src/routes.ts#L20",
+              "file:apps/api/src/routes.ts#L19",
+              "file:apps/api/test/customer-profile.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/routes.ts#L10",
+              "file:apps/api/src/routes.ts#L9"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_customers_api",
+            "sourceRefsInclude": [
+              "file:apps/api/src/routes.ts#L19"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/routes.ts#L10",
+              "file:apps/api/src/routes.ts#L9"
+            ]
+          },
+          {
+            "ref": "inventory_tests_customers_api",
+            "sourceRefsInclude": [
+              "file:apps/api/test/customer-profile.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/routes.ts#L10",
+              "file:apps/api/src/routes.ts#L9"
+            ]
+          }
+        ],
+        "selectedCountMin": 4
+      }
+    },
+    {
+      "id": "accepted-capability-rename-correction",
+      "label": "Accepted capability-map rename correction selects Orders API evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix fulfillment cancellation behavior and update fulfillment tests.",
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_cap_orders_rename",
+            "kind": "explore",
+            "entityId": "CAP-ORDERS",
+            "status": "accepted",
+            "metadata": {
+              "title": "Capability correction: Fulfillment API",
+              "text": "# Capability Correction: Fulfillment API",
+              "correctionKind": "project_capability_map",
+              "correctionAction": "renamed",
+              "capabilityId": "cap_api_orders",
+              "originalLabel": "Orders API",
+              "correctedLabel": "Fulfillment API",
+              "inventoryArtifactId": "art_eval_legacy_inventory",
+              "reviewStatus": "none",
+              "sourceRefs": [
+                "artifact:art_eval_legacy_inventory",
+                "capability:cap_api_orders",
+                "file:apps/api/src/orders-route.ts#L12"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_orders",
+          "inventory_symbols_fulfillment_api",
+          "inventory_tests_fulfillment_api",
+          "inventory_hotspots_fulfillment_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_cap_orders_rename",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_orders",
+          "inventory_symbols_fulfillment_api",
+          "inventory_tests_fulfillment_api",
+          "inventory_hotspots_fulfillment_api"
+        ],
+        "irrelevantContextRatioMax": 0.15,
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory",
+          "knowledge_artifact:kart_eval_cap_orders_rename",
+          "capability:cap_api_orders",
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/test/orders-route.test.ts"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/payments-route.ts#L8"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_orders": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_orders",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/orders-route.ts#L10",
+              "file:apps/api/test/orders-route.test.ts",
+              "knowledge_artifact:kart_eval_cap_orders_rename",
+              "capability:cap_api_orders"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_fulfillment_api",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts#L10",
+              "file:apps/api/src/order-service.ts#L1",
+              "knowledge_artifact:kart_eval_cap_orders_rename",
+              "capability:cap_api_orders"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_tests_fulfillment_api",
+            "sourceRefsInclude": [
+              "file:apps/api/test/orders-route.test.ts",
+              "knowledge_artifact:kart_eval_cap_orders_rename",
+              "capability:cap_api_orders"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_hotspots_fulfillment_api",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts",
+              "knowledge_artifact:kart_eval_cap_orders_rename",
+              "capability:cap_api_orders"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          }
+        ],
+        "selectedCountMin": 5
+      }
+    },
+    {
+      "id": "accepted-capability-merge-correction",
+      "label": "Accepted capability-map merge correction selects Orders API evidence",
+      "inputOverrides": {
+        "taskBrief": "Update commerce operations cancellation behavior and tests.",
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_cap_orders_merge",
+            "kind": "explore",
+            "entityId": "CAP-ORDERS",
+            "status": "accepted",
+            "metadata": {
+              "title": "Capability correction: Commerce Operations",
+              "text": "# Capability Correction: Commerce Operations",
+              "correctionKind": "project_capability_map",
+              "correctionAction": "merged",
+              "capabilityId": "cap_api_orders",
+              "originalLabel": "Orders API",
+              "mergeTarget": "Commerce Operations",
+              "inventoryArtifactId": "art_eval_legacy_inventory",
+              "reviewStatus": "none",
+              "sourceRefs": [
+                "artifact:art_eval_legacy_inventory",
+                "capability:cap_api_orders",
+                "file:apps/api/src/orders-route.ts#L12"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_orders",
+          "inventory_symbols_commerce_operations",
+          "inventory_tests_commerce_operations",
+          "inventory_hotspots_commerce_operations"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_cap_orders_merge",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_orders",
+          "inventory_symbols_commerce_operations",
+          "inventory_tests_commerce_operations",
+          "inventory_hotspots_commerce_operations"
+        ],
+        "irrelevantContextRatioMax": 0.15,
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory",
+          "knowledge_artifact:kart_eval_cap_orders_merge",
+          "capability:cap_api_orders",
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/test/orders-route.test.ts"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/payments-route.ts#L8"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_orders": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_orders",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/orders-route.ts#L10",
+              "file:apps/api/test/orders-route.test.ts",
+              "knowledge_artifact:kart_eval_cap_orders_merge",
+              "capability:cap_api_orders"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_commerce_operations",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts#L10",
+              "file:apps/api/src/order-service.ts#L1",
+              "knowledge_artifact:kart_eval_cap_orders_merge",
+              "capability:cap_api_orders"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_tests_commerce_operations",
+            "sourceRefsInclude": [
+              "file:apps/api/test/orders-route.test.ts",
+              "knowledge_artifact:kart_eval_cap_orders_merge",
+              "capability:cap_api_orders"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_hotspots_commerce_operations",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts",
+              "knowledge_artifact:kart_eval_cap_orders_merge",
+              "capability:cap_api_orders"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          }
+        ],
+        "selectedCountMin": 5
+      }
+    },
+    {
+      "id": "accepted-capability-wrong-correction",
+      "label": "Accepted capability-map mark-wrong correction suppresses Orders API capability",
+      "inputOverrides": {
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_cap_orders_wrong",
+            "kind": "explore",
+            "entityId": "CAP-ORDERS",
+            "status": "accepted",
+            "metadata": {
+              "title": "Capability correction: Orders API wrong",
+              "text": "# Capability Correction: Orders API",
+              "correctionKind": "project_capability_map",
+              "correctionAction": "wrong",
+              "capabilityId": "cap_api_orders",
+              "originalLabel": "Orders API",
+              "inventoryArtifactId": "art_eval_legacy_inventory",
+              "reviewStatus": "none",
+              "sourceRefs": [
+                "artifact:art_eval_legacy_inventory",
+                "capability:cap_api_orders",
+                "file:apps/api/src/orders-route.ts#L12"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_correction_cap_api_orders",
+          "inventory_hybrid_entry_orders_delete",
+          "inventory_hybrid_sym_delete_order",
+          "inventory_hybrid_test_orders"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_cap_orders_wrong",
+          "inventory_capability_cap_api_orders",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_correction_cap_api_orders",
+          "inventory_hybrid_entry_orders_delete",
+          "inventory_hybrid_sym_delete_order",
+          "inventory_hybrid_sym_order_service",
+          "inventory_hybrid_test_orders"
+        ],
+        "irrelevantContextRatioMax": 0.13,
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory",
+          "knowledge_artifact:kart_eval_cap_orders_wrong",
+          "capability:cap_api_orders",
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/test/orders-route.test.ts"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/payments-route.ts#L8"
+        ],
+        "sectionModes": {
+          "inventory_correction_cap_api_orders": "summary",
+          "inventory_hybrid_entry_orders_delete": "summary",
+          "inventory_hybrid_sym_delete_order": "summary",
+          "inventory_hybrid_test_orders": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_correction_cap_api_orders",
+            "mode": "summary",
+            "contentIncludes": [
+              "Heuristic capability suppressed",
+              "Accepted correction kart_eval_cap_orders_wrong"
+            ],
+            "reasonIncludes": [
+              "heuristic capability suppressed"
+            ],
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "knowledge_artifact:kart_eval_cap_orders_wrong",
+              "capability:cap_api_orders"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_hybrid_entry_orders_delete",
+            "mode": "summary",
+            "contentIncludes": [
+              "Source-level fallback: an accepted wrong capability correction suppressed the attached capability grouping.",
+              "Accepted correction kart_eval_cap_orders_wrong"
+            ],
+            "reasonIncludes": [
+              "source-level fallback evidence only"
+            ],
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "knowledge_artifact:kart_eval_cap_orders_wrong",
+              "capability:cap_api_orders"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_hybrid_sym_delete_order",
+            "mode": "summary",
+            "contentIncludes": [
+              "Source-level fallback: an accepted wrong capability correction suppressed the attached capability grouping.",
+              "Accepted correction kart_eval_cap_orders_wrong"
+            ],
+            "reasonIncludes": [
+              "source-level fallback evidence only"
+            ],
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts#L10",
+              "knowledge_artifact:kart_eval_cap_orders_wrong",
+              "capability:cap_api_orders"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_hybrid_test_orders",
+            "mode": "summary",
+            "contentIncludes": [
+              "Source-level fallback: an accepted wrong capability correction suppressed the attached capability grouping.",
+              "Accepted correction kart_eval_cap_orders_wrong"
+            ],
+            "reasonIncludes": [
+              "source-level fallback evidence only"
+            ],
+            "sourceRefsInclude": [
+              "file:apps/api/test/orders-route.test.ts",
+              "knowledge_artifact:kart_eval_cap_orders_wrong",
+              "capability:cap_api_orders"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          }
+        ],
+        "selectedCountMin": 5
+      }
+    },
+    {
+      "id": "review-required-capability-wrong-ignored",
+      "label": "Review-required mark-wrong correction does not suppress Orders API",
+      "inputOverrides": {
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_cap_orders_wrong_needs_review",
+            "kind": "explore",
+            "entityId": "CAP-ORDERS",
+            "status": "accepted",
+            "metadata": {
+              "title": "Capability correction: Orders API wrong needs review",
+              "text": "# Capability Correction: Orders API",
+              "correctionKind": "project_capability_map",
+              "correctionAction": "wrong",
+              "capabilityId": "cap_api_orders",
+              "originalLabel": "Orders API",
+              "inventoryArtifactId": "art_eval_legacy_inventory",
+              "reviewStatus": "needs_review",
+              "sourceRefs": [
+                "artifact:art_eval_legacy_inventory",
+                "capability:cap_api_orders",
+                "file:apps/api/src/orders-route.ts#L12"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_orders",
+          "inventory_symbols_orders_api",
+          "inventory_tests_orders_api",
+          "inventory_hotspots_orders_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_cap_orders_wrong_needs_review",
+          "inventory_correction_cap_api_orders",
+          "inventory_hybrid_entry_orders_delete",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_orders",
+          "inventory_symbols_orders_api",
+          "inventory_tests_orders_api",
+          "inventory_hotspots_orders_api"
+        ],
+        "irrelevantContextRatioMax": 0.15,
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory",
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/test/orders-route.test.ts"
+        ],
+        "sourceRefsExclude": [
+          "knowledge_artifact:kart_eval_cap_orders_wrong_needs_review",
+          "capability:cap_api_orders",
+          "file:apps/api/src/payments-route.ts#L8"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_orders": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_orders",
+            "mode": "summary",
+            "contentExcludes": [
+              "Heuristic capability suppressed",
+              "Accepted correction kart_eval_cap_orders_wrong_needs_review"
+            ],
+            "reasonExcludes": [
+              "source-level fallback evidence only"
+            ],
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/orders-route.ts#L10",
+              "file:apps/api/test/orders-route.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "knowledge_artifact:kart_eval_cap_orders_wrong_needs_review",
+              "capability:cap_api_orders",
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_orders_api",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts#L10",
+              "file:apps/api/src/order-service.ts#L1"
+            ],
+            "sourceRefsExclude": [
+              "knowledge_artifact:kart_eval_cap_orders_wrong_needs_review",
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_tests_orders_api",
+            "sourceRefsInclude": [
+              "file:apps/api/test/orders-route.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "knowledge_artifact:kart_eval_cap_orders_wrong_needs_review",
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_hotspots_orders_api",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts"
+            ],
+            "sourceRefsExclude": [
+              "knowledge_artifact:kart_eval_cap_orders_wrong_needs_review",
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          }
+        ],
+        "selectedCountMin": 5
+      }
+    },
+    {
+      "id": "review-required-capability-rename-match-ignored",
+      "label": "Review-required rename correction does not match corrected label",
+      "inputOverrides": {
+        "taskBrief": "Fix fulfillment cancellation behavior and update fulfillment tests.",
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_cap_orders_rename_needs_review",
+            "kind": "explore",
+            "entityId": "CAP-ORDERS",
+            "status": "accepted",
+            "metadata": {
+              "title": "Capability correction: Fulfillment API needs review",
+              "text": "# Capability Correction: Fulfillment API",
+              "correctionKind": "project_capability_map",
+              "correctionAction": "renamed",
+              "capabilityId": "cap_api_orders",
+              "originalLabel": "Orders API",
+              "correctedLabel": "Fulfillment API",
+              "inventoryArtifactId": "art_eval_legacy_inventory",
+              "reviewStatus": "needs_review",
+              "sourceRefs": [
+                "artifact:art_eval_legacy_inventory",
+                "capability:cap_api_orders",
+                "file:apps/api/src/orders-route.ts#L12"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_cap_orders_rename_needs_review",
+          "inventory_capability_cap_api_orders",
+          "inventory_symbols_fulfillment_api",
+          "inventory_tests_fulfillment_api",
+          "inventory_hotspots_fulfillment_api",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "project_profile"
+        ],
+        "irrelevantContextRatioMax": 0,
+        "sourceRefsInclude": [],
+        "sourceRefsExclude": [
+          "knowledge_artifact:kart_eval_cap_orders_rename_needs_review",
+          "capability:cap_api_orders",
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/test/orders-route.test.ts",
+          "file:apps/api/src/payments-route.ts#L8"
+        ],
+        "sectionModes": {},
+        "selectedCountMin": 2
+      }
+    },
+    {
+      "id": "review-required-capability-merge-match-ignored",
+      "label": "Review-required merge correction does not match merge target",
+      "inputOverrides": {
+        "taskBrief": "Update commerce operations cancellation behavior and tests.",
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_cap_orders_merge_needs_review",
+            "kind": "explore",
+            "entityId": "CAP-ORDERS",
+            "status": "accepted",
+            "metadata": {
+              "title": "Capability correction: Commerce Operations needs review",
+              "text": "# Capability Correction: Commerce Operations",
+              "correctionKind": "project_capability_map",
+              "correctionAction": "merged",
+              "capabilityId": "cap_api_orders",
+              "originalLabel": "Orders API",
+              "mergeTarget": "Commerce Operations",
+              "inventoryArtifactId": "art_eval_legacy_inventory",
+              "reviewStatus": "needs_review",
+              "sourceRefs": [
+                "artifact:art_eval_legacy_inventory",
+                "capability:cap_api_orders",
+                "file:apps/api/src/orders-route.ts#L12"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_cap_orders_merge_needs_review",
+          "inventory_capability_cap_api_orders",
+          "inventory_symbols_commerce_operations",
+          "inventory_tests_commerce_operations",
+          "inventory_hotspots_commerce_operations",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "project_profile"
+        ],
+        "irrelevantContextRatioMax": 0,
+        "sourceRefsInclude": [],
+        "sourceRefsExclude": [
+          "knowledge_artifact:kart_eval_cap_orders_merge_needs_review",
+          "capability:cap_api_orders",
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/test/orders-route.test.ts",
+          "file:apps/api/src/payments-route.ts#L8"
+        ],
+        "sectionModes": {},
+        "selectedCountMin": 2
+      }
+    },
+    {
+      "id": "accepted-correction-missing-capability-drift-signal",
+      "label": "Accepted correction emits stale signal when current inventory drops capability",
+      "inputOverrides": {
+        "taskBrief": "Review capability map drift after a fresh project scan removed Fulfillment API.",
+        "inputArtifacts": [
+          {
+            "name": "project-inventory.json",
+            "artifactId": "art_eval_current_inventory_without_orders",
+            "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[{\"id\":\"entry_payments_get\",\"kind\":\"http_route\",\"label\":\"GET /api/payments\",\"path\":\"apps/api/src/payments-route.ts\",\"method\":\"GET\",\"route\":\"/api/payments\",\"handler\":\"listPayments\",\"sourceRefs\":[\"file:apps/api/src/payments-route.ts#L8\"],\"confidence\":0.9}],\"symbols\":[{\"id\":\"sym_list_payments\",\"kind\":\"function\",\"name\":\"listPayments\",\"path\":\"apps/api/src/payments-route.ts\",\"exported\":true,\"line\":6,\"signature\":\"export function listPayments()\",\"sourceRefs\":[\"file:apps/api/src/payments-route.ts#L6\"]}],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[{\"id\":\"cap_api_payments\",\"label\":\"Payments API\",\"kind\":\"api\",\"entrypointRefs\":[\"entry_payments_get\"],\"moduleRefs\":[],\"symbolRefs\":[\"sym_list_payments\"],\"testRefs\":[],\"hotspotRefs\":[],\"sourceRefs\":[\"file:apps/api/src/payments-route.ts#L8\"],\"confidence\":0.9,\"openQuestions\":[]}],\"symbolGraph\":{\"parser\":\"typescript_ast\",\"nodes\":[],\"edges\":[]},\"sourceChunks\":[]}"
+          }
+        ],
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_cap_orders_rename_drift",
+            "kind": "explore",
+            "entityId": "CAP-ORDERS",
+            "status": "accepted",
+            "metadata": {
+              "title": "Capability correction: Fulfillment API",
+              "text": "# Capability Correction: Fulfillment API",
+              "correctionKind": "project_capability_map",
+              "correctionAction": "renamed",
+              "capabilityId": "cap_api_orders",
+              "originalLabel": "Orders API",
+              "correctedLabel": "Fulfillment API",
+              "inventoryArtifactId": "art_eval_legacy_inventory",
+              "reviewStatus": "none",
+              "sourceRefs": [
+                "artifact:art_eval_legacy_inventory",
+                "capability:cap_api_orders",
+                "file:apps/api/src/orders-route.ts#L12"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_cap_orders_rename_drift",
+          "inventory_capability_cap_api_orders",
+          "inventory_symbols_fulfillment_api",
+          "inventory_tests_fulfillment_api",
+          "inventory_hotspots_fulfillment_api",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "project_profile"
+        ],
+        "irrelevantContextRatioMax": 0,
+        "sourceRefsInclude": [],
+        "sourceRefsExclude": [
+          "knowledge_artifact:kart_eval_cap_orders_rename_drift",
+          "capability:cap_api_orders",
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/src/payments-route.ts#L8"
+        ],
+        "sectionModes": {},
+        "calibrationSignalsMin": 1,
+        "calibrationSignalsInclude": [
+          {
+            "kind": "stale",
+            "severity": "review_required",
+            "recommendedAction": "mark_stale_or_supersede",
+            "messageIncludes": [
+              "current project inventory no longer contains that capability"
+            ],
+            "subjectRefsInclude": [
+              "knowledge_artifact:kart_eval_cap_orders_rename_drift",
+              "capability:cap_api_orders"
+            ],
+            "evidenceRefsInclude": [
+              "artifact:art_eval_current_inventory_without_orders",
+              "artifact:art_eval_legacy_inventory",
+              "file:apps/api/src/orders-route.ts#L12"
+            ],
+            "evidenceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          }
+        ],
+        "selectedCountMin": 2
+      }
+    },
+    {
+      "id": "accepted-correction-converged-label-superseded-signal",
+      "label": "Accepted correction emits superseded signal when current inventory converges on corrected label",
+      "inputOverrides": {
+        "taskBrief": "Review Fulfillment API capability map drift after a fresh scan converged on the governed label.",
+        "inputArtifacts": [
+          {
+            "name": "project-inventory.json",
+            "artifactId": "art_eval_current_inventory_converged_fulfillment",
+            "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[{\"id\":\"entry_fulfillment_cancel\",\"kind\":\"http_route\",\"label\":\"POST /api/fulfillment/cancel\",\"path\":\"apps/api/src/fulfillment-route.ts\",\"method\":\"POST\",\"route\":\"/api/fulfillment/cancel\",\"handler\":\"cancelFulfillment\",\"sourceRefs\":[\"file:apps/api/src/fulfillment-route.ts#L22\"],\"confidence\":0.9}],\"symbols\":[],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[{\"id\":\"cap_api_fulfillment\",\"label\":\"Fulfillment API\",\"kind\":\"api\",\"entrypointRefs\":[\"entry_fulfillment_cancel\"],\"moduleRefs\":[],\"symbolRefs\":[],\"testRefs\":[],\"hotspotRefs\":[],\"sourceRefs\":[\"file:apps/api/src/fulfillment-route.ts#L22\"],\"confidence\":0.91,\"openQuestions\":[]}],\"symbolGraph\":{\"parser\":\"typescript_ast\",\"nodes\":[],\"edges\":[]},\"sourceChunks\":[]}"
+          }
+        ],
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_cap_orders_rename_converged",
+            "kind": "explore",
+            "entityId": "CAP-ORDERS",
+            "status": "accepted",
+            "metadata": {
+              "title": "Capability correction: Fulfillment API",
+              "text": "# Capability Correction: Fulfillment API",
+              "correctionKind": "project_capability_map",
+              "correctionAction": "renamed",
+              "capabilityId": "cap_api_orders",
+              "originalLabel": "Orders API",
+              "correctedLabel": "Fulfillment API",
+              "inventoryArtifactId": "art_eval_legacy_inventory",
+              "reviewStatus": "none",
+              "sourceRefs": [
+                "artifact:art_eval_legacy_inventory",
+                "capability:cap_api_orders",
+                "file:apps/api/src/orders-route.ts#L12"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_fulfillment"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_cap_orders_rename_converged",
+          "inventory_capability_cap_api_orders",
+          "inventory_symbols_fulfillment_api",
+          "inventory_tests_fulfillment_api",
+          "inventory_hotspots_fulfillment_api",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "project_profile",
+          "inventory_capability_cap_api_fulfillment"
+        ],
+        "irrelevantContextRatioMax": 0,
+        "sourceRefsInclude": [
+          "artifact:art_eval_current_inventory_converged_fulfillment",
+          "file:apps/api/src/fulfillment-route.ts#L22"
+        ],
+        "sourceRefsExclude": [
+          "knowledge_artifact:kart_eval_cap_orders_rename_converged",
+          "capability:cap_api_orders",
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/src/payments-route.ts#L8"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_fulfillment": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_fulfillment",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "artifact:art_eval_current_inventory_converged_fulfillment",
+              "file:apps/api/src/fulfillment-route.ts#L22"
+            ],
+            "sourceRefsExclude": [
+              "knowledge_artifact:kart_eval_cap_orders_rename_converged",
+              "capability:cap_api_orders",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/payments-route.ts#L8"
+            ],
+            "contentIncludes": [
+              "Capability: Fulfillment API"
+            ]
+          }
+        ],
+        "calibrationSignalsMin": 1,
+        "calibrationSignalsInclude": [
+          {
+            "kind": "superseded",
+            "severity": "review_required",
+            "recommendedAction": "mark_stale_or_supersede",
+            "messageIncludes": [
+              "heuristic scan appears to have converged on the governed label"
+            ],
+            "subjectRefsInclude": [
+              "knowledge_artifact:kart_eval_cap_orders_rename_converged",
+              "capability:cap_api_orders",
+              "capability:cap_api_fulfillment"
+            ],
+            "evidenceRefsInclude": [
+              "artifact:art_eval_current_inventory_converged_fulfillment",
+              "artifact:art_eval_legacy_inventory",
+              "file:apps/api/src/fulfillment-route.ts#L22",
+              "file:apps/api/src/orders-route.ts#L12"
+            ],
+            "evidenceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          }
+        ],
+        "selectedCountMin": 3
+      }
+    },
+    {
+      "id": "accepted-correction-ambiguous-converged-label-conflict-signal",
+      "label": "Accepted correction emits conflict signal when governed label matches multiple current capabilities",
+      "inputOverrides": {
+        "taskBrief": "Review Fulfillment API capability map drift after a fresh scan found duplicate governed labels.",
+        "inputArtifacts": [
+          {
+            "name": "project-inventory.json",
+            "artifactId": "art_eval_current_inventory_ambiguous_fulfillment",
+            "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[{\"id\":\"entry_fulfillment_cancel\",\"kind\":\"http_route\",\"label\":\"POST /api/fulfillment/cancel\",\"path\":\"apps/api/src/fulfillment-route.ts\",\"method\":\"POST\",\"route\":\"/api/fulfillment/cancel\",\"handler\":\"cancelFulfillment\",\"sourceRefs\":[\"file:apps/api/src/fulfillment-route.ts#L22\"],\"confidence\":0.9},{\"id\":\"entry_fulfillment_returns\",\"kind\":\"http_route\",\"label\":\"POST /api/fulfillment/returns\",\"path\":\"apps/api/src/returns-route.ts\",\"method\":\"POST\",\"route\":\"/api/fulfillment/returns\",\"handler\":\"returnFulfillmentOrder\",\"sourceRefs\":[\"file:apps/api/src/returns-route.ts#L44\"],\"confidence\":0.88}],\"symbols\":[],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[{\"id\":\"cap_api_fulfillment_cancel\",\"label\":\"Fulfillment API\",\"kind\":\"api\",\"entrypointRefs\":[\"entry_fulfillment_cancel\"],\"moduleRefs\":[],\"symbolRefs\":[],\"testRefs\":[],\"hotspotRefs\":[],\"sourceRefs\":[\"file:apps/api/src/fulfillment-route.ts#L22\"],\"confidence\":0.91,\"openQuestions\":[]},{\"id\":\"cap_api_fulfillment_returns\",\"label\":\"Fulfillment API\",\"kind\":\"api\",\"entrypointRefs\":[\"entry_fulfillment_returns\"],\"moduleRefs\":[],\"symbolRefs\":[],\"testRefs\":[],\"hotspotRefs\":[],\"sourceRefs\":[\"file:apps/api/src/returns-route.ts#L44\"],\"confidence\":0.89,\"openQuestions\":[]}],\"symbolGraph\":{\"parser\":\"typescript_ast\",\"nodes\":[],\"edges\":[]},\"sourceChunks\":[]}"
+          }
+        ],
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_cap_orders_rename_ambiguous",
+            "kind": "explore",
+            "entityId": "CAP-ORDERS",
+            "status": "accepted",
+            "metadata": {
+              "title": "Capability correction: Fulfillment API",
+              "text": "# Capability Correction: Fulfillment API",
+              "correctionKind": "project_capability_map",
+              "correctionAction": "renamed",
+              "capabilityId": "cap_api_orders",
+              "originalLabel": "Orders API",
+              "correctedLabel": "Fulfillment API",
+              "inventoryArtifactId": "art_eval_legacy_inventory",
+              "reviewStatus": "none",
+              "sourceRefs": [
+                "artifact:art_eval_legacy_inventory",
+                "capability:cap_api_orders",
+                "file:apps/api/src/orders-route.ts#L12"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "mode": "calibration",
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_fulfillment_cancel",
+          "inventory_capability_cap_api_fulfillment_returns"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_cap_orders_rename_ambiguous",
+          "inventory_capability_cap_api_orders",
+          "inventory_symbols_fulfillment_api",
+          "inventory_tests_fulfillment_api",
+          "inventory_hotspots_fulfillment_api",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "project_profile",
+          "inventory_capability_cap_api_fulfillment_cancel",
+          "inventory_capability_cap_api_fulfillment_returns"
+        ],
+        "irrelevantContextRatioMax": 0,
+        "sourceRefsInclude": [
+          "artifact:art_eval_current_inventory_ambiguous_fulfillment",
+          "file:apps/api/src/fulfillment-route.ts#L22",
+          "file:apps/api/src/returns-route.ts#L44"
+        ],
+        "sourceRefsExclude": [
+          "knowledge_artifact:kart_eval_cap_orders_rename_ambiguous",
+          "capability:cap_api_orders",
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/src/payments-route.ts#L8"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_fulfillment_cancel": "summary",
+          "inventory_capability_cap_api_fulfillment_returns": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_fulfillment_cancel",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "artifact:art_eval_current_inventory_ambiguous_fulfillment",
+              "file:apps/api/src/fulfillment-route.ts#L22"
+            ],
+            "sourceRefsExclude": [
+              "knowledge_artifact:kart_eval_cap_orders_rename_ambiguous",
+              "capability:cap_api_orders",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/payments-route.ts#L8"
+            ],
+            "contentIncludes": [
+              "Capability: Fulfillment API"
+            ],
+            "contentExcludes": [
+              "Correction Review:"
+            ]
+          },
+          {
+            "ref": "inventory_capability_cap_api_fulfillment_returns",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "artifact:art_eval_current_inventory_ambiguous_fulfillment",
+              "file:apps/api/src/returns-route.ts#L44"
+            ],
+            "sourceRefsExclude": [
+              "knowledge_artifact:kart_eval_cap_orders_rename_ambiguous",
+              "capability:cap_api_orders",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/payments-route.ts#L8"
+            ],
+            "contentIncludes": [
+              "Capability: Fulfillment API"
+            ],
+            "contentExcludes": [
+              "Correction Review:"
+            ]
+          }
+        ],
+        "calibrationSignalsMin": 1,
+        "calibrationSignalsInclude": [
+          {
+            "kind": "conflict",
+            "severity": "review_required",
+            "recommendedAction": "open_knowledge_review",
+            "messageIncludes": [
+              "matches multiple current project inventory capabilities"
+            ],
+            "subjectRefsInclude": [
+              "knowledge_artifact:kart_eval_cap_orders_rename_ambiguous",
+              "capability:cap_api_orders",
+              "capability:cap_api_fulfillment_cancel",
+              "capability:cap_api_fulfillment_returns"
+            ],
+            "evidenceRefsInclude": [
+              "artifact:art_eval_current_inventory_ambiguous_fulfillment",
+              "artifact:art_eval_legacy_inventory",
+              "file:apps/api/src/fulfillment-route.ts#L22",
+              "file:apps/api/src/returns-route.ts#L44",
+              "file:apps/api/src/orders-route.ts#L12"
+            ],
+            "evidenceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          }
+        ],
+        "selectedCountMin": 4
+      }
+    },
+    {
+      "id": "historical-inventory-knowledge",
+      "label": "Historical inventory knowledge selects Orders API evidence",
+      "inputOverrides": {
+        "inputArtifacts": [],
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_legacy_inventory_history",
+            "kind": "explore",
+            "entityId": "project_inventory:latest",
+            "status": "accepted",
+            "metadata": {
+              "title": "Latest legacy project inventory",
+              "role": "project_inventory",
+              "output": "project-inventory.json",
+              "schemaVersion": "ainp.project_inventory.v1",
+              "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[{\"id\":\"entry_orders_delete\",\"kind\":\"http_route\",\"label\":\"DELETE /api/orders/:id\",\"path\":\"apps/api/src/orders-route.ts\",\"method\":\"DELETE\",\"route\":\"/api/orders/:id\",\"handler\":\"deleteOrder\",\"sourceRefs\":[\"file:apps/api/src/orders-route.ts#L12\"],\"confidence\":0.9},{\"id\":\"entry_payments_get\",\"kind\":\"http_route\",\"label\":\"GET /api/payments\",\"path\":\"apps/api/src/payments-route.ts\",\"method\":\"GET\",\"route\":\"/api/payments\",\"handler\":\"listPayments\",\"sourceRefs\":[\"file:apps/api/src/payments-route.ts#L8\"],\"confidence\":0.9}],\"symbols\":[{\"id\":\"sym_delete_order\",\"kind\":\"function\",\"name\":\"deleteOrder\",\"path\":\"apps/api/src/orders-route.ts\",\"exported\":true,\"line\":10,\"signature\":\"export function deleteOrder()\",\"sourceRefs\":[\"file:apps/api/src/orders-route.ts#L10\"]},{\"id\":\"sym_order_service\",\"kind\":\"class\",\"name\":\"OrderService\",\"path\":\"apps/api/src/order-service.ts\",\"exported\":true,\"line\":1,\"signature\":\"export class OrderService\",\"sourceRefs\":[\"file:apps/api/src/order-service.ts#L1\"]},{\"id\":\"sym_list_payments\",\"kind\":\"function\",\"name\":\"listPayments\",\"path\":\"apps/api/src/payments-route.ts\",\"exported\":true,\"line\":6,\"signature\":\"export function listPayments()\",\"sourceRefs\":[\"file:apps/api/src/payments-route.ts#L6\"]}],\"testSurfaces\":[{\"id\":\"test_orders\",\"path\":\"apps/api/test/orders-route.test.ts\",\"frameworkHint\":\"vitest\",\"targetHints\":[\"orders-route\",\"orders\"],\"sourceRefs\":[\"file:apps/api/test/orders-route.test.ts\"]}],\"hotspots\":[{\"id\":\"hot_orders\",\"path\":\"apps/api/src/orders-route.ts\",\"reason\":\"entrypoint_dense\",\"score\":0.8,\"sourceRefs\":[\"file:apps/api/src/orders-route.ts\"]}],\"capabilities\":[{\"id\":\"cap_api_orders\",\"label\":\"Orders API\",\"kind\":\"api\",\"entrypointRefs\":[\"entry_orders_delete\"],\"moduleRefs\":[],\"symbolRefs\":[\"sym_delete_order\",\"sym_order_service\"],\"testRefs\":[\"test_orders\"],\"hotspotRefs\":[\"hot_orders\"],\"sourceRefs\":[\"file:apps/api/src/orders-route.ts#L12\"],\"confidence\":0.95,\"openQuestions\":[]},{\"id\":\"cap_api_payments\",\"label\":\"Payments API\",\"kind\":\"api\",\"entrypointRefs\":[\"entry_payments_get\"],\"moduleRefs\":[],\"symbolRefs\":[\"sym_list_payments\"],\"testRefs\":[],\"hotspotRefs\":[],\"sourceRefs\":[\"file:apps/api/src/payments-route.ts#L8\"],\"confidence\":0.9,\"openQuestions\":[]}]}",
+              "knowledgeClass": "recovered",
+              "trustLevel": "source",
+              "freshness": "possibly_stale",
+              "sourceRefs": [
+                "artifact:art_eval_legacy_inventory_history"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_orders",
+          "inventory_symbols_orders_api",
+          "inventory_tests_orders_api",
+          "inventory_hotspots_orders_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_legacy_inventory_history",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_orders",
+          "inventory_symbols_orders_api",
+          "inventory_tests_orders_api",
+          "inventory_hotspots_orders_api"
+        ],
+        "irrelevantContextRatioMax": 0.15,
+        "sourceRefsInclude": [
+          "knowledge_artifact:kart_eval_legacy_inventory_history",
+          "artifact:art_eval_legacy_inventory_history",
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/test/orders-route.test.ts"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/payments-route.ts#L8"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_orders": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_orders",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/orders-route.ts#L10",
+              "file:apps/api/test/orders-route.test.ts",
+              "knowledge_artifact:kart_eval_legacy_inventory_history",
+              "artifact:art_eval_legacy_inventory_history"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_orders_api",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts#L10",
+              "file:apps/api/src/order-service.ts#L1",
+              "knowledge_artifact:kart_eval_legacy_inventory_history",
+              "artifact:art_eval_legacy_inventory_history"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_tests_orders_api",
+            "sourceRefsInclude": [
+              "file:apps/api/test/orders-route.test.ts",
+              "knowledge_artifact:kart_eval_legacy_inventory_history",
+              "artifact:art_eval_legacy_inventory_history"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_hotspots_orders_api",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts",
+              "knowledge_artifact:kart_eval_legacy_inventory_history",
+              "artifact:art_eval_legacy_inventory_history"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          }
+        ],
+        "selectedCountMin": 5
+      }
+    },
+    {
+      "id": "historical-inventory-source-chunk-refs",
+      "label": "Historical inventory sourceChunkRefs select bounded source evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix refund reconciliation rounding.",
+        "inputArtifacts": [],
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_legacy_refund_inventory",
+            "kind": "explore",
+            "entityId": "project_inventory:latest",
+            "status": "accepted",
+            "metadata": {
+              "title": "Latest legacy refund project inventory",
+              "role": "project_inventory",
+              "output": "project-inventory.json",
+              "schemaVersion": "ainp.project_inventory.v1",
+              "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[],\"symbols\":[{\"id\":\"sym_refund_reconciliation\",\"kind\":\"class\",\"name\":\"RefundReconciliationService\",\"path\":\"apps/api/src/refunds.ts\",\"exported\":true,\"line\":12,\"signature\":\"export class RefundReconciliationService\",\"sourceRefs\":[\"file:apps/api/src/refunds.ts#L12\"],\"sourceChunkRefs\":[\"chunk_refund_service_body\"]}],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[],\"sourceChunks\":[{\"id\":\"chunk_refund_service_body\",\"path\":\"apps/api/src/refunds.ts\",\"startLine\":13,\"endLine\":18,\"snippet\":\"L13:   settle(amountInCents: number) {\\nL14:     const cents = amountInCents.toString();\\nL15:     return cents;\\nL16:   }\",\"contentSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"sourceRefs\":[\"file:apps/api/src/refunds.ts#L13\"],\"confidence\":0.7}]}",
+              "knowledgeClass": "recovered",
+              "trustLevel": "source",
+              "freshness": "possibly_stale",
+              "sourceRefs": [
+                "artifact:art_eval_legacy_refund_inventory_history"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_hybrid_sym_refund_reconciliation",
+          "inventory_source_chunk_chunk_refund_service_body"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_legacy_refund_inventory",
+          "inventory_capability_cap_api_orders",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_hybrid_sym_refund_reconciliation",
+          "inventory_source_chunk_chunk_refund_service_body",
+          "project_profile"
+        ],
+        "irrelevantContextRatioMax": 0.15,
+        "sourceRefsInclude": [
+          "knowledge_artifact:kart_eval_legacy_refund_inventory",
+          "artifact:art_eval_legacy_refund_inventory_history",
+          "file:apps/api/src/refunds.ts#L12",
+          "file:apps/api/src/refunds.ts#L13"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/src/payments-route.ts#L8"
+        ],
+        "sectionModes": {
+          "inventory_hybrid_sym_refund_reconciliation": "summary",
+          "inventory_source_chunk_chunk_refund_service_body": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_hybrid_sym_refund_reconciliation",
+            "mode": "summary",
+            "contentIncludes": [
+              "Hybrid match: symbol RefundReconciliationService",
+              "Symbol:",
+              "RefundReconciliationService"
+            ],
+            "reasonIncludes": [
+              "Hybrid inventory retrieval matched the task brief",
+              "bm25="
+            ],
+            "sourceRefsInclude": [
+              "knowledge_artifact:kart_eval_legacy_refund_inventory",
+              "artifact:art_eval_legacy_refund_inventory_history",
+              "file:apps/api/src/refunds.ts#L12"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_source_chunk_chunk_refund_service_body",
+            "mode": "summary",
+            "contentIncludes": [
+              "Source chunk: apps/api/src/refunds.ts:13-18",
+              "Pointed by inventory evidence: sym_refund_reconciliation",
+              "Content SHA-256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "L13:   settle(amountInCents: number) {"
+            ],
+            "contentExcludes": [
+              "\"schemaVersion\":\"ainp.project_inventory.v1\"",
+              "DELETE /api/orders/:id",
+              "GET /api/payments"
+            ],
+            "reasonIncludes": [
+              "Project inventory source chunk selected as bounded source evidence because",
+              "hybrid inventory evidence points to this chunk (sym_refund_reconciliation)"
+            ],
+            "sourceRefsInclude": [
+              "knowledge_artifact:kart_eval_legacy_refund_inventory",
+              "artifact:art_eval_legacy_refund_inventory_history",
+              "file:apps/api/src/refunds.ts#L13",
+              "file:apps/api/src/refunds.ts#L12"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          }
+        ],
+        "selectedCountMin": 4
+      }
+    },
+    {
+      "id": "historical-inventory-source-chunk-index",
+      "label": "Historical inventory sourceChunkIndex links bounded source evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix refund reconciliation rounding.",
+        "inputArtifacts": [],
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_legacy_refund_source_index",
+            "kind": "explore",
+            "entityId": "project_inventory:latest",
+            "status": "accepted",
+            "metadata": {
+              "title": "Latest legacy refund project source index",
+              "role": "project_inventory",
+              "output": "project-inventory.json",
+              "schemaVersion": "ainp.project_inventory.v1",
+              "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[],\"symbols\":[{\"id\":\"sym_refund_reconciliation\",\"kind\":\"class\",\"name\":\"RefundReconciliationService\",\"path\":\"apps/api/src/refunds.ts\",\"exported\":true,\"line\":12,\"signature\":\"export class RefundReconciliationService\",\"sourceRefs\":[\"file:apps/api/src/refunds.ts#L12\"]}],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[],\"sourceChunks\":[{\"id\":\"chunk_refund_service_body\",\"path\":\"apps/api/src/refunds.ts\",\"startLine\":13,\"endLine\":18,\"snippet\":\"L13:   settle(amountInCents: number) {\\nL14:     const cents = amountInCents.toString();\\nL15:     return cents;\\nL16:   }\",\"contentSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"sourceRefs\":[\"file:apps/api/src/refunds.ts#L13\"],\"confidence\":0.7}],\"sourceChunkIndex\":{\"schemaVersion\":\"ainp.source_chunk_index.v1\",\"generatedAt\":\"2026-07-03T00:00:00.000Z\",\"source\":\"project_inventory.sourceChunks\",\"chunkCount\":1,\"maxEntries\":120,\"entries\":[{\"id\":\"src_chunk_idx_refund_service\",\"sourceChunkRef\":\"chunk_refund_service_body\",\"contentSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"path\":\"apps/api/src/refunds.ts\",\"startLine\":13,\"endLine\":18,\"sourceRefs\":[\"file:apps/api/src/refunds.ts#L12\",\"file:apps/api/src/refunds.ts#L13\"],\"entrypointRefs\":[],\"symbolRefs\":[\"sym_refund_reconciliation\"],\"graphEdgeRefs\":[],\"testRefs\":[],\"hotspotRefs\":[],\"capabilityRefs\":[]}]}}",
+              "knowledgeClass": "recovered",
+              "trustLevel": "source",
+              "freshness": "possibly_stale",
+              "sourceRefs": [
+                "artifact:art_eval_legacy_refund_source_index_history"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_hybrid_sym_refund_reconciliation",
+          "inventory_source_chunk_chunk_refund_service_body"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_legacy_refund_source_index",
+          "inventory_capability_cap_api_orders",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_hybrid_sym_refund_reconciliation",
+          "inventory_source_chunk_chunk_refund_service_body",
+          "project_profile"
+        ],
+        "irrelevantContextRatioMax": 0.15,
+        "sourceRefsInclude": [
+          "knowledge_artifact:kart_eval_legacy_refund_source_index",
+          "artifact:art_eval_legacy_refund_source_index_history",
+          "file:apps/api/src/refunds.ts#L12",
+          "file:apps/api/src/refunds.ts#L13"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/src/payments-route.ts#L8"
+        ],
+        "sectionModes": {
+          "inventory_hybrid_sym_refund_reconciliation": "summary",
+          "inventory_source_chunk_chunk_refund_service_body": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_hybrid_sym_refund_reconciliation",
+            "mode": "summary",
+            "contentIncludes": [
+              "Hybrid match: symbol RefundReconciliationService",
+              "Symbol:",
+              "RefundReconciliationService"
+            ],
+            "reasonIncludes": [
+              "Hybrid inventory retrieval matched the task brief",
+              "bm25="
+            ],
+            "sourceRefsInclude": [
+              "knowledge_artifact:kart_eval_legacy_refund_source_index",
+              "artifact:art_eval_legacy_refund_source_index_history",
+              "file:apps/api/src/refunds.ts#L12"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_source_chunk_chunk_refund_service_body",
+            "mode": "summary",
+            "contentIncludes": [
+              "Source chunk: apps/api/src/refunds.ts:13-18",
+              "Pointed by inventory evidence: sym_refund_reconciliation",
+              "Content SHA-256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "L13:   settle(amountInCents: number) {"
+            ],
+            "contentExcludes": [
+              "\"schemaVersion\":\"ainp.project_inventory.v1\"",
+              "DELETE /api/orders/:id",
+              "GET /api/payments"
+            ],
+            "reasonIncludes": [
+              "Project inventory source chunk selected as bounded source evidence because",
+              "hybrid inventory evidence points to this chunk (sym_refund_reconciliation)"
+            ],
+            "sourceRefsInclude": [
+              "knowledge_artifact:kart_eval_legacy_refund_source_index",
+              "artifact:art_eval_legacy_refund_source_index_history",
+              "file:apps/api/src/refunds.ts#L13",
+              "file:apps/api/src/refunds.ts#L12"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          }
+        ],
+        "selectedCountMin": 4
+      }
+    },
+    {
+      "id": "historical-inventory-source-chunk-index-source-ref",
+      "label": "Historical inventory sourceChunkIndex source refs select bounded source evidence",
+      "inputOverrides": {
+        "taskBrief": "Inspect file:apps/api/src/refunds.ts#L12 before editing.",
+        "inputArtifacts": [],
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_legacy_source_ref_index",
+            "kind": "explore",
+            "entityId": "project_inventory:latest",
+            "status": "accepted",
+            "metadata": {
+              "title": "Latest legacy source-ref index inventory",
+              "role": "project_inventory",
+              "output": "project-inventory.json",
+              "schemaVersion": "ainp.project_inventory.v1",
+              "projectInventory": {
+                "schemaVersion": "ainp.project_inventory.v1",
+                "entrypoints": [],
+                "symbols": [],
+                "testSurfaces": [],
+                "hotspots": [],
+                "capabilities": [],
+                "sourceChunks": [
+                  {
+                    "id": "chunk_refund_source_ref_target",
+                    "path": "apps/api/src/refunds.ts",
+                    "startLine": 13,
+                    "endLine": 18,
+                    "snippet": "L13:   settle(amountInCents: number) {\nL14:     return amountInCents.toString();\nL15:   }",
+                    "contentSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                    "sourceRefs": [
+                      "file:apps/api/src/refunds.ts#L13"
+                    ],
+                    "confidence": 0.7
+                  },
+                  {
+                    "id": "chunk_unrelated_orders",
+                    "path": "apps/api/src/orders.ts",
+                    "startLine": 10,
+                    "endLine": 12,
+                    "snippet": "L10: export function deleteOrder() {\nL11:   return audit();\nL12: }",
+                    "sourceRefs": [
+                      "file:apps/api/src/orders.ts#L10"
+                    ],
+                    "confidence": 0.7
+                  }
+                ],
+                "sourceChunkIndex": {
+                  "schemaVersion": "ainp.source_chunk_index.v1",
+                  "generatedAt": "2026-07-03T00:00:00.000Z",
+                  "source": "project_inventory.sourceChunks",
+                  "chunkCount": 2,
+                  "maxEntries": 120,
+                  "entries": [
+                    {
+                      "id": "src_chunk_idx_refund_source_ref",
+                      "sourceChunkRef": "chunk_refund_source_ref_target",
+                      "contentSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+                      "path": "apps/api/src/refunds.ts",
+                      "startLine": 13,
+                      "endLine": 18,
+                      "sourceRefs": [
+                        "file:apps/api/src/refunds.ts#L12"
+                      ],
+                      "entrypointRefs": [],
+                      "symbolRefs": [],
+                      "graphEdgeRefs": [],
+                      "testRefs": [],
+                      "hotspotRefs": [],
+                      "capabilityRefs": []
+                    }
+                  ]
+                }
+              },
+              "knowledgeClass": "recovered",
+              "trustLevel": "source",
+              "freshness": "possibly_stale",
+              "sourceRefs": [
+                "artifact:art_eval_legacy_source_ref_index_history"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_source_chunk_chunk_refund_source_ref_target"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_legacy_source_ref_index",
+          "inventory_source_chunk_chunk_unrelated_orders"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_source_chunk_chunk_refund_source_ref_target",
+          "project_profile"
+        ],
+        "irrelevantContextRatioMax": 0.15,
+        "sourceRefsInclude": [
+          "knowledge_artifact:kart_eval_legacy_source_ref_index",
+          "artifact:art_eval_legacy_source_ref_index_history",
+          "file:apps/api/src/refunds.ts#L12"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/orders.ts#L10"
+        ],
+        "sectionModes": {
+          "inventory_source_chunk_chunk_refund_source_ref_target": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_source_chunk_chunk_refund_source_ref_target",
+            "mode": "summary",
+            "contentIncludes": [
+              "Source chunk: apps/api/src/refunds.ts:13-18",
+              "Matched source refs: file:apps/api/src/refunds.ts#L12",
+              "L13:   settle(amountInCents: number) {"
+            ],
+            "contentExcludes": [
+              "\"schemaVersion\":\"ainp.project_inventory.v1\"",
+              "deleteOrder"
+            ],
+            "reasonIncludes": [
+              "Project inventory source chunk selected as bounded source evidence because",
+              "task source ref matched this chunk"
+            ],
+            "sourceRefsInclude": [
+              "knowledge_artifact:kart_eval_legacy_source_ref_index",
+              "artifact:art_eval_legacy_source_ref_index_history",
+              "file:apps/api/src/refunds.ts#L12"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders.ts#L10"
+            ]
+          }
+        ],
+        "selectedCountMin": 3
+      }
+    },
+    {
+      "id": "current-source-ref-chunk-suppresses-historical-duplicate",
+      "label": "Current source-ref chunk suppresses historical duplicate evidence",
+      "inputOverrides": {
+        "taskBrief": "Inspect file:apps/api/src/refunds.ts#L13 before editing.",
+        "inputArtifacts": [
+          {
+            "name": "project-inventory.json",
+            "artifactId": "art_eval_current_source_ref_inventory",
+            "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[],\"symbols\":[],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[],\"sourceChunks\":[{\"id\":\"chunk_source_ref_current_target\",\"path\":\"apps/api/src/refunds.ts\",\"startLine\":13,\"endLine\":18,\"snippet\":\"L13: export function settleCurrentRefund() {\\nL14:   return ledger.settle();\\nL15: }\",\"contentSha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"sourceRefs\":[\"file:apps/api/src/refunds.ts#L13\"],\"confidence\":0.8}]}"
+          }
+        ],
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_legacy_source_ref_duplicate",
+            "kind": "explore",
+            "entityId": "project_inventory:latest",
+            "status": "accepted",
+            "metadata": {
+              "title": "Previous source-ref inventory duplicate",
+              "role": "project_inventory",
+              "output": "project-inventory.json",
+              "schemaVersion": "ainp.project_inventory.v1",
+              "projectInventory": {
+                "schemaVersion": "ainp.project_inventory.v1",
+                "entrypoints": [],
+                "symbols": [],
+                "testSurfaces": [],
+                "hotspots": [],
+                "capabilities": [],
+                "sourceChunks": [
+                  {
+                    "id": "chunk_source_ref_historical_duplicate",
+                    "path": "apps/api/src/refunds.ts",
+                    "startLine": 13,
+                    "endLine": 18,
+                    "snippet": "L13: export function settleHistoricalRefund() {\nL14:   return staleLedger.settle();\nL15: }",
+                    "contentSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                    "sourceRefs": [
+                      "file:apps/api/src/refunds.ts#L13"
+                    ],
+                    "confidence": 0.7
+                  }
+                ],
+                "sourceChunkIndex": {
+                  "schemaVersion": "ainp.source_chunk_index.v1",
+                  "generatedAt": "2026-07-03T00:00:00.000Z",
+                  "source": "project_inventory.sourceChunks",
+                  "chunkCount": 1,
+                  "maxEntries": 120,
+                  "entries": [
+                    {
+                      "id": "src_chunk_idx_historical_duplicate",
+                      "sourceChunkRef": "chunk_source_ref_historical_duplicate",
+                      "contentSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                      "path": "apps/api/src/refunds.ts",
+                      "startLine": 13,
+                      "endLine": 18,
+                      "sourceRefs": [
+                        "file:apps/api/src/refunds.ts#L13"
+                      ],
+                      "entrypointRefs": [],
+                      "symbolRefs": [],
+                      "graphEdgeRefs": [],
+                      "testRefs": [],
+                      "hotspotRefs": [],
+                      "capabilityRefs": []
+                    }
+                  ]
+                }
+              },
+              "knowledgeClass": "recovered",
+              "trustLevel": "source",
+              "freshness": "possibly_stale",
+              "sourceRefs": [
+                "artifact:art_eval_previous_source_ref_inventory"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_source_chunk_chunk_source_ref_current_target"
+        ],
+        "manifestRefsExclude": [
+          "knowledge_kart_eval_legacy_source_ref_duplicate",
+          "inventory_source_chunk_chunk_source_ref_historical_duplicate"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_source_chunk_chunk_source_ref_current_target",
+          "project_profile"
+        ],
+        "irrelevantContextRatioMax": 0.15,
+        "sourceRefsInclude": [
+          "artifact:art_eval_current_source_ref_inventory",
+          "file:apps/api/src/refunds.ts#L13"
+        ],
+        "sectionModes": {
+          "inventory_source_chunk_chunk_source_ref_current_target": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_source_chunk_chunk_source_ref_current_target",
+            "mode": "summary",
+            "contentIncludes": [
+              "Source chunk: apps/api/src/refunds.ts:13-18",
+              "Matched source refs: file:apps/api/src/refunds.ts#L13",
+              "settleCurrentRefund"
+            ],
+            "contentExcludes": [
+              "\"schemaVersion\":\"ainp.project_inventory.v1\"",
+              "settleHistoricalRefund"
+            ],
+            "reasonIncludes": [
+              "Project inventory source chunk selected as bounded source evidence because",
+              "task source ref matched this chunk"
+            ],
+            "sourceRefsInclude": [
+              "artifact:art_eval_current_source_ref_inventory",
+              "file:apps/api/src/refunds.ts#L13"
+            ]
+          }
+        ],
+        "selectedCountMin": 3
+      }
+    },
+    {
+      "id": "current-source-chunk-uses-historical-index-metadata",
+      "label": "Current source chunk uses historical sourceChunkIndex metadata",
+      "inputOverrides": {
+        "taskBrief": "Inspect file:apps/api/src/refunds.ts#L12 before editing.",
+        "inputArtifacts": [
+          {
+            "name": "project-inventory.json",
+            "artifactId": "art_eval_current_inventory_historical_index_ref",
+            "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[],\"symbols\":[{\"id\":\"sym_refund_settlement\",\"kind\":\"function\",\"name\":\"settleCurrent\",\"path\":\"apps/api/src/refunds.ts\",\"line\":12,\"signature\":\"export function settleCurrent\",\"sourceRefs\":[\"file:apps/api/src/refunds.ts#L12\"]}],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[],\"sourceChunks\":[{\"id\":\"chunk_source_ref_current_from_historical_index\",\"path\":\"apps/api/src/refunds.ts\",\"startLine\":13,\"endLine\":18,\"snippet\":\"L13: export function settleCurrent() {\\nL14:   return ledger.settle();\\nL15: }\",\"contentSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"sourceRefs\":[\"file:apps/api/src/refunds.ts#L14\"],\"confidence\":0.8}]}"
+          }
+        ],
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_historical_source_chunk_index_ref",
+            "kind": "explore",
+            "entityId": "project_inventory:latest",
+            "status": "accepted",
+            "metadata": {
+              "title": "Previous source-ref inventory with chunk index",
+              "role": "project_inventory",
+              "output": "project-inventory.json",
+              "schemaVersion": "ainp.project_inventory.v1",
+              "projectInventory": {
+                "schemaVersion": "ainp.project_inventory.v1",
+                "entrypoints": [],
+                "symbols": [],
+                "testSurfaces": [],
+                "hotspots": [],
+                "capabilities": [],
+                "sourceChunks": [
+                  {
+                    "id": "chunk_source_ref_historical_index_duplicate",
+                    "path": "apps/api/src/refunds.ts",
+                    "startLine": 13,
+                    "endLine": 18,
+                    "snippet": "L13: export function settleHistorical() {\nL14:   return staleLedger.settle();\nL15: }",
+                    "contentSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                    "sourceRefs": [
+                      "file:apps/api/src/refunds.ts#L14"
+                    ],
+                    "confidence": 0.7
+                  }
+                ],
+                "sourceChunkIndex": {
+                  "schemaVersion": "ainp.source_chunk_index.v1",
+                  "generatedAt": "2026-07-03T00:00:00.000Z",
+                  "source": "project_inventory.sourceChunks",
+                  "chunkCount": 1,
+                  "maxEntries": 120,
+                  "entries": [
+                    {
+                      "id": "src_chunk_idx_historical_line_ref",
+                      "sourceChunkRef": "chunk_source_ref_historical_index_duplicate",
+                      "contentSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                      "path": "apps/api/src/refunds.ts",
+                      "startLine": 13,
+                      "endLine": 18,
+                      "sourceRefs": [
+                        "file:apps/api/src/refunds.ts#L12"
+                      ],
+                      "entrypointRefs": [],
+                      "symbolRefs": [
+                        "sym_refund_settlement"
+                      ],
+                      "graphEdgeRefs": [],
+                      "testRefs": [],
+                      "hotspotRefs": [],
+                      "capabilityRefs": []
+                    }
+                  ]
+                }
+              },
+              "knowledgeClass": "recovered",
+              "trustLevel": "source",
+              "freshness": "possibly_stale",
+              "sourceRefs": [
+                "artifact:art_eval_previous_inventory_historical_index_ref"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_source_chunk_chunk_source_ref_current_from_historical_index",
+          "inventory_hybrid_sym_refund_settlement"
+        ],
+        "manifestRefsExclude": [
+          "knowledge_kart_eval_historical_source_chunk_index_ref",
+          "inventory_source_chunk_chunk_source_ref_historical_index_duplicate",
+          "input_project_inventory_json"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_hybrid_sym_refund_settlement",
+          "inventory_source_chunk_chunk_source_ref_current_from_historical_index",
+          "project_profile"
+        ],
+        "irrelevantContextRatioMax": 0.15,
+        "sourceRefsInclude": [
+          "artifact:art_eval_current_inventory_historical_index_ref",
+          "file:apps/api/src/refunds.ts#L12"
+        ],
+        "sectionModes": {
+          "inventory_source_chunk_chunk_source_ref_current_from_historical_index": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_source_chunk_chunk_source_ref_current_from_historical_index",
+            "mode": "summary",
+            "contentIncludes": [
+              "Source chunk: apps/api/src/refunds.ts:13-18",
+              "Matched source refs: file:apps/api/src/refunds.ts#L12",
+              "Pointed by inventory evidence: sym_refund_settlement",
+              "settleCurrent"
+            ],
+            "contentExcludes": [
+              "\"schemaVersion\":\"ainp.project_inventory.v1\"",
+              "settleHistorical"
+            ],
+            "reasonIncludes": [
+              "Project inventory source chunk selected as bounded source evidence because",
+              "task source ref matched this chunk",
+              "hybrid inventory evidence points to this chunk"
+            ],
+            "sourceRefsInclude": [
+              "artifact:art_eval_current_inventory_historical_index_ref",
+              "file:apps/api/src/refunds.ts#L12"
+            ],
+            "sourceRefsExclude": [
+              "knowledge_artifact:kart_eval_historical_source_chunk_index_ref",
+              "artifact:art_eval_previous_inventory_historical_index_ref"
+            ]
+          }
+        ],
+        "selectedCountMin": 3
+      }
+    },
+    {
+      "id": "historical-inventory-source-chunk-drift-signal",
+      "label": "Historical inventory source chunk hash drift emits a calibration signal",
+      "inputOverrides": {
+        "taskBrief": "Review refund reconciliation source drift after a fresh project scan.",
+        "inputArtifacts": [
+          {
+            "name": "project-inventory.json",
+            "artifactId": "art_eval_current_refund_inventory",
+            "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[],\"symbols\":[],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[],\"sourceChunks\":[{\"id\":\"chunk_refund_service_body_shifted\",\"path\":\"apps/api/src/refunds.ts\",\"startLine\":15,\"endLine\":20,\"snippet\":\"L15:   settle(amountInCents: number) {\\nL16:     return round(amountInCents);\\nL17:   }\",\"contentSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"sourceRefs\":[\"file:apps/api/src/refunds.ts#L15\"],\"symbolRefs\":[\"sym_refund_reconciliation\"]}]}"
+          }
+        ],
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_legacy_refund_inventory_drift",
+            "kind": "explore",
+            "entityId": "project_inventory:latest",
+            "status": "accepted",
+            "metadata": {
+              "title": "Latest legacy refund project inventory",
+              "role": "project_inventory",
+              "output": "project-inventory.json",
+              "schemaVersion": "ainp.project_inventory.v1",
+              "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[],\"symbols\":[],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[],\"sourceChunks\":[{\"id\":\"chunk_refund_service_body\",\"path\":\"apps/api/src/refunds.ts\",\"startLine\":13,\"endLine\":18,\"snippet\":\"L13:   settle(amountInCents: number) {\\nL14:     return amountInCents.toString();\\nL15:   }\",\"contentSha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"sourceRefs\":[\"file:apps/api/src/refunds.ts#L13\"],\"symbolRefs\":[\"sym_refund_reconciliation\"]}]}",
+              "knowledgeClass": "recovered",
+              "trustLevel": "source",
+              "freshness": "possibly_stale",
+              "sourceRefs": [
+                "artifact:art_eval_previous_refund_inventory"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "mode": "calibration",
+        "manifestRefsInclude": [],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_legacy_refund_inventory_drift",
+          "inventory_capability_cap_api_orders",
+          "inventory_capability_cap_api_payments"
+        ],
+        "sourceRefsInclude": [],
+        "sourceRefsExclude": [
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/src/payments-route.ts#L8"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "project_profile"
+        ],
+        "irrelevantContextRatioMax": 0,
+        "sectionModes": {},
+        "calibrationSignalsMin": 1,
+        "calibrationSignalsInclude": [
+          {
+            "kind": "stale",
+            "severity": "review_required",
+            "recommendedAction": "mark_stale_or_supersede",
+            "messageIncludes": [
+              "contentSha256 that differs from the current project inventory"
+            ],
+            "subjectRefsInclude": [
+              "knowledge_artifact:kart_eval_legacy_refund_inventory_drift",
+              "source_chunk:chunk_refund_service_body"
+            ],
+            "evidenceRefsInclude": [
+              "artifact:art_eval_current_refund_inventory",
+              "knowledge_artifact:kart_eval_legacy_refund_inventory_drift",
+              "artifact:art_eval_previous_refund_inventory",
+              "file:apps/api/src/refunds.ts#L15",
+              "file:apps/api/src/refunds.ts#L13"
+            ],
+            "evidenceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          }
+        ],
+        "selectedCountMin": 2
+      }
+    },
+    {
+      "id": "standalone-source-chunk-index-drift-signal",
+      "label": "Standalone source chunk index hash drift emits a calibration signal",
+      "inputOverrides": {
+        "taskBrief": "Review source drift after a fresh project scan.",
+        "inputArtifacts": [
+          {
+            "name": "project-inventory.json",
+            "artifactId": "art_eval_current_source_index_drift_inventory",
+            "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[],\"symbols\":[],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[],\"sourceChunks\":[{\"id\":\"chunk_current_refund_policy\",\"path\":\"apps/api/src/refunds.ts\",\"startLine\":40,\"endLine\":44,\"snippet\":\"L40: export function applyLegacyAdjustment() {\\nL41:   return policy.apply();\\nL42: }\",\"contentSha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"sourceRefs\":[\"file:apps/api/src/refunds.ts#L40\"],\"symbolRefs\":[\"sym_refund_policy\"],\"confidence\":0.72}]}"
+          }
+        ],
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_legacy_refund_source_index_drift",
+            "kind": "explore",
+            "entityId": "source_chunk_index:latest",
+            "status": "accepted",
+            "metadata": {
+              "title": "Previous source chunk index",
+              "output": "source-chunk-index.json",
+              "schemaVersion": "ainp.source_chunk_index.v1",
+              "content": "{\"schemaVersion\":\"ainp.source_chunk_index.v1\",\"generatedAt\":\"2026-07-03T00:00:00.000Z\",\"source\":\"project_inventory.sourceChunks\",\"chunkCount\":1,\"maxEntries\":120,\"entries\":[{\"id\":\"src_chunk_idx_old_refund_policy\",\"sourceChunkRef\":\"chunk_previous_refund_policy\",\"contentSha256\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"path\":\"apps/api/src/refunds.ts\",\"startLine\":40,\"endLine\":44,\"language\":\"typescript/javascript\",\"lexicalTokens\":[\"refund\",\"policy\"],\"searchText\":\"refund policy\",\"linkedRecordRefs\":[\"sym_refund_policy\"],\"sourceRefs\":[\"file:apps/api/src/refunds.ts#L40\"],\"entrypointRefs\":[],\"symbolRefs\":[\"sym_refund_policy\"],\"graphEdgeRefs\":[],\"testRefs\":[],\"hotspotRefs\":[],\"capabilityRefs\":[]}]}",
+              "knowledgeClass": "recovered",
+              "trustLevel": "source",
+              "freshness": "possibly_stale",
+              "sourceRefs": [
+                "artifact:art_eval_previous_source_index"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "mode": "calibration",
+        "manifestRefsInclude": [],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "input_source_chunk_index_json",
+          "knowledge_kart_eval_legacy_refund_source_index_drift"
+        ],
+        "sourceRefsInclude": [],
+        "sourceRefsExclude": [
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/src/payments-route.ts#L8"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "project_profile"
+        ],
+        "irrelevantContextRatioMax": 0,
+        "sectionModes": {},
+        "calibrationSignalsMin": 1,
+        "calibrationSignalsInclude": [
+          {
+            "kind": "stale",
+            "severity": "review_required",
+            "recommendedAction": "mark_stale_or_supersede",
+            "messageIncludes": [
+              "Accepted source chunk index",
+              "contentSha256 that differs from the current project inventory"
+            ],
+            "subjectRefsInclude": [
+              "knowledge_artifact:kart_eval_legacy_refund_source_index_drift",
+              "source_chunk:chunk_previous_refund_policy"
+            ],
+            "evidenceRefsInclude": [
+              "artifact:art_eval_current_source_index_drift_inventory",
+              "knowledge_artifact:kart_eval_legacy_refund_source_index_drift",
+              "artifact:art_eval_previous_source_index",
+              "file:apps/api/src/refunds.ts#L40"
+            ],
+            "evidenceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          }
+        ],
+        "selectedCountMin": 2
+      }
+    },
+    {
+      "id": "content-sha256-source-chunk-hint",
+      "label": "Content SHA-256 task hint selects the bounded source chunk",
+      "inputOverrides": {
+        "taskBrief": "Inspect Content SHA-256 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee before editing.",
+        "inputArtifacts": [
+          {
+            "name": "project-inventory.json",
+            "artifactId": "art_eval_content_hash_inventory",
+            "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[],\"symbols\":[],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[],\"sourceChunks\":[{\"id\":\"chunk_hash_refund_settlement\",\"path\":\"apps/api/src/refunds.ts\",\"startLine\":30,\"endLine\":34,\"snippet\":\"L30: export function settleRefund() {\\nL31:   return ledger.settle();\\nL32: }\",\"contentSha256\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"sourceRefs\":[\"file:apps/api/src/refunds.ts#L30\"],\"confidence\":0.7},{\"id\":\"chunk_hash_orders_neighbor\",\"path\":\"apps/api/src/orders.ts\",\"startLine\":1,\"endLine\":3,\"snippet\":\"L1: export function deleteOrder() { return true; }\",\"contentSha256\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"sourceRefs\":[\"file:apps/api/src/orders.ts#L1\"],\"confidence\":0.7}]}"
+          }
+        ],
+        "knowledgeArtifacts": []
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_source_chunk_chunk_hash_refund_settlement"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_legacy_inventory_history",
+          "inventory_source_chunk_chunk_hash_orders_neighbor",
+          "inventory_capability_cap_api_orders",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "project_profile",
+          "inventory_source_chunk_chunk_hash_refund_settlement"
+        ],
+        "irrelevantContextRatioMax": 0,
+        "sourceRefsInclude": [
+          "artifact:art_eval_content_hash_inventory",
+          "file:apps/api/src/refunds.ts#L30"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/src/payments-route.ts#L8",
+          "file:apps/api/src/orders.ts#L1"
+        ],
+        "sectionModes": {
+          "inventory_source_chunk_chunk_hash_refund_settlement": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_source_chunk_chunk_hash_refund_settlement",
+            "mode": "summary",
+            "contentIncludes": [
+              "Source chunk: apps/api/src/refunds.ts:30-34",
+              "Content SHA-256: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              "Matched Content SHA-256: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              "L30: export function settleRefund() {"
+            ],
+            "contentExcludes": [
+              "\"schemaVersion\":\"ainp.project_inventory.v1\"",
+              "deleteOrder"
+            ],
+            "reasonIncludes": [
+              "Project inventory source chunk selected as bounded source evidence because",
+              "task contentSha256 matched this chunk"
+            ],
+            "sourceRefsInclude": [
+              "artifact:art_eval_content_hash_inventory",
+              "file:apps/api/src/refunds.ts#L30"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders.ts#L1"
+            ]
+          }
+        ],
+        "selectedCountMin": 4
+      }
+    },
+    {
+      "id": "historical-content-sha256-source-chunk-hint",
+      "label": "Content SHA-256 task hint selects bounded source from historical inventory",
+      "inputOverrides": {
+        "taskBrief": "Inspect Content SHA-256 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee from the previous inventory.",
+        "inputArtifacts": [],
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_legacy_hash_inventory",
+            "kind": "explore",
+            "entityId": "project_inventory:latest",
+            "status": "accepted",
+            "metadata": {
+              "title": "Latest legacy source inventory",
+              "role": "project_inventory",
+              "output": "project-inventory.json",
+              "schemaVersion": "ainp.project_inventory.v1",
+              "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[],\"symbols\":[],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[],\"sourceChunks\":[{\"id\":\"chunk_hash_historical_refund_settlement\",\"path\":\"apps/api/src/refunds.ts\",\"startLine\":30,\"endLine\":34,\"snippet\":\"L30: export function settleRefund() {\\nL31:   return ledger.settle();\\nL32: }\",\"contentSha256\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"sourceRefs\":[\"file:apps/api/src/refunds.ts#L30\"],\"confidence\":0.7},{\"id\":\"chunk_hash_historical_orders_neighbor\",\"path\":\"apps/api/src/orders.ts\",\"startLine\":1,\"endLine\":3,\"snippet\":\"L1: export function deleteOrder() { return true; }\",\"contentSha256\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"sourceRefs\":[\"file:apps/api/src/orders.ts#L1\"],\"confidence\":0.7}]}",
+              "knowledgeClass": "recovered",
+              "trustLevel": "source",
+              "freshness": "possibly_stale",
+              "sourceRefs": [
+                "artifact:art_eval_previous_hash_inventory"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_source_chunk_chunk_hash_historical_refund_settlement"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_legacy_hash_inventory",
+          "inventory_source_chunk_chunk_hash_historical_orders_neighbor",
+          "inventory_capability_cap_api_orders",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "project_profile",
+          "inventory_source_chunk_chunk_hash_historical_refund_settlement"
+        ],
+        "irrelevantContextRatioMax": 0,
+        "sourceRefsInclude": [
+          "knowledge_artifact:kart_eval_legacy_hash_inventory",
+          "artifact:art_eval_previous_hash_inventory",
+          "file:apps/api/src/refunds.ts#L30"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/src/payments-route.ts#L8",
+          "file:apps/api/src/orders.ts#L1"
+        ],
+        "sectionModes": {
+          "inventory_source_chunk_chunk_hash_historical_refund_settlement": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_source_chunk_chunk_hash_historical_refund_settlement",
+            "mode": "summary",
+            "contentIncludes": [
+              "Source chunk: apps/api/src/refunds.ts:30-34",
+              "Content SHA-256: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              "Matched Content SHA-256: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              "L30: export function settleRefund() {"
+            ],
+            "contentExcludes": [
+              "\"schemaVersion\":\"ainp.project_inventory.v1\"",
+              "deleteOrder"
+            ],
+            "reasonIncludes": [
+              "Project inventory source chunk selected as bounded source evidence because",
+              "task contentSha256 matched this chunk"
+            ],
+            "sourceRefsInclude": [
+              "knowledge_artifact:kart_eval_legacy_hash_inventory",
+              "artifact:art_eval_previous_hash_inventory",
+              "file:apps/api/src/refunds.ts#L30"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders.ts#L1"
+            ]
+          }
+        ],
+        "selectedCountMin": 4
+      }
+    },
+    {
+      "id": "content-sha256-current-over-historical",
+      "label": "Content SHA-256 task hint prefers current inventory over historical duplicate",
+      "inputOverrides": {
+        "taskBrief": "Inspect Content SHA-256 eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee before editing.",
+        "inputArtifacts": [
+          {
+            "name": "project-inventory.json",
+            "artifactId": "art_eval_current_hash_inventory",
+            "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[],\"symbols\":[],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[],\"sourceChunks\":[{\"id\":\"chunk_hash_current_refund_settlement\",\"path\":\"apps/api/src/refunds-current.ts\",\"startLine\":30,\"endLine\":34,\"snippet\":\"L30: export function settleCurrentRefund() {\\nL31:   return ledger.settle();\\nL32: }\",\"contentSha256\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"sourceRefs\":[\"file:apps/api/src/refunds-current.ts#L30\"],\"confidence\":0.8}]}"
+          }
+        ],
+        "knowledgeArtifacts": [
+          {
+            "id": "kart_eval_legacy_hash_inventory_duplicate",
+            "kind": "explore",
+            "entityId": "project_inventory:latest",
+            "status": "accepted",
+            "metadata": {
+              "title": "Previous source inventory",
+              "role": "project_inventory",
+              "output": "project-inventory.json",
+              "schemaVersion": "ainp.project_inventory.v1",
+              "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[],\"symbols\":[],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[],\"sourceChunks\":[{\"id\":\"chunk_hash_historical_duplicate\",\"path\":\"apps/api/src/refunds-old.ts\",\"startLine\":30,\"endLine\":34,\"snippet\":\"L30: export function settleOldRefund() {\\nL31:   return ledger.settle();\\nL32: }\",\"contentSha256\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"sourceRefs\":[\"file:apps/api/src/refunds-old.ts#L30\"],\"confidence\":0.7}]}",
+              "knowledgeClass": "recovered",
+              "trustLevel": "source",
+              "freshness": "possibly_stale",
+              "sourceRefs": [
+                "artifact:art_eval_previous_hash_inventory_duplicate"
+              ]
+            }
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_source_chunk_chunk_hash_current_refund_settlement"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "knowledge_kart_eval_legacy_hash_inventory_duplicate",
+          "inventory_source_chunk_chunk_hash_historical_duplicate",
+          "inventory_capability_cap_api_orders",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "project_profile",
+          "inventory_source_chunk_chunk_hash_current_refund_settlement"
+        ],
+        "irrelevantContextRatioMax": 0,
+        "sourceRefsInclude": [
+          "artifact:art_eval_current_hash_inventory",
+          "file:apps/api/src/refunds-current.ts#L30"
+        ],
+        "sourceRefsExclude": [
+          "knowledge_artifact:kart_eval_legacy_hash_inventory_duplicate",
+          "artifact:art_eval_previous_hash_inventory_duplicate",
+          "file:apps/api/src/refunds-old.ts#L30"
+        ],
+        "sectionModes": {
+          "inventory_source_chunk_chunk_hash_current_refund_settlement": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_source_chunk_chunk_hash_current_refund_settlement",
+            "mode": "summary",
+            "contentIncludes": [
+              "Source chunk: apps/api/src/refunds-current.ts:30-34",
+              "Matched Content SHA-256: eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              "settleCurrentRefund"
+            ],
+            "contentExcludes": [
+              "settleOldRefund",
+              "\"schemaVersion\":\"ainp.project_inventory.v1\""
+            ],
+            "reasonIncludes": [
+              "task contentSha256 matched this chunk"
+            ],
+            "sourceRefsInclude": [
+              "artifact:art_eval_current_hash_inventory",
+              "file:apps/api/src/refunds-current.ts#L30"
+            ],
+            "sourceRefsExclude": [
+              "knowledge_artifact:kart_eval_legacy_hash_inventory_duplicate",
+              "artifact:art_eval_previous_hash_inventory_duplicate",
+              "file:apps/api/src/refunds-old.ts#L30"
+            ]
+          }
+        ],
+        "selectedCountMin": 4
+      }
+    },
+    {
+      "id": "capability-primary-with-source-ref-hybrid-graph-supplement",
+      "label": "Capability match remains primary while exact source ref adds hybrid graph evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix billing statements behavior. Inspect file:apps/api/src/domain.ts#L77 before changing it.",
+        "inputArtifacts": [
+          {
+            "name": "project-inventory.json",
+            "artifactId": "art_eval_source_ref_hybrid_supplement",
+            "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[{\"id\":\"entry_billing_statements\",\"kind\":\"http_route\",\"label\":\"GET /billing/statements\",\"path\":\"apps/api/src/billing-routes.ts\",\"method\":\"GET\",\"route\":\"/billing/statements\",\"handler\":\"listBillingStatements\",\"sourceRefs\":[\"file:apps/api/src/billing-routes.ts#L8\"],\"confidence\":0.9}],\"symbols\":[{\"id\":\"sym_billing_statements\",\"kind\":\"function\",\"name\":\"listBillingStatements\",\"path\":\"apps/api/src/billing-routes.ts\",\"exported\":true,\"line\":9,\"signature\":\"export function listBillingStatements()\",\"sourceRefs\":[\"file:apps/api/src/billing-routes.ts#L9\"]},{\"id\":\"sym_unrelated_same_file\",\"kind\":\"class\",\"name\":\"CustomerAuditReporter\",\"path\":\"apps/api/src/domain.ts\",\"exported\":true,\"line\":4,\"signature\":\"export class CustomerAuditReporter\",\"sourceRefs\":[\"file:apps/api/src/domain.ts#L4\"]}],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[{\"id\":\"cap_billing_statements\",\"label\":\"Billing Statements API\",\"kind\":\"api\",\"entrypointRefs\":[\"entry_billing_statements\"],\"moduleRefs\":[],\"symbolRefs\":[\"sym_billing_statements\"],\"testRefs\":[],\"hotspotRefs\":[],\"sourceRefs\":[\"file:apps/api/src/billing-routes.ts#L8\"],\"confidence\":0.93,\"openQuestions\":[]}],\"symbolGraph\":{\"parser\":\"typescript_ast\",\"nodes\":[],\"edges\":[{\"id\":\"edge_ledger_handoff\",\"kind\":\"symbol_reference\",\"from\":\"node_symbol_sym_billing_statements\",\"to\":\"node_symbol_sym_ledger_writer\",\"label\":\"ledger writer handoff\",\"sourceRefs\":[\"file:apps/api/src/domain.ts#L77\"],\"confidence\":0.72}]},\"sourceChunks\":[{\"id\":\"chunk_ledger_handoff_call\",\"path\":\"apps/api/src/domain.ts\",\"startLine\":75,\"endLine\":79,\"snippet\":\"L75: export class CustomerAuditReporter {}\\nL77:   return ledgerWriter.persist(statement);\\nL79: export function listCustomers() { return []; }\",\"graphEdgeRefs\":[\"edge_ledger_handoff\"],\"sourceRefs\":[\"file:apps/api/src/domain.ts#L75\",\"file:apps/api/src/domain.ts#L77\",\"file:apps/api/src/domain.ts#L79\"],\"confidence\":0.7}]}"
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_billing_statements",
+          "inventory_hybrid_edge_ledger_handoff",
+          "inventory_source_chunk_chunk_ledger_handoff_call"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_hybrid_sym_unrelated_same_file"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_billing_statements",
+          "inventory_symbols_billing_statements_api",
+          "inventory_hybrid_edge_ledger_handoff",
+          "inventory_source_chunk_chunk_ledger_handoff_call"
+        ],
+        "irrelevantContextRatioMax": 0.17,
+        "sourceRefsInclude": [
+          "artifact:art_eval_source_ref_hybrid_supplement",
+          "file:apps/api/src/billing-routes.ts#L8",
+          "file:apps/api/src/domain.ts#L77"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/domain.ts#L4"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_billing_statements": "summary",
+          "inventory_hybrid_edge_ledger_handoff": "summary",
+          "inventory_source_chunk_chunk_ledger_handoff_call": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_billing_statements",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:apps/api/src/billing-routes.ts#L8",
+              "file:apps/api/src/billing-routes.ts#L9"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/domain.ts#L4"
+            ]
+          },
+          {
+            "ref": "inventory_hybrid_edge_ledger_handoff",
+            "mode": "summary",
+            "contentIncludes": [
+              "Hybrid match: symbol_graph_edge ledger writer handoff",
+              "Matched source refs: file:apps/api/src/domain.ts#L77",
+              "Graph Edge:"
+            ],
+            "reasonIncludes": [
+              "matched explicit task source refs"
+            ],
+            "sourceRefsInclude": [
+              "file:apps/api/src/domain.ts#L77"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/domain.ts#L4"
+            ]
+          },
+          {
+            "ref": "inventory_source_chunk_chunk_ledger_handoff_call",
+            "mode": "summary",
+            "contentIncludes": [
+              "Source chunk: apps/api/src/domain.ts:75-79",
+              "Pointed by inventory evidence: edge_ledger_handoff",
+              "Linked Evidence:",
+              "symbol_reference | edge_ledger_handoff | ledger writer handoff",
+              "L77:   return ledgerWriter.persist(statement);"
+            ],
+            "contentExcludes": [
+              "CustomerAuditReporter",
+              "listCustomers"
+            ],
+            "reasonIncludes": [
+              "hybrid inventory evidence points to this chunk (edge_ledger_handoff)"
+            ],
+            "sourceRefsInclude": [
+              "file:apps/api/src/domain.ts#L77"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/domain.ts#L4"
+            ]
+          }
+        ],
+        "selectedCountMin": 4
+      }
+    },
+    {
+      "id": "path-only-source-hint-does-not-add-hybrid-same-file-record",
+      "label": "Path-only source hints do not add unrelated same-file hybrid records",
+      "inputOverrides": {
+        "taskBrief": "Fix billing statements behavior. Inspect file:apps/api/src/domain.ts before changing it.",
+        "inputArtifacts": [
+          {
+            "name": "project-inventory.json",
+            "artifactId": "art_eval_path_only_hybrid_supplement",
+            "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[{\"id\":\"entry_billing_statements\",\"kind\":\"http_route\",\"label\":\"GET /billing/statements\",\"path\":\"apps/api/src/billing-routes.ts\",\"method\":\"GET\",\"route\":\"/billing/statements\",\"handler\":\"listBillingStatements\",\"sourceRefs\":[\"file:apps/api/src/billing-routes.ts#L8\"],\"confidence\":0.9}],\"symbols\":[{\"id\":\"sym_billing_statements\",\"kind\":\"function\",\"name\":\"listBillingStatements\",\"path\":\"apps/api/src/billing-routes.ts\",\"exported\":true,\"line\":9,\"signature\":\"export function listBillingStatements()\",\"sourceRefs\":[\"file:apps/api/src/billing-routes.ts#L9\"]},{\"id\":\"sym_unrelated_same_file\",\"kind\":\"class\",\"name\":\"CustomerAuditReporter\",\"path\":\"apps/api/src/domain.ts\",\"exported\":true,\"line\":4,\"signature\":\"export class CustomerAuditReporter\",\"sourceRefs\":[\"file:apps/api/src/domain.ts#L4\"]}],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[{\"id\":\"cap_billing_statements\",\"label\":\"Billing Statements API\",\"kind\":\"api\",\"entrypointRefs\":[\"entry_billing_statements\"],\"moduleRefs\":[],\"symbolRefs\":[\"sym_billing_statements\"],\"testRefs\":[],\"hotspotRefs\":[],\"sourceRefs\":[\"file:apps/api/src/billing-routes.ts#L8\"],\"confidence\":0.93,\"openQuestions\":[]}],\"sourceChunks\":[{\"id\":\"chunk_unrelated_same_file_customer_audit\",\"path\":\"apps/api/src/domain.ts\",\"startLine\":23,\"endLine\":27,\"snippet\":\"L23: export function loadCustomerAuditTrail() {\\nL24:   return CustomerAuditReporter.load();\\nL25: }\",\"sourceRefs\":[\"file:apps/api/src/domain.ts#L23\",\"file:apps/api/src/domain.ts#L25\"],\"confidence\":0.7}]}"
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_billing_statements"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_hybrid_sym_unrelated_same_file",
+          "inventory_hybrid_edge_ledger_handoff",
+          "inventory_source_chunk_chunk_unrelated_same_file_customer_audit",
+          "inventory_source_chunk_chunk_ledger_handoff_call"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_billing_statements",
+          "inventory_symbols_billing_statements_api",
+          "project_profile"
+        ],
+        "irrelevantContextRatioMax": 0.17,
+        "sourceRefsInclude": [
+          "artifact:art_eval_path_only_hybrid_supplement",
+          "file:apps/api/src/billing-routes.ts#L8"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/domain.ts#L4",
+          "file:apps/api/src/domain.ts#L23",
+          "file:apps/api/src/domain.ts#L25"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_billing_statements": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_billing_statements",
+            "mode": "summary",
+            "contentExcludes": [
+              "CustomerAuditReporter",
+              "loadCustomerAuditTrail"
+            ],
+            "sourceRefsInclude": [
+              "file:apps/api/src/billing-routes.ts#L8",
+              "file:apps/api/src/billing-routes.ts#L9"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/domain.ts#L4"
+            ]
+          }
+        ],
+        "selectedCountMin": 3
+      }
+    },
+    {
+      "id": "capability-domain-entity-sql-source-chunk",
+      "label": "Capability matching uses SQL table domain entity evidence",
+      "inputOverrides": {
+        "taskBrief": "Implement refund ledger retention using the audit data table.",
+        "inputArtifacts": [
+          {
+            "name": "project-inventory.json",
+            "artifactId": "art_eval_domain_entity_inventory",
+            "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"entrypoints\":[{\"id\":\"entry_billing_status\",\"kind\":\"http_route\",\"label\":\"POST /billing/status\",\"path\":\"apps/api/src/billing-route.ts\",\"method\":\"POST\",\"route\":\"/billing/status\",\"handler\":\"updateBillingStatus\",\"sourceRefs\":[\"file:apps/api/src/billing-route.ts#L8\"],\"confidence\":0.9},{\"id\":\"entry_customer_status\",\"kind\":\"http_route\",\"label\":\"POST /customers/status\",\"path\":\"apps/api/src/customer-route.ts\",\"method\":\"POST\",\"route\":\"/customers/status\",\"handler\":\"updateCustomerStatus\",\"sourceRefs\":[\"file:apps/api/src/customer-route.ts#L8\"],\"confidence\":0.9}],\"symbols\":[],\"domainEntities\":[{\"id\":\"domain_refund_ledger_entries\",\"name\":\"refund_ledger_entries\",\"kind\":\"table\",\"path\":\"db/billing/schema.sql\",\"sourceRefs\":[\"file:db/billing/schema.sql#L1\"],\"referenceSourceRefs\":[\"file:apps/api/src/billing-repository.ts#L12\"],\"sourceChunkRefs\":[\"src_chunk_db_billing_schema\",\"src_chunk_billing_repository_table_ref\"],\"confidence\":0.88},{\"id\":\"domain_customer_profiles\",\"name\":\"customer_profiles\",\"kind\":\"table\",\"path\":\"db/customer/schema.sql\",\"sourceRefs\":[\"file:db/customer/schema.sql#L1\"],\"sourceChunkRefs\":[\"src_chunk_db_customer_schema\"],\"confidence\":0.88}],\"testSurfaces\":[],\"hotspots\":[],\"capabilities\":[{\"id\":\"cap_api_billing\",\"label\":\"Billing API\",\"kind\":\"api\",\"entrypointRefs\":[\"entry_billing_status\"],\"moduleRefs\":[],\"symbolRefs\":[],\"domainEntityRefs\":[\"domain_refund_ledger_entries\"],\"testRefs\":[],\"hotspotRefs\":[],\"sourceRefs\":[\"file:apps/api/src/billing-route.ts#L8\",\"file:db/billing/schema.sql#L1\"],\"confidence\":0.9,\"openQuestions\":[]},{\"id\":\"cap_api_customers\",\"label\":\"Customers API\",\"kind\":\"api\",\"entrypointRefs\":[\"entry_customer_status\"],\"moduleRefs\":[],\"symbolRefs\":[],\"domainEntityRefs\":[\"domain_customer_profiles\"],\"testRefs\":[],\"hotspotRefs\":[],\"sourceRefs\":[\"file:apps/api/src/customer-route.ts#L8\",\"file:db/customer/schema.sql#L1\"],\"confidence\":0.9,\"openQuestions\":[]}],\"sourceChunks\":[{\"id\":\"src_chunk_db_billing_schema\",\"path\":\"db/billing/schema.sql\",\"language\":\"sql\",\"startLine\":1,\"endLine\":4,\"snippet\":\"L1: CREATE TABLE refund_ledger_entries (\\nL2:   id uuid PRIMARY KEY,\\nL3:   refund_id uuid NOT NULL\\nL4: );\",\"contentSha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"sourceRefs\":[\"file:db/billing/schema.sql#L1\"],\"entrypointRefs\":[],\"symbolRefs\":[],\"domainEntityRefs\":[\"domain_refund_ledger_entries\"],\"graphEdgeRefs\":[],\"testRefs\":[],\"hotspotRefs\":[],\"capabilityRefs\":[\"cap_api_billing\"],\"sha256\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"confidence\":0.78},{\"id\":\"src_chunk_db_customer_schema\",\"path\":\"db/customer/schema.sql\",\"language\":\"sql\",\"startLine\":1,\"endLine\":4,\"snippet\":\"L1: CREATE TABLE customer_profiles (\\nL2:   id uuid PRIMARY KEY,\\nL3:   customer_id uuid NOT NULL\\nL4: );\",\"contentSha256\":\"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\",\"sourceRefs\":[\"file:db/customer/schema.sql#L1\"],\"entrypointRefs\":[],\"symbolRefs\":[],\"domainEntityRefs\":[\"domain_customer_profiles\"],\"graphEdgeRefs\":[],\"testRefs\":[],\"hotspotRefs\":[],\"capabilityRefs\":[\"cap_api_customers\"],\"sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"confidence\":0.78},{\"id\":\"src_chunk_billing_repository_table_ref\",\"path\":\"apps/api/src/billing-repository.ts\",\"language\":\"typescript/javascript\",\"startLine\":10,\"endLine\":14,\"snippet\":\"L10: export class BillingRepository {\\nL11:   async retainRefundLedger() {\\nL12:     return sql`select * from refund_ledger_entries where retained_at is null`;\\nL13:   }\\nL14: }\",\"contentSha256\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"sourceRefs\":[\"file:apps/api/src/billing-repository.ts#L12\"],\"entrypointRefs\":[],\"symbolRefs\":[],\"domainEntityRefs\":[\"domain_refund_ledger_entries\"],\"graphEdgeRefs\":[],\"testRefs\":[],\"hotspotRefs\":[],\"capabilityRefs\":[\"cap_api_billing\"],\"sha256\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"confidence\":0.78}]}"
+          }
+        ]
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_billing",
+          "inventory_domain_entities_billing_api",
+          "inventory_source_chunk_src_chunk_db_billing_schema",
+          "inventory_source_chunk_src_chunk_billing_repository_table_ref"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_customers",
+          "inventory_source_chunk_src_chunk_db_customer_schema"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "project_profile",
+          "inventory_capability_cap_api_billing",
+          "inventory_domain_entities_billing_api",
+          "inventory_source_chunk_src_chunk_db_billing_schema",
+          "inventory_source_chunk_src_chunk_billing_repository_table_ref"
+        ],
+        "irrelevantContextRatioMax": 0.15,
+        "sourceRefsInclude": [
+          "artifact:art_eval_domain_entity_inventory",
+          "file:db/billing/schema.sql#L1",
+          "file:apps/api/src/billing-repository.ts#L12"
+        ],
+        "sourceRefsExclude": [
+          "file:db/customer/schema.sql#L1"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_billing": "summary",
+          "inventory_domain_entities_billing_api": "summary",
+          "inventory_source_chunk_src_chunk_db_billing_schema": "summary",
+          "inventory_source_chunk_src_chunk_billing_repository_table_ref": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_domain_entities_billing_api",
+            "contentIncludes": [
+              "Matched Domain Entities",
+              "table | refund_ledger_entries | db/billing/schema.sql",
+              "refs=file:apps/api/src/billing-repository.ts#L12"
+            ],
+            "sourceRefsInclude": [
+              "file:db/billing/schema.sql#L1",
+              "file:apps/api/src/billing-repository.ts#L12"
+            ],
+            "sourceRefsExclude": [
+              "file:db/customer/schema.sql#L1"
+            ]
+          },
+          {
+            "ref": "inventory_source_chunk_src_chunk_db_billing_schema",
+            "contentIncludes": [
+              "Pointed by inventory evidence: domain_refund_ledger_entries",
+              "CREATE TABLE refund_ledger_entries"
+            ],
+            "contentExcludes": [
+              "customer_profiles"
+            ],
+            "reasonIncludes": [
+              "hybrid inventory evidence points to this chunk"
+            ],
+            "sourceRefsInclude": [
+              "file:db/billing/schema.sql#L1"
+            ],
+            "sourceRefsExclude": [
+              "file:db/customer/schema.sql#L1"
+            ]
+          },
+          {
+            "ref": "inventory_source_chunk_src_chunk_billing_repository_table_ref",
+            "contentIncludes": [
+              "Pointed by inventory evidence: domain_refund_ledger_entries",
+              "select * from refund_ledger_entries"
+            ],
+            "contentExcludes": [
+              "customer_profiles"
+            ],
+            "reasonIncludes": [
+              "hybrid inventory evidence points to this chunk"
+            ],
+            "sourceRefsInclude": [
+              "file:apps/api/src/billing-repository.ts#L12"
+            ],
+            "sourceRefsExclude": [
+              "file:db/customer/schema.sql#L1"
+            ]
+          }
+        ],
+        "selectedCountMin": 4
+      }
+    },
+    {
+      "id": "hybrid-fallback-symbol-graph",
+      "label": "Hybrid fallback selects refund symbol graph evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix refund reconciliation rounding and cover refund tests."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_hybrid_sym_refund_reconciliation",
+          "inventory_hybrid_test_refunds",
+          "inventory_source_chunk_chunk_refund_repository_call_site"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_orders",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_hybrid_test_refunds",
+          "inventory_hybrid_sym_refund_reconciliation",
+          "inventory_hybrid_edge_refund_repo",
+          "inventory_source_chunk_chunk_refund_repository_call_site"
+        ],
+        "irrelevantContextRatioMax": 0.15,
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory",
+          "file:apps/api/src/refund-reconciliation.ts#L4",
+          "file:apps/api/src/refund-reconciliation.ts#L8",
+          "file:apps/api/src/refund-reconciliation.ts#L9",
+          "file:apps/api/test/refund-reconciliation.test.ts"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/src/payments-route.ts#L8"
+        ],
+        "sectionModes": {
+          "inventory_hybrid_sym_refund_reconciliation": "summary",
+          "inventory_source_chunk_chunk_refund_repository_call_site": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_hybrid_test_refunds",
+            "mode": "summary",
+            "contentIncludes": [
+              "Hybrid match: test_surface",
+              "Test Surface:",
+              "refund-reconciliation.test.ts"
+            ],
+            "reasonIncludes": [
+              "Hybrid inventory retrieval matched the task brief",
+              "bm25="
+            ],
+            "sourceRefsInclude": [
+              "file:apps/api/test/refund-reconciliation.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_hybrid_sym_refund_reconciliation",
+            "mode": "summary",
+            "contentIncludes": [
+              "Hybrid match: symbol RefundReconciliationService",
+              "Symbol:",
+              "RefundReconciliationService",
+              "Graph Edges:",
+              "uses RefundRepository"
+            ],
+            "reasonIncludes": [
+              "Hybrid inventory retrieval matched the task brief",
+              "bm25="
+            ],
+            "sourceRefsInclude": [
+              "file:apps/api/src/refund-reconciliation.ts#L4",
+              "file:apps/api/src/refund-reconciliation.ts#L8"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_hybrid_edge_refund_repo",
+            "contentIncludes": [
+              "Hybrid match: symbol_graph_edge uses RefundRepository",
+              "Graph Edge:",
+              "symbol_reference node_symbol_sym_refund_reconciliation -> node_symbol_sym_refund_repository uses RefundRepository"
+            ],
+            "reasonIncludes": [
+              "Hybrid inventory retrieval matched the task brief",
+              "bm25="
+            ],
+            "sourceRefsInclude": [
+              "file:apps/api/src/refund-reconciliation.ts#L8"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          },
+          {
+            "ref": "inventory_source_chunk_chunk_refund_repository_call_site",
+            "mode": "summary",
+            "contentIncludes": [
+              "Source chunk: apps/api/src/refund-reconciliation.ts:9-11",
+              "Pointed by inventory evidence: edge_refund_repo",
+              "Linked Evidence:",
+              "symbol_reference | edge_refund_repo | uses RefundRepository",
+              "L9:     return repository.loadLedger();"
+            ],
+            "contentExcludes": [
+              "DELETE /api/orders/:id",
+              "GET /api/payments"
+            ],
+            "reasonIncludes": [
+              "Project inventory source chunk selected as bounded source evidence because",
+              "hybrid inventory evidence points to this chunk (edge_refund_repo)"
+            ],
+            "sourceRefsInclude": [
+              "file:apps/api/src/refund-reconciliation.ts#L9",
+              "file:apps/api/src/refund-reconciliation.ts#L8"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/payments-route.ts#L8"
+            ]
+          }
+        ],
+        "selectedCountMin": 5
+      }
+    }
+  ]
+}

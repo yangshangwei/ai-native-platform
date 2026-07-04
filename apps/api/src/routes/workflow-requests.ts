@@ -5,15 +5,18 @@ import type {
   FlowId,
   MessageRole,
   Project,
+  ProjectAgentBackendKind,
   WorkflowRequestStatus,
   WorkflowRunType,
   WorkflowStage,
 } from '@ainp/shared';
 import {
+  FLOW_REGISTRY,
   KNOWN_FLOW_IDS,
   WORKFLOW_STAGES,
   errorMessage,
   isFlowId,
+  isProjectAgentBackendKind,
   isWorkflowStage,
 } from '@ainp/shared';
 import { store } from '../store/store';
@@ -63,6 +66,7 @@ workflowRequests.post('/', async (c) => {
     title?: string;
     branch?: string;
     firstMessage?: { role?: MessageRole; content?: string };
+    agentBackend?: string | null;
     flowId?: string | null;
     startStage?: string | null;
     kind?: 'ask' | null;
@@ -72,7 +76,31 @@ workflowRequests.post('/', async (c) => {
   if (!project && body.projectName) project = store.projectByName(body.projectName);
   if (!project) return c.json({ error: 'projectId or projectName required' }, 400);
   if ((project.status ?? 'active') === 'archived') return c.json({ error: 'project is archived' }, 400);
-  const backendError = projectAgentBackendError(project);
+  let agentBackend: ProjectAgentBackendKind | null | undefined;
+  if (body.agentBackend !== undefined && body.agentBackend !== null && body.agentBackend !== '') {
+    if (!isProjectAgentBackendKind(body.agentBackend)) {
+      return c.json({ error: 'agentBackend must be one of claude_code, codex' }, 400);
+    }
+    agentBackend = body.agentBackend;
+  }
+
+  // Optional UI overrides from the New Task form 高级覆盖 disclosure.
+  // null/undefined/'' all collapse to "no override" so the runner watch loop
+  // falls back to Coordinator + Router. Validate the trust-boundary mirroring
+  // /workflow-runs POST behaviour (PRD 05-08 Q2 = 400 hard error).
+  let flowId: FlowId | null | undefined;
+  if (body.flowId !== undefined && body.flowId !== null && body.flowId !== '') {
+    if (!isFlowId(body.flowId)) {
+      return c.json(
+        { error: `unknown flowId: ${body.flowId} (known: ${KNOWN_FLOW_IDS.join(', ')})` },
+        400,
+      );
+    }
+    flowId = body.flowId;
+  }
+
+  const requestType = body.type ?? (flowId ? FLOW_REGISTRY[flowId].kind : 'feature');
+  const backendError = projectAgentBackendError(project, agentBackend ?? null, requestType, flowId ?? null);
   if (backendError) return c.json({ error: backendError, needsAgentBackendSetup: true }, 400);
   if (!body.title?.trim()) return c.json({ error: 'title required' }, 400);
 
@@ -92,21 +120,6 @@ workflowRequests.post('/', async (c) => {
       return c.json({ error: 'firstMessage.content required' }, 400);
     }
     firstMessage = { role, content };
-  }
-
-  // Optional UI overrides from the New Task form 高级覆盖 disclosure.
-  // null/undefined/'' all collapse to "no override" so the runner watch loop
-  // falls back to Coordinator + Router. Validate the trust-boundary mirroring
-  // /workflow-runs POST behaviour (PRD 05-08 Q2 = 400 hard error).
-  let flowId: FlowId | null | undefined;
-  if (body.flowId !== undefined && body.flowId !== null && body.flowId !== '') {
-    if (!isFlowId(body.flowId)) {
-      return c.json(
-        { error: `unknown flowId: ${body.flowId} (known: ${KNOWN_FLOW_IDS.join(', ')})` },
-        400,
-      );
-    }
-    flowId = body.flowId;
   }
 
   let startStage: WorkflowStage | null | undefined;
@@ -136,19 +149,28 @@ workflowRequests.post('/', async (c) => {
 
   const request = createWorkflowRequest({
     projectId: project.id,
-    type: body.type ?? 'feature',
+    type: requestType,
     title: body.title.trim(),
     branch: body.branch?.trim() || project.defaultBranch,
     firstMessage,
-    flowId: flowId ?? null,
+    agentBackend: agentBackend ?? null,
+    flowId: flowId ?? (requestType === 'profile' ? 'profile.bootstrap' : null),
     startStage: startStage ?? null,
     kind: body.kind ?? null,
   });
   return c.json(request, 201);
 });
 
-function projectAgentBackendError(project: Project): string | null {
-  if (!project.agentBackend) {
+function projectAgentBackendError(
+  project: Project,
+  requestBackend: ProjectAgentBackendKind | null,
+  requestType: WorkflowRunType,
+  flowId: FlowId | null,
+): string | null {
+  if (requestType === 'profile' || flowId === 'profile.bootstrap') {
+    return null;
+  }
+  if (!requestBackend && !project.agentBackend) {
     return 'Agent Backend is not configured for this project. Choose Claude Code or Codex before creating a workflow request.';
   }
   return null;

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-corpus-coverage-gate",
+  "title": "Legacy project understanding red fixture rejects impossible corpus coverage gates",
+  "description": "Intentionally sets an impossible source extension diversity floor; the harness must fail this red fixture even when scanner-to-context generation itself succeeds.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_corpus_coverage_gate_red",
+    "title": "Update legacy Orders API behavior",
+    "stage": "implementation",
+    "taskBrief": "Implement deleting orders in the Orders API and update order tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 8,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\"name\":\"legacy-corpus-coverage-red\",\"scripts\":{\"start\":\"node apps/api/src/orders-route.ts\",\"test\":\"vitest run\"}}"
+      },
+      {
+        "path": "apps/api/src/orders-route.ts",
+        "content": "import { Router } from \"express\";\nexport const router = Router();\nexport class OrderService {\n  deleteOrder(id: string) { return id; }\n}\nexport function deleteOrder() {\n  const service = new OrderService();\n  return service.deleteOrder(\"o1\");\n}\nrouter.delete(\"/api/orders/:id\", deleteOrder);\n"
+      },
+      {
+        "path": "apps/api/test/orders-route.test.ts",
+        "content": "import { describe, it, expect } from \"vitest\";\ndescribe(\"orders route\", () => { it(\"deletes orders\", () => expect(true).toBe(true)); });\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Orders API"
+    ],
+    "inventoryEntrypointRoutesInclude": [
+      "DELETE /api/orders/:id"
+    ],
+    "inventorySymbolNamesInclude": [
+      "OrderService",
+      "deleteOrder"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "sourceFileExtensionCountMin": 99
+    }
+  }
+}

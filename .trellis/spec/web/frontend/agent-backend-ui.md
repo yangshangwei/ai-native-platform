@@ -4,7 +4,8 @@
 
 ### 1. Scope / Trigger
 
-- Trigger: changes to Web project setup, task creation gating, backend status labels, or Agent Stream rendering.
+- Trigger: changes to Web project setup, task creation/profile-bootstrap
+  actions, backend status labels, or Agent Stream rendering.
 - The UI must make the real backend obvious without repeatedly interrupting users.
 
 ### 2. Signatures
@@ -18,13 +19,40 @@
   - `GET /workflow-runs/:id/agent-stream?sinceSeq=<n>` for workflow-run execution.
   - `GET /workflow-requests/:id/agent-stream?sinceSeq=<n>` for pre-run Coordinator triage.
 - Stream event display uses `agentKind`, `sequence`, `type`, `text`, and `ts`.
+- Profile bootstrap action:
+  - `POST /workflow-requests`
+  - Body: `{ projectId, title: 'Generate legacy project profile', type: 'profile', flowId: 'profile.bootstrap' }`
+  - Response: `WorkflowRequestDto`; use the existing task/run detail surfaces
+    for progress and evidence.
 
 ### 3. Contracts
 
 - Backend select options are exactly `Claude Code` and `Codex`.
 - Missing backend displays `Needs setup` / `未配置`; it must not display a default fake value.
-- The project card owns persistent backend selection; task creation only displays the current project default and status.
-- Creating a task must be disabled or rejected until a project backend is configured and preflight is connected.
+- The project card owns persistent backend selection; task creation may override
+  the execution backend for a single request without mutating the project
+  default.
+- The New Task advanced section defaults execution backend to the selected
+  project's current default, but must allow switching between exactly
+  `Claude Code` and `Codex` for the request.
+- Creating a task must be disabled or rejected until either the request-level
+  backend override or the project backend is configured and preflight is
+  connected for the selected backend.
+- The project card may show `Generate legacy profile`. It posts a normal
+  workflow request with `type='profile'` and `flowId='profile.bootstrap'`,
+  disables duplicate clicks while a profile request/run is non-terminal, and
+  links the latest profile request/run back to the existing task/workbench
+  detail view. When the matching run detail is loaded, the card may expose
+  inline `profile` / `inventory` artifact controls backed by the existing
+  artifact-content cache. Do not create a separate profile job model in Web
+  state.
+- When the matching profile-bootstrap run detail has a cached
+  `project-inventory.json` artifact, the project page may render a compact
+  capability map from that artifact. Capability rows should show confidence,
+  entrypoint, symbol, test, and hotspot evidence with source paths. Human
+  correction actions (`accept`, `rename`, `merge`, `mark wrong`) must persist
+  draft project-scoped knowledge artifacts through `/knowledge-artifacts`; they
+  must not silently promote scanned capabilities to accepted knowledge.
 - The stream panel title should be backend-specific when known: `Claude Code 执行日志` or `Codex 执行日志`.
 - The stream panel should expose a clear recording/expanded-view action when a
   run is available. The expanded view is UI-only: reuse the same
@@ -65,6 +93,10 @@
 - Clickable clarification options may update the reply composer, but they must reuse the existing draft/focus/IME preservation path. Generated option replies should be replaceable as a block so changing a selection does not erase user-written supplements.
 - When the request gains `workflowRunId`, close the request-channel `EventSource` and switch to the run-channel stream without clearing cached history for either channel. The switch must preserve `sinceSeq` resume semantics per channel and avoid opening duplicate SSE connections.
 - Cached preflight status is valid only when its `backend` matches the current project backend.
+- New Task cached preflight status is valid only when its `backend` matches the
+  currently selected request backend; do not reuse a project-default Codex
+  check when the operator has switched the request to Claude Code, or vice
+  versa.
 - Project/task-creation API load failures must show concise user-facing Chinese
   copy in the primary form flow. Do not render raw backend payloads, HTML error
   pages, stack traces, or proxy diagnostics as default-visible form text. Keep
@@ -83,16 +115,32 @@
 - `/projects` or related setup endpoints return an HTML/Bun error page -> show
   a short failure summary, keep retry/setup actions visible, and keep the raw
   response available only inside collapsed diagnostics.
+- Profile bootstrap request is pending/claimed or the latest profile run is
+  pending/running/awaiting human -> disable the project-card profile action.
+- Profile bootstrap creation fails -> keep the user on the projects surface,
+  set the normal `ui.lastError`, and do not fabricate local request/run state.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: project configured as Codex; task form shows `Codex · Connected`; run detail opens `Codex 执行日志` and streams events live.
 - Base: project not configured; project card shows Agent Backend select and task form tells the user to configure it first.
+- Good: project card `Generate legacy profile` posts
+  `type='profile'`/`flowId='profile.bootstrap'`, then opens the existing task
+  detail for the created request.
+- Base: active profile request exists; project card shows latest profile status
+  and disables duplicate generation.
 - Bad: project was changed from Claude Code to Codex but UI reuses an old Claude preflight cache; always key/validate cache by matching backend.
 
 ### 6. Tests Required
 
 - Projection/render tests for backend label/status helpers where practical.
+- Project rendering tests should cover profile bootstrap action POST body and
+  duplicate-action disabling while a profile request is active. They should
+  also cover visible profile/inventory artifact controls when the matching
+  run detail has loaded.
+- Project rendering tests should cover capability-map rendering from cached
+  inventory artifacts and verify correction actions create draft governed
+  knowledge candidates with inventory/source refs.
 - Route-level tests should cover task creation blocking without backend.
 - Stream behavior should be verified with stored history plus live events so replay/live races do not drop lines.
 - Stream rendering tests should cover Claude Code readable aggregation,
@@ -411,7 +459,10 @@ isAskRouted(request)
 - `ContextGovernanceDto` is hand-aligned with
   `apps/api/src/context-governance.ts` until a shared type exists. It must
   include `contextPacks`, `contextRequests.baseContextPackArtifactId`, and
-  `stageHandoffs`.
+  `stageHandoffs`. Each context pack may also include bounded
+  `calibrationSignals` for knowledge review/drift auditing; the task-detail
+  context-governance panel renders those signals read-only and must not mutate
+  knowledge state from the browser.
 - Context Flow state is derived inside `projection.ts`; do not cache it in
   module-scope state.
 - The task-detail panel is collapsed by default and uses
@@ -430,6 +481,7 @@ isAskRouted(request)
 | Output artifact from one stage appears as a later stage input | Render an `artifact_reuse` relation. |
 | `stageHandoffs` or handoff metadata is available | Render a `stage_handoff` relation with readable stage labels. |
 | `context_request` evidence is available | Render base/request/supplement artifacts as one relation chain. |
+| Context pack calibration signals are available | Render signal count plus kind, severity, recommended action, subject refs, and evidence refs in the context-governance disclosure. |
 
 ### 5. Good/Base/Bad Cases
 
@@ -446,6 +498,8 @@ isAskRouted(request)
   stage-handoff relations, context-request chains, and missing-artifact
   defensive behavior.
 - Web typecheck must pass after DTO changes.
+- DOM tests should cover knowledge review / calibration signal rendering when
+  `ContextGovernanceDto.contextPacks[].calibrationSignals` is populated.
 - Manual smoke should open a task detail page with context governance available
   and confirm the Context Flow panel is collapsed by default, expandable, and
   artifact chips open the existing inline viewer.

@@ -1,0 +1,15 @@
+<?php
+function commerce_billing_menu() {
+  $items['billing/refunds/%/review-form'] = array(
+    'title' => 'Review refund form',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('commerce_billing_refund_review_form', 2),
+    'access callback' => TRUE,
+  );
+  return $items;
+}
+
+function commerce_billing_refund_review_form($form, &$form_state, $refund_id) {
+  $service = new BillingRefundService();
+  return $service->rebuildDrupalRefundReview($refund_id);
+}

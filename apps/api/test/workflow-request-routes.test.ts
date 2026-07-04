@@ -87,6 +87,114 @@ test('workflow request routes create, list, claim, and complete runner work', as
   });
 });
 
+test('workflow request creation persists a request-level agent backend override', async () => {
+  const project = seedProject(`request-backend-${Date.now()}`);
+
+  const res = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectName: project.name,
+      title: 'run this one with claude',
+      type: 'feature',
+      agentBackend: 'claude_code',
+    }),
+  });
+
+  expect(res.status).toBe(201);
+  expect(await res.json()).toMatchObject({
+    title: 'run this one with claude',
+    agentBackend: 'claude_code',
+  });
+});
+
+test('workflow request creation can use a request backend when project default is missing', async () => {
+  const project = seedProject(`request-backend-fallback-${Date.now()}`);
+  storeMod.store.projects.set(project.id, { ...project, agentBackend: null });
+
+  const res = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectId: project.id,
+      title: 'queue with one-off backend',
+      type: 'feature',
+      agentBackend: 'codex',
+    }),
+  });
+
+  expect(res.status).toBe(201);
+  expect(await res.json()).toMatchObject({
+    title: 'queue with one-off backend',
+    agentBackend: 'codex',
+  });
+});
+
+test('profile bootstrap request can be queued without a configured backend', async () => {
+  const project = seedProject(`profile-bootstrap-no-backend-${Date.now()}`);
+  storeMod.store.projects.set(project.id, { ...project, agentBackend: null });
+
+  const res = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectId: project.id,
+      title: 'Generate legacy project profile',
+      type: 'profile',
+    }),
+  });
+
+  expect(res.status).toBe(201);
+  expect(await res.json()).toMatchObject({
+    title: 'Generate legacy project profile',
+    type: 'profile',
+    flowId: 'profile.bootstrap',
+    agentBackend: null,
+  });
+});
+
+test('project profile-bootstrap route creates a profile workflow request', async () => {
+  const project = seedProject(`profile-bootstrap-route-${Date.now()}`);
+  storeMod.store.projects.set(project.id, { ...project, agentBackend: null, defaultBranch: 'legacy-main' });
+
+  const res = await app.request(`/projects/${project.id}/profile-bootstrap`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ title: 'Map the old billing system' }),
+  });
+
+  expect(res.status).toBe(201);
+  expect(await res.json()).toMatchObject({
+    projectId: project.id,
+    title: 'Map the old billing system',
+    branch: 'legacy-main',
+    type: 'profile',
+    flowId: 'profile.bootstrap',
+    status: 'pending',
+    agentBackend: null,
+  });
+});
+
+test('workflow request creation rejects invalid request-level agent backend', async () => {
+  const project = seedProject(`invalid-request-backend-${Date.now()}`);
+
+  const res = await app.request('/workflow-requests', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectId: project.id,
+      title: 'bad backend',
+      type: 'feature',
+      agentBackend: 'native',
+    }),
+  });
+
+  expect(res.status).toBe(400);
+  expect(await res.json()).toMatchObject({
+    error: 'agentBackend must be one of claude_code, codex',
+  });
+});
+
 test('workflow request creation fails fast when project agent backend is not configured', async () => {
   const project = seedProject(`missing-backend-${Date.now()}`);
   storeMod.store.projects.set(project.id, { ...project, agentBackend: null });

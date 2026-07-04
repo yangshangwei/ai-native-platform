@@ -1,0 +1,2 @@
+def test_customer_profile_returns_snapshot
+end

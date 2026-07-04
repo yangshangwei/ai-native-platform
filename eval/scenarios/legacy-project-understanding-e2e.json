@@ -1,0 +1,1002 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-e2e",
+  "title": "Legacy project understanding scans a fixture project before context retrieval",
+  "description": "Runs buildProjectInventory against a temporary legacy-project fixture, then feeds the generated inventory into ContextPack selection. This guards the scanner-to-context contract before adding broader RAG.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_e2e",
+    "title": "Update legacy project behavior",
+    "stage": "implementation",
+    "taskBrief": "Implement deleting orders in the Orders API and update order tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 32,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\"name\":\"legacy-eval\",\"scripts\":{\"start\":\"node apps/api/src/orders-route.ts\",\"test\":\"vitest run\",\"build\":\"tsc --noEmit\",\"migrate\":\"node scripts/migrate.js\"}}"
+      },
+      {
+        "path": "apps/api/src/orders-route.ts",
+        "content": "import { Router } from \"express\";\nexport const router = Router();\nexport class OrderService {\n  deleteOrder(id: string) { return id; }\n}\nexport function deleteOrder() {\n  const service = new OrderService();\n  return service.deleteOrder(\"o1\");\n}\nexport function listPayments() { return []; }\nrouter.delete(\"/api/orders/:id\", deleteOrder);\nrouter.get(\"/api/payments\", listPayments);\n"
+      },
+      {
+        "path": "apps/api/src/nest-catalog.controller.ts",
+        "content": "import { Controller, Get } from \"@nestjs/common\";\n\n@Controller(\"/api/nest-catalog\")\nexport class NestCatalogController {\n  @Get(\":itemId\")\n  showItem() {\n    return {};\n  }\n}\n"
+      },
+      {
+        "path": "apps/api/src/refund-reconciliation.ts",
+        "content": "export class RefundRepository {}\nexport class RefundReconciliationService {\n  reconcile() {\n    const repo = new RefundRepository();\n    return repo;\n  }\n}\n"
+      },
+      {
+        "path": "pages/api/legacy-invoices/[id].ts",
+        "content": "import { loadLegacyInvoice } from \"../services/legacy-invoice-service\";\nfunction handler(req, res) {\n  if (req.method === \"POST\") return loadLegacyInvoice(req.query.id);\n  return res.status(405).end();\n}\nexport default handler;\n"
+      },
+      {
+        "path": "pages/api/services/legacy-invoice-service.ts",
+        "content": "export function loadLegacyInvoice(invoiceId) { return { invoiceId }; }\n"
+      },
+      {
+        "path": "pages/api/legacy-subscriptions/[id].ts",
+        "content": "export { showLegacySubscription as default } from \"../handlers/legacy-subscription-handler\";\n"
+      },
+      {
+        "path": "pages/api/handlers/legacy-subscription-handler.ts",
+        "content": "import { loadLegacySubscription } from \"../services/legacy-subscription-service\";\nexport function showLegacySubscription(req, res) {\n  return loadLegacySubscription(req.query.id);\n}\n"
+      },
+      {
+        "path": "pages/api/services/legacy-subscription-service.ts",
+        "content": "export function loadLegacySubscription(subscriptionId) { return { subscriptionId }; }\n"
+      },
+      {
+        "path": "pages/api/legacy-renewals/[id].ts",
+        "content": "import handler from \"../../../src/api-handlers/legacy-renewal-handler\";\nexport default handler;\n"
+      },
+      {
+        "path": "src/api-handlers/legacy-renewal-handler.ts",
+        "content": "import { loadLegacyRenewal } from \"../services/legacy-renewal-service\";\nexport default function renewalHandler(req, res) {\n  return loadLegacyRenewal(req.query.id);\n}\n"
+      },
+      {
+        "path": "src/services/legacy-renewal-service.ts",
+        "content": "export function loadLegacyRenewal(renewalId) { return { renewalId }; }\n"
+      },
+      {
+        "path": "pages/api/legacy-usage/[id].js",
+        "content": "const handler = require(\"../../../src/api-handlers/legacy-usage-handler\");\nmodule.exports = handler;\n"
+      },
+      {
+        "path": "src/api-handlers/legacy-usage-handler.js",
+        "content": "const { loadLegacyUsage } = require(\"../services/legacy-usage-service\");\nmodule.exports = function usageHandler(req, res) {\n  return loadLegacyUsage(req.query.id);\n};\n"
+      },
+      {
+        "path": "src/services/legacy-usage-service.js",
+        "content": "exports.loadLegacyUsage = function loadLegacyUsage(usageId) { return { usageId }; };\n"
+      },
+      {
+        "path": "apps/api/test/orders-route.test.ts",
+        "content": "import { describe, it, expect } from \"vitest\";\ndescribe(\"orders route\", () => { it(\"deletes orders\", () => expect(true).toBe(true)); });\n"
+      },
+      {
+        "path": "apps/api/test/refund-reconciliation.test.ts",
+        "content": "import { describe, it, expect } from \"vitest\";\ndescribe(\"refund reconciliation\", () => { it(\"rounds refunds\", () => expect(true).toBe(true)); });\n"
+      },
+      {
+        "path": "apps/api/test/legacy-invoices.test.ts",
+        "content": "import { describe, it, expect } from \"vitest\";\ndescribe(\"legacy invoices\", () => { it(\"loads invoices\", () => expect(true).toBe(true)); });\n"
+      },
+      {
+        "path": "apps/api/test/legacy-subscriptions.test.ts",
+        "content": "import { describe, it, expect } from \"vitest\";\ndescribe(\"legacy subscriptions\", () => { it(\"loads subscriptions\", () => expect(true).toBe(true)); });\n"
+      },
+      {
+        "path": "apps/api/test/legacy-renewals.test.ts",
+        "content": "import { describe, it, expect } from \"vitest\";\ndescribe(\"legacy renewals\", () => { it(\"loads renewals\", () => expect(true).toBe(true)); });\n"
+      },
+      {
+        "path": "apps/api/test/legacy-usage.test.ts",
+        "content": "import { describe, it, expect } from \"vitest\";\ndescribe(\"legacy usage\", () => { it(\"loads usage\", () => expect(true).toBe(true)); });\n"
+      },
+      {
+        "path": ".env",
+        "content": "SECRET_TOKEN=do-not-capture\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Orders API",
+      "Legacy Invoices API",
+      "Legacy Renewals API",
+      "Legacy Subscriptions API",
+      "Legacy Usage API",
+      "Nest Catalog API",
+      "Payments API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API"
+    ],
+    "inventoryEntrypointRoutesInclude": [
+      "DELETE /api/orders/:id",
+      "POST /api/legacy-invoices/[id]",
+      "ANY /api/legacy-renewals/[id]",
+      "ANY /api/legacy-subscriptions/[id]",
+      "ANY /api/legacy-usage/[id]",
+      "GET /api/nest-catalog/:itemId",
+      "GET /api/payments"
+    ],
+    "inventorySymbolNamesInclude": [
+      "OrderService",
+      "deleteOrder",
+      "handler",
+      "loadLegacyInvoice",
+      "showLegacySubscription",
+      "loadLegacySubscription",
+      "renewalHandler",
+      "loadLegacyRenewal",
+      "usageHandler",
+      "loadLegacyUsage",
+      "NestCatalogController",
+      "showItem",
+      "RefundReconciliationService"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventorySourceChunkGraphEdgeRefsInclude": [
+      "edge_route_handler_entry_route_apps_api_src_orders_route_ts_delete_api_orders_id_11_sym_apps_api_src_orders_route_ts_deleteorder_6"
+    ],
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_orders",
+      "inventory_symbols_orders_api",
+      "inventory_tests_orders_api",
+      "inventory_hotspots_orders_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_payments"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_orders",
+      "inventory_symbols_orders_api",
+      "inventory_tests_orders_api",
+      "inventory_hotspots_orders_api",
+      "inventory_source_chunk_src_chunk_apps_api_src_orders_route",
+      "inventory_source_chunk_src_chunk_apps_api_test_orders_route"
+    ],
+    "irrelevantContextRatioMax": 0.13,
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 7,
+      "sourceChunkContentSha256CoverageMin": 1,
+      "sourceChunkIndexCoverageMin": 1,
+      "sourceChunkLinkedRecordCoverageMin": 1
+    },
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_capability_map_primary",
+      "file:apps/api/src/orders-route.ts#L11",
+      "file:apps/api/test/orders-route.test.ts"
+    ],
+    "sourceRefsExclude": [
+      "file:apps/api/src/orders-route.ts#L12"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_orders": "summary"
+    },
+    "selectedCountMin": 5
+  },
+  "variants": [
+    {
+      "id": "capability-map-primary",
+      "label": "Scanner-generated Orders API capability is primary context",
+      "expectations": {
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_orders",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts#L3",
+              "file:apps/api/src/orders-route.ts#L4",
+              "file:apps/api/src/orders-route.ts#L6",
+              "file:apps/api/src/orders-route.ts#L7",
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/test/orders-route.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/test/refund-reconciliation.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_orders_api",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts#L3",
+              "file:apps/api/src/orders-route.ts#L4",
+              "file:apps/api/src/orders-route.ts#L6",
+              "file:apps/api/src/orders-route.ts#L7",
+              "file:apps/api/src/orders-route.ts#L11"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/test/refund-reconciliation.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_tests_orders_api",
+            "sourceRefsInclude": [
+              "file:apps/api/test/orders-route.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/test/refund-reconciliation.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_source_chunk_src_chunk_apps_api_src_orders_route_ts_1_13",
+            "sourceRefsInclude": [
+              "file:apps/api/src/orders-route.ts#L11"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/test/refund-reconciliation.test.ts"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "hybrid-fallback-symbol-graph",
+      "label": "Scanner-generated refund symbols feed hybrid fallback",
+      "inputOverrides": {
+        "taskBrief": "Fix refund reconciliation rounding and cover refund tests."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_hybrid_sym_apps_api_src_refund_reconciliation_ts_refundreconciliationservice_2",
+          "inventory_hybrid_test_surface_apps_api_test_refund_reconciliation_test_ts",
+          "inventory_source_chunk_src_chunk_apps_api_src_refund_reconciliation_ts_1_8"
+        ],
+        "inventorySourceChunkGraphEdgeRefsInclude": [
+          "edge_symbol_reference_sym_apps_api_src_refund_reconciliation_ts_reconcile_3_sym_apps_api_src_refund_reconciliation_ts_refundrepository_1_constructs_refundrepository"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_orders",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_hybrid_sym_apps_api_src_refund_reconciliation",
+          "inventory_hybrid_test_surface_apps_api_test_refund_reconciliation",
+          "inventory_hybrid_edge_symbol_reference_sym_apps_api_src_refund_reconciliation",
+          "inventory_source_chunk_src_chunk_apps_api_src_refund_reconciliation",
+          "inventory_source_chunk_src_chunk_apps_api_test_refund_reconciliation"
+        ],
+        "irrelevantContextRatioMax": 0.13,
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_hybrid_fallback_symbol_graph",
+          "file:apps/api/src/refund-reconciliation.ts#L2",
+          "file:apps/api/src/refund-reconciliation.ts#L4",
+          "file:apps/api/test/refund-reconciliation.test.ts"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/orders-route.ts#L11",
+          "file:apps/api/src/orders-route.ts#L12"
+        ],
+        "sectionModes": {
+          "inventory_hybrid_sym_apps_api_src_refund_reconciliation_ts_refundreconciliationservice_2": "summary",
+          "inventory_source_chunk_src_chunk_apps_api_src_refund_reconciliation_ts_1_8": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_hybrid_sym_apps_api_src_refund_reconciliation_ts_refundreconciliationservice_2",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:apps/api/src/refund-reconciliation.ts#L1",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:apps/api/src/refund-reconciliation.ts#L4"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/test/orders-route.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_hybrid_test_surface_apps_api_test_refund_reconciliation_test_ts",
+            "sourceRefsInclude": [
+              "file:apps/api/test/refund-reconciliation.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/test/orders-route.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_source_chunk_src_chunk_apps_api_src_refund_reconciliation_ts_1_8",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:apps/api/src/refund-reconciliation.ts#L1",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:apps/api/src/refund-reconciliation.ts#L4"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/test/orders-route.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_hybrid_edge_symbol_reference_sym_apps_api_src_refund_reconciliation_ts_reconcile_3_sym_apps_api_src_refund_reconciliation_ts_refundrepository_1_constructs_refundrepository",
+            "sourceRefsInclude": [
+              "file:apps/api/src/refund-reconciliation.ts#L1",
+              "file:apps/api/src/refund-reconciliation.ts#L4"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/test/orders-route.test.ts"
+            ]
+          }
+        ],
+        "selectedCountMin": 5
+      }
+    },
+    {
+      "id": "next-pages-api-primary",
+      "label": "Scanner-generated Next Pages API route is primary context",
+      "inputOverrides": {
+        "taskBrief": "Update legacy invoice lookup Pages API behavior and cover invoice tests."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_legacy_invoices",
+          "inventory_symbols_legacy_invoices_api",
+          "inventory_tests_legacy_invoices_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_orders",
+          "inventory_capability_cap_api_payments",
+          "inventory_capability_cap_api_nest_catalog"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_legacy_invoices",
+          "inventory_symbols_legacy_invoices_api",
+          "inventory_tests_legacy_invoices_api",
+          "inventory_source_chunk_src_chunk_pages_api_legacy_invoices",
+          "inventory_source_chunk_src_chunk_pages_api_services_legacy_invoice_service",
+          "inventory_source_chunk_src_chunk_apps_api_test_legacy_invoices"
+        ],
+        "irrelevantContextRatioMax": 0.17,
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_next_pages_api_primary",
+          "file:pages/api/legacy-invoices/[id].ts#L2",
+          "file:pages/api/legacy-invoices/[id].ts#L3",
+          "file:pages/api/legacy-invoices/[id].ts#L6",
+          "file:apps/api/test/legacy-invoices.test.ts"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/orders-route.ts#L11",
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/src/nest-catalog.controller.ts#L3",
+          "file:apps/api/src/refund-reconciliation.ts#L2",
+          "file:apps/api/test/orders-route.test.ts",
+          "file:apps/api/test/refund-reconciliation.test.ts"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_legacy_invoices": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_legacy_invoices",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:pages/api/legacy-invoices/[id].ts#L2",
+              "file:pages/api/legacy-invoices/[id].ts#L3",
+              "file:pages/api/legacy-invoices/[id].ts#L6",
+              "file:pages/api/services/legacy-invoice-service.ts#L1",
+              "file:apps/api/test/legacy-invoices.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:apps/api/test/orders-route.test.ts",
+              "file:apps/api/test/refund-reconciliation.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_legacy_invoices_api",
+            "sourceRefsInclude": [
+              "file:pages/api/legacy-invoices/[id].ts#L2",
+              "file:pages/api/legacy-invoices/[id].ts#L3",
+              "file:pages/api/legacy-invoices/[id].ts#L6",
+              "file:pages/api/services/legacy-invoice-service.ts#L1"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:apps/api/test/orders-route.test.ts",
+              "file:apps/api/test/refund-reconciliation.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_tests_legacy_invoices_api",
+            "sourceRefsInclude": [
+              "file:apps/api/test/legacy-invoices.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:apps/api/test/orders-route.test.ts",
+              "file:apps/api/test/refund-reconciliation.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_source_chunk_src_chunk_pages_api_legacy_invoices_id_ts_1_7",
+            "sourceRefsInclude": [
+              "file:pages/api/legacy-invoices/[id].ts#L2",
+              "file:pages/api/legacy-invoices/[id].ts#L3",
+              "file:pages/api/legacy-invoices/[id].ts#L6"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:apps/api/test/orders-route.test.ts",
+              "file:apps/api/test/refund-reconciliation.test.ts"
+            ]
+          }
+        ],
+        "selectedCountMin": 5
+      }
+    },
+    {
+      "id": "next-pages-api-reexport-primary",
+      "label": "Scanner-generated Next Pages API re-export route is primary context",
+      "inputOverrides": {
+        "taskBrief": "Update legacy subscription lookup Pages API behavior and cover subscription tests."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_legacy_subscriptions",
+          "inventory_symbols_legacy_subscriptions_api",
+          "inventory_tests_legacy_subscriptions_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_orders",
+          "inventory_capability_cap_api_payments",
+          "inventory_capability_cap_api_nest_catalog",
+          "inventory_capability_cap_api_legacy_invoices"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_legacy_subscriptions",
+          "inventory_symbols_legacy_subscriptions_api",
+          "inventory_tests_legacy_subscriptions_api",
+          "inventory_source_chunk_src_chunk_pages_api_legacy_subscriptions",
+          "inventory_source_chunk_src_chunk_pages_api_handlers_legacy_subscription_handler",
+          "inventory_source_chunk_src_chunk_pages_api_services_legacy_subscription_service",
+          "inventory_source_chunk_src_chunk_apps_api_test_legacy_subscriptions"
+        ],
+        "irrelevantContextRatioMax": 0.17,
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_next_pages_api_reexport_primary",
+          "file:pages/api/legacy-subscriptions/[id].ts#L1",
+          "file:pages/api/handlers/legacy-subscription-handler.ts#L2",
+          "file:pages/api/handlers/legacy-subscription-handler.ts#L3",
+          "file:pages/api/services/legacy-subscription-service.ts#L1",
+          "file:apps/api/test/legacy-subscriptions.test.ts"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/orders-route.ts#L11",
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/src/nest-catalog.controller.ts#L3",
+          "file:apps/api/src/refund-reconciliation.ts#L2",
+          "file:pages/api/legacy-invoices/[id].ts#L2",
+          "file:apps/api/test/orders-route.test.ts",
+          "file:apps/api/test/refund-reconciliation.test.ts",
+          "file:apps/api/test/legacy-invoices.test.ts"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_legacy_subscriptions": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_legacy_subscriptions",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:pages/api/legacy-subscriptions/[id].ts#L1",
+              "file:pages/api/handlers/legacy-subscription-handler.ts#L2",
+              "file:pages/api/handlers/legacy-subscription-handler.ts#L3",
+              "file:pages/api/services/legacy-subscription-service.ts#L1",
+              "file:apps/api/test/legacy-subscriptions.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:pages/api/legacy-invoices/[id].ts#L2",
+              "file:apps/api/test/orders-route.test.ts",
+              "file:apps/api/test/refund-reconciliation.test.ts",
+              "file:apps/api/test/legacy-invoices.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_legacy_subscriptions_api",
+            "sourceRefsInclude": [
+              "file:pages/api/legacy-subscriptions/[id].ts#L1",
+              "file:pages/api/handlers/legacy-subscription-handler.ts#L2",
+              "file:pages/api/handlers/legacy-subscription-handler.ts#L3",
+              "file:pages/api/services/legacy-subscription-service.ts#L1"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:pages/api/legacy-invoices/[id].ts#L2",
+              "file:apps/api/test/orders-route.test.ts",
+              "file:apps/api/test/refund-reconciliation.test.ts",
+              "file:apps/api/test/legacy-invoices.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_tests_legacy_subscriptions_api",
+            "sourceRefsInclude": [
+              "file:apps/api/test/legacy-subscriptions.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:pages/api/legacy-invoices/[id].ts#L2",
+              "file:apps/api/test/orders-route.test.ts",
+              "file:apps/api/test/refund-reconciliation.test.ts",
+              "file:apps/api/test/legacy-invoices.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_source_chunk_src_chunk_pages_api_handlers_legacy_subscription_handler_ts_1_5",
+            "sourceRefsInclude": [
+              "file:pages/api/handlers/legacy-subscription-handler.ts#L2",
+              "file:pages/api/handlers/legacy-subscription-handler.ts#L3",
+              "file:pages/api/services/legacy-subscription-service.ts#L1"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:pages/api/legacy-invoices/[id].ts#L2",
+              "file:apps/api/test/orders-route.test.ts",
+              "file:apps/api/test/refund-reconciliation.test.ts",
+              "file:apps/api/test/legacy-invoices.test.ts"
+            ]
+          }
+        ],
+        "selectedCountMin": 5
+      }
+    },
+    {
+      "id": "next-pages-api-imported-default-primary",
+      "label": "Scanner-generated Next Pages API imported default handler is primary context",
+      "inputOverrides": {
+        "taskBrief": "Update legacy renewal lookup Pages API behavior and cover renewal tests."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_legacy_renewals",
+          "inventory_symbols_legacy_renewals_api",
+          "inventory_tests_legacy_renewals_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_orders",
+          "inventory_capability_cap_api_payments",
+          "inventory_capability_cap_api_nest_catalog",
+          "inventory_capability_cap_api_legacy_invoices",
+          "inventory_capability_cap_api_legacy_subscriptions"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_legacy_renewals",
+          "inventory_symbols_legacy_renewals_api",
+          "inventory_tests_legacy_renewals_api",
+          "inventory_source_chunk_src_chunk_pages_api_legacy_renewals",
+          "inventory_source_chunk_src_chunk_src_api_handlers_legacy_renewal_handler",
+          "inventory_source_chunk_src_chunk_src_services_legacy_renewal_service",
+          "inventory_source_chunk_src_chunk_apps_api_test_legacy_renewals"
+        ],
+        "irrelevantContextRatioMax": 0.17,
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_next_pages_api_imported_default_primary",
+          "file:pages/api/legacy-renewals/[id].ts#L1",
+          "file:pages/api/legacy-renewals/[id].ts#L2",
+          "file:src/api-handlers/legacy-renewal-handler.ts#L2",
+          "file:src/api-handlers/legacy-renewal-handler.ts#L3",
+          "file:src/services/legacy-renewal-service.ts#L1",
+          "file:apps/api/test/legacy-renewals.test.ts"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/orders-route.ts#L11",
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/src/nest-catalog.controller.ts#L3",
+          "file:apps/api/src/refund-reconciliation.ts#L2",
+          "file:pages/api/legacy-invoices/[id].ts#L2",
+          "file:pages/api/legacy-subscriptions/[id].ts#L1",
+          "file:apps/api/test/orders-route.test.ts",
+          "file:apps/api/test/refund-reconciliation.test.ts",
+          "file:apps/api/test/legacy-invoices.test.ts",
+          "file:apps/api/test/legacy-subscriptions.test.ts"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_legacy_renewals": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_legacy_renewals",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:pages/api/legacy-renewals/[id].ts#L1",
+              "file:pages/api/legacy-renewals/[id].ts#L2",
+              "file:src/api-handlers/legacy-renewal-handler.ts#L2",
+              "file:src/api-handlers/legacy-renewal-handler.ts#L3",
+              "file:src/services/legacy-renewal-service.ts#L1",
+              "file:apps/api/test/legacy-renewals.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:pages/api/legacy-invoices/[id].ts#L2",
+              "file:pages/api/legacy-subscriptions/[id].ts#L1",
+              "file:apps/api/test/orders-route.test.ts",
+              "file:apps/api/test/refund-reconciliation.test.ts",
+              "file:apps/api/test/legacy-invoices.test.ts",
+              "file:apps/api/test/legacy-subscriptions.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_legacy_renewals_api",
+            "sourceRefsInclude": [
+              "file:pages/api/legacy-renewals/[id].ts#L1",
+              "file:pages/api/legacy-renewals/[id].ts#L2",
+              "file:src/api-handlers/legacy-renewal-handler.ts#L2",
+              "file:src/api-handlers/legacy-renewal-handler.ts#L3",
+              "file:src/services/legacy-renewal-service.ts#L1"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:pages/api/legacy-invoices/[id].ts#L2",
+              "file:pages/api/legacy-subscriptions/[id].ts#L1",
+              "file:apps/api/test/orders-route.test.ts",
+              "file:apps/api/test/refund-reconciliation.test.ts",
+              "file:apps/api/test/legacy-invoices.test.ts",
+              "file:apps/api/test/legacy-subscriptions.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_tests_legacy_renewals_api",
+            "sourceRefsInclude": [
+              "file:apps/api/test/legacy-renewals.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:pages/api/legacy-invoices/[id].ts#L2",
+              "file:pages/api/legacy-subscriptions/[id].ts#L1",
+              "file:apps/api/test/orders-route.test.ts",
+              "file:apps/api/test/refund-reconciliation.test.ts",
+              "file:apps/api/test/legacy-invoices.test.ts",
+              "file:apps/api/test/legacy-subscriptions.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_source_chunk_src_chunk_src_api_handlers_legacy_renewal_handler_ts_1_5",
+            "sourceRefsInclude": [
+              "file:src/api-handlers/legacy-renewal-handler.ts#L2",
+              "file:src/api-handlers/legacy-renewal-handler.ts#L3",
+              "file:src/services/legacy-renewal-service.ts#L1"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:pages/api/legacy-invoices/[id].ts#L2",
+              "file:pages/api/legacy-subscriptions/[id].ts#L1",
+              "file:apps/api/test/orders-route.test.ts",
+              "file:apps/api/test/refund-reconciliation.test.ts",
+              "file:apps/api/test/legacy-invoices.test.ts",
+              "file:apps/api/test/legacy-subscriptions.test.ts"
+            ]
+          }
+        ],
+        "selectedCountMin": 5
+      }
+    },
+    {
+      "id": "next-pages-api-commonjs-default-primary",
+      "label": "Scanner-generated Next Pages API CommonJS handler is primary context",
+      "inputOverrides": {
+        "taskBrief": "Update legacy usage lookup Pages API behavior and cover usage tests."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_legacy_usage",
+          "inventory_symbols_legacy_usage_api",
+          "inventory_tests_legacy_usage_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_orders",
+          "inventory_capability_cap_api_payments",
+          "inventory_capability_cap_api_nest_catalog",
+          "inventory_capability_cap_api_legacy_invoices",
+          "inventory_capability_cap_api_legacy_renewals",
+          "inventory_capability_cap_api_legacy_subscriptions"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_legacy_usage",
+          "inventory_symbols_legacy_usage_api",
+          "inventory_tests_legacy_usage_api",
+          "inventory_source_chunk_src_chunk_pages_api_legacy_usage",
+          "inventory_source_chunk_src_chunk_src_api_handlers_legacy_usage_handler",
+          "inventory_source_chunk_src_chunk_src_services_legacy_usage_service",
+          "inventory_source_chunk_src_chunk_apps_api_test_legacy_usage"
+        ],
+        "irrelevantContextRatioMax": 0.17,
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_next_pages_api_commonjs_default_primary",
+          "file:pages/api/legacy-usage/[id].js#L1",
+          "file:pages/api/legacy-usage/[id].js#L2",
+          "file:src/api-handlers/legacy-usage-handler.js#L2",
+          "file:src/api-handlers/legacy-usage-handler.js#L3",
+          "file:src/services/legacy-usage-service.js#L1",
+          "file:apps/api/test/legacy-usage.test.ts"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/orders-route.ts#L11",
+          "file:apps/api/src/orders-route.ts#L12",
+          "file:apps/api/src/nest-catalog.controller.ts#L3",
+          "file:apps/api/src/refund-reconciliation.ts#L2",
+          "file:pages/api/legacy-invoices/[id].ts#L2",
+          "file:pages/api/legacy-renewals/[id].ts#L1",
+          "file:pages/api/legacy-subscriptions/[id].ts#L1",
+          "file:apps/api/test/orders-route.test.ts",
+          "file:apps/api/test/refund-reconciliation.test.ts",
+          "file:apps/api/test/legacy-invoices.test.ts",
+          "file:apps/api/test/legacy-renewals.test.ts",
+          "file:apps/api/test/legacy-subscriptions.test.ts"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_legacy_usage": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_legacy_usage",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:pages/api/legacy-usage/[id].js#L1",
+              "file:pages/api/legacy-usage/[id].js#L2",
+              "file:src/api-handlers/legacy-usage-handler.js#L2",
+              "file:src/api-handlers/legacy-usage-handler.js#L3",
+              "file:src/services/legacy-usage-service.js#L1",
+              "file:apps/api/test/legacy-usage.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:pages/api/legacy-invoices/[id].ts#L2",
+              "file:pages/api/legacy-renewals/[id].ts#L1",
+              "file:pages/api/legacy-subscriptions/[id].ts#L1",
+              "file:apps/api/test/orders-route.test.ts",
+              "file:apps/api/test/refund-reconciliation.test.ts",
+              "file:apps/api/test/legacy-invoices.test.ts",
+              "file:apps/api/test/legacy-renewals.test.ts",
+              "file:apps/api/test/legacy-subscriptions.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_legacy_usage_api",
+            "sourceRefsInclude": [
+              "file:pages/api/legacy-usage/[id].js#L1",
+              "file:pages/api/legacy-usage/[id].js#L2",
+              "file:src/api-handlers/legacy-usage-handler.js#L2",
+              "file:src/api-handlers/legacy-usage-handler.js#L3",
+              "file:src/services/legacy-usage-service.js#L1"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:pages/api/legacy-invoices/[id].ts#L2",
+              "file:pages/api/legacy-renewals/[id].ts#L1",
+              "file:pages/api/legacy-subscriptions/[id].ts#L1",
+              "file:apps/api/test/orders-route.test.ts",
+              "file:apps/api/test/refund-reconciliation.test.ts",
+              "file:apps/api/test/legacy-invoices.test.ts",
+              "file:apps/api/test/legacy-renewals.test.ts",
+              "file:apps/api/test/legacy-subscriptions.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_tests_legacy_usage_api",
+            "sourceRefsInclude": [
+              "file:apps/api/test/legacy-usage.test.ts"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:pages/api/legacy-invoices/[id].ts#L2",
+              "file:pages/api/legacy-renewals/[id].ts#L1",
+              "file:pages/api/legacy-subscriptions/[id].ts#L1",
+              "file:apps/api/test/orders-route.test.ts",
+              "file:apps/api/test/refund-reconciliation.test.ts",
+              "file:apps/api/test/legacy-invoices.test.ts",
+              "file:apps/api/test/legacy-renewals.test.ts",
+              "file:apps/api/test/legacy-subscriptions.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_source_chunk_src_chunk_src_api_handlers_legacy_usage_handler_js_1_5",
+            "sourceRefsInclude": [
+              "file:src/api-handlers/legacy-usage-handler.js#L2",
+              "file:src/api-handlers/legacy-usage-handler.js#L3",
+              "file:src/services/legacy-usage-service.js#L1"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:pages/api/legacy-invoices/[id].ts#L2",
+              "file:pages/api/legacy-renewals/[id].ts#L1",
+              "file:pages/api/legacy-subscriptions/[id].ts#L1",
+              "file:apps/api/test/orders-route.test.ts",
+              "file:apps/api/test/refund-reconciliation.test.ts",
+              "file:apps/api/test/legacy-invoices.test.ts",
+              "file:apps/api/test/legacy-renewals.test.ts",
+              "file:apps/api/test/legacy-subscriptions.test.ts"
+            ]
+          }
+        ],
+        "selectedCountMin": 5
+      }
+    },
+    {
+      "id": "nest-catalog-primary",
+      "label": "Scanner-generated NestJS controller route is primary context",
+      "inputOverrides": {
+        "taskBrief": "Fix Nest catalog lookup endpoint behavior."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_nest_catalog",
+          "inventory_symbols_nest_catalog_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_orders",
+          "inventory_capability_cap_api_payments"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_nest_catalog",
+          "inventory_symbols_nest_catalog_api",
+          "inventory_source_chunk_src_chunk_apps_api_src_nest_catalog_controller"
+        ],
+        "irrelevantContextRatioMax": 0.17,
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_nest_catalog_primary",
+          "file:apps/api/src/nest-catalog.controller.ts#L3",
+          "file:apps/api/src/nest-catalog.controller.ts#L5",
+          "file:apps/api/src/nest-catalog.controller.ts#L6"
+        ],
+        "sourceRefsExclude": [
+          "file:apps/api/src/orders-route.ts#L11",
+          "file:apps/api/src/orders-route.ts#L12"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_nest_catalog": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_nest_catalog",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/nest-catalog.controller.ts#L5",
+              "file:apps/api/src/nest-catalog.controller.ts#L6"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:apps/api/test/orders-route.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_nest_catalog_api",
+            "sourceRefsInclude": [
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/nest-catalog.controller.ts#L5",
+              "file:apps/api/src/nest-catalog.controller.ts#L6"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:apps/api/test/orders-route.test.ts"
+            ]
+          },
+          {
+            "ref": "inventory_source_chunk_src_chunk_apps_api_src_nest_catalog_controller_ts_1_10",
+            "sourceRefsInclude": [
+              "file:apps/api/src/nest-catalog.controller.ts#L3",
+              "file:apps/api/src/nest-catalog.controller.ts#L5",
+              "file:apps/api/src/nest-catalog.controller.ts#L6"
+            ],
+            "sourceRefsExclude": [
+              "file:apps/api/src/orders-route.ts#L11",
+              "file:apps/api/src/orders-route.ts#L12",
+              "file:apps/api/src/refund-reconciliation.ts#L2",
+              "file:apps/api/test/orders-route.test.ts"
+            ]
+          }
+        ],
+        "selectedCountMin": 3
+      }
+    }
+  ]
+}

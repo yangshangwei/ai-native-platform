@@ -38,6 +38,35 @@ import type {
 } from '@ainp/shared';
 import { API_BASE } from './config';
 
+export interface SourceChunkIndexCatalogEntry {
+  id: string;
+  projectId: string;
+  workflowRunId: string;
+  sourceChunkIndexArtifactId: string;
+  sourceInventoryArtifactId: string | null;
+  sourceChunkRef: string;
+  contentSha256: string;
+  path: string;
+  language: string | null;
+  startLine: number;
+  endLine: number;
+  lexicalTokens: string[];
+  searchText: string;
+  linkedRecordRefs: string[];
+  sourceRefs: string[];
+  entrypointRefs: string[];
+  symbolRefs: string[];
+  domainEntityRefs: string[];
+  graphEdgeRefs: string[];
+  testRefs: string[];
+  hotspotRefs: string[];
+  capabilityRefs: string[];
+  embeddingModel?: string | null;
+  embeddingDimensions?: number | null;
+  embeddingVector?: number[] | null;
+  createdAt: string;
+}
+
 async function request<T>(method: string, path: string, body?: unknown, extraHeaders?: Record<string, string>): Promise<T> {
   const headers: Record<string, string> = body ? { 'content-type': 'application/json' } : {};
   if (extraHeaders) {
@@ -74,10 +103,39 @@ export const api = {
     'x-ainp-internal': 'runner',
   }),
 
+  listSourceChunkIndexEntries: (params: {
+    projectId: string;
+    q?: string | null;
+    contentSha256?: string | null;
+    path?: string | null;
+    linkedRecordRef?: string | null;
+    sourceChunkIndexArtifactId?: string | null;
+    sourceInventoryArtifactId?: string | null;
+    queryEmbedding?: readonly number[] | null;
+    queryEmbeddingModel?: string | null;
+    limit?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set('q', params.q);
+    if (params.queryEmbedding?.length) qs.set('embedding', JSON.stringify(params.queryEmbedding));
+    if (params.queryEmbeddingModel) qs.set('embeddingModel', params.queryEmbeddingModel);
+    if (params.contentSha256) qs.set('contentSha256', params.contentSha256);
+    if (params.path) qs.set('path', params.path);
+    if (params.linkedRecordRef) qs.set('linkedRecordRef', params.linkedRecordRef);
+    if (params.sourceChunkIndexArtifactId) qs.set('sourceChunkIndexArtifactId', params.sourceChunkIndexArtifactId);
+    if (params.sourceInventoryArtifactId) qs.set('sourceInventoryArtifactId', params.sourceInventoryArtifactId);
+    if (params.limit !== undefined) qs.set('limit', String(params.limit));
+    const suffix = qs.size > 0 ? `?${qs.toString()}` : '';
+    return request<{ ok: boolean; items: SourceChunkIndexCatalogEntry[]; limit: number }>(
+      'GET',
+      `/projects/${encodeURIComponent(params.projectId)}/source-chunk-index${suffix}`,
+    ).then((r) => r.items);
+  },
+
   createWorkflowRun: (params: {
     projectName: string;
     title: string;
-    type?: 'smoke' | 'feature' | 'bugfix' | 'refactor';
+    type?: 'smoke' | 'feature' | 'bugfix' | 'refactor' | 'profile';
     sourceBranch?: string;
     /** V2 W2-3: optional flow id; omitted values use server-side conservative defaults. */
     flowId?: FlowId;
@@ -100,8 +158,11 @@ export const api = {
     projectId?: string;
     projectName?: string;
     title: string;
-    type?: 'smoke' | 'feature' | 'bugfix' | 'refactor';
+    type?: 'smoke' | 'feature' | 'bugfix' | 'refactor' | 'profile';
     branch?: string;
+    agentBackend?: Project['agentBackend'];
+    flowId?: FlowId;
+    startStage?: WorkflowStage | null;
   }) =>
     request<WorkflowRequest>('POST', '/workflow-requests', {
       ...params,
@@ -149,6 +210,7 @@ export const api = {
       run: WorkflowRun;
       steps: StepRun[];
       commands: CommandRun[];
+      artifacts: Artifact[];
       stepCheckpoints: StepCheckpoint[];
       graph: {
         graphDefinition: GraphDefinition | null;

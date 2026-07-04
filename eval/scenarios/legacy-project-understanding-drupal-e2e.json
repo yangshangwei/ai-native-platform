@@ -1,0 +1,201 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-drupal-e2e",
+  "title": "Legacy project understanding keeps Drupal hook_menu route context focused",
+  "description": "Runs the real scanner against a small Drupal 7 hook_menu fixture, then verifies ContextPack selects the billing refund callback and tests without leaking an unrelated customer route.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_drupal",
+    "title": "Update legacy Drupal billing refunds",
+    "stage": "implementation",
+    "taskBrief": "Fix billing refund approval behavior in the legacy Drupal hook_menu route and update billing refund tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 18,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "sites/all/modules/billing/billing.module",
+        "content": "<?php\nfunction billing_menu() {\n  $items['billing/refunds/%/approve'] = array(\n    'title' => 'Approve refund',\n    'page callback' => 'billing_refund_approve',\n    'page arguments' => array(2),\n    'access callback' => TRUE,\n  );\n  $items['customers/profile'] = array(\n    'page callback' => 'customer_profile_view',\n    'access callback' => TRUE,\n  );\n  $items['billing/dynamic'] = array(\n    'page callback' => $dynamicCallback,\n    'access callback' => TRUE,\n  );\n  return $items;\n}\n\nfunction billing_refund_approve($refund_id) {\n  $service = new BillingRefundService();\n  return $service->approveRefund($refund_id);\n}\n\nfunction customer_profile_view() {\n  return NULL;\n}\n"
+      },
+      {
+        "path": "sites/all/modules/billing/src/BillingRefundService.php",
+        "content": "<?php\nclass BillingRefundService\n{\n  public function approveRefund($refundId) {\n    $repository = new BillingRefundRepository();\n    return $repository->approveRefund($refundId);\n  }\n}\n"
+      },
+      {
+        "path": "sites/all/modules/billing/src/BillingRefundRepository.php",
+        "content": "<?php\nclass BillingRefundRepository\n{\n  public function approveRefund($refundId) {\n    return $refundId;\n  }\n}\n"
+      },
+      {
+        "path": "tests/BillingRefundDrupalTest.php",
+        "content": "<?php\nfunction test_billing_refund_drupal_hook_menu_approves_refunds() {}\n"
+      },
+      {
+        "path": "tests/CustomerProfileDrupalTest.php",
+        "content": "<?php\nfunction test_customer_profile_drupal_hook_menu_returns_customer_profile() {}\n"
+      },
+      {
+        "path": ".env",
+        "content": "DB_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /billing/refunds/%/approve",
+      "ANY /customers/profile"
+    ],
+    "inventoryEntrypointRouteCountMin": 2,
+    "inventoryEntrypointRouteCountMax": 2,
+    "inventorySymbolNamesInclude": [
+      "billing_menu",
+      "billing_refund_approve",
+      "customer_profile_view",
+      "BillingRefundService",
+      "approveRefund",
+      "BillingRefundRepository"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 6,
+    "inventoryGraphEdgeConfidenceMin": 0.68,
+    "inventoryRouteHandlerEdgeCountMin": 2,
+    "inventoryRouteHandlerEdgeConfidenceMin": 0.78,
+    "inventorySourceChunkCountMin": 5,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_drupal_billing_refund_primary",
+      "file:sites/all/modules/billing/billing.module#L3",
+      "file:sites/all/modules/billing/billing.module#L5",
+      "file:sites/all/modules/billing/billing.module#L20",
+      "file:sites/all/modules/billing/billing.module#L21",
+      "file:sites/all/modules/billing/billing.module#L22",
+      "file:sites/all/modules/billing/src/BillingRefundService.php#L2",
+      "file:sites/all/modules/billing/src/BillingRefundService.php#L4",
+      "file:sites/all/modules/billing/src/BillingRefundService.php#L5",
+      "file:sites/all/modules/billing/src/BillingRefundRepository.php#L2",
+      "file:tests/BillingRefundDrupalTest.php"
+    ],
+    "sourceRefsExclude": [
+      "file:sites/all/modules/billing/billing.module#L9",
+      "file:sites/all/modules/billing/billing.module#L10",
+      "file:sites/all/modules/billing/billing.module#L13",
+      "file:sites/all/modules/billing/billing.module#L14",
+      "file:sites/all/modules/billing/billing.module#L25",
+      "file:tests/CustomerProfileDrupalTest.php"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:sites/all/modules/billing/billing.module#L3",
+          "file:sites/all/modules/billing/billing.module#L5",
+          "file:sites/all/modules/billing/billing.module#L20",
+          "file:sites/all/modules/billing/billing.module#L21",
+          "file:sites/all/modules/billing/billing.module#L22",
+          "file:sites/all/modules/billing/src/BillingRefundService.php#L2",
+          "file:sites/all/modules/billing/src/BillingRefundService.php#L4",
+          "file:sites/all/modules/billing/src/BillingRefundService.php#L5",
+          "file:sites/all/modules/billing/src/BillingRefundService.php#L6",
+          "file:sites/all/modules/billing/src/BillingRefundRepository.php#L2",
+          "file:sites/all/modules/billing/src/BillingRefundRepository.php#L4",
+          "file:tests/BillingRefundDrupalTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:sites/all/modules/billing/billing.module#L9",
+          "file:sites/all/modules/billing/billing.module#L10",
+          "file:sites/all/modules/billing/billing.module#L13",
+          "file:sites/all/modules/billing/billing.module#L14",
+          "file:sites/all/modules/billing/billing.module#L25",
+          "file:tests/CustomerProfileDrupalTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:sites/all/modules/billing/billing.module#L3",
+          "file:sites/all/modules/billing/billing.module#L5",
+          "file:sites/all/modules/billing/billing.module#L20",
+          "file:sites/all/modules/billing/billing.module#L21",
+          "file:sites/all/modules/billing/billing.module#L22",
+          "file:sites/all/modules/billing/src/BillingRefundService.php#L2",
+          "file:sites/all/modules/billing/src/BillingRefundService.php#L4",
+          "file:sites/all/modules/billing/src/BillingRefundService.php#L5",
+          "file:sites/all/modules/billing/src/BillingRefundService.php#L6",
+          "file:sites/all/modules/billing/src/BillingRefundRepository.php#L2",
+          "file:sites/all/modules/billing/src/BillingRefundRepository.php#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:sites/all/modules/billing/billing.module#L9",
+          "file:sites/all/modules/billing/billing.module#L10",
+          "file:sites/all/modules/billing/billing.module#L13",
+          "file:sites/all/modules/billing/billing.module#L14",
+          "file:sites/all/modules/billing/billing.module#L25",
+          "file:tests/CustomerProfileDrupalTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/BillingRefundDrupalTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:sites/all/modules/billing/billing.module#L9",
+          "file:sites/all/modules/billing/billing.module#L10",
+          "file:sites/all/modules/billing/billing.module#L25",
+          "file:tests/CustomerProfileDrupalTest.php"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 11,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_sites_all_modules_billing_billing",
+      "inventory_source_chunk_src_chunk_sites_all_modules_billing_src_billingrefund",
+      "inventory_source_chunk_src_chunk_tests_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13,
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.68,
+      "routeHandlerEdgeConfidenceMin": 0.78
+    }
+  },
+  "variants": [
+    {
+      "id": "drupal-billing-refund-primary",
+      "label": "Legacy Drupal hook_menu billing refund task stays focused on billing route and tests"
+    }
+  ]
+}

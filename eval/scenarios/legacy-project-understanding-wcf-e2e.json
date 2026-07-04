@@ -1,0 +1,219 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-wcf-e2e",
+  "title": "Legacy project understanding keeps WCF service contract and host context focused",
+  "description": "Runs the real scanner against a small static WCF fixture, then verifies ContextPack sees static .svc service hosts and selects the billing service contract without leaking an unrelated WCF service.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_wcf",
+    "title": "Update legacy billing WCF service",
+    "stage": "implementation",
+    "taskBrief": "Fix billing invoice reconciliation in the legacy WCF service contract and .svc service host, then update billing tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 14,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "Services/BillingStatementService.svc",
+        "content": "<%@ ServiceHost Language=\"C#\" Service=\"Acme.Legacy.Billing.BillingStatementService, Acme.Legacy\" %>\n"
+      },
+      {
+        "path": "src/Legacy/Billing/IBillingStatementContract.cs",
+        "content": "using System.ServiceModel;\n\nnamespace Acme.Legacy.Billing;\n\n[ServiceContract(Name = \"BillingStatementService\")]\npublic interface IBillingStatementContract\n{\n  [OperationContract(Name = \"ReconcileInvoice\")]\n  string ReconcileInvoice(string invoiceId);\n}\n"
+      },
+      {
+        "path": "src/Legacy/Billing/BillingStatementService.cs",
+        "content": "namespace Acme.Legacy.Billing;\n\npublic class BillingStatementService : IBillingStatementContract\n{\n  private readonly BillingStatementManager _manager = new BillingStatementManager();\n\n  public string ReconcileInvoice(string invoiceId)\n  {\n    return _manager.Reconcile(invoiceId);\n  }\n}\n"
+      },
+      {
+        "path": "src/Legacy/Billing/BillingStatementManager.cs",
+        "content": "namespace Acme.Legacy.Billing;\n\npublic class BillingStatementManager\n{\n  private readonly BillingStatementRepository _repository = new BillingStatementRepository();\n\n  public string Reconcile(string invoiceId)\n  {\n    return _repository.MarkReconciled(invoiceId);\n  }\n}\n"
+      },
+      {
+        "path": "src/Legacy/Billing/BillingStatementRepository.cs",
+        "content": "namespace Acme.Legacy.Billing;\n\npublic class BillingStatementRepository\n{\n  public string MarkReconciled(string invoiceId)\n  {\n    return invoiceId;\n  }\n}\n"
+      },
+      {
+        "path": "src/Legacy/Customers/ICustomerProfileContract.cs",
+        "content": "using System.ServiceModel;\n\nnamespace Acme.Legacy.Customers;\n\n[ServiceContract(Name = \"CustomerProfileService\")]\npublic interface ICustomerProfileContract\n{\n  [OperationContract(Name = \"LoadProfile\")]\n  string LoadProfile(string customerId);\n}\n"
+      },
+      {
+        "path": "src/Legacy/Customers/CustomerProfileService.cs",
+        "content": "namespace Acme.Legacy.Customers;\n\npublic class CustomerProfileService : ICustomerProfileContract\n{\n  public string LoadProfile(string customerId)\n  {\n    return customerId;\n  }\n}\n"
+      },
+      {
+        "path": "Services/CustomerProfileService.svc",
+        "content": "<%@ ServiceHost Language=\"C#\" Service=\"Acme.Legacy.Customers.CustomerProfileService\" %>\n"
+      },
+      {
+        "path": "tests/billing_statement_serviceTest.cs",
+        "content": "using Xunit;\n\npublic class BillingStatementServiceTests\n{\n  [Fact]\n  public void ReconcilesInvoiceThroughWcfService() {}\n}\n"
+      },
+      {
+        "path": ".env",
+        "content": "SECRET_TOKEN=do-not-capture\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing Statement Service API",
+      "Customer Profile Service API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /Services/BillingStatementService.svc",
+      "ANY /Services/CustomerProfileService.svc",
+      "ANY /wcf/billing_statement_service/reconcile_invoice",
+      "ANY /wcf/customer_profile_service/load_profile"
+    ],
+    "inventoryEntrypointRouteCountMin": 4,
+    "inventoryEntrypointRouteCountMax": 4,
+    "inventorySymbolNamesInclude": [
+      "BillingStatementService",
+      "ReconcileInvoice",
+      "BillingStatementManager",
+      "Reconcile",
+      "BillingStatementRepository",
+      "MarkReconciled",
+      "CustomerProfileService",
+      "LoadProfile"
+    ],
+    "inventorySymbolCountMin": 8,
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 8,
+    "inventoryRouteHandlerEdgeCountMin": 4,
+    "inventorySourceChunkCountMin": 4,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing_statement_service",
+      "inventory_symbols_billing_statement_service_api",
+      "inventory_tests_billing_statement_service_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customer_profile_service"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing_statement_service",
+      "inventory_symbols_billing_statement_service_api",
+      "inventory_tests_billing_statement_service_api",
+      "inventory_source_chunk_src_chunk_services_billingstatementservice_svc",
+      "inventory_source_chunk_src_chunk_src_legacy_billing"
+    ],
+    "irrelevantContextRatioMax": 0.1,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_billing_wcf_primary",
+      "file:Services/BillingStatementService.svc#L1",
+      "file:src/Legacy/Billing/IBillingStatementContract.cs#L5",
+      "file:src/Legacy/Billing/IBillingStatementContract.cs#L8",
+      "file:src/Legacy/Billing/IBillingStatementContract.cs#L9",
+      "file:src/Legacy/Billing/BillingStatementService.cs#L3",
+      "file:src/Legacy/Billing/BillingStatementService.cs#L5",
+      "file:src/Legacy/Billing/BillingStatementService.cs#L7",
+      "file:src/Legacy/Billing/BillingStatementService.cs#L9",
+      "file:src/Legacy/Billing/BillingStatementManager.cs#L3",
+      "file:src/Legacy/Billing/BillingStatementManager.cs#L5",
+      "file:src/Legacy/Billing/BillingStatementManager.cs#L7",
+      "file:src/Legacy/Billing/BillingStatementManager.cs#L9",
+      "file:src/Legacy/Billing/BillingStatementRepository.cs#L3",
+      "file:src/Legacy/Billing/BillingStatementRepository.cs#L5",
+      "file:tests/billing_statement_serviceTest.cs"
+    ],
+    "sourceRefsExclude": [
+      "file:Services/CustomerProfileService.svc#L1",
+      "file:src/Legacy/Customers/ICustomerProfileContract.cs#L5",
+      "file:src/Legacy/Customers/ICustomerProfileContract.cs#L8",
+      "file:src/Legacy/Customers/CustomerProfileService.cs#L3",
+      "file:src/Legacy/Customers/CustomerProfileService.cs#L5"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing_statement_service": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing_statement_service",
+        "mode": "summary",
+        "contentIncludes": [
+          "ANY /Services/BillingStatementService.svc"
+        ],
+        "contentExcludes": [
+          "ANY /Services/CustomerProfileService.svc"
+        ],
+        "sourceRefsInclude": [
+          "file:Services/BillingStatementService.svc#L1",
+          "file:src/Legacy/Billing/IBillingStatementContract.cs#L5",
+          "file:src/Legacy/Billing/IBillingStatementContract.cs#L8",
+          "file:src/Legacy/Billing/IBillingStatementContract.cs#L9",
+          "file:src/Legacy/Billing/BillingStatementService.cs#L3",
+          "file:src/Legacy/Billing/BillingStatementService.cs#L7",
+          "file:src/Legacy/Billing/BillingStatementService.cs#L9",
+          "file:src/Legacy/Billing/BillingStatementManager.cs#L3",
+          "file:src/Legacy/Billing/BillingStatementManager.cs#L7",
+          "file:src/Legacy/Billing/BillingStatementRepository.cs#L3",
+          "file:src/Legacy/Billing/BillingStatementRepository.cs#L5",
+          "file:tests/billing_statement_serviceTest.cs"
+        ],
+        "sourceRefsExclude": [
+          "file:Services/CustomerProfileService.svc#L1",
+          "file:src/Legacy/Customers/ICustomerProfileContract.cs#L5",
+          "file:src/Legacy/Customers/ICustomerProfileContract.cs#L8",
+          "file:src/Legacy/Customers/CustomerProfileService.cs#L3",
+          "file:src/Legacy/Customers/CustomerProfileService.cs#L5"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_statement_service_api",
+        "sourceRefsInclude": [
+          "file:src/Legacy/Billing/IBillingStatementContract.cs#L5",
+          "file:src/Legacy/Billing/IBillingStatementContract.cs#L8",
+          "file:src/Legacy/Billing/IBillingStatementContract.cs#L9",
+          "file:src/Legacy/Billing/BillingStatementService.cs#L3",
+          "file:src/Legacy/Billing/BillingStatementService.cs#L7",
+          "file:src/Legacy/Billing/BillingStatementService.cs#L9",
+          "file:src/Legacy/Billing/BillingStatementManager.cs#L3",
+          "file:src/Legacy/Billing/BillingStatementManager.cs#L7",
+          "file:src/Legacy/Billing/BillingStatementRepository.cs#L3",
+          "file:src/Legacy/Billing/BillingStatementRepository.cs#L5"
+        ],
+        "sourceRefsExclude": [
+          "file:src/Legacy/Customers/ICustomerProfileContract.cs#L5",
+          "file:src/Legacy/Customers/ICustomerProfileContract.cs#L8",
+          "file:src/Legacy/Customers/CustomerProfileService.cs#L3",
+          "file:src/Legacy/Customers/CustomerProfileService.cs#L5"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_statement_service_api",
+        "sourceRefsInclude": [
+          "file:tests/billing_statement_serviceTest.cs"
+        ],
+        "sourceRefsExclude": [
+          "file:src/Legacy/Customers/ICustomerProfileContract.cs#L5",
+          "file:src/Legacy/Customers/ICustomerProfileContract.cs#L8",
+          "file:src/Legacy/Customers/CustomerProfileService.cs#L3",
+          "file:src/Legacy/Customers/CustomerProfileService.cs#L5"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 10
+  },
+  "variants": [
+    {
+      "id": "billing-wcf-primary",
+      "label": "Scanner-generated billing WCF service is primary context"
+    }
+  ]
+}

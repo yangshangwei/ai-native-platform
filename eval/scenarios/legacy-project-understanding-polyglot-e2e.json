@@ -1,0 +1,768 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-polyglot-e2e",
+  "title": "Legacy project understanding keeps polyglot old-project context focused",
+  "description": "Runs the real scanner against a small Flask/Django/Rails/Laravel legacy fixture, then verifies ContextPack selects Billing API evidence without leaking unrelated same-project capabilities or sensitive files.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_polyglot",
+    "title": "Update legacy billing reconciliation",
+    "stage": "implementation",
+    "taskBrief": "Fix billing invoice reconciliation and update billing tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 24,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "legacy_billing/app.py",
+        "content": "from flask import Flask, Blueprint\nfrom legacy_billing.services import *\napp = Flask(__name__)\nbilling = Blueprint(\"billing\", __name__)\napp.register_blueprint(billing, url_prefix=\"/api/v1/billing\")\n\n@billing.post(\"/invoices/<invoice_id>/reconcile\")\ndef reconcile_invoice(invoice_id):\n    service = billing_service.BillingService()\n    return service.reconcile(invoice_id)\n\n@app.route(\"/api/v1/users/<user_id>\", methods=[\"GET\"])\ndef show_user(user_id):\n    return {\"user_id\": user_id}\n"
+      },
+      {
+        "path": "legacy_billing/services/__init__.py",
+        "content": "from . import billing_service\n__all__ = [\"billing_service\"]\n"
+      },
+      {
+        "path": "legacy_billing/services/billing_service.py",
+        "content": "from legacy_billing.repositories import *\n\nclass BillingService:\n    def reconcile(self, invoice_id):\n        repository = billing_repository.BillingRepository()\n        return repository.mark_reconciled(invoice_id)\n"
+      },
+      {
+        "path": "legacy_billing/repositories/__init__.py",
+        "content": "from . import billing_repository\n__all__ = [\"billing_repository\"]\n"
+      },
+      {
+        "path": "legacy_billing/repositories/billing_repository.py",
+        "content": "class BillingRepository:\n    def mark_reconciled(self, invoice_id):\n        return invoice_id\n"
+      },
+      {
+        "path": "legacy_django/urls.py",
+        "content": "from django.urls import include, path\n\nurlpatterns = [\n    path(\"api/v1/\", include((\"legacy_django_shipments.urls\", \"shipments\"), namespace=\"shipments\")),\n]\n"
+      },
+      {
+        "path": "legacy_django_shipments/urls.py",
+        "content": "from django.urls import path\nfrom .views import TrackShipmentView\n\nurlpatterns = [\n    path(\"shipments/<int:shipment_id>/track\", TrackShipmentView.as_view()),\n]\n"
+      },
+      {
+        "path": "legacy_django_shipments/views.py",
+        "content": "class TrackShipmentView:\n    def get(self, request, shipment_id):\n        return None\n"
+      },
+      {
+        "path": "config/routes.rb",
+        "content": "Rails.application.routes.draw do\n  scope \"/api/v1\" do\n    resources :reports, only: [:index]\n    get \"/reports/daily\", to: \"reports#daily\"\n  end\nend\n"
+      },
+      {
+        "path": "app/controllers/reports_controller.rb",
+        "content": "class ReportsController < ApplicationController\n  def daily\n    service = ReportService.new\n    render json: service.daily_summary\n  end\n\n  def index\n    render json: []\n  end\nend\n"
+      },
+      {
+        "path": "app/rails_services/report_service.rb",
+        "content": "class ReportService\n  def daily_summary\n    repository = ReportRepository.new\n    repository.load_daily\n  end\nend\n"
+      },
+      {
+        "path": "app/rails_repositories/report_repository.rb",
+        "content": "class ReportRepository\n  def load_daily\n    { status: \"ok\" }\n  end\nend\n"
+      },
+      {
+        "path": "routes/web.php",
+        "content": "<?php\nRoute::prefix('/api/v1')->group(function () {\n    Route::get('customers/{customer}', [CustomerController::class, 'show']);\n    Route::apiResource('customers', CustomerController::class)->only(['index']);\n});\n"
+      },
+      {
+        "path": "app/Http/Controllers/CustomerController.php",
+        "content": "<?php\nclass CustomerController extends Controller\n{\n  public function show($customer) {\n    $service = app(\\App\\Services\\CustomerService::class);\n    return response()->json($service->loadProfile($customer));\n  }\n\n  public function index() {\n    return response()->json([]);\n  }\n}\n"
+      },
+      {
+        "path": "app/Services/CustomerService.php",
+        "content": "<?php\nuse App\\Repositories\\{\n  CustomerRepository as CustomerRepo\n};\nclass CustomerService\n{\n  public function loadProfile($customer) {\n    $repository = \\App::make(CustomerRepo::class);\n    return $repository->findProfile($customer);\n  }\n}\n"
+      },
+      {
+        "path": "app/Repositories/CustomerRepository.php",
+        "content": "<?php\nclass CustomerRepository\n{\n  public function findProfile($customer) {\n    return $customer;\n  }\n}\n"
+      },
+      {
+        "path": "tests/test_billing_reconcile.py",
+        "content": "def test_reconcile_invoice_posts_to_billing_api():\n    assert True\n"
+      },
+      {
+        "path": "tests/test_users.py",
+        "content": "def test_show_user_returns_user_payload():\n    assert True\n"
+      },
+      {
+        "path": ".env",
+        "content": "SECRET_TOKEN=do-not-capture\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Users API",
+      "Shipments API",
+      "Reports API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 5,
+    "inventoryCapabilityCountMax": 5,
+    "inventoryEntrypointRoutesInclude": [
+      "POST /api/v1/billing/invoices/<invoice_id>/reconcile",
+      "GET /api/v1/users/<user_id>",
+      "ANY /api/v1/shipments/<int:shipment_id>/track",
+      "GET /api/v1/reports",
+      "GET /api/v1/reports/daily",
+      "GET /api/v1/customers",
+      "GET /api/v1/customers/{customer}"
+    ],
+    "inventoryEntrypointRouteCountMin": 7,
+    "inventoryEntrypointRouteCountMax": 7,
+    "inventorySymbolNamesInclude": [
+      "reconcile_invoice",
+      "BillingService",
+      "reconcile",
+      "BillingRepository",
+      "mark_reconciled",
+      "TrackShipmentView",
+      "ReportsController",
+      "daily",
+      "ReportService",
+      "daily_summary",
+      "ReportRepository",
+      "load_daily",
+      "CustomerController",
+      "show",
+      "CustomerService",
+      "loadProfile",
+      "CustomerRepository",
+      "findProfile"
+    ],
+    "inventorySymbolCountMin": 21,
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 17,
+    "inventoryRouteHandlerEdgeCountMin": 5,
+    "inventorySourceChunkCountMin": 13,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_users",
+      "inventory_capability_cap_api_shipments",
+      "inventory_capability_cap_api_reports",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_legacy_billing",
+      "inventory_source_chunk_src_chunk_tests_test_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13,
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 4,
+      "graphEdgeConfidenceMin": 0.68,
+      "routeHandlerEdgeConfidenceMin": 0.9,
+      "sourceFileExtensionCountMin": 3,
+      "sourcePathPatternCountMin": 5,
+      "sourceRecordKindCountMin": 8
+    },
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_billing_primary",
+      "file:legacy_billing/app.py#L4",
+      "file:legacy_billing/app.py#L5",
+      "file:legacy_billing/app.py#L7",
+      "file:legacy_billing/app.py#L8",
+      "file:legacy_billing/app.py#L9",
+      "file:legacy_billing/app.py#L10",
+      "file:legacy_billing/services/__init__.py#L1",
+      "file:legacy_billing/services/billing_service.py#L3",
+      "file:legacy_billing/services/billing_service.py#L4",
+      "file:legacy_billing/services/billing_service.py#L5",
+      "file:legacy_billing/repositories/__init__.py#L1",
+      "file:legacy_billing/repositories/billing_repository.py#L1",
+      "file:legacy_billing/repositories/billing_repository.py#L2",
+      "file:tests/test_billing_reconcile.py"
+    ],
+    "sourceRefsExclude": [
+      "file:legacy_billing/app.py#L12",
+      "file:legacy_django/urls.py#L4",
+      "file:legacy_django_shipments/urls.py#L5",
+      "file:legacy_django_shipments/views.py#L1",
+      "file:config/routes.rb#L2",
+      "file:config/routes.rb#L3",
+      "file:config/routes.rb#L4",
+      "file:app/controllers/reports_controller.rb#L2",
+      "file:app/controllers/reports_controller.rb#L7",
+      "file:app/rails_services/report_service.rb#L1",
+      "file:app/rails_repositories/report_repository.rb#L1",
+      "file:routes/web.php#L2",
+      "file:routes/web.php#L3",
+      "file:routes/web.php#L4",
+      "file:app/Http/Controllers/CustomerController.php#L4",
+      "file:app/Http/Controllers/CustomerController.php#L9",
+      "file:app/Services/CustomerService.php#L2",
+      "file:app/Repositories/CustomerRepository.php#L2",
+      "file:tests/test_users.py"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedCountMin": 4,
+    "selectedCountMax": 11
+  },
+  "variants": [
+    {
+      "id": "billing-primary",
+      "label": "Billing task stays focused on Flask billing evidence",
+      "expectations": {
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_billing",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:legacy_billing/app.py#L4",
+              "file:legacy_billing/app.py#L5",
+              "file:legacy_billing/app.py#L7",
+              "file:legacy_billing/app.py#L8",
+              "file:legacy_billing/app.py#L9",
+              "file:legacy_billing/app.py#L10",
+              "file:legacy_billing/services/__init__.py#L1",
+              "file:legacy_billing/services/billing_service.py#L3",
+              "file:legacy_billing/services/billing_service.py#L4",
+              "file:legacy_billing/services/billing_service.py#L5",
+              "file:legacy_billing/services/billing_service.py#L6",
+              "file:legacy_billing/repositories/__init__.py#L1",
+              "file:legacy_billing/repositories/billing_repository.py#L1",
+              "file:legacy_billing/repositories/billing_repository.py#L2",
+              "file:tests/test_billing_reconcile.py"
+            ],
+            "sourceRefsExclude": [
+              "file:legacy_billing/app.py#L12",
+              "file:legacy_django/urls.py#L4",
+              "file:legacy_django_shipments/urls.py#L5",
+              "file:legacy_django_shipments/views.py#L1",
+              "file:config/routes.rb#L2",
+              "file:config/routes.rb#L3",
+              "file:config/routes.rb#L4",
+              "file:app/controllers/reports_controller.rb#L2",
+              "file:app/controllers/reports_controller.rb#L7",
+              "file:routes/web.php#L2",
+              "file:routes/web.php#L3",
+              "file:routes/web.php#L4",
+              "file:app/Http/Controllers/CustomerController.php#L4",
+              "file:app/Http/Controllers/CustomerController.php#L9",
+              "file:tests/test_users.py"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_billing_api",
+            "sourceRefsInclude": [
+              "file:legacy_billing/app.py#L4",
+              "file:legacy_billing/app.py#L5",
+              "file:legacy_billing/app.py#L7",
+              "file:legacy_billing/app.py#L8",
+              "file:legacy_billing/app.py#L9",
+              "file:legacy_billing/app.py#L10",
+              "file:legacy_billing/services/__init__.py#L1",
+              "file:legacy_billing/services/billing_service.py#L3",
+              "file:legacy_billing/services/billing_service.py#L4",
+              "file:legacy_billing/services/billing_service.py#L5",
+              "file:legacy_billing/services/billing_service.py#L6",
+              "file:legacy_billing/repositories/__init__.py#L1",
+              "file:legacy_billing/repositories/billing_repository.py#L1",
+              "file:legacy_billing/repositories/billing_repository.py#L2"
+            ],
+            "sourceRefsExclude": [
+              "file:legacy_billing/app.py#L12",
+              "file:legacy_django/urls.py#L4",
+              "file:legacy_django_shipments/urls.py#L5",
+              "file:legacy_django_shipments/views.py#L1",
+              "file:config/routes.rb#L2",
+              "file:config/routes.rb#L3",
+              "file:config/routes.rb#L4",
+              "file:app/controllers/reports_controller.rb#L2",
+              "file:app/controllers/reports_controller.rb#L7",
+              "file:routes/web.php#L2",
+              "file:routes/web.php#L3",
+              "file:routes/web.php#L4",
+              "file:app/Http/Controllers/CustomerController.php#L4",
+              "file:app/Http/Controllers/CustomerController.php#L9",
+              "file:tests/test_users.py"
+            ]
+          },
+          {
+            "ref": "inventory_tests_billing_api",
+            "sourceRefsInclude": [
+              "file:tests/test_billing_reconcile.py"
+            ],
+            "sourceRefsExclude": [
+              "file:legacy_billing/app.py#L12",
+              "file:legacy_django_shipments/urls.py#L5",
+              "file:config/routes.rb#L4",
+              "file:routes/web.php#L3",
+              "file:tests/test_users.py"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "rails-reports-primary",
+      "label": "Rails report route selects controller action evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix daily reports endpoint behavior."
+      },
+      "expectations": {
+        "inventoryCapabilityLabelsInclude": [
+          "Billing API",
+          "Users API",
+          "Shipments API",
+          "Reports API",
+          "Customers API"
+        ],
+        "inventoryEntrypointRoutesInclude": [
+          "POST /api/v1/billing/invoices/<invoice_id>/reconcile",
+          "GET /api/v1/users/<user_id>",
+          "ANY /api/v1/shipments/<int:shipment_id>/track",
+          "GET /api/v1/reports",
+          "GET /api/v1/reports/daily",
+          "GET /api/v1/customers",
+          "GET /api/v1/customers/{customer}"
+        ],
+        "inventorySymbolNamesInclude": [
+          "ReportsController",
+          "daily",
+          "ReportService",
+          "daily_summary",
+          "ReportRepository",
+          "load_daily"
+        ],
+        "inventoryGraphEdgeKindsInclude": [
+          "route_handler",
+          "symbol_reference"
+        ],
+        "inventoryExclusionsInclude": [
+          ".env:sensitive"
+        ],
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_reports",
+          "inventory_symbols_reports_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_billing",
+          "inventory_capability_cap_api_users",
+          "inventory_capability_cap_api_shipments",
+          "inventory_capability_cap_api_customers"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_reports",
+          "inventory_symbols_reports_api",
+          "inventory_hotspots_reports_api",
+          "inventory_source_chunk_src_chunk_app_controllers_reports_controller_rb",
+          "inventory_source_chunk_src_chunk_app_rails_repositories_report_repository_rb",
+          "inventory_source_chunk_src_chunk_app_rails_services_report_service_rb",
+          "inventory_source_chunk_src_chunk_config_routes_rb"
+        ],
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_rails_reports_primary",
+          "file:config/routes.rb#L2",
+          "file:config/routes.rb#L4",
+          "file:app/controllers/reports_controller.rb#L2",
+          "file:app/controllers/reports_controller.rb#L3",
+          "file:app/controllers/reports_controller.rb#L4",
+          "file:app/rails_services/report_service.rb#L1",
+          "file:app/rails_services/report_service.rb#L2",
+          "file:app/rails_services/report_service.rb#L3",
+          "file:app/rails_services/report_service.rb#L4",
+          "file:app/rails_repositories/report_repository.rb#L1",
+          "file:app/rails_repositories/report_repository.rb#L2"
+        ],
+        "sourceRefsExclude": [
+          "file:legacy_billing/app.py#L4",
+      "file:legacy_billing/app.py#L5",
+          "file:legacy_billing/app.py#L7",
+          "file:legacy_billing/app.py#L8",
+          "file:legacy_billing/app.py#L9",
+          "file:legacy_billing/app.py#L10",
+          "file:legacy_billing/app.py#L12",
+          "file:legacy_billing/services/billing_service.py#L3",
+          "file:legacy_billing/repositories/billing_repository.py#L1",
+          "file:legacy_django/urls.py#L4",
+          "file:legacy_django_shipments/urls.py#L5",
+          "file:legacy_django_shipments/views.py#L1",
+          "file:config/routes.rb#L3",
+          "file:app/controllers/reports_controller.rb#L7",
+          "file:routes/web.php#L2",
+          "file:routes/web.php#L3",
+          "file:routes/web.php#L4",
+          "file:app/Http/Controllers/CustomerController.php#L4",
+          "file:app/Http/Controllers/CustomerController.php#L9",
+          "file:app/Services/CustomerService.php#L2",
+          "file:app/Repositories/CustomerRepository.php#L2",
+          "file:tests/test_billing_reconcile.py",
+          "file:tests/test_users.py"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_reports": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_reports",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:config/routes.rb#L2",
+              "file:config/routes.rb#L4",
+              "file:app/controllers/reports_controller.rb#L1",
+              "file:app/controllers/reports_controller.rb#L2",
+              "file:app/controllers/reports_controller.rb#L3",
+              "file:app/controllers/reports_controller.rb#L4",
+              "file:app/rails_services/report_service.rb#L1",
+              "file:app/rails_services/report_service.rb#L2",
+              "file:app/rails_services/report_service.rb#L3",
+              "file:app/rails_services/report_service.rb#L4",
+              "file:app/rails_repositories/report_repository.rb#L1",
+              "file:app/rails_repositories/report_repository.rb#L2"
+            ],
+            "sourceRefsExclude": [
+              "file:legacy_billing/app.py#L7",
+              "file:legacy_django_shipments/urls.py#L5",
+              "file:legacy_django_shipments/views.py#L1",
+              "file:config/routes.rb#L3",
+              "file:app/controllers/reports_controller.rb#L7",
+              "file:routes/web.php#L3",
+              "file:app/Http/Controllers/CustomerController.php#L4",
+              "file:tests/test_billing_reconcile.py",
+              "file:tests/test_users.py"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_reports_api",
+            "sourceRefsInclude": [
+              "file:config/routes.rb#L2",
+              "file:config/routes.rb#L4",
+              "file:app/controllers/reports_controller.rb#L1",
+              "file:app/controllers/reports_controller.rb#L2",
+              "file:app/controllers/reports_controller.rb#L3",
+              "file:app/controllers/reports_controller.rb#L4",
+              "file:app/rails_services/report_service.rb#L1",
+              "file:app/rails_services/report_service.rb#L2",
+              "file:app/rails_services/report_service.rb#L3",
+              "file:app/rails_services/report_service.rb#L4",
+              "file:app/rails_repositories/report_repository.rb#L1",
+              "file:app/rails_repositories/report_repository.rb#L2"
+            ],
+            "sourceRefsExclude": [
+              "file:legacy_billing/app.py#L7",
+              "file:legacy_django_shipments/urls.py#L5",
+              "file:legacy_django_shipments/views.py#L1",
+              "file:config/routes.rb#L3",
+              "file:app/controllers/reports_controller.rb#L7",
+              "file:routes/web.php#L3",
+              "file:app/Http/Controllers/CustomerController.php#L4",
+              "file:tests/test_billing_reconcile.py",
+              "file:tests/test_users.py"
+            ]
+          }
+        ],
+        "selectedCountMin": 4
+      }
+    },
+    {
+      "id": "django-shipments-primary",
+      "label": "Django shipment route selects cross-file view evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix shipment tracking endpoint behavior."
+      },
+      "expectations": {
+        "inventoryCapabilityLabelsInclude": [
+          "Billing API",
+          "Users API",
+          "Shipments API",
+          "Reports API",
+          "Customers API"
+        ],
+        "inventoryEntrypointRoutesInclude": [
+          "POST /api/v1/billing/invoices/<invoice_id>/reconcile",
+          "GET /api/v1/users/<user_id>",
+          "ANY /api/v1/shipments/<int:shipment_id>/track",
+          "GET /api/v1/reports",
+          "GET /api/v1/reports/daily",
+          "GET /api/v1/customers",
+          "GET /api/v1/customers/{customer}"
+        ],
+        "inventorySymbolNamesInclude": [
+          "TrackShipmentView"
+        ],
+        "inventoryGraphEdgeKindsInclude": [
+          "route_handler"
+        ],
+        "inventoryExclusionsInclude": [
+          ".env:sensitive"
+        ],
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_shipments",
+          "inventory_symbols_shipments_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_billing",
+          "inventory_capability_cap_api_users",
+          "inventory_capability_cap_api_reports",
+          "inventory_capability_cap_api_customers"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_shipments",
+          "inventory_symbols_shipments_api",
+          "inventory_source_chunk_src_chunk_legacy_django",
+          "inventory_source_chunk_src_chunk_legacy_django_shipments"
+        ],
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_django_shipments_primary",
+          "file:legacy_django/urls.py#L4",
+          "file:legacy_django_shipments/urls.py#L5",
+          "file:legacy_django_shipments/views.py#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:legacy_billing/app.py#L4",
+      "file:legacy_billing/app.py#L5",
+          "file:legacy_billing/app.py#L7",
+          "file:legacy_billing/app.py#L8",
+          "file:legacy_billing/app.py#L9",
+          "file:legacy_billing/app.py#L10",
+          "file:legacy_billing/app.py#L12",
+          "file:legacy_billing/services/billing_service.py#L3",
+          "file:legacy_billing/repositories/billing_repository.py#L1",
+          "file:config/routes.rb#L2",
+          "file:config/routes.rb#L3",
+          "file:config/routes.rb#L4",
+          "file:app/controllers/reports_controller.rb#L2",
+          "file:app/controllers/reports_controller.rb#L7",
+          "file:app/rails_services/report_service.rb#L1",
+          "file:app/rails_repositories/report_repository.rb#L1",
+          "file:routes/web.php#L2",
+          "file:routes/web.php#L3",
+          "file:routes/web.php#L4",
+          "file:app/Http/Controllers/CustomerController.php#L4",
+          "file:app/Http/Controllers/CustomerController.php#L9",
+          "file:app/Services/CustomerService.php#L2",
+          "file:app/Repositories/CustomerRepository.php#L2",
+          "file:tests/test_billing_reconcile.py",
+          "file:tests/test_users.py"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_shipments": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_shipments",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:legacy_django/urls.py#L4",
+              "file:legacy_django_shipments/urls.py#L5",
+              "file:legacy_django_shipments/views.py#L1",
+              "file:legacy_django_shipments/views.py#L2"
+            ],
+            "sourceRefsExclude": [
+              "file:legacy_billing/app.py#L7",
+              "file:config/routes.rb#L4",
+              "file:routes/web.php#L3",
+              "file:tests/test_billing_reconcile.py",
+              "file:tests/test_users.py"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_shipments_api",
+            "sourceRefsInclude": [
+              "file:legacy_django/urls.py#L4",
+              "file:legacy_django_shipments/urls.py#L5",
+              "file:legacy_django_shipments/views.py#L1",
+              "file:legacy_django_shipments/views.py#L2"
+            ],
+            "sourceRefsExclude": [
+              "file:legacy_billing/app.py#L7",
+              "file:config/routes.rb#L4",
+              "file:routes/web.php#L3",
+              "file:tests/test_billing_reconcile.py",
+              "file:tests/test_users.py"
+            ]
+          }
+        ],
+        "selectedCountMin": 4
+      }
+    },
+    {
+      "id": "laravel-customers-primary",
+      "label": "Laravel customer route selects controller action evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix customer profile endpoint behavior."
+      },
+      "expectations": {
+        "inventoryCapabilityLabelsInclude": [
+          "Billing API",
+          "Users API",
+          "Shipments API",
+          "Reports API",
+          "Customers API"
+        ],
+        "inventoryEntrypointRoutesInclude": [
+          "POST /api/v1/billing/invoices/<invoice_id>/reconcile",
+          "GET /api/v1/users/<user_id>",
+          "ANY /api/v1/shipments/<int:shipment_id>/track",
+          "GET /api/v1/reports",
+          "GET /api/v1/reports/daily",
+          "GET /api/v1/customers",
+          "GET /api/v1/customers/{customer}"
+        ],
+        "inventorySymbolNamesInclude": [
+          "CustomerController",
+          "show",
+          "CustomerService",
+          "loadProfile",
+          "CustomerRepository",
+          "findProfile"
+        ],
+        "inventoryGraphEdgeKindsInclude": [
+          "route_handler",
+          "symbol_reference"
+        ],
+        "inventoryExclusionsInclude": [
+          ".env:sensitive"
+        ],
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_customers",
+          "inventory_symbols_customers_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_billing",
+          "inventory_capability_cap_api_users",
+          "inventory_capability_cap_api_shipments",
+          "inventory_capability_cap_api_reports"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_customers",
+          "inventory_symbols_customers_api",
+          "inventory_hotspots_customers_api",
+          "inventory_source_chunk_src_chunk_app_http_controllers_customercontroller_php",
+          "inventory_source_chunk_src_chunk_app_repositories_customerrepository_php",
+          "inventory_source_chunk_src_chunk_app_services_customerservice_php",
+          "inventory_source_chunk_src_chunk_routes_web_php"
+        ],
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_laravel_customers_primary",
+          "file:routes/web.php#L2",
+          "file:routes/web.php#L3",
+          "file:app/Http/Controllers/CustomerController.php#L4",
+          "file:app/Http/Controllers/CustomerController.php#L5",
+          "file:app/Services/CustomerService.php#L2",
+          "file:app/Services/CustomerService.php#L5",
+          "file:app/Repositories/CustomerRepository.php#L2"
+        ],
+        "sourceRefsExclude": [
+          "file:legacy_billing/app.py#L4",
+      "file:legacy_billing/app.py#L5",
+          "file:legacy_billing/app.py#L7",
+          "file:legacy_billing/app.py#L8",
+          "file:legacy_billing/app.py#L9",
+          "file:legacy_billing/app.py#L10",
+          "file:legacy_billing/app.py#L12",
+          "file:legacy_billing/services/billing_service.py#L3",
+          "file:legacy_billing/repositories/billing_repository.py#L1",
+          "file:legacy_django/urls.py#L4",
+          "file:legacy_django_shipments/urls.py#L5",
+          "file:legacy_django_shipments/views.py#L1",
+          "file:config/routes.rb#L2",
+          "file:config/routes.rb#L3",
+          "file:config/routes.rb#L4",
+          "file:app/controllers/reports_controller.rb#L2",
+          "file:app/controllers/reports_controller.rb#L7",
+          "file:app/rails_services/report_service.rb#L1",
+          "file:app/rails_repositories/report_repository.rb#L1",
+          "file:routes/web.php#L4",
+          "file:app/Http/Controllers/CustomerController.php#L9",
+          "file:tests/test_billing_reconcile.py",
+          "file:tests/test_users.py"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_customers": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_customers",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:routes/web.php#L2",
+              "file:routes/web.php#L3",
+              "file:app/Http/Controllers/CustomerController.php#L2",
+              "file:app/Http/Controllers/CustomerController.php#L4",
+              "file:app/Http/Controllers/CustomerController.php#L5",
+              "file:app/Http/Controllers/CustomerController.php#L6",
+              "file:app/Services/CustomerService.php#L2",
+              "file:app/Services/CustomerService.php#L5",
+              "file:app/Services/CustomerService.php#L7",
+              "file:app/Services/CustomerService.php#L8",
+              "file:app/Repositories/CustomerRepository.php#L2",
+              "file:app/Repositories/CustomerRepository.php#L4"
+            ],
+            "sourceRefsExclude": [
+              "file:legacy_billing/app.py#L7",
+              "file:legacy_django_shipments/urls.py#L5",
+              "file:config/routes.rb#L4",
+              "file:routes/web.php#L4",
+              "file:app/Http/Controllers/CustomerController.php#L9",
+              "file:tests/test_billing_reconcile.py",
+              "file:tests/test_users.py"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_customers_api",
+            "sourceRefsInclude": [
+              "file:routes/web.php#L2",
+              "file:routes/web.php#L3",
+              "file:app/Http/Controllers/CustomerController.php#L2",
+              "file:app/Http/Controllers/CustomerController.php#L4",
+              "file:app/Http/Controllers/CustomerController.php#L5",
+              "file:app/Http/Controllers/CustomerController.php#L6",
+              "file:app/Services/CustomerService.php#L2",
+              "file:app/Services/CustomerService.php#L5",
+              "file:app/Services/CustomerService.php#L7",
+              "file:app/Services/CustomerService.php#L8",
+              "file:app/Repositories/CustomerRepository.php#L2",
+              "file:app/Repositories/CustomerRepository.php#L4"
+            ],
+            "sourceRefsExclude": [
+              "file:legacy_billing/app.py#L7",
+              "file:legacy_django_shipments/urls.py#L5",
+              "file:config/routes.rb#L4",
+              "file:routes/web.php#L4",
+              "file:app/Http/Controllers/CustomerController.php#L9",
+              "file:tests/test_billing_reconcile.py",
+              "file:tests/test_users.py"
+            ]
+          }
+        ],
+        "selectedCountMin": 4,
+        "selectedCountMax": 11
+      }
+    }
+  ]
+}

@@ -1,0 +1,275 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-symfony-directory-corpus-e2e",
+  "title": "Legacy project understanding scans a directory-backed old Symfony commerce corpus",
+  "description": "Runs the real scanner against a checked-in Symfony-style old commerce fixture with billing, orders, and customers domains; YAML route config; PHP controller/service/repository layers; SQL schema/routine evidence; tests; and generated/vendor noise filtered by fixtureDir.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_symfony_directory_corpus",
+    "title": "Update legacy Symfony billing settlement reconciliation",
+    "stage": "implementation",
+    "taskBrief": "Fix billing settlement reconciliation in the legacy Symfony YAML route and reconcile_billing_settlements SQL routine, then update billing settlement tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 28,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072
+    },
+    "fixtureDir": {
+      "path": "../fixtures/legacy-directory-backed-symfony-commerce",
+      "maxFiles": 20,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072,
+      "excludePaths": [
+        "tmp",
+        "vendor",
+        "var/cache"
+      ]
+    }
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Orders API",
+      "Customers API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /billing/settlements/reconcile",
+      "ANY /orders/backlog/reprice",
+      "ANY /customers/risk-review"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventorySymbolNamesInclude": [
+      "SettlementController",
+      "reconcileAction",
+      "BillingSettlementService",
+      "reconcileSettlementBatch",
+      "BillingLedgerRepository",
+      "applyReconciliation",
+      "BacklogController",
+      "OrderBacklogService",
+      "RiskController",
+      "CustomerRiskService"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 9,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventorySourceChunkCountMin": 14,
+    "inventoryExclusionsInclude": [
+      "config/credentials.yml:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_domain_entities_billing_api",
+      "inventory_source_chunk_src_chunk_db_billing_routines_sql_1_14",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_orders",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_domain_entities_billing_api",
+      "inventory_source_chunk_src_chunk_app_config_routing_yml",
+      "inventory_source_chunk_src_chunk_src_acme_billingbundle",
+      "inventory_source_chunk_src_chunk_db_billing",
+      "inventory_source_chunk_src_chunk_tests_billing"
+    ],
+    "irrelevantContextRatioMax": 0.16,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_symfony_commerce_billing_reconciliation",
+      "file:app/config/routing.yml#L2",
+      "file:app/config/routing.yml#L3",
+      "file:src/Acme/BillingBundle/Controller/SettlementController.php#L2",
+      "file:src/Acme/BillingBundle/Controller/SettlementController.php#L4",
+      "file:src/Acme/BillingBundle/Controller/SettlementController.php#L5",
+      "file:src/Acme/BillingBundle/Service/BillingSettlementService.php#L2",
+      "file:src/Acme/BillingBundle/Service/BillingSettlementService.php#L4",
+      "file:src/Acme/BillingBundle/Repository/BillingLedgerRepository.php#L2",
+      "file:src/Acme/BillingBundle/Repository/BillingLedgerRepository.php#L5",
+      "file:db/billing/schema.sql#L1",
+      "file:db/billing/routines.sql#L1",
+      "file:tests/Billing/SettlementReconciliationTest.php"
+    ],
+    "sourceRefsExclude": [
+      "file:app/config/routing.yml#L5",
+      "file:app/config/routing.yml#L6",
+      "file:app/config/routing.yml#L8",
+      "file:app/config/routing.yml#L9",
+      "file:src/Acme/OrderBundle/Controller/BacklogController.php#L2",
+      "file:src/Acme/OrderBundle/Service/OrderBacklogService.php#L2",
+      "file:src/Acme/OrderBundle/Repository/OrderBacklogRepository.php#L2",
+      "file:src/Acme/CustomerBundle/Controller/RiskController.php#L2",
+      "file:src/Acme/CustomerBundle/Service/CustomerRiskService.php#L2",
+      "file:src/Acme/CustomerBundle/Repository/CustomerRiskRepository.php#L2",
+      "file:db/orders/schema.sql#L1",
+      "file:db/customers/schema.sql#L1",
+      "file:tests/Orders/BacklogRepriceTest.php",
+      "file:tests/Customers/RiskReviewTest.php",
+      "file:vendor/GeneratedErpClient.php",
+      "file:tmp/generated-settlement-cache.php",
+      "file:var/cache/container.php"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary",
+      "inventory_domain_entities_billing_api": "summary",
+      "inventory_source_chunk_src_chunk_db_billing_routines_sql_1_14": "summary"
+    },
+    "selectedCountMin": 5,
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:app/config/routing.yml#L2",
+          "file:app/config/routing.yml#L3",
+          "file:src/Acme/BillingBundle/Controller/SettlementController.php#L2",
+          "file:src/Acme/BillingBundle/Controller/SettlementController.php#L4",
+          "file:src/Acme/BillingBundle/Controller/SettlementController.php#L5",
+          "file:src/Acme/BillingBundle/Controller/SettlementController.php#L6",
+          "file:src/Acme/BillingBundle/Service/BillingSettlementService.php#L2",
+          "file:src/Acme/BillingBundle/Service/BillingSettlementService.php#L4",
+          "file:src/Acme/BillingBundle/Service/BillingSettlementService.php#L5",
+          "file:src/Acme/BillingBundle/Repository/BillingLedgerRepository.php#L2",
+          "file:src/Acme/BillingBundle/Repository/BillingLedgerRepository.php#L4",
+          "file:tests/Billing/SettlementReconciliationTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:app/config/routing.yml#L5",
+          "file:app/config/routing.yml#L6",
+          "file:app/config/routing.yml#L8",
+          "file:app/config/routing.yml#L9",
+          "file:src/Acme/OrderBundle/Controller/BacklogController.php#L2",
+          "file:src/Acme/OrderBundle/Service/OrderBacklogService.php#L2",
+          "file:src/Acme/OrderBundle/Repository/OrderBacklogRepository.php#L2",
+          "file:src/Acme/CustomerBundle/Controller/RiskController.php#L2",
+          "file:src/Acme/CustomerBundle/Service/CustomerRiskService.php#L2",
+          "file:src/Acme/CustomerBundle/Repository/CustomerRiskRepository.php#L2",
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1",
+          "file:tests/Orders/BacklogRepriceTest.php",
+          "file:tests/Orders/BacklogRepriceTest.php#L2",
+          "file:tests/Customers/RiskReviewTest.php",
+          "file:tests/Customers/RiskReviewTest.php#L2",
+          "file:vendor/GeneratedErpClient.php",
+          "file:tmp/generated-settlement-cache.php",
+          "file:var/cache/container.php"
+        ]
+      },
+      {
+        "ref": "inventory_domain_entities_billing_api",
+        "contentIncludes": [
+          "Matched Domain Entities",
+          "routine | reconcile_billing_settlements | db/billing/routines.sql",
+          "table | settlement_batch_items | db/billing/schema.sql",
+          "refs=file:src/Acme/BillingBundle/Repository/BillingLedgerRepository.php#L5"
+        ],
+        "contentExcludes": [
+          "order_backlog_items",
+          "customer_risk_scores"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/schema.sql#L1",
+          "file:src/Acme/BillingBundle/Repository/BillingLedgerRepository.php#L5"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_db_billing_routines_sql_1_14",
+        "contentIncludes": [
+          "Pointed by inventory evidence: domain_routine_db_billing_routines_sql_reconcile_billing_settlements_1",
+          "L1: CREATE PROCEDURE recon"
+        ],
+        "contentExcludes": [
+          "order_backlog_items",
+          "customer_risk_scores"
+        ],
+        "reasonIncludes": [
+          "hybrid inventory evidence points to this chunk"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/schema.sql#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:app/config/routing.yml#L2",
+          "file:app/config/routing.yml#L3",
+          "file:src/Acme/BillingBundle/Controller/SettlementController.php#L2",
+          "file:src/Acme/BillingBundle/Controller/SettlementController.php#L4",
+          "file:src/Acme/BillingBundle/Controller/SettlementController.php#L5",
+          "file:src/Acme/BillingBundle/Service/BillingSettlementService.php#L2",
+          "file:src/Acme/BillingBundle/Service/BillingSettlementService.php#L4",
+          "file:src/Acme/BillingBundle/Service/BillingSettlementService.php#L5",
+          "file:src/Acme/BillingBundle/Repository/BillingLedgerRepository.php#L2",
+          "file:src/Acme/BillingBundle/Repository/BillingLedgerRepository.php#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:app/config/routing.yml#L5",
+          "file:app/config/routing.yml#L6",
+          "file:app/config/routing.yml#L8",
+          "file:app/config/routing.yml#L9",
+          "file:src/Acme/OrderBundle/Controller/BacklogController.php#L2",
+          "file:src/Acme/CustomerBundle/Controller/RiskController.php#L2",
+          "file:tests/Orders/BacklogRepriceTest.php",
+          "file:tests/Customers/RiskReviewTest.php",
+          "file:vendor/GeneratedErpClient.php",
+          "file:tmp/generated-settlement-cache.php",
+          "file:var/cache/container.php"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/Billing/SettlementReconciliationTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:tests/Orders/BacklogRepriceTest.php",
+          "file:tests/Customers/RiskReviewTest.php"
+        ]
+      }
+    ],
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.65,
+      "routeHandlerEdgeConfidenceMin": 0.78,
+      "sourceChunkContentSha256CoverageMin": 1,
+      "sourceChunkIndexCoverageMin": 1,
+      "sourceChunkLinkedRecordCoverageMin": 1,
+      "sourceFileExtensionCountMin": 3,
+      "sourcePathPatternCountMin": 5,
+      "sourceRecordKindCountMin": 7
+    }
+  },
+  "variants": [
+    {
+      "id": "symfony-commerce-billing-reconciliation",
+      "label": "Legacy Symfony commerce task stays focused on billing settlement route, SQL routine, and tests"
+    }
+  ]
+}

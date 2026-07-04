@@ -1,0 +1,207 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-rails-singular-resource-e2e",
+  "title": "Legacy project understanding keeps Rails singular resource context focused",
+  "description": "Runs the real scanner against a small legacy Rails fixture, then verifies ContextPack selects the billing singular resource route and tests without leaking customer or dynamic resource routes.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_rails_singular_resource",
+    "title": "Update legacy Rails billing account resource",
+    "stage": "implementation",
+    "taskBrief": "Fix billing account update behavior in the legacy Rails singular resource route and update billing account resource tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 18,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "config/routes.rb",
+        "content": "Rails.application.routes.draw do\n  scope \"/billing\" do\n    resource :account, only: [:show, :update]\n  end\n  scope \"/customers\" do\n    resource :profile, only: [:show]\n  end\n  resource dynamic_resource, only: [:show]\nend\n"
+      },
+      {
+        "path": "app/controllers/accounts_controller.rb",
+        "content": "class AccountsController < ApplicationController\n  def show\n    render json: {}\n  end\n\n  def update\n    service = BillingAccountService.new\n    service.update_account(params[:account])\n  end\nend\n"
+      },
+      {
+        "path": "app/controllers/profiles_controller.rb",
+        "content": "class ProfilesController < ApplicationController\n  def show\n    render json: {}\n  end\nend\n"
+      },
+      {
+        "path": "app/services/billing_account_service.rb",
+        "content": "class BillingAccountService\n  def update_account(account_params)\n    repository = BillingAccountRepository.new\n    repository.update_account(account_params)\n  end\nend\n"
+      },
+      {
+        "path": "app/repositories/billing_account_repository.rb",
+        "content": "class BillingAccountRepository\n  def update_account(account_params)\n    account_params\n  end\nend\n"
+      },
+      {
+        "path": "test/billing_account_resource_test.rb",
+        "content": "def test_billing_account_resource_updates_account\nend\n"
+      },
+      {
+        "path": "test/customer_profile_resource_test.rb",
+        "content": "def test_customer_profile_resource_shows_profile\nend\n"
+      },
+      {
+        "path": ".env",
+        "content": "DB_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "GET /billing/account",
+      "PATCH /billing/account",
+      "PUT /billing/account",
+      "GET /customers/profile"
+    ],
+    "inventoryEntrypointRouteCountMin": 4,
+    "inventoryEntrypointRouteCountMax": 4,
+    "inventorySymbolNamesInclude": [
+      "AccountsController",
+      "update",
+      "BillingAccountService",
+      "BillingAccountRepository",
+      "ProfilesController",
+      "show"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 7,
+    "inventoryGraphEdgeConfidenceMin": 0.68,
+    "inventoryRouteHandlerEdgeCountMin": 4,
+    "inventoryRouteHandlerEdgeConfidenceMin": 0.78,
+    "inventorySourceChunkCountMin": 7,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_rails_singular_resource_billing_update",
+      "file:config/routes.rb#L2",
+      "file:config/routes.rb#L3",
+      "file:app/controllers/accounts_controller.rb#L1",
+      "file:app/controllers/accounts_controller.rb#L6",
+      "file:app/controllers/accounts_controller.rb#L7",
+      "file:app/controllers/accounts_controller.rb#L8",
+      "file:app/services/billing_account_service.rb#L1",
+      "file:app/services/billing_account_service.rb#L2",
+      "file:app/repositories/billing_account_repository.rb#L1",
+      "file:test/billing_account_resource_test.rb"
+    ],
+    "sourceRefsExclude": [
+      "file:config/routes.rb#L5",
+      "file:config/routes.rb#L6",
+      "file:config/routes.rb#L8",
+      "file:app/controllers/profiles_controller.rb#L1",
+      "file:app/controllers/profiles_controller.rb#L2",
+      "file:test/customer_profile_resource_test.rb"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:config/routes.rb#L2",
+          "file:config/routes.rb#L3",
+          "file:app/controllers/accounts_controller.rb#L1",
+          "file:app/controllers/accounts_controller.rb#L6",
+          "file:app/controllers/accounts_controller.rb#L7",
+          "file:app/controllers/accounts_controller.rb#L8",
+          "file:app/services/billing_account_service.rb#L1",
+          "file:app/repositories/billing_account_repository.rb#L1",
+          "file:test/billing_account_resource_test.rb"
+        ],
+        "sourceRefsExclude": [
+          "file:config/routes.rb#L5",
+          "file:config/routes.rb#L6",
+          "file:config/routes.rb#L8",
+          "file:app/controllers/profiles_controller.rb#L1",
+          "file:app/controllers/profiles_controller.rb#L2",
+          "file:test/customer_profile_resource_test.rb"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:config/routes.rb#L2",
+          "file:config/routes.rb#L3",
+          "file:app/controllers/accounts_controller.rb#L1",
+          "file:app/controllers/accounts_controller.rb#L6",
+          "file:app/controllers/accounts_controller.rb#L7",
+          "file:app/controllers/accounts_controller.rb#L8",
+          "file:app/services/billing_account_service.rb#L1",
+          "file:app/services/billing_account_service.rb#L2",
+          "file:app/repositories/billing_account_repository.rb#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:config/routes.rb#L5",
+          "file:config/routes.rb#L6",
+          "file:config/routes.rb#L8",
+          "file:app/controllers/profiles_controller.rb#L1",
+          "file:app/controllers/profiles_controller.rb#L2",
+          "file:test/customer_profile_resource_test.rb"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:test/billing_account_resource_test.rb"
+        ],
+        "sourceRefsExclude": [
+          "file:config/routes.rb#L5",
+          "file:app/controllers/profiles_controller.rb#L1",
+          "file:test/customer_profile_resource_test.rb"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 11,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_config_routes",
+      "inventory_source_chunk_src_chunk_app_controllers_accounts",
+      "inventory_source_chunk_src_chunk_app_services_billing_account",
+      "inventory_source_chunk_src_chunk_app_repositories_billing_account",
+      "inventory_source_chunk_src_chunk_test_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13,
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.68,
+      "routeHandlerEdgeConfidenceMin": 0.78
+    }
+  },
+  "variants": [
+    {
+      "id": "rails-singular-resource-billing-update",
+      "label": "Legacy Rails singular resource billing account task stays focused on billing route and tests"
+    }
+  ]
+}

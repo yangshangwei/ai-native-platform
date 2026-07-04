@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "context-pack-calibration-signal-bad-expectation",
+  "title": "ContextPack red fixture rejects missing calibration signal evidence",
+  "description": "Intentionally expects a stale correction-drift signal to cite evidence it does not cite; the fixture must fail on calibrationSignalsInclude.",
+  "kind": "context_pack_fixture",
+  "input": {
+    "projectId": "proj_eval_context_signal_red",
+    "title": "Review stale capability correction signal",
+    "stage": "implementation",
+    "taskBrief": "Review capability map drift after a fresh project scan.",
+    "inputArtifacts": [
+      {
+        "name": "project-inventory.json",
+        "artifactId": "art_current_inventory_without_orders",
+        "content": "{\"schemaVersion\":\"ainp.project_inventory.v1\",\"capabilities\":[{\"id\":\"cap_api_payments\",\"label\":\"Payments API\",\"kind\":\"api\",\"entrypointRefs\":[],\"moduleRefs\":[],\"symbolRefs\":[],\"testRefs\":[],\"hotspotRefs\":[],\"sourceRefs\":[\"file:apps/api/src/payments-route.ts#L8\"],\"confidence\":0.9,\"openQuestions\":[]}]}"
+      }
+    ],
+    "knowledgeArtifacts": [
+      {
+        "id": "kart_cap_orders_rename_drift_red",
+        "kind": "explore",
+        "entityId": "CAP-ORDERS",
+        "status": "accepted",
+        "metadata": {
+          "title": "Capability correction: Fulfillment API",
+          "text": "# Capability Correction: Fulfillment API",
+          "correctionKind": "project_capability_map",
+          "correctionAction": "renamed",
+          "capabilityId": "cap_api_orders",
+          "originalLabel": "Orders API",
+          "correctedLabel": "Fulfillment API",
+          "inventoryArtifactId": "art_previous_inventory",
+          "reviewStatus": "none",
+          "sourceRefs": [
+            "artifact:art_previous_inventory",
+            "capability:cap_api_orders",
+            "file:apps/api/src/orders-route.ts#L12"
+          ]
+        }
+      }
+    ]
+  },
+  "expectations": {
+    "calibrationSignalsInclude": [
+      {
+        "kind": "stale",
+        "severity": "review_required",
+        "recommendedAction": "mark_stale_or_supersede",
+        "subjectRefsInclude": [
+          "knowledge_artifact:kart_cap_orders_rename_drift_red",
+          "capability:cap_api_orders"
+        ],
+        "evidenceRefsInclude": [
+          "artifact:this-evidence-ref-is-intentionally-absent"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-classic-asp-e2e",
+  "title": "Legacy project understanding keeps Classic ASP page context focused",
+  "description": "Runs the real scanner against a small Classic ASP fixture, then verifies ContextPack selects the billing page and tests without leaking an unrelated customer page.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_classic_asp",
+    "title": "Update legacy Classic ASP billing statement page",
+    "stage": "implementation",
+    "taskBrief": "Fix billing statement behavior in the legacy Classic ASP VBScript page on IIS and update billing statement tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 12,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "web/Billing/Statement.asp",
+        "content": "<%@ Language=\"VBScript\" %>\n<%\nSet service = Server.CreateObject(\"Billing.StatementService\")\nstatement = service.LoadStatement(Request.QueryString(\"statementId\"))\n%>\n<html><body><%= statement %></body></html>\n"
+      },
+      {
+        "path": "web/Customers/Profile.asp",
+        "content": "<%@ Language=\"VBScript\" %>\n<html><body>profile</body></html>\n"
+      },
+      {
+        "path": "tests/BillingStatementClassicAsp.test.js",
+        "content": "test('renders billing statement classic asp page', () => {});\n"
+      },
+      {
+        "path": "tests/CustomerProfileClassicAsp.test.js",
+        "content": "test('renders customer profile classic asp page', () => {});\n"
+      },
+      {
+        "path": ".env",
+        "content": "DB_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /Billing/Statement.asp",
+      "ANY /Customers/Profile.asp"
+    ],
+    "inventoryEntrypointRouteCountMin": 2,
+    "inventoryEntrypointRouteCountMax": 2,
+    "inventorySourceChunkCountMin": 4,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_web_billing",
+      "inventory_source_chunk_src_chunk_tests_billingstatementclassicasp"
+    ],
+    "irrelevantContextRatioMax": 0.15,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_classic_asp_billing_statement_primary",
+      "file:web/Billing/Statement.asp#L1",
+      "file:tests/BillingStatementClassicAsp.test.js"
+    ],
+    "sourceRefsExclude": [
+      "file:web/Customers/Profile.asp#L1",
+      "file:tests/CustomerProfileClassicAsp.test.js"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_source_chunk_src_chunk_web_billing_statement_asp_1_7",
+        "sourceRefsInclude": [
+          "file:web/Billing/Statement.asp#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:web/Customers/Profile.asp#L1",
+          "file:tests/CustomerProfileClassicAsp.test.js"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_tests_billingstatementclassicasp_test_js_1_2",
+        "sourceRefsInclude": [
+          "file:tests/BillingStatementClassicAsp.test.js"
+        ],
+        "sourceRefsExclude": [
+          "file:web/Customers/Profile.asp#L1",
+          "file:tests/CustomerProfileClassicAsp.test.js"
+        ]
+      },
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:web/Billing/Statement.asp#L1",
+          "file:tests/BillingStatementClassicAsp.test.js"
+        ],
+        "sourceRefsExclude": [
+          "file:web/Customers/Profile.asp#L1",
+          "file:tests/CustomerProfileClassicAsp.test.js"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/BillingStatementClassicAsp.test.js"
+        ],
+        "sourceRefsExclude": [
+          "file:web/Customers/Profile.asp#L1",
+          "file:tests/CustomerProfileClassicAsp.test.js"
+        ]
+      }
+    ],
+    "selectedCountMin": 3,
+    "selectedCountMax": 10
+  },
+  "variants": [
+    {
+      "id": "classic-asp-billing-statement-primary",
+      "label": "Legacy Classic ASP billing statement task stays focused on billing page and tests"
+    }
+  ]
+}

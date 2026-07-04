@@ -55,6 +55,7 @@ export type ContextSourceType =
   | 'workflow_metadata'
   | 'project_profile'
   | 'knowledge_artifact'
+  | 'code_probe'
   | 'run_artifact'
   | 'current_input';
 

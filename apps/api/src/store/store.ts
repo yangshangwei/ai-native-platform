@@ -305,6 +305,7 @@ interface WorkflowRequestRow {
   claimed_by: string | null;
   workflow_run_id: string | null;
   error: string | null;
+  agent_backend: string | null;
   created_at: string;
   updated_at: string;
   flow_id: string | null;
@@ -323,6 +324,7 @@ function rowToWorkflowRequest(r: WorkflowRequestRow): WorkflowRequest {
     claimedBy: r.claimed_by,
     workflowRunId: r.workflow_run_id,
     error: r.error,
+    agentBackend: isProjectAgentBackendKind(r.agent_backend) ? r.agent_backend : null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     flowId: r.flow_id as WorkflowRequest['flowId'],
@@ -344,6 +346,7 @@ const workflowRequestsTable = defineTable<WorkflowRequestRow, WorkflowRequest>({
     claimed_by: req.claimedBy,
     workflow_run_id: req.workflowRunId,
     error: req.error,
+    agent_backend: req.agentBackend,
     created_at: req.createdAt,
     updated_at: req.updatedAt,
     flow_id: req.flowId,
@@ -734,6 +737,608 @@ const artifacts = {
       kind,
     ),
 };
+
+// ---- source_chunk_index_entries -------------------------------------------
+
+export const SOURCE_CHUNK_INDEX_MAX_EMBEDDING_DIMENSIONS = 4096;
+
+interface SourceChunkIndexCatalogEntryRow {
+  id: string;
+  project_id: string;
+  workflow_run_id: string;
+  source_chunk_index_artifact_id: string;
+  source_inventory_artifact_id: string | null;
+  source_chunk_ref: string;
+  content_sha256: string;
+  path: string;
+  language: string | null;
+  start_line: number;
+  end_line: number;
+  lexical_tokens_json: string;
+  search_text: string;
+  linked_record_refs_json: string;
+  source_refs_json: string;
+  entrypoint_refs_json: string;
+  symbol_refs_json: string;
+  domain_entity_refs_json: string;
+  graph_edge_refs_json: string;
+  test_refs_json: string;
+  hotspot_refs_json: string;
+  capability_refs_json: string;
+  embedding_model: string | null;
+  embedding_dimensions: number | null;
+  embedding_vector_json: string | null;
+  created_at: string;
+}
+
+export interface SourceChunkIndexCatalogEntry {
+  id: string;
+  projectId: string;
+  workflowRunId: string;
+  sourceChunkIndexArtifactId: string;
+  sourceInventoryArtifactId: string | null;
+  sourceChunkRef: string;
+  contentSha256: string;
+  path: string;
+  language: string | null;
+  startLine: number;
+  endLine: number;
+  lexicalTokens: string[];
+  searchText: string;
+  linkedRecordRefs: string[];
+  sourceRefs: string[];
+  entrypointRefs: string[];
+  symbolRefs: string[];
+  domainEntityRefs: string[];
+  graphEdgeRefs: string[];
+  testRefs: string[];
+  hotspotRefs: string[];
+  capabilityRefs: string[];
+  embeddingModel?: string | null;
+  embeddingDimensions?: number | null;
+  embeddingVector?: number[] | null;
+  createdAt: string;
+}
+
+export interface SourceChunkIndexCatalogQuery {
+  projectId: string;
+  sourceChunkIndexArtifactId?: string | null;
+  sourceInventoryArtifactId?: string | null;
+  contentSha256?: string | null;
+  path?: string | null;
+  linkedRecordRef?: string | null;
+  search?: string | null;
+  queryEmbedding?: number[] | null;
+  queryEmbeddingModel?: string | null;
+  limit?: number;
+}
+
+function rowJsonStringArray(value: string): string[] {
+  return parseStringArrayJson(value) ?? [];
+}
+
+function parseNumberArrayJson(value: string | null): number[] | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return sourceChunkIndexEmbeddingVectorForStorage(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function rowToSourceChunkIndexCatalogEntry(
+  r: SourceChunkIndexCatalogEntryRow,
+): SourceChunkIndexCatalogEntry {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    workflowRunId: r.workflow_run_id,
+    sourceChunkIndexArtifactId: r.source_chunk_index_artifact_id,
+    sourceInventoryArtifactId: r.source_inventory_artifact_id,
+    sourceChunkRef: r.source_chunk_ref,
+    contentSha256: r.content_sha256,
+    path: r.path,
+    language: r.language,
+    startLine: r.start_line,
+    endLine: r.end_line,
+    lexicalTokens: rowJsonStringArray(r.lexical_tokens_json),
+    searchText: r.search_text,
+    linkedRecordRefs: rowJsonStringArray(r.linked_record_refs_json),
+    sourceRefs: rowJsonStringArray(r.source_refs_json),
+    entrypointRefs: rowJsonStringArray(r.entrypoint_refs_json),
+    symbolRefs: rowJsonStringArray(r.symbol_refs_json),
+    domainEntityRefs: rowJsonStringArray(r.domain_entity_refs_json),
+    graphEdgeRefs: rowJsonStringArray(r.graph_edge_refs_json),
+    testRefs: rowJsonStringArray(r.test_refs_json),
+    hotspotRefs: rowJsonStringArray(r.hotspot_refs_json),
+    capabilityRefs: rowJsonStringArray(r.capability_refs_json),
+    embeddingModel: r.embedding_model,
+    embeddingDimensions: r.embedding_dimensions,
+    embeddingVector: parseNumberArrayJson(r.embedding_vector_json),
+    createdAt: r.created_at,
+  };
+}
+
+const sourceChunkIndexEntriesTable = defineTable<
+  SourceChunkIndexCatalogEntryRow,
+  SourceChunkIndexCatalogEntry
+>({
+  table: 'source_chunk_index_entries',
+  fromRow: rowToSourceChunkIndexCatalogEntry,
+  toRow: (entry) => {
+    const embeddingVector = sourceChunkIndexEmbeddingVectorForStorage(entry.embeddingVector);
+    return {
+      id: entry.id,
+      project_id: entry.projectId,
+      workflow_run_id: entry.workflowRunId,
+      source_chunk_index_artifact_id: entry.sourceChunkIndexArtifactId,
+      source_inventory_artifact_id: entry.sourceInventoryArtifactId,
+      source_chunk_ref: entry.sourceChunkRef,
+      content_sha256: entry.contentSha256,
+      path: entry.path,
+      language: entry.language,
+      start_line: entry.startLine,
+      end_line: entry.endLine,
+      lexical_tokens_json: JSON.stringify(entry.lexicalTokens),
+      search_text: entry.searchText,
+      linked_record_refs_json: JSON.stringify(entry.linkedRecordRefs),
+      source_refs_json: JSON.stringify(entry.sourceRefs),
+      entrypoint_refs_json: JSON.stringify(entry.entrypointRefs),
+      symbol_refs_json: JSON.stringify(entry.symbolRefs),
+      domain_entity_refs_json: JSON.stringify(entry.domainEntityRefs),
+      graph_edge_refs_json: JSON.stringify(entry.graphEdgeRefs),
+      test_refs_json: JSON.stringify(entry.testRefs),
+      hotspot_refs_json: JSON.stringify(entry.hotspotRefs),
+      capability_refs_json: JSON.stringify(entry.capabilityRefs),
+      embedding_model: sourceChunkIndexEmbeddingModelForStorage(entry.embeddingModel),
+      embedding_dimensions: sourceChunkIndexEmbeddingDimensionsForStorage(
+        entry.embeddingDimensions,
+        embeddingVector,
+      ),
+      embedding_vector_json: embeddingVector ? JSON.stringify(embeddingVector) : null,
+      created_at: entry.createdAt,
+    };
+  },
+});
+
+const sourceChunkIndexEntries = {
+  replaceForArtifact(
+    sourceChunkIndexArtifactId: string,
+    entries: readonly SourceChunkIndexCatalogEntry[],
+  ): void {
+    db.transaction(() => {
+      db.prepare(
+        'DELETE FROM source_chunk_index_entries WHERE source_chunk_index_artifact_id = ?',
+      ).run(sourceChunkIndexArtifactId);
+      for (const entry of entries) sourceChunkIndexEntriesTable.insert(entry);
+    })();
+  },
+  byArtifact: (sourceChunkIndexArtifactId: string): SourceChunkIndexCatalogEntry[] =>
+    sourceChunkIndexEntriesTable.all(
+      `SELECT * FROM source_chunk_index_entries
+        WHERE source_chunk_index_artifact_id = ?
+        ORDER BY path ASC, start_line ASC, end_line ASC, id ASC`,
+      sourceChunkIndexArtifactId,
+    ),
+  byProject: (projectId: string, limit = 200): SourceChunkIndexCatalogEntry[] =>
+    sourceChunkIndexEntriesTable.all(
+      `SELECT * FROM source_chunk_index_entries
+        WHERE project_id = ?
+        ORDER BY created_at DESC, path ASC, start_line ASC, id ASC
+        LIMIT ?`,
+      projectId,
+      limit,
+    ),
+  byProjectContentSha256: (
+    projectId: string,
+    contentSha256: string,
+  ): SourceChunkIndexCatalogEntry[] =>
+    sourceChunkIndexEntriesTable.all(
+      `SELECT * FROM source_chunk_index_entries
+        WHERE project_id = ? AND content_sha256 = ?
+        ORDER BY created_at DESC, path ASC, start_line ASC, id ASC`,
+      projectId,
+      contentSha256,
+    ),
+  queryProject: (query: SourceChunkIndexCatalogQuery): SourceChunkIndexCatalogEntry[] => {
+    const where = ['project_id = ?'];
+    const params: unknown[] = [query.projectId];
+    if (query.sourceChunkIndexArtifactId) {
+      where.push('source_chunk_index_artifact_id = ?');
+      params.push(query.sourceChunkIndexArtifactId);
+    }
+    if (query.sourceInventoryArtifactId) {
+      where.push('source_inventory_artifact_id = ?');
+      params.push(query.sourceInventoryArtifactId);
+    }
+    if (query.contentSha256) {
+      where.push('content_sha256 = ?');
+      params.push(query.contentSha256);
+    }
+    if (query.path) {
+      where.push('path = ?');
+      params.push(query.path);
+    }
+    if (query.linkedRecordRef) {
+      where.push('linked_record_refs_json LIKE ? ESCAPE \'\\\'');
+      params.push(sqliteLikePattern(`"${query.linkedRecordRef}"`));
+    }
+    const searchTokens = sourceChunkIndexSearchTokens(query.search ?? '');
+    const hasQueryEmbedding = Array.isArray(query.queryEmbedding);
+    const queryEmbedding = sourceChunkIndexEmbeddingVectorForStorage(query.queryEmbedding);
+    if (hasQueryEmbedding && !queryEmbedding) return [];
+    const queryEmbeddingModel = sourceChunkIndexEmbeddingModelForStorage(query.queryEmbeddingModel);
+    if (queryEmbedding && queryEmbeddingModel) {
+      return sourceChunkIndexEntriesQueryProjectWithEmbedding({
+        where,
+        params,
+        searchTokens,
+        queryEmbedding,
+        queryEmbeddingModel,
+        limit: query.limit,
+      });
+    }
+    if (queryEmbedding && searchTokens.length === 0) return [];
+    const bm25Terms: string[] = [];
+    const bm25Params: unknown[] = [];
+    const searchPredicates: string[] = [];
+    for (const token of searchTokens) {
+      const whereMatch = sourceChunkIndexTokenMatchSql(token);
+      searchPredicates.push(`(${whereMatch.sql})`);
+      params.push(...whereMatch.params);
+
+      const bm25Term = sourceChunkIndexBm25TermSql(token);
+      bm25Terms.push(bm25Term.sql);
+      bm25Params.push(...bm25Term.params);
+    }
+    if (searchPredicates.length > 0) {
+      where.push(`(${searchPredicates.join(' OR ')})`);
+    }
+    const limit = Math.min(Math.max(Math.trunc(query.limit ?? 50), 1), 500);
+    if (bm25Terms.length === 0) {
+      params.push(limit);
+      return sourceChunkIndexEntriesTable.all(
+        `SELECT * FROM source_chunk_index_entries
+          WHERE ${where.join(' AND ')}
+          ORDER BY created_at DESC, path ASC, start_line ASC, end_line ASC, id ASC
+          LIMIT ?`,
+        ...params,
+      );
+    }
+    params.push(...bm25Params);
+    params.push(limit);
+    return sourceChunkIndexEntriesTable.all(
+      `WITH candidates AS (
+          SELECT *, ${sourceChunkIndexDocumentLengthSql()} AS _doc_len
+          FROM source_chunk_index_entries
+          WHERE ${where.join(' AND ')}
+        ),
+        stats AS (
+          SELECT CASE
+            WHEN AVG(_doc_len) IS NULL OR AVG(_doc_len) <= 0 THEN 1.0
+            ELSE AVG(_doc_len)
+          END AS _avg_doc_len
+          FROM candidates
+        )
+        SELECT candidates.*
+        FROM candidates CROSS JOIN stats
+        ORDER BY (${bm25Terms.join(' + ')}) DESC, created_at DESC, path ASC, start_line ASC, end_line ASC, id ASC
+        LIMIT ?`,
+      ...params,
+    );
+  },
+};
+
+function sourceChunkIndexEntriesQueryProjectWithEmbedding(input: {
+  where: readonly string[];
+  params: readonly unknown[];
+  searchTokens: readonly string[];
+  queryEmbedding: readonly number[];
+  queryEmbeddingModel: string;
+  limit?: number;
+}): SourceChunkIndexCatalogEntry[] {
+  const where = [...input.where];
+  const params = [...input.params];
+  const embeddingModel = input.queryEmbeddingModel;
+  const embeddingPredicate = '(embedding_vector_json IS NOT NULL AND embedding_dimensions = ? AND embedding_model = ?)';
+  const embeddingPredicateParams: unknown[] = [input.queryEmbedding.length, embeddingModel];
+  if (input.searchTokens.length > 0) {
+    const search = sourceChunkIndexSearchPredicateSql(input.searchTokens);
+    where.push(`((${search.sql}) OR ${embeddingPredicate})`);
+    params.push(...search.params, ...embeddingPredicateParams);
+  } else {
+    where.push(embeddingPredicate);
+    params.push(...embeddingPredicateParams);
+  }
+
+  const limit = Math.min(Math.max(Math.trunc(input.limit ?? 50), 1), 500);
+  const candidateLimit = Math.min(Math.max(limit * 20, 200), 5000);
+  params.push(candidateLimit);
+  const candidates = sourceChunkIndexEntriesTable.all(
+    `SELECT * FROM source_chunk_index_entries
+      WHERE ${where.join(' AND ')}
+      ORDER BY created_at DESC, path ASC, start_line ASC, end_line ASC, id ASC
+      LIMIT ?`,
+    ...params,
+  );
+  const avgDocumentLength = sourceChunkIndexAverageDocumentLength(candidates);
+  return candidates
+    .map((row) => sourceChunkIndexScoreEmbeddingCandidate(
+      row,
+      input.queryEmbedding,
+      embeddingModel,
+      input.searchTokens,
+      avgDocumentLength,
+    ))
+    .filter((scored): scored is SourceChunkIndexScoredCatalogEntry => scored !== null)
+    .sort(compareSourceChunkIndexScoredCatalogEntries)
+    .slice(0, limit)
+    .map((scored) => scored.entry);
+}
+
+interface SourceChunkIndexScoredCatalogEntry {
+  entry: SourceChunkIndexCatalogEntry;
+  combinedScore: number;
+  lexicalScore: number;
+  vectorScore: number;
+}
+
+function sourceChunkIndexScoreEmbeddingCandidate(
+  entry: SourceChunkIndexCatalogEntry,
+  queryEmbedding: readonly number[],
+  queryEmbeddingModel: string,
+  searchTokens: readonly string[],
+  avgDocumentLength: number,
+): SourceChunkIndexScoredCatalogEntry | null {
+  const lexicalScore = sourceChunkIndexBm25Score(entry, searchTokens, avgDocumentLength);
+  const vectorScore = sourceChunkIndexEmbeddingModelMatches(queryEmbeddingModel, entry.embeddingModel)
+    ? sourceChunkIndexCosineSimilarity(queryEmbedding, entry.embeddingVector ?? null) ?? 0
+    : 0;
+  const combinedScore = lexicalScore + vectorScore;
+  if (combinedScore <= 0) return null;
+  return { entry, combinedScore, lexicalScore, vectorScore };
+}
+
+function sourceChunkIndexEmbeddingModelMatches(
+  queryEmbeddingModel: string,
+  rowEmbeddingModel: unknown,
+): boolean {
+  return sourceChunkIndexEmbeddingModelForStorage(rowEmbeddingModel) === queryEmbeddingModel;
+}
+
+function compareSourceChunkIndexScoredCatalogEntries(
+  a: SourceChunkIndexScoredCatalogEntry,
+  b: SourceChunkIndexScoredCatalogEntry,
+): number {
+  return (b.combinedScore - a.combinedScore)
+    || (b.lexicalScore - a.lexicalScore)
+    || (b.vectorScore - a.vectorScore)
+    || compareSourceChunkIndexCatalogEntriesStable(a.entry, b.entry);
+}
+
+function compareSourceChunkIndexCatalogEntriesStable(
+  a: SourceChunkIndexCatalogEntry,
+  b: SourceChunkIndexCatalogEntry,
+): number {
+  return b.createdAt.localeCompare(a.createdAt)
+    || a.path.localeCompare(b.path)
+    || (a.startLine - b.startLine)
+    || (a.endLine - b.endLine)
+    || a.id.localeCompare(b.id);
+}
+
+function sourceChunkIndexSearchTokens(value: string): string[] {
+  return [...new Set(
+    value
+      .toLowerCase()
+      .split(/[^a-z0-9]+/g)
+      .map((token) => token.trim())
+      .filter((token) => token.length >= 2)
+      .slice(0, 8),
+  )];
+}
+
+function sourceChunkIndexSearchPredicateSql(tokens: readonly string[]): { sql: string; params: unknown[] } {
+  const predicates: string[] = [];
+  const params: unknown[] = [];
+  for (const token of tokens) {
+    const match = sourceChunkIndexTokenMatchSql(token);
+    predicates.push(`(${match.sql})`);
+    params.push(...match.params);
+  }
+  return {
+    sql: predicates.length > 0 ? predicates.join(' OR ') : '0',
+    params,
+  };
+}
+
+function sourceChunkIndexTokenMatchSql(token: string): { sql: string; params: unknown[] } {
+  const escapedToken = sqliteLikeEscaped(token);
+  return {
+    sql: [
+      'lexical_tokens_json LIKE ? ESCAPE \'\\\'',
+      'OR search_text = ?',
+      'OR search_text LIKE ? ESCAPE \'\\\'',
+      'OR search_text LIKE ? ESCAPE \'\\\'',
+      'OR search_text LIKE ? ESCAPE \'\\\'',
+    ].join(' '),
+    params: [
+      sqliteLikePattern(`"${token}"`),
+      token,
+      `${escapedToken} %`,
+      `% ${escapedToken}`,
+      `% ${escapedToken} %`,
+    ],
+  };
+}
+
+function sourceChunkIndexAverageDocumentLength(
+  entries: readonly SourceChunkIndexCatalogEntry[],
+): number {
+  if (entries.length === 0) return 1;
+  const total = entries.reduce((sum, entry) => (
+    sum + sourceChunkIndexDocumentLength(entry.searchText)
+  ), 0);
+  return total > 0 ? total / entries.length : 1;
+}
+
+function sourceChunkIndexDocumentLength(value: string): number {
+  const trimmed = value.trim();
+  if (!trimmed) return 1;
+  return trimmed.split(/\s+/g).filter(Boolean).length || 1;
+}
+
+function sourceChunkIndexDocumentLengthSql(): string {
+  return [
+    'CASE',
+    "WHEN trim(search_text) = '' THEN 1.0",
+    "ELSE CAST(length(trim(search_text)) - length(replace(trim(search_text), ' ', '')) + 1 AS REAL)",
+    'END',
+  ].join(' ');
+}
+
+function sourceChunkIndexBm25Score(
+  entry: SourceChunkIndexCatalogEntry,
+  tokens: readonly string[],
+  avgDocumentLength: number,
+): number {
+  if (tokens.length === 0) return 0;
+  const documentLength = sourceChunkIndexDocumentLength(entry.searchText);
+  return tokens.reduce((sum, token) => (
+    sum + sourceChunkIndexBm25TermScore({
+      token,
+      entry,
+      documentLength,
+      avgDocumentLength,
+    })
+  ), 0);
+}
+
+function sourceChunkIndexBm25TermScore(input: {
+  token: string;
+  entry: SourceChunkIndexCatalogEntry;
+  documentLength: number;
+  avgDocumentLength: number;
+}): number {
+  const frequency = sourceChunkIndexTokenFrequency(input.entry, input.token);
+  if (frequency <= 0) return 0;
+  const k1 = 1.2;
+  const b = 0.75;
+  return (frequency * (k1 + 1))
+    / (frequency + (k1 * ((1 - b) + (b * (input.documentLength / input.avgDocumentLength)))));
+}
+
+function sourceChunkIndexTokenFrequency(
+  entry: SourceChunkIndexCatalogEntry,
+  token: string,
+): number {
+  const lexicalBoost = entry.lexicalTokens.includes(token) ? 1.5 : 0;
+  const searchFrequency = entry.searchText
+    .trim()
+    .split(/\s+/g)
+    .filter((candidate) => candidate === token)
+    .length;
+  return lexicalBoost + searchFrequency;
+}
+
+function sourceChunkIndexTokenFrequencySql(token: string): { sql: string; params: unknown[] } {
+  const searchNeedle = ` ${token} `;
+  return {
+    sql: [
+      '(CASE WHEN lexical_tokens_json LIKE ? ESCAPE \'\\\' THEN 1.5 ELSE 0.0 END)',
+      '+',
+      "(1.0 * (length(' ' || search_text || ' ') - length(replace(' ' || search_text || ' ', ?, ''))) / length(?))",
+    ].join(' '),
+    params: [
+      sqliteLikePattern(`"${token}"`),
+      searchNeedle,
+      searchNeedle,
+    ],
+  };
+}
+
+function sourceChunkIndexCosineSimilarity(
+  queryEmbedding: readonly number[],
+  rowEmbedding: readonly number[] | null,
+): number | null {
+  if (!rowEmbedding || rowEmbedding.length !== queryEmbedding.length) return null;
+  let dot = 0;
+  let queryNorm = 0;
+  let rowNorm = 0;
+  for (let i = 0; i < queryEmbedding.length; i += 1) {
+    const queryValue = queryEmbedding[i]!;
+    const rowValue = rowEmbedding[i]!;
+    dot += queryValue * rowValue;
+    queryNorm += queryValue * queryValue;
+    rowNorm += rowValue * rowValue;
+  }
+  if (queryNorm <= 0 || rowNorm <= 0) return null;
+  return dot / (Math.sqrt(queryNorm) * Math.sqrt(rowNorm));
+}
+
+function sourceChunkIndexEmbeddingModelForStorage(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 120) return null;
+  return trimmed;
+}
+
+function sourceChunkIndexEmbeddingDimensionsForStorage(
+  value: unknown,
+  vector: readonly number[] | null,
+): number | null {
+  if (vector) return vector.length;
+  if (typeof value !== 'number' || !Number.isInteger(value)) return null;
+  if (value < 1 || value > SOURCE_CHUNK_INDEX_MAX_EMBEDDING_DIMENSIONS) return null;
+  return value;
+}
+
+function sourceChunkIndexEmbeddingVectorForStorage(value: unknown): number[] | null {
+  if (!Array.isArray(value)) return null;
+  if (value.length < 1 || value.length > SOURCE_CHUNK_INDEX_MAX_EMBEDDING_DIMENSIONS) {
+    return null;
+  }
+  const vector: number[] = [];
+  let norm = 0;
+  for (const item of value) {
+    if (typeof item !== 'number' || !Number.isFinite(item)) return null;
+    vector.push(item);
+    norm += item * item;
+  }
+  return norm > 0 ? vector : null;
+}
+
+function sourceChunkIndexBm25TermSql(token: string): { sql: string; params: unknown[] } {
+  const frequency = sourceChunkIndexTokenFrequencySql(token);
+  const k1 = 1.2;
+  const b = 0.75;
+  const denominator = [
+    `(${frequency.sql})`,
+    '+',
+    `(${k1} * (${1 - b} + (${b} * (_doc_len / _avg_doc_len))))`,
+  ].join(' ');
+  return {
+    sql: [
+      `CASE WHEN (${frequency.sql}) > 0 THEN`,
+      `((${frequency.sql}) * ${k1 + 1}) / (${denominator})`,
+      'ELSE 0.0 END',
+    ].join(' '),
+    params: [
+      ...frequency.params,
+      ...frequency.params,
+      ...frequency.params,
+    ],
+  };
+}
+
+function sqliteLikePattern(value: string): string {
+  return `%${sqliteLikeEscaped(value)}%`;
+}
+
+function sqliteLikeEscaped(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
 
 // ---- knowledge_artifacts ---------------------------------------------------
 // V2 P0-1: project-scoped, long-lived, editable, versioned. Sibling to
@@ -2478,6 +3083,7 @@ export const store = {
   commandRuns,
   gateRuns,
   artifacts,
+  sourceChunkIndexEntries,
   knowledgeArtifacts,
   requirementEntities,
   designEntities,

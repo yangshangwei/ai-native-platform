@@ -4,12 +4,15 @@ import {
   errorMessage,
   newId,
   type AgentTaskKind,
+  type Artifact,
+  type ContextRequest,
   type ContextPack,
   type ContextPackArtifactEnvelope,
   type ContextPackArtifactRole,
   type SkillSpec,
+  type WorkflowRun,
 } from '@ainp/shared';
-import { api } from '../api-client';
+import { api, type SourceChunkIndexCatalogEntry } from '../api-client';
 import type { AgentBackend } from '../agents/types';
 import { generateProjectProfile } from '../profile';
 import { acceptedKnowledgeMarkdownForContext, collectAcceptedKnowledge } from '../knowledge';
@@ -18,6 +21,7 @@ import {
   buildIncrementalContextPack,
   contextSelectionAudit,
   sanitizeContextRequestForContextInjection,
+  type BuildContextPackInputArtifact,
 } from '../context/builder';
 import {
   CONTEXT_REQUEST_SCHEMA_VERSION,
@@ -25,9 +29,23 @@ import {
   type ParsedContextRequest,
 } from '../context/request';
 import { inputInjectionAuditForPrompt } from '../context/renderer';
-import type { ContextRequestCapture, InvokedAgent, RunCtx } from './types';
+import {
+  sourceChunkIndexConfiguredEmbeddingProvider,
+  sourceChunkIndexEmbeddingForText,
+  type SourceChunkIndexEmbeddingProvider,
+} from '../source-chunk-embedding';
+import type {
+  ContextRequestCapture,
+  HistoricalProjectInventoryInput,
+  HistoricalSourceChunkIndexInput,
+  InvokedAgent,
+  RunCtx,
+} from './types';
 
 const CONTEXT_PACK_ARTIFACT_SCHEMA_VERSION = 'ainp.context_pack_artifact.v1' as const;
+const SOURCE_CHUNK_INDEX_CATALOG_QUERY_MAX_LENGTH = 200;
+const SOURCE_CHUNK_INDEX_CATALOG_MAX_LINKED_RECORD_REFS = 16;
+const SOURCE_CHUNK_INDEX_CATALOG_LINKED_RECORD_QUERY_LIMIT = 100;
 
 // ---------------------------------------------------------------------------
 // T3.1 de-closure (06-12): `invokeSkill` / `captureContextRequest` /
@@ -45,9 +63,13 @@ export interface InvokeSkillDeps {
   agentSessionStarted: typeof api.agentSessionStarted;
   agentSessionFinished: typeof api.agentSessionFinished;
   postArtifact: typeof api.postArtifact;
+  getWorkflowRun: typeof api.getWorkflowRun;
+  getArtifactContent: typeof api.getArtifactContent;
+  listSourceChunkIndexEntries: typeof api.listSourceChunkIndexEntries;
   recordContextRequest: typeof api.recordContextRequest;
   recordKnowledgeUsage: typeof api.recordKnowledgeUsage;
   recordKnowledgeAction: typeof api.recordKnowledgeAction;
+  sourceChunkEmbeddingProvider?: SourceChunkIndexEmbeddingProvider | null;
 }
 
 export const DEFAULT_INVOKE_SKILL_DEPS: InvokeSkillDeps = {
@@ -56,6 +78,9 @@ export const DEFAULT_INVOKE_SKILL_DEPS: InvokeSkillDeps = {
   agentSessionStarted: api.agentSessionStarted,
   agentSessionFinished: api.agentSessionFinished,
   postArtifact: api.postArtifact,
+  getWorkflowRun: api.getWorkflowRun,
+  getArtifactContent: api.getArtifactContent,
+  listSourceChunkIndexEntries: api.listSourceChunkIndexEntries,
   recordContextRequest: api.recordContextRequest,
   recordKnowledgeUsage: api.recordKnowledgeUsage,
   recordKnowledgeAction: api.recordKnowledgeAction,
@@ -68,7 +93,9 @@ export async function invokeSkill(
   deps: InvokeSkillDeps = DEFAULT_INVOKE_SKILL_DEPS,
 ): Promise<InvokedAgent> {
   const foundation = await ensureContextFoundation(c);
-  const taskBrief = agentTaskBriefForContext(skillCtx.title, skillCtx.inputs);
+  const taskBrief = agentTaskBriefForRunContext(skillCtx.title, c, skillCtx.inputs);
+  const catalogQuery = sourceChunkIndexCatalogQueryForTaskBrief(taskBrief);
+  const inputArtifacts = await contextPackInputArtifactsForSkill(c, skillCtx.inputs, foundation, catalogQuery, deps);
   const baseContextPack = buildContextPack({
     project: c.project,
     run: c.run,
@@ -85,12 +112,8 @@ export async function invokeSkill(
     }),
     knowledgeArtifacts: foundation.knowledgeArtifacts ?? [],
     runHistory: foundation.runHistory ?? [],
-    inputNames: Object.keys(skillCtx.inputs),
-    inputArtifacts: Object.entries(skillCtx.inputs).map(([name, content]) => ({
-      name,
-      content,
-      artifactId: c.inputArtifactIds[name] ?? null,
-    })),
+    inputNames: inputArtifacts.map((artifact) => artifact.name),
+    inputArtifacts,
     budget: c.contextPolicy.budget,
     sensitivePathPatterns: c.contextPolicy.sensitivePathPatterns,
   });
@@ -412,6 +435,665 @@ async function recordKnowledgeReviewSignals(
   }
 }
 
+async function contextPackInputArtifactsForSkill(
+  c: RunCtx,
+  skillInputs: Readonly<Record<string, string>>,
+  foundation: RunCtx['contextFoundation'],
+  sourceChunkIndexCatalogQuery: string | null,
+  deps: InvokeSkillDeps,
+): Promise<BuildContextPackInputArtifact[]> {
+  const inputArtifacts = Object.entries(skillInputs).map(([name, content]) => ({
+    name,
+    content,
+    artifactId: c.inputArtifactIds[name] ?? null,
+  }));
+  const currentInventoryInput = c.inputs['project-inventory.json'];
+  if (
+    !hasProjectInventoryInput(skillInputs)
+    && typeof currentInventoryInput === 'string'
+  ) {
+    inputArtifacts.push({
+      name: 'project-inventory.json',
+      content: currentInventoryInput,
+      artifactId: c.inputArtifactIds['project-inventory.json'] ?? null,
+    });
+  }
+  if (inputArtifacts.some((artifact) => artifact.name === 'project-inventory.json')) {
+    const currentSourceChunkIndex = await currentSourceChunkIndexInputFromCatalog(
+      c,
+      inputArtifacts,
+      sourceChunkIndexCatalogQuery,
+      taskScopedSourceChunkIndexLinkedRecordRefs(inputArtifacts, sourceChunkIndexCatalogQuery),
+      deps,
+    );
+    return currentSourceChunkIndex
+      ? [...inputArtifacts, currentSourceChunkIndex]
+      : inputArtifacts;
+  }
+
+  const historicalInventory = await discoverHistoricalProjectInventoryInputArtifact(
+    c,
+    foundation,
+    sourceChunkIndexCatalogQuery,
+    deps,
+  );
+  if (!historicalInventory) return inputArtifacts;
+  const { sourceChunkIndexArtifact, ...inventoryArtifact } = historicalInventory;
+  return sourceChunkIndexArtifact
+    ? [...inputArtifacts, inventoryArtifact, sourceChunkIndexArtifact]
+    : [...inputArtifacts, inventoryArtifact];
+}
+
+async function discoverHistoricalProjectInventoryInputArtifact(
+  c: RunCtx,
+  foundation: RunCtx['contextFoundation'],
+  sourceChunkIndexCatalogQuery: string | null,
+  deps: InvokeSkillDeps,
+): Promise<HistoricalProjectInventoryInput | null> {
+  if (foundation.historicalInventoryArtifactChecked) {
+    const historicalInventory = foundation.historicalInventoryArtifact;
+    if (
+      historicalInventory?.artifactId
+      && !historicalInventory.sourceChunkIndexArtifact
+      && sourceChunkIndexCatalogQuery
+    ) {
+      const sourceChunkIndexArtifact = await sourceChunkIndexInputFromCatalog(
+        c.project.id,
+        {
+          sourceInventoryArtifactId: historicalInventory.artifactId,
+          createdAt: historicalInventory.createdAt ?? null,
+          q: sourceChunkIndexCatalogQuery,
+        },
+        deps,
+      );
+      if (sourceChunkIndexArtifact) {
+        const refreshed = {
+          ...historicalInventory,
+          sourceChunkIndexArtifact,
+        };
+        foundation.historicalInventoryArtifact = refreshed;
+        return refreshed;
+      }
+    }
+    return foundation.historicalInventoryArtifact;
+  }
+
+  const priorRuns = [...(foundation.runHistory ?? [])]
+    .filter((run) => run.projectId === c.project.id && run.id !== c.run.id)
+    .sort(compareWorkflowRunsByLatestFirst);
+  for (const run of priorRuns) {
+    let artifacts: readonly Artifact[] = [];
+    try {
+      const detail = await deps.getWorkflowRun(run.id);
+      artifacts = detail.artifacts ?? [];
+    } catch (err) {
+      console.warn(
+        `[runner] workflow run ${run.id} unavailable for historical project_inventory discovery: ${errorMessage(err)}`,
+      );
+      continue;
+    }
+
+    const artifact = latestProjectInventoryArtifact(artifacts);
+    if (!artifact) continue;
+    const sourceChunkIndexArtifact = latestSourceChunkIndexArtifact(artifacts, artifact);
+    try {
+      const content = await deps.getArtifactContent(artifact.id);
+      const linkedRecordRefs = sourceChunkIndexCatalogQuery
+        ? sourceChunkIndexLinkedRecordRefsForTaskBrief(content.text, sourceChunkIndexCatalogQuery)
+        : [];
+      let historicalSourceChunkIndex: HistoricalSourceChunkIndexInput | null = null;
+      if (sourceChunkIndexArtifact) {
+        try {
+          const indexContent = await deps.getArtifactContent(sourceChunkIndexArtifact.id);
+          historicalSourceChunkIndex = {
+            name: 'source-chunk-index.json',
+            content: indexContent.text,
+            artifactId: sourceChunkIndexArtifact.id,
+            createdAt: sourceChunkIndexArtifact.createdAt,
+          };
+        } catch (err) {
+          console.warn(
+            `[runner] source_chunk_index artifact ${sourceChunkIndexArtifact.id} unavailable for context pack: ${errorMessage(err)}`,
+          );
+          historicalSourceChunkIndex = await sourceChunkIndexInputFromCatalog(
+            c.project.id,
+            {
+              sourceChunkIndexArtifactId: sourceChunkIndexArtifact.id,
+              sourceInventoryArtifactId: artifact.id,
+              createdAt: sourceChunkIndexArtifact.createdAt,
+              q: sourceChunkIndexCatalogQuery,
+              linkedRecordRefs,
+            },
+            deps,
+          );
+        }
+      } else {
+        historicalSourceChunkIndex = await sourceChunkIndexInputFromCatalog(
+          c.project.id,
+          {
+            sourceInventoryArtifactId: artifact.id,
+            createdAt: artifact.createdAt,
+            q: sourceChunkIndexCatalogQuery,
+            linkedRecordRefs,
+          },
+          deps,
+        );
+      }
+      const historicalInventory = {
+        name: 'project-inventory.json' as const,
+        content: content.text,
+        artifactId: artifact.id,
+        createdAt: artifact.createdAt,
+        sourceChunkIndexArtifact: historicalSourceChunkIndex,
+      };
+      foundation.historicalInventoryArtifact = historicalInventory;
+      foundation.historicalInventoryArtifactChecked = true;
+      return historicalInventory;
+    } catch (err) {
+      console.warn(
+        `[runner] project_inventory artifact ${artifact.id} unavailable for context pack: ${errorMessage(err)}`,
+      );
+      const historicalSourceChunkIndex = await sourceChunkIndexInputForArtifactPair(
+        c.project.id,
+        artifact,
+        sourceChunkIndexArtifact,
+        sourceChunkIndexCatalogQuery,
+        deps,
+      );
+      if (historicalSourceChunkIndex) {
+        const historicalInventory = {
+          name: 'project-inventory.json' as const,
+          content: '',
+          artifactId: artifact.id,
+          createdAt: artifact.createdAt,
+          sourceChunkIndexArtifact: historicalSourceChunkIndex,
+        };
+        foundation.historicalInventoryArtifact = historicalInventory;
+        foundation.historicalInventoryArtifactChecked = true;
+        return historicalInventory;
+      }
+    }
+  }
+  foundation.historicalInventoryArtifact = null;
+  foundation.historicalInventoryArtifactChecked = true;
+  return null;
+}
+
+async function currentSourceChunkIndexInputFromCatalog(
+  c: RunCtx,
+  inputArtifacts: readonly BuildContextPackInputArtifact[],
+  sourceChunkIndexCatalogQuery: string | null,
+  linkedRecordRefs: readonly string[],
+  deps: InvokeSkillDeps,
+): Promise<HistoricalSourceChunkIndexInput | null> {
+  if (hasSourceChunkIndexInput(inputArtifacts)) return null;
+  const sourceInventoryArtifactId = c.inputArtifactIds['project-inventory.json'];
+  if (!sourceInventoryArtifactId) return null;
+  return sourceChunkIndexInputFromCatalog(
+    c.project.id,
+    {
+      sourceInventoryArtifactId,
+      createdAt: null,
+      q: sourceChunkIndexCatalogQuery,
+      linkedRecordRefs,
+    },
+    deps,
+  );
+}
+
+async function sourceChunkIndexInputForArtifactPair(
+  projectId: string,
+  inventoryArtifact: Artifact,
+  sourceChunkIndexArtifact: Artifact | null,
+  sourceChunkIndexCatalogQuery: string | null,
+  deps: InvokeSkillDeps,
+): Promise<HistoricalSourceChunkIndexInput | null> {
+  return sourceChunkIndexInputFromCatalog(
+    projectId,
+    {
+      sourceChunkIndexArtifactId: sourceChunkIndexArtifact?.id ?? null,
+      sourceInventoryArtifactId: inventoryArtifact.id,
+      createdAt: sourceChunkIndexArtifact?.createdAt ?? inventoryArtifact.createdAt,
+      q: sourceChunkIndexCatalogQuery,
+    },
+    deps,
+  );
+}
+
+async function sourceChunkIndexInputFromCatalog(
+  projectId: string,
+  input: {
+    sourceChunkIndexArtifactId?: string | null;
+    sourceInventoryArtifactId: string;
+    createdAt?: string | null;
+    q?: string | null;
+    linkedRecordRefs?: readonly string[];
+  },
+  deps: InvokeSkillDeps,
+): Promise<HistoricalSourceChunkIndexInput | null> {
+  try {
+    const baseParams: Parameters<InvokeSkillDeps['listSourceChunkIndexEntries']>[0] = {
+      projectId,
+      sourceChunkIndexArtifactId: input.sourceChunkIndexArtifactId ?? null,
+      sourceInventoryArtifactId: input.sourceInventoryArtifactId,
+      limit: 500,
+    };
+    const rows: SourceChunkIndexCatalogEntry[] = [];
+    if (input.q) {
+      const queryEmbedding = await sourceChunkIndexEmbeddingForText(input.q, {
+        kind: 'catalog_query',
+        provider: deps.sourceChunkEmbeddingProvider
+          ?? sourceChunkIndexConfiguredEmbeddingProvider(),
+      });
+      rows.push(...await deps.listSourceChunkIndexEntries({
+        ...baseParams,
+        q: input.q,
+        queryEmbedding: queryEmbedding.vector,
+        queryEmbeddingModel: queryEmbedding.model,
+      }));
+    }
+    if (rows.length === 0) {
+      for (const linkedRecordRef of uniqueStrings(input.linkedRecordRefs ?? [])
+        .slice(0, SOURCE_CHUNK_INDEX_CATALOG_MAX_LINKED_RECORD_REFS)) {
+        rows.push(...await deps.listSourceChunkIndexEntries({
+          ...baseParams,
+          linkedRecordRef,
+          limit: SOURCE_CHUNK_INDEX_CATALOG_LINKED_RECORD_QUERY_LIMIT,
+        }));
+      }
+    }
+    if (!input.q && rows.length === 0) {
+      rows.push(...await deps.listSourceChunkIndexEntries(baseParams));
+    }
+    const uniqueRows = uniqueSourceChunkIndexCatalogRows(rows);
+    if (uniqueRows.length === 0) return null;
+    const artifactId = input.sourceChunkIndexArtifactId ?? uniqueRows[0]?.sourceChunkIndexArtifactId ?? null;
+    return {
+      name: 'source-chunk-index.json',
+      content: `${JSON.stringify(sourceChunkIndexEnvelopeFromCatalogRows(uniqueRows), null, 2)}\n`,
+      artifactId,
+      createdAt: input.createdAt ?? uniqueRows[0]?.createdAt ?? null,
+    };
+  } catch (err) {
+    console.warn(
+      `[runner] source_chunk_index catalog unavailable for context pack: ${errorMessage(err)}`,
+    );
+    return null;
+  }
+}
+
+function uniqueSourceChunkIndexCatalogRows(
+  rows: readonly SourceChunkIndexCatalogEntry[],
+): SourceChunkIndexCatalogEntry[] {
+  const seen = new Set<string>();
+  const selected: SourceChunkIndexCatalogEntry[] = [];
+  for (const row of rows) {
+    const key = [
+      row.id,
+      row.sourceChunkIndexArtifactId,
+      row.sourceChunkRef,
+      row.contentSha256,
+      row.path,
+      row.startLine,
+      row.endLine,
+    ].join(':');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    selected.push(row);
+    if (selected.length >= 500) break;
+  }
+  return selected;
+}
+
+function taskScopedSourceChunkIndexLinkedRecordRefs(
+  inputArtifacts: readonly BuildContextPackInputArtifact[],
+  taskBrief: string | null,
+): string[] {
+  if (!taskBrief) return [];
+  const inventoryArtifact = inputArtifacts.find((artifact) => artifact.name === 'project-inventory.json');
+  if (!inventoryArtifact) return [];
+  return sourceChunkIndexLinkedRecordRefsForTaskBrief(inventoryArtifact.content, taskBrief);
+}
+
+function sourceChunkIndexLinkedRecordRefsForTaskBrief(
+  content: string,
+  taskBrief: string,
+): string[] {
+  const tokens = sourceChunkIndexTaskTokens(taskBrief);
+  if (tokens.length === 0) return [];
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    return [];
+  }
+  if (!isRecord(parsed) || parsed.schemaVersion !== 'ainp.project_inventory.v1') return [];
+
+  const candidates = [
+    ...sourceChunkIndexRecordCandidates(parsed.entrypoints, 'entrypoint'),
+    ...sourceChunkIndexRecordCandidates(parsed.symbols, 'symbol'),
+    ...sourceChunkIndexRecordCandidates(parsed.domainEntities, 'domain_entity'),
+    ...sourceChunkIndexRecordCandidates(
+      isRecord(parsed.symbolGraph) ? parsed.symbolGraph.edges : null,
+      'graph_edge',
+    ),
+    ...sourceChunkIndexRecordCandidates(parsed.testSurfaces, 'test'),
+    ...sourceChunkIndexRecordCandidates(parsed.hotspots, 'hotspot'),
+    ...sourceChunkIndexRecordCandidates(parsed.capabilities, 'capability'),
+  ].map((candidate) => ({
+    ...candidate,
+    score: tokens.filter((token) => candidate.searchTokens.has(token)).length,
+  })).filter((candidate) => candidate.score > 0);
+  if (candidates.length === 0) return [];
+  candidates.sort((a, b) => (
+    b.score - a.score
+    || a.id.localeCompare(b.id)
+  ));
+
+  const refs: string[] = [];
+  for (const candidate of candidates.slice(0, 8)) {
+    refs.push(...sourceChunkIndexLinkedRecordRefVariants(candidate.id, candidate.kind));
+    if (candidate.kind === 'capability') {
+      refs.push(
+        ...sourceChunkIndexRecordRefVariantsForField(candidate.record, 'entrypointRefs', 'entrypoint'),
+        ...sourceChunkIndexRecordRefVariantsForField(candidate.record, 'symbolRefs', 'symbol'),
+        ...sourceChunkIndexRecordRefVariantsForField(candidate.record, 'domainEntityRefs', 'domain_entity'),
+        ...sourceChunkIndexRecordRefVariantsForField(candidate.record, 'graphEdgeRefs', 'graph_edge'),
+        ...sourceChunkIndexRecordRefVariantsForField(candidate.record, 'testRefs', 'test'),
+        ...sourceChunkIndexRecordRefVariantsForField(candidate.record, 'hotspotRefs', 'hotspot'),
+      );
+    }
+    if (refs.length >= SOURCE_CHUNK_INDEX_CATALOG_MAX_LINKED_RECORD_REFS) break;
+  }
+  return uniqueStrings(refs).slice(0, SOURCE_CHUNK_INDEX_CATALOG_MAX_LINKED_RECORD_REFS);
+}
+
+function sourceChunkIndexRecordCandidates(
+  value: unknown,
+  kind: SourceChunkIndexLinkedRecordKind,
+): Array<{
+  id: string;
+  kind: SourceChunkIndexLinkedRecordKind;
+  record: Record<string, unknown>;
+  searchText: string;
+  searchTokens: Set<string>;
+}> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is Record<string, unknown> => isRecord(item))
+    .map((record) => {
+      const searchText = sourceChunkIndexRecordSearchText(record);
+      return {
+        id: stringField(record, 'id') ?? '',
+        kind,
+        record,
+        searchText,
+        searchTokens: new Set(searchText.split(' ').filter(Boolean)),
+      };
+    })
+    .filter((candidate) => candidate.id && candidate.searchText.length > 0);
+}
+
+type SourceChunkIndexLinkedRecordKind =
+  | 'entrypoint'
+  | 'symbol'
+  | 'domain_entity'
+  | 'graph_edge'
+  | 'test'
+  | 'hotspot'
+  | 'capability';
+
+function sourceChunkIndexRecordSearchText(record: Record<string, unknown>): string {
+  return normalizeSourceChunkIndexSearchText([
+    stringField(record, 'label'),
+    stringField(record, 'name'),
+    stringField(record, 'kind'),
+    stringField(record, 'method'),
+    stringField(record, 'route'),
+    stringField(record, 'handler'),
+    stringField(record, 'signature'),
+    stringField(record, 'frameworkHint'),
+    ...stringArrayField(record, 'targetHints'),
+  ].filter((value): value is string => Boolean(value)).join(' '));
+}
+
+function sourceChunkIndexRecordRefVariantsForField(
+  record: Record<string, unknown>,
+  field: string,
+  kind: SourceChunkIndexLinkedRecordKind,
+): string[] {
+  return stringArrayField(record, field)
+    .flatMap((ref) => sourceChunkIndexLinkedRecordRefVariants(ref, kind));
+}
+
+function sourceChunkIndexLinkedRecordRefVariants(
+  id: string,
+  kind: SourceChunkIndexLinkedRecordKind,
+): string[] {
+  const trimmed = id.trim();
+  if (!trimmed) return [];
+  const prefix = sourceChunkIndexLinkedRecordPrefix(kind);
+  return uniqueStrings([trimmed, `${prefix}:${trimmed}`]);
+}
+
+function sourceChunkIndexLinkedRecordPrefix(kind: SourceChunkIndexLinkedRecordKind): string {
+  if (kind === 'domain_entity') return 'domain_entity';
+  if (kind === 'graph_edge') return 'graph_edge';
+  if (kind === 'test') return 'test';
+  return kind;
+}
+
+function sourceChunkIndexTaskTokens(value: string): string[] {
+  return uniqueStrings(normalizeSourceChunkIndexSearchText(value)
+    .split(' ')
+    .filter((token) => token.length >= 3)
+    .filter((token) => !SOURCE_CHUNK_INDEX_TASK_STOPWORDS.has(token)))
+    .slice(0, 20);
+}
+
+const SOURCE_CHUNK_INDEX_TASK_STOPWORDS = new Set([
+  'add',
+  'and',
+  'api',
+  'app',
+  'behavior',
+  'build',
+  'catalog',
+  'change',
+  'code',
+  'context',
+  'current',
+  'exact',
+  'fix',
+  'for',
+  'from',
+  'implement',
+  'index',
+  'legacy',
+  'lookup',
+  'metadata',
+  'path',
+  'project',
+  'record',
+  'retrieval',
+  'run',
+  'source',
+  'task',
+  'test',
+  'the',
+  'this',
+  'use',
+  'with',
+]);
+
+function normalizeSourceChunkIndexSearchText(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stringField(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function stringArrayField(record: Record<string, unknown>, key: string): string[] {
+  const value = record[key];
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function hasSourceChunkIndexInput(inputArtifacts: readonly BuildContextPackInputArtifact[]): boolean {
+  return inputArtifacts.some((artifact) => (
+    artifact.name === 'source-chunk-index.json'
+    || artifact.name === 'source_chunk_index.json'
+    || artifact.name === 'sourceChunkIndex.json'
+  ));
+}
+
+function sourceChunkIndexEnvelopeFromCatalogRows(rows: readonly SourceChunkIndexCatalogEntry[]) {
+  return {
+    schemaVersion: 'ainp.source_chunk_index.v1',
+    source: 'api.source_chunk_index_entries',
+    chunkCount: rows.length,
+    maxEntries: rows.length,
+    entries: rows.map((row) => ({
+      id: row.id,
+      sourceChunkRef: row.sourceChunkRef,
+      contentSha256: row.contentSha256,
+      path: row.path,
+      language: row.language,
+      startLine: row.startLine,
+      endLine: row.endLine,
+      lexicalTokens: row.lexicalTokens,
+      searchText: row.searchText,
+      linkedRecordRefs: row.linkedRecordRefs,
+      sourceRefs: row.sourceRefs,
+      entrypointRefs: row.entrypointRefs,
+      symbolRefs: row.symbolRefs,
+      domainEntityRefs: row.domainEntityRefs,
+      graphEdgeRefs: row.graphEdgeRefs,
+      testRefs: row.testRefs,
+      hotspotRefs: row.hotspotRefs,
+      capabilityRefs: row.capabilityRefs,
+      ...(row.embeddingModel ? { embeddingModel: row.embeddingModel } : {}),
+      ...(row.embeddingDimensions ? { embeddingDimensions: row.embeddingDimensions } : {}),
+      ...(row.embeddingVector ? { embeddingVector: row.embeddingVector } : {}),
+    })),
+  };
+}
+
+function latestProjectInventoryArtifact(artifacts: readonly Artifact[]): Artifact | null {
+  return artifacts
+    .filter(isProjectInventoryArtifact)
+    .sort(compareArtifactsByLatestFirst)[0] ?? null;
+}
+
+function latestSourceChunkIndexArtifact(
+  artifacts: readonly Artifact[],
+  inventoryArtifact: Artifact,
+): Artifact | null {
+  const indexArtifacts = artifacts.filter(isSourceChunkIndexArtifact);
+  const paired = indexArtifacts.filter((artifact) => (
+    metadataString(artifact.metadata, 'sourceInventoryArtifactId') === inventoryArtifact.id
+  ));
+  if (paired.length > 0) return paired.sort(compareArtifactsByLatestFirst)[0] ?? null;
+
+  const hasExplicitPairing = indexArtifacts.some((artifact) => (
+    metadataString(artifact.metadata, 'sourceInventoryArtifactId') !== null
+  ));
+  if (hasExplicitPairing) return null;
+
+  return indexArtifacts.sort(compareArtifactsByLatestFirst)[0] ?? null;
+}
+
+function isProjectInventoryArtifact(artifact: Artifact): boolean {
+  const metadata = artifact.metadata;
+  return metadataString(metadata, 'role') === 'project_inventory'
+    || metadataString(metadata, 'output') === 'project-inventory.json'
+    || metadataString(metadata, 'schemaVersion') === 'ainp.project_inventory.v1';
+}
+
+function isSourceChunkIndexArtifact(artifact: Artifact): boolean {
+  const metadata = artifact.metadata;
+  return metadataString(metadata, 'role') === 'source_chunk_index'
+    || metadataString(metadata, 'output') === 'source-chunk-index.json'
+    || metadataString(metadata, 'schemaVersion') === 'ainp.source_chunk_index.v1';
+}
+
+function hasProjectInventoryInput(inputs: Readonly<Record<string, string>>): boolean {
+  return Object.prototype.hasOwnProperty.call(inputs, 'project-inventory.json');
+}
+
+function compareWorkflowRunsByLatestFirst(a: WorkflowRun, b: WorkflowRun): number {
+  return timestampForWorkflowRun(b) - timestampForWorkflowRun(a)
+    || b.id.localeCompare(a.id);
+}
+
+function compareArtifactsByLatestFirst(a: Artifact, b: Artifact): number {
+  return timestampForArtifact(b) - timestampForArtifact(a)
+    || b.id.localeCompare(a.id);
+}
+
+function timestampForWorkflowRun(run: WorkflowRun): number {
+  return Date.parse(run.updatedAt || run.createdAt) || Date.parse(run.createdAt) || 0;
+}
+
+function timestampForArtifact(artifact: Artifact): number {
+  return Date.parse(artifact.createdAt) || 0;
+}
+
+function metadataString(metadata: Record<string, unknown>, key: string): string | null {
+  const value = metadata[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function sourceChunkIndexCatalogQueryForTaskBrief(taskBrief: string): string | null {
+  const normalized = taskBrief.replace(/\s+/g, ' ').trim();
+  if (normalized.length === 0) return null;
+  if (normalized.length <= SOURCE_CHUNK_INDEX_CATALOG_QUERY_MAX_LENGTH) return normalized;
+
+  const bounded = normalized
+    .slice(0, SOURCE_CHUNK_INDEX_CATALOG_QUERY_MAX_LENGTH)
+    .trimEnd();
+  const lastSpace = bounded.lastIndexOf(' ');
+  return lastSpace >= 80 ? bounded.slice(0, lastSpace) : bounded;
+}
+
+function sourceChunkIndexCatalogQueryForContextRequest(
+  request: ContextRequest,
+  taskBrief: string,
+): string | null {
+  const requestQuery = [
+    ...request.requestedRefs,
+    ...request.questions,
+  ].join(' ');
+  const normalizedRequestQuery = requestQuery.replace(/\s+/g, ' ').trim();
+  if (normalizedRequestQuery.length === 0) {
+    return sourceChunkIndexCatalogQueryForTaskBrief(taskBrief);
+  }
+
+  const boundedTaskBriefQuery = sourceChunkIndexCatalogQueryForTaskBrief(taskBrief);
+  const query = boundedTaskBriefQuery
+    ? `${normalizedRequestQuery} ${boundedTaskBriefQuery}`
+    : normalizedRequestQuery;
+  return sourceChunkIndexCatalogQueryForTaskBrief(query);
+}
+
 export async function captureContextRequest(
   c: RunCtx,
   input: {
@@ -441,6 +1123,15 @@ export async function captureContextRequest(
     return null;
   }
 
+  const taskBrief = agentTaskBriefForRunContext(input.skillCtx.title, c, input.skillCtx.inputs);
+  const catalogQuery = sourceChunkIndexCatalogQueryForContextRequest(request, taskBrief);
+  const inputArtifacts = await contextPackInputArtifactsForSkill(
+    c,
+    input.skillCtx.inputs,
+    input.foundation,
+    catalogQuery,
+    deps,
+  );
   const supplementPack = buildIncrementalContextPack({
     project: c.project,
     run: c.run,
@@ -448,7 +1139,7 @@ export async function captureContextRequest(
     stepRunId: input.skillCtx.stepRunId ?? null,
     workspacePath: input.skillCtx.workspacePath,
     branch: input.skillCtx.branch,
-    taskBrief: agentTaskBriefForContext(input.skillCtx.title, input.skillCtx.inputs),
+    taskBrief,
     projectProfile: input.foundation.projectProfileResult?.profile ?? null,
     projectProfileMarkdown: input.foundation.projectProfileResult?.markdown
       ?? input.skillCtx.inputs['project_profile.md'],
@@ -459,12 +1150,8 @@ export async function captureContextRequest(
     }),
     knowledgeArtifacts: input.foundation.knowledgeArtifacts ?? [],
     runHistory: input.foundation.runHistory ?? [],
-    inputNames: Object.keys(input.skillCtx.inputs),
-    inputArtifacts: Object.entries(input.skillCtx.inputs).map(([name, content]) => ({
-      name,
-      content,
-      artifactId: c.inputArtifactIds[name] ?? null,
-    })),
+    inputNames: inputArtifacts.map((artifact) => artifact.name),
+    inputArtifacts,
     budget: c.contextPolicy.budget,
     sensitivePathPatterns: c.contextPolicy.sensitivePathPatterns,
     contextRequest: request,
@@ -718,6 +1405,17 @@ export function agentTaskBriefForContext(
 ): string {
   const userRequest = inputs.user_request?.trim();
   return userRequest && userRequest.length > 0 ? userRequest : title;
+}
+
+function agentTaskBriefForRunContext(
+  title: string,
+  c: RunCtx,
+  inputs: Readonly<Record<string, string>>,
+): string {
+  const userRequest = c.inputs.user_request?.trim();
+  return userRequest && userRequest.length > 0
+    ? userRequest
+    : agentTaskBriefForContext(title, inputs);
 }
 
 function taskKindForSkill(skill: SkillSpec): AgentTaskKind {

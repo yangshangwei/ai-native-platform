@@ -118,6 +118,24 @@ test('GET /workflow-runs/:id/context exposes manifest, refs, budget, context req
           },
         ],
         retrievalHints: [],
+        calibrationSignals: [
+          {
+            id: 'signal_capability_drift',
+            kind: 'stale',
+            severity: 'review_required',
+            recommendedAction: 'mark_stale_or_supersede',
+            message: 'Accepted correction points at a capability that the current project inventory no longer contains.',
+            subjectRefs: [
+              'knowledge_artifact:kart_eval_cap_orders_rename_drift',
+              'capability:cap_api_orders',
+            ],
+            evidenceRefs: [
+              'artifact:art_eval_current_inventory_without_orders',
+              'artifact:art_eval_legacy_inventory',
+              'file:apps/api/src/orders-route.ts#L12',
+            ],
+          },
+        ],
       },
     },
   });
@@ -209,7 +227,19 @@ test('GET /workflow-runs/:id/context exposes manifest, refs, budget, context req
   expect(res.status).toBe(200);
   const body = (await res.json()) as {
     schemaVersion: string;
-    contextPacks: Array<{ contextPackId: string; role: string | null; invocationId: string | null }>;
+    contextPacks: Array<{
+      contextPackId: string;
+      role: string | null;
+      invocationId: string | null;
+      calibrationSignals: Array<{
+        id?: string;
+        kind?: string;
+        severity?: string;
+        recommendedAction?: string;
+        subjectRefs?: string[];
+        evidenceRefs?: string[];
+      }>;
+    }>;
     manifest: Array<{ ref: string; priority: number | null; trustLevel: string | null; sourceRefs: string[] }>;
     sourceRefs: Array<{ sourceRef: string; trustLevels: string[] }>;
     budgetDecisions: Array<{ ref: string; degradedFrom: string | null }>;
@@ -244,6 +274,23 @@ test('GET /workflow-runs/:id/context exposes manifest, refs, budget, context req
         contextPackId: 'ctxpack_artifact',
         role: 'base',
         invocationId: 'ctxinv_artifact',
+        calibrationSignals: [
+          expect.objectContaining({
+            id: 'signal_capability_drift',
+            kind: 'stale',
+            severity: 'review_required',
+            recommendedAction: 'mark_stale_or_supersede',
+            subjectRefs: expect.arrayContaining([
+              'knowledge_artifact:kart_eval_cap_orders_rename_drift',
+              'capability:cap_api_orders',
+            ]),
+            evidenceRefs: expect.arrayContaining([
+              'artifact:art_eval_current_inventory_without_orders',
+              'artifact:art_eval_legacy_inventory',
+              'file:apps/api/src/orders-route.ts#L12',
+            ]),
+          }),
+        ],
       }),
     ]),
   );

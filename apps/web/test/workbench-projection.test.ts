@@ -50,6 +50,7 @@ function request(id: string, workflowRunId: string | null, status: WorkflowReque
     error: null,
     createdAt: '2026-06-29T00:00:00.000Z',
     updatedAt: '2026-06-29T00:00:00.000Z',
+    agentBackend: null,
     flowId: null,
     startStage: null,
     kind: null,

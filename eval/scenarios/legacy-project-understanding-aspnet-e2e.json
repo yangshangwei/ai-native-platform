@@ -1,0 +1,364 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-aspnet-e2e",
+  "title": "Legacy project understanding keeps ASP.NET monolith context focused",
+  "description": "Runs the real scanner against a small old ASP.NET-style C# monolith, then verifies ContextPack selects the requested controller and tests without leaking unrelated domains.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_aspnet",
+    "title": "Update legacy ASP.NET billing reconciliation",
+    "stage": "implementation",
+    "taskBrief": "Fix billing invoice reconciliation in the legacy ASP.NET billing controller and update billing tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 32,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "src/Legacy/Billing/BillingController.cs",
+        "content": "namespace Acme.Legacy.Billing;\n\n[ApiController]\n[Route(\"api/v1/billing\")]\npublic class BillingController : ControllerBase\n{\n  private readonly BillingService _billingService = new BillingService();\n\n  [HttpPost(\"invoices/{invoiceId}/reconcile\")]\n  public IActionResult ReconcileInvoice(string invoiceId)\n  {\n    return Ok(_billingService.ReconcileInvoice(invoiceId));\n  }\n\n  [HttpGet(\"invoices/{invoiceId}/audit\")]\n  public IActionResult AuditInvoice(string invoiceId)\n  {\n    return Ok(_billingService.AuditInvoice(invoiceId));\n  }\n}\n"
+      },
+      {
+        "path": "src/Legacy/Billing/BillingService.cs",
+        "content": "namespace Acme.Legacy.Billing;\n\npublic class BillingService\n{\n  private readonly BillingRepository _billingRepository = new BillingRepository();\n\n  public string ReconcileInvoice(string invoiceId)\n  {\n    return _billingRepository.MarkReconciled(invoiceId);\n  }\n\n  public string AuditInvoice(string invoiceId)\n  {\n    return _billingRepository.LoadAudit(invoiceId);\n  }\n}\n"
+      },
+      {
+        "path": "src/Legacy/Billing/BillingRepository.cs",
+        "content": "namespace Acme.Legacy.Billing;\n\npublic class BillingRepository\n{\n  public string MarkReconciled(string invoiceId)\n  {\n    return invoiceId;\n  }\n\n  public string LoadAudit(string invoiceId)\n  {\n    return invoiceId;\n  }\n}\n"
+      },
+      {
+        "path": "src/Legacy/Customers/CustomersController.cs",
+        "content": "namespace Acme.Legacy.Customers;\n\n[ApiController]\n[Route(\"api/v1/customers\")]\npublic class CustomersController : ControllerBase\n{\n  [HttpGet(\"{customerId}\")]\n  public IActionResult ShowCustomer(string customerId)\n  {\n    return Ok(customerId);\n  }\n}\n"
+      },
+      {
+        "path": "src/Legacy/Reports/ReportsController.cs",
+        "content": "namespace Acme.Legacy.Reports;\n\n[ApiController]\n[Route(\"api/v1/reports\")]\npublic class ReportsController : ControllerBase\n{\n  [HttpGet(\"daily\")]\n  public IActionResult DailyReport()\n  {\n    return Ok(\"daily\");\n  }\n}\n"
+      },
+      {
+        "path": "tests/Legacy/Billing/BillingControllerTests.cs",
+        "content": "namespace Acme.Legacy.Billing.Tests;\n\npublic class BillingControllerTests\n{\n  public void ReconcilesInvoicesThroughBillingController() {}\n}\n"
+      },
+      {
+        "path": "tests/Legacy/Customers/CustomersControllerTests.cs",
+        "content": "namespace Acme.Legacy.Customers.Tests;\n\npublic class CustomersControllerTests\n{\n  public void ShowsCustomerProfile() {}\n}\n"
+      },
+      {
+        "path": "tests/Legacy/Reports/ReportsControllerTests.cs",
+        "content": "namespace Acme.Legacy.Reports.Tests;\n\npublic class ReportsControllerTests\n{\n  public void LoadsDailyReports() {}\n}\n"
+      },
+      {
+        "path": ".env",
+        "content": "ConnectionStrings__Default=Server=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API",
+      "Reports API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API",
+      "V1 API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryCapabilityCountMax": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "POST /api/v1/billing/invoices/{invoiceId}/reconcile",
+      "GET /api/v1/billing/invoices/{invoiceId}/audit",
+      "GET /api/v1/customers/{customerId}",
+      "GET /api/v1/reports/daily"
+    ],
+    "inventoryEntrypointRouteCountMin": 4,
+    "inventoryEntrypointRouteCountMax": 4,
+    "inventorySymbolNamesInclude": [
+      "BillingController",
+      "ReconcileInvoice",
+      "AuditInvoice",
+      "BillingService",
+      "BillingRepository",
+      "MarkReconciled",
+      "CustomersController",
+      "ShowCustomer",
+      "ReportsController",
+      "DailyReport"
+    ],
+    "inventorySymbolCountMin": 14,
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 10,
+    "inventoryRouteHandlerEdgeCountMin": 4,
+    "inventorySourceChunkCountMin": 8,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers",
+      "inventory_capability_cap_api_reports"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_src_legacy_billing",
+      "inventory_source_chunk_src_chunk_tests_legacy_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_billing_reconciliation_primary",
+      "file:src/Legacy/Billing/BillingController.cs#L9",
+      "file:src/Legacy/Billing/BillingController.cs#L10",
+      "file:src/Legacy/Billing/BillingService.cs#L3",
+      "file:src/Legacy/Billing/BillingService.cs#L7",
+      "file:src/Legacy/Billing/BillingRepository.cs#L3",
+      "file:tests/Legacy/Billing/BillingControllerTests.cs"
+    ],
+    "sourceRefsExclude": [
+      "file:src/Legacy/Customers/CustomersController.cs#L7",
+      "file:src/Legacy/Reports/ReportsController.cs#L7",
+      "file:tests/Legacy/Customers/CustomersControllerTests.cs",
+      "file:tests/Legacy/Reports/ReportsControllerTests.cs"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedCountMin": 4,
+    "selectedCountMax": 11
+  },
+  "variants": [
+    {
+      "id": "billing-reconciliation-primary",
+      "label": "ASP.NET billing reconciliation task stays focused on billing controller and tests",
+      "expectations": {
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_billing",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:src/Legacy/Billing/BillingController.cs#L9",
+              "file:src/Legacy/Billing/BillingService.cs#L7",
+              "file:tests/Legacy/Billing/BillingControllerTests.cs"
+            ],
+            "sourceRefsExclude": [
+              "file:src/Legacy/Customers/CustomersController.cs#L7",
+              "file:src/Legacy/Reports/ReportsController.cs#L7",
+              "file:tests/Legacy/Customers/CustomersControllerTests.cs",
+              "file:tests/Legacy/Reports/ReportsControllerTests.cs"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_billing_api",
+            "sourceRefsInclude": [
+              "file:src/Legacy/Billing/BillingController.cs#L10",
+              "file:src/Legacy/Billing/BillingService.cs#L7",
+              "file:src/Legacy/Billing/BillingRepository.cs#L3"
+            ],
+            "sourceRefsExclude": [
+              "file:src/Legacy/Customers/CustomersController.cs#L7",
+              "file:src/Legacy/Reports/ReportsController.cs#L7",
+              "file:tests/Legacy/Customers/CustomersControllerTests.cs",
+              "file:tests/Legacy/Reports/ReportsControllerTests.cs"
+            ]
+          },
+          {
+            "ref": "inventory_tests_billing_api",
+            "sourceRefsInclude": [
+              "file:tests/Legacy/Billing/BillingControllerTests.cs"
+            ],
+            "sourceRefsExclude": [
+              "file:tests/Legacy/Customers/CustomersControllerTests.cs",
+              "file:tests/Legacy/Reports/ReportsControllerTests.cs"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "customer-profile-primary",
+      "label": "ASP.NET customer profile task selects customers controller evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix customer profile response in the legacy ASP.NET customers API."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_customers",
+          "inventory_symbols_customers_api",
+          "inventory_tests_customers_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_billing",
+          "inventory_capability_cap_api_reports"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_customers",
+          "inventory_symbols_customers_api",
+          "inventory_tests_customers_api",
+          "inventory_hotspots_customers_api",
+          "inventory_source_chunk_src_chunk_src_legacy_customers",
+          "inventory_source_chunk_src_chunk_tests_legacy_customers"
+        ],
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_customer_profile_primary",
+          "file:src/Legacy/Customers/CustomersController.cs#L7",
+          "file:src/Legacy/Customers/CustomersController.cs#L8",
+          "file:tests/Legacy/Customers/CustomersControllerTests.cs"
+        ],
+        "sourceRefsExclude": [
+          "file:src/Legacy/Billing/BillingController.cs#L9",
+          "file:src/Legacy/Reports/ReportsController.cs#L7",
+          "file:tests/Legacy/Billing/BillingControllerTests.cs",
+          "file:tests/Legacy/Reports/ReportsControllerTests.cs"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_customers": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_customers",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:src/Legacy/Customers/CustomersController.cs#L7",
+              "file:src/Legacy/Customers/CustomersController.cs#L8",
+              "file:tests/Legacy/Customers/CustomersControllerTests.cs"
+            ],
+            "sourceRefsExclude": [
+              "file:src/Legacy/Billing/BillingController.cs#L9",
+              "file:src/Legacy/Reports/ReportsController.cs#L7",
+              "file:tests/Legacy/Billing/BillingControllerTests.cs",
+              "file:tests/Legacy/Reports/ReportsControllerTests.cs"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_customers_api",
+            "sourceRefsInclude": [
+              "file:src/Legacy/Customers/CustomersController.cs#L7",
+              "file:src/Legacy/Customers/CustomersController.cs#L8"
+            ],
+            "sourceRefsExclude": [
+              "file:src/Legacy/Billing/BillingController.cs#L9",
+              "file:src/Legacy/Reports/ReportsController.cs#L7",
+              "file:tests/Legacy/Billing/BillingControllerTests.cs",
+              "file:tests/Legacy/Reports/ReportsControllerTests.cs"
+            ]
+          },
+          {
+            "ref": "inventory_tests_customers_api",
+            "sourceRefsInclude": [
+              "file:tests/Legacy/Customers/CustomersControllerTests.cs"
+            ],
+            "sourceRefsExclude": [
+              "file:tests/Legacy/Billing/BillingControllerTests.cs",
+              "file:tests/Legacy/Reports/ReportsControllerTests.cs"
+            ]
+          }
+        ],
+        "selectedCountMin": 4,
+        "selectedCountMax": 11
+      }
+    },
+    {
+      "id": "reports-daily-primary",
+      "label": "ASP.NET reports task selects reports controller evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix daily reports endpoint in the legacy ASP.NET reports API."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_reports",
+          "inventory_symbols_reports_api",
+          "inventory_tests_reports_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_billing",
+          "inventory_capability_cap_api_customers"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_reports",
+          "inventory_symbols_reports_api",
+          "inventory_tests_reports_api",
+          "inventory_hotspots_reports_api",
+          "inventory_source_chunk_src_chunk_src_legacy_reports",
+          "inventory_source_chunk_src_chunk_tests_legacy_reports"
+        ],
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_reports_daily_primary",
+          "file:src/Legacy/Reports/ReportsController.cs#L7",
+          "file:src/Legacy/Reports/ReportsController.cs#L8",
+          "file:tests/Legacy/Reports/ReportsControllerTests.cs"
+        ],
+        "sourceRefsExclude": [
+          "file:src/Legacy/Billing/BillingController.cs#L9",
+          "file:src/Legacy/Customers/CustomersController.cs#L7",
+          "file:tests/Legacy/Billing/BillingControllerTests.cs",
+          "file:tests/Legacy/Customers/CustomersControllerTests.cs"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_reports": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_reports",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:src/Legacy/Reports/ReportsController.cs#L7",
+              "file:src/Legacy/Reports/ReportsController.cs#L8",
+              "file:tests/Legacy/Reports/ReportsControllerTests.cs"
+            ],
+            "sourceRefsExclude": [
+              "file:src/Legacy/Billing/BillingController.cs#L9",
+              "file:src/Legacy/Customers/CustomersController.cs#L7",
+              "file:tests/Legacy/Billing/BillingControllerTests.cs",
+              "file:tests/Legacy/Customers/CustomersControllerTests.cs"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_reports_api",
+            "sourceRefsInclude": [
+              "file:src/Legacy/Reports/ReportsController.cs#L7",
+              "file:src/Legacy/Reports/ReportsController.cs#L8"
+            ],
+            "sourceRefsExclude": [
+              "file:src/Legacy/Billing/BillingController.cs#L9",
+              "file:src/Legacy/Customers/CustomersController.cs#L7",
+              "file:tests/Legacy/Billing/BillingControllerTests.cs",
+              "file:tests/Legacy/Customers/CustomersControllerTests.cs"
+            ]
+          },
+          {
+            "ref": "inventory_tests_reports_api",
+            "sourceRefsInclude": [
+              "file:tests/Legacy/Reports/ReportsControllerTests.cs"
+            ],
+            "sourceRefsExclude": [
+              "file:tests/Legacy/Billing/BillingControllerTests.cs",
+              "file:tests/Legacy/Customers/CustomersControllerTests.cs"
+            ]
+          }
+        ],
+        "selectedCountMin": 4,
+        "selectedCountMax": 11
+      }
+    }
+  ]
+}

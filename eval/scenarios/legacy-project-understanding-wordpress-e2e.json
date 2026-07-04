@@ -1,0 +1,201 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-wordpress-e2e",
+  "title": "Legacy project understanding keeps WordPress action hook context focused",
+  "description": "Runs the real scanner against a small legacy WordPress plugin fixture, then verifies ContextPack selects the billing admin_post callback and tests without leaking sibling AJAX/customer hooks.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_wordpress",
+    "title": "Update legacy WordPress billing refunds",
+    "stage": "implementation",
+    "taskBrief": "Fix billing refund approval behavior in the legacy WordPress admin_post action hook and update billing refund tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 18,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "wp-content/plugins/billing-refunds/billing-refunds.php",
+        "content": "<?php\nadd_action('admin_post_billing_refund_approve', 'billing_refund_approve_admin_post');\nadd_action('wp_ajax_billing_refund_status', 'billing_refund_status_ajax');\nadd_action('wp_ajax_customer_profile', 'customer_profile_ajax');\nadd_action('wp_ajax_billing_dynamic', $dynamicCallback);\nadd_action($dynamicHook, 'billing_refund_approve_admin_post');\n\nfunction billing_refund_approve_admin_post() {\n  $service = new BillingRefundService();\n  return $service->approveRefund($_POST['refund_id']);\n}\n\nfunction billing_refund_status_ajax() {\n  return array('ok' => TRUE);\n}\n\nfunction customer_profile_ajax() {\n  return array();\n}\n"
+      },
+      {
+        "path": "wp-content/plugins/billing-refunds/src/BillingRefundService.php",
+        "content": "<?php\nclass BillingRefundService\n{\n  public function approveRefund($refundId) {\n    $repository = new BillingRefundRepository();\n    return $repository->approveRefund($refundId);\n  }\n}\n"
+      },
+      {
+        "path": "wp-content/plugins/billing-refunds/src/BillingRefundRepository.php",
+        "content": "<?php\nclass BillingRefundRepository\n{\n  public function approveRefund($refundId) {\n    return $refundId;\n  }\n}\n"
+      },
+      {
+        "path": "tests/BillingRefundWordPressTest.php",
+        "content": "<?php\nfunction test_billing_refund_wordpress_admin_post_approves_refunds() {}\n"
+      },
+      {
+        "path": "tests/CustomerProfileWordPressTest.php",
+        "content": "<?php\nfunction test_customer_profile_wordpress_ajax_returns_customer_profile() {}\n"
+      },
+      {
+        "path": ".env",
+        "content": "DB_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customer API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /wp-admin/admin-post.php?action=billing_refund_approve",
+      "ANY /wp-admin/admin-ajax.php?action=billing_refund_status",
+      "ANY /wp-admin/admin-ajax.php?action=customer_profile"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventoryEntrypointRouteCountMax": 3,
+    "inventorySymbolNamesInclude": [
+      "billing_refund_approve_admin_post",
+      "billing_refund_status_ajax",
+      "customer_profile_ajax",
+      "BillingRefundService",
+      "approveRefund",
+      "BillingRefundRepository"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 7,
+    "inventoryGraphEdgeConfidenceMin": 0.68,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventoryRouteHandlerEdgeConfidenceMin": 0.78,
+    "inventorySourceChunkCountMin": 5,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customer"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_wordpress_billing_refund_primary",
+      "file:wp-content/plugins/billing-refunds/billing-refunds.php#L2",
+      "file:wp-content/plugins/billing-refunds/billing-refunds.php#L8",
+      "file:wp-content/plugins/billing-refunds/billing-refunds.php#L9",
+      "file:wp-content/plugins/billing-refunds/billing-refunds.php#L10",
+      "file:wp-content/plugins/billing-refunds/src/BillingRefundService.php#L2",
+      "file:wp-content/plugins/billing-refunds/src/BillingRefundService.php#L4",
+      "file:wp-content/plugins/billing-refunds/src/BillingRefundService.php#L5",
+      "file:wp-content/plugins/billing-refunds/src/BillingRefundRepository.php#L2",
+      "file:tests/BillingRefundWordPressTest.php"
+    ],
+    "sourceRefsExclude": [
+      "file:wp-content/plugins/billing-refunds/billing-refunds.php#L3",
+      "file:wp-content/plugins/billing-refunds/billing-refunds.php#L4",
+      "file:wp-content/plugins/billing-refunds/billing-refunds.php#L5",
+      "file:wp-content/plugins/billing-refunds/billing-refunds.php#L6",
+      "file:wp-content/plugins/billing-refunds/billing-refunds.php#L13",
+      "file:wp-content/plugins/billing-refunds/billing-refunds.php#L17",
+      "file:tests/CustomerProfileWordPressTest.php"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L2",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L8",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L9",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L10",
+          "file:wp-content/plugins/billing-refunds/src/BillingRefundService.php#L2",
+          "file:wp-content/plugins/billing-refunds/src/BillingRefundService.php#L4",
+          "file:wp-content/plugins/billing-refunds/src/BillingRefundService.php#L5",
+          "file:wp-content/plugins/billing-refunds/src/BillingRefundService.php#L6",
+          "file:wp-content/plugins/billing-refunds/src/BillingRefundRepository.php#L2",
+          "file:wp-content/plugins/billing-refunds/src/BillingRefundRepository.php#L4",
+          "file:tests/BillingRefundWordPressTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L3",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L4",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L5",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L6",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L13",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L17",
+          "file:tests/CustomerProfileWordPressTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L2",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L8",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L9",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L10",
+          "file:wp-content/plugins/billing-refunds/src/BillingRefundService.php#L2",
+          "file:wp-content/plugins/billing-refunds/src/BillingRefundService.php#L4",
+          "file:wp-content/plugins/billing-refunds/src/BillingRefundService.php#L5",
+          "file:wp-content/plugins/billing-refunds/src/BillingRefundService.php#L6",
+          "file:wp-content/plugins/billing-refunds/src/BillingRefundRepository.php#L2",
+          "file:wp-content/plugins/billing-refunds/src/BillingRefundRepository.php#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L3",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L4",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L5",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L6",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L13",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L17",
+          "file:tests/CustomerProfileWordPressTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/BillingRefundWordPressTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L3",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L4",
+          "file:wp-content/plugins/billing-refunds/billing-refunds.php#L17",
+          "file:tests/CustomerProfileWordPressTest.php"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 11,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_wp_content_plugins_billing_refunds",
+      "inventory_source_chunk_src_chunk_tests_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13,
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.68,
+      "routeHandlerEdgeConfidenceMin": 0.78
+    }
+  },
+  "variants": [
+    {
+      "id": "wordpress-billing-refund-primary",
+      "label": "Legacy WordPress billing refund task stays focused on admin_post callback and tests"
+    }
+  ]
+}

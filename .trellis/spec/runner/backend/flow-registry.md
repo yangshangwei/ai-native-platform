@@ -11,14 +11,14 @@
 
 ### 2. Signatures
 
-- `FlowId` (`@ainp/shared`) — string-literal union, **not** a free `string`. Today: `'feature.standard' | 'feature.fastforward' | 'issue.standard' | 'refactor.standard'`.
+- `FlowId` (`@ainp/shared`) — string-literal union, **not** a free `string`. Today: `'feature.standard' | 'feature.fastforward' | 'issue.standard' | 'refactor.standard' | 'profile.bootstrap'`.
 - `StageStep` (`@ainp/shared`) — `{ stage: WorkflowStage; kind: StageStepKind; skillId?: string }`. `kind` is `'agent' | 'gate' | 'human' | 'engine'`.
 - `FlowDef` (`@ainp/shared`) — `{ id: FlowId; kind: WorkflowRunType; description: string; stages: readonly StageStep[] }`.
 - `FLOW_REGISTRY` (`packages/shared/src/flows/registry.ts`; moved from runner in W2-4, `apps/runner/src/flows/registry.ts` remains a re-export shim) — `Readonly<Record<FlowId, FlowDef>>`. Single source of truth for V2 flow definitions.
 - `KNOWN_FLOW_IDS` / `isFlowId(value): value is FlowId` (`packages/shared/src/flows/registry.ts`) — derived from `Object.keys(FLOW_REGISTRY)`; the single trust-boundary guard consumed by both the API route and the runner CLI.
 - `WORKFLOW_STAGES` / `isWorkflowStage(value): value is WorkflowStage` (`packages/shared/src/types/workflow.ts`) — shared stage guard; replaced the three hand-written copies in api routes.
 - `dispatchStep(step: StageStep, ctx: RunCtx, deps?: DispatchDeps): Promise<void>` — top-level function in `orchestrator.ts` (lifted out of `cmdOrchestrate` in the 06-12 de-closure), still the single-point router every stage flows through. The optional `deps` parameter defaults to the real step implementations and exists for test spies only.
-- `executeImplementation(c, deps?)` / `executeBuildTest` / `executeVerifier` / `executeAcceptance` / `executeCompletion` / `executeKnowledgePromotion` / `executeAgentMarkdownStage` / `runStage` / `runContextPack` — top-level functions in `apps/runner/src/orchestrator/steps.ts`, signature `(c: RunCtx, deps: StepDeps = DEFAULT_STEP_DEPS)`. Behavior byte-equivalent to the former inner closures; all run-scoped state flows through `RunCtx` explicitly. `invokeSkill` / `captureContextRequest` / `ensureContextFoundation` live in `orchestrator/invoke-skill.ts`; approval waiting in `orchestrator/approval.ts`; verifier media pure functions in `orchestrator/verifier-media.ts` (directly unit-tested since 06-12). T3.2 update: `executeBuildTest` sources its compile/test commands from `c.project.buildCompileCommand` / `c.project.buildTestCommand` when set (passed to `runWhitelistedCommand` as exact-match `extraAllow`), falling back to the historical `./mvnw`/`mvn` detection — contract in `.trellis/spec/api/backend/build-commands.md`; pinned by `apps/runner/test/orchestrator-build-test.test.ts`.
+- `executeImplementation(c, deps?)` / `executeBuildTest` / `executeVerifier` / `executeAcceptance` / `executeCompletion` / `executeKnowledgePromotion` / `executeAgentMarkdownStage` / `executeInventory` / `executeProfileBootstrap` / `runStage` / `runContextPack` — top-level functions in `apps/runner/src/orchestrator/steps.ts`, signature `(c: RunCtx, deps: StepDeps = DEFAULT_STEP_DEPS)`. Behavior byte-equivalent to the former inner closures where extracted; all run-scoped state flows through `RunCtx` explicitly. `invokeSkill` / `captureContextRequest` / `ensureContextFoundation` live in `orchestrator/invoke-skill.ts`; approval waiting in `orchestrator/approval.ts`; verifier media pure functions in `orchestrator/verifier-media.ts` (directly unit-tested since 06-12). T3.2 update: `executeBuildTest` sources its compile/test commands from `c.project.buildCompileCommand` / `c.project.buildTestCommand` when set (passed to `runWhitelistedCommand` as exact-match `extraAllow`), falling back to the historical `./mvnw`/`mvn` detection — contract in `.trellis/spec/api/backend/build-commands.md`; pinned by `apps/runner/test/orchestrator-build-test.test.ts`. Profile bootstrap update: `executeInventory` is engine/read-only and requires no agent backend; `executeProfileBootstrap` selects/preflights the real backend at the profile stage and persists `project-profile.md` / `project-profile.json` only after schema validation.
 - `RunCtx` — defined and **exported** from `apps/runner/src/orchestrator/types.ts` (de-closure made it the explicit parameter type; tests build fixtures via `apps/runner/test/helpers/orchestrator-fixtures.ts`). The W2-1 "file-private, not exported" rule is superseded: the invariant that matters — no `executeXxx` closes over run-scoped mutable state — is now structurally guaranteed by top-level function signatures.
 - `OrchestrateOpts.flowId?: FlowId` (`apps/runner/src/orchestrator.ts`) — W2-3 PR2: optional flow id on the runner CLI/orchestrator entry; forwarded to `api.createWorkflowRun`.
 - `OrchestrateOpts.userRequest?: string` (`apps/runner/src/orchestrator.ts`) — optional agent-facing clarified task brief. It seeds `inputs.user_request` and the ContextPack task brief; it must NOT replace the WorkflowRun/UI `title` passed to `api.createWorkflowRun`.
@@ -103,6 +103,86 @@ Acceptance gate rule for refactor.standard: same as `issue.standard` — `runAcc
 
 Knowledge promotion: identical handling to `issue.standard` — `c.draftsToPromote` is naturally empty on `refactor.standard` runs (no `requirement` / `design` step writes into it). W2-2b does NOT extend `KnowledgeArtifactKind` or `promoteAcceptedDraftToKnowledge` (PRD ADR Q5=A inherited).
 
+#### Stage layout for `profile.bootstrap`
+
+Four steps, in this exact order — pinned by `packages/shared/test/flow-registry.test.ts`,
+`apps/runner/test/flow-registry.test.ts`, and direct stage tests:
+
+1. `inventory` (kind=`engine`) — `executeInventory`. Builds a read-only
+   repository inventory via `buildProjectInventory`, persists it as an
+   `other` artifact with `metadata.role='project_inventory'`,
+   `metadata.schemaVersion='ainp.project_inventory.v1'`, and output
+   `project-inventory.json`. This step must not select or preflight an agent
+   backend. The inventory envelope is additive: in addition to repo/scan,
+   sources, commands, modules, git, exclusions, and warnings, it may include
+   deterministic capability-map sections (`entrypoints`, `symbols`,
+   `sourceChunks`, bounded `sourceChunkIndex`, `domainEntities`,
+   `testSurfaces`, `hotspots`, `capabilities`) derived only from files that
+   passed the existing sensitive/generated/binary/size filters.
+   `sourceChunkIndex` is metadata-only: it keys bounded chunks by
+   `contentSha256`, path/window, optional language, source refs, and linked
+   inventory record refs plus bounded lexical tokens/search text so current or
+   historical inventories can recover chunk links and prepare deterministic
+   lexical lookup without treating RAG/index data as source truth.
+   When the scanner emits a non-empty `sourceChunkIndex`, the inventory stage
+   also persists it as a separate `source-chunk-index.json` `other` artifact
+   with `metadata.role='source_chunk_index'`,
+   `metadata.schemaVersion='ainp.source_chunk_index.v1'`, and a
+   `sourceInventoryArtifactId` back-pointer to the owning
+   `project-inventory.json` artifact. This standalone artifact is durable
+   index metadata only; it is not injected as an additional raw profile prompt
+   input and does not replace project inventory as the source-backed evidence
+   authority. The API also catalogs each valid source-chunk-index entry in the
+   `source_chunk_index_entries` table, keyed by project/run/index artifact,
+   source inventory artifact, content hash, path/window, lexical tokens,
+   compact search text, optional bounded embedding metadata, linked record
+   refs, and source refs. This DB catalog is a lookup surface for hybrid
+   retrieval; it stores metadata only and does not store raw snippets or
+   replace source refs / bounded source chunks as evidence authority.
+   For TypeScript/JavaScript inventory, `symbolGraph.route_handler` edges
+   should resolve local route callbacks and locally imported callbacks when
+   import/export evidence identifies an exported handler symbol, including a
+   one-hop local barrel re-export; imported handler edges cite the route line,
+   import line, barrel export line when present, and resolved handler/export
+   source refs. `symbolGraph.symbol_reference` edges should likewise prefer
+   local import/export evidence before same-path name fallback, so a controller
+   that imports an aliased service links to the original exported service symbol
+   and cites the call site, import line, re-export/export line when present,
+   and resolved service source refs.
+   Capability grouping may use handler-name fallback only when the handler and
+   entrypoint are in the same file. Cross-file handler attachment must come
+   from symbolGraph evidence; otherwise generic legacy method names such as
+   Servlet `doGet` can leak sibling methods and source chunks into unrelated
+   capabilities.
+   These sections are navigation evidence for the profile agent; they are not
+   accepted project knowledge until the downstream Knowledge Gate path promotes
+   generated candidates.
+2. `profile` (kind=`agent`, skillId=`project-profile-bootstrap`) —
+   `executeProfileBootstrap`. Consumes the inventory artifact, resolves the
+   configured request/project backend through the existing backend-selection
+   path, invokes the profile skill, validates `project-profile.json`
+   `schemaVersion === 'ainp.project_profile.v1'`, then persists markdown and
+   JSON `project_profile` artifacts with `metadata.profileFormat` and
+   `metadata.inventoryArtifactId`.
+3. `completion` (kind=`engine`) — `executeCompletion`; evidence gate and
+   completion report generation still run through existing report machinery.
+4. `knowledge` (kind=`engine`) — `executeKnowledgePromotion`; for profile runs
+   the API knowledge candidate generator reads the latest JSON
+   `project_profile` artifact and emits reviewable `knowledge_candidate`
+   artifacts only. It must not write accepted `KnowledgeArtifact` rows unless
+   the existing Knowledge Gate promotion path is used.
+
+Skipped from `feature.standard`: `context_pack`, `requirement`, `design`,
+`implementation`, `build_test`, and `review`. Profile bootstrap is read-only
+with respect to target project code; it must not run implementation or project
+build/test commands.
+
+Backend-unavailable path: request creation and `inventory` are allowed without
+a configured backend. The `profile` stage must fail closed through
+`selectAgentBackend()`/preflight, mark the step failed with actionable setup
+text, preserve the inventory artifact, and create no `project_profile` or
+`knowledge_candidate` artifacts on that failed path.
+
 #### Smart Router (W2-4)
 
 `apps/api/src/router.ts:recommend(input)` is a pure function that maps a `RouterInput` (`{ projectId, title, runType }`) to a `RouterRecommendation` (`{ flowId, startStage, relevantKnowledge[], estimates, reason, rulesFired, confidence }`). The full canonical contract — rule list R10-R13, audit + UI surfaces, Wave 3 follow-up — lives in `.trellis/spec/api/backend/smart-router.md`. This section captures only the FLOW_REGISTRY-facing semantics.
@@ -127,7 +207,7 @@ UI override (W2-4 PR4):
 #### Entry contract — `flowId` plumbing
 
 - `WorkflowRun.flowId: FlowId` is **required** in TypeScript and **NOT NULL** in the `workflow_runs.flow_id` column with `DEFAULT 'feature.standard'` (PRD ADR Q2 — explicit backfill, no NULL state).
-- `createWorkflowRun(params)` accepts optional `flowId?: FlowId`; when omitted, the API applies conservative run-type defaults (`feature.standard` for feature/smoke, `issue.standard` for bugfix, `refactor.standard` for refactor). Existing call sites (API routes, runner triggers) need no changes for V1-equivalent feature runs (PRD AC-14).
+- `createWorkflowRun(params)` accepts optional `flowId?: FlowId`; when omitted, the API applies conservative run-type defaults (`feature.standard` for feature/smoke, `issue.standard` for bugfix, `refactor.standard` for refactor, `profile.bootstrap` for profile). Existing call sites (API routes, runner triggers) need no changes for V1-equivalent feature runs (PRD AC-14).
 - `runWorkflow` reads `run.flowId` and looks up `FLOW_REGISTRY[run.flowId]`. If the entry is missing the run aborts with a clear error rather than falling back — defensive `?? 'feature.standard'` shortcuts in the orchestrator are forbidden (PRD ADR Q2 consequence).
 - **Trust-boundary validation (W2-3 PR2; centralised 06-11)**: each external entry into the system that accepts a flowId validates against the shared guard. There are two:
   - `apps/api/src/routes/workflow-runs.ts` — `isFlowId(value)` rejects unknown bodies with HTTP 400.
@@ -173,6 +253,9 @@ Verify: `bun test` should grow by the new flow's tests; `bun run --filter '*' ty
 - `WorkflowStage` gains a new value but `dispatchStep` switch isn't updated -> `_exhaustive: never` assignment at the default branch fails `tsc --noEmit`.
 - `run.flowId` references an id that is not in `FLOW_REGISTRY` at runtime -> `cmdOrchestrate` throws `unknown flowId in registry: <id> (run=<runId>)` before entering the for-of loop. No silent fallback.
 - `workflow_runs.flow_id` somehow ends up empty (cannot happen via `createWorkflowRun`) -> the migration's defensive `UPDATE ... WHERE flow_id = ''` normalises it on next API boot. NULL never occurs because the column is `NOT NULL`.
+- `profile.bootstrap` request/run reaches `profile` without a configured or runnable backend -> `executeProfileBootstrap` fails the `profile` step and throws; inventory artifact remains visible; no profile/knowledge artifacts are synthesized.
+- `project-profile.json` is missing or has a schemaVersion other than `ainp.project_profile.v1` -> `executeProfileBootstrap` throws before registering JSON as a profile artifact.
+- Profile knowledge candidate has an invalid `KnowledgeArtifactKind`, invalid subtype, confidence below `0.70`, missing source refs, or missing body -> API report generation drops that candidate and records a warning in the `knowledge_candidate` sidecar.
 - Modifying `feature.standard.stages` order without updating the V1 reference array in `apps/runner/test/flow-registry.test.ts` -> the `stages.map(s => s.stage) toEqual(V1_STAGE_ORDER)` assertion fails. This is the zero-regression canary.
 - Reading `step.kind` / `step.skillId` inside W2-1 dispatchStep / executeXxx -> contract violation; the W2-1 ADR Q1=α explicitly leaves these as placeholders. W2-3 is the gate that flips this.
 - Closing over outer `ok` (the unboxed boolean style) inside `executeXxx` -> would silently lose mutation across function boundaries. Always go through `ctx.ok.value`.
@@ -184,14 +267,26 @@ Verify: `bun test` should grow by the new flow's tests; `bun run --filter '*' ty
 - **Good** — W2-2a `issue.standard` extension (now shipped): same recipe with two new `WorkflowStage` values (`report` / `analyze`), two new `executeXxx` inner functions, two placeholder `SkillSpec`s, and the `skill.implementation.inputs[design.md].required` relaxed from `true` to `false` so issue runs are schema-valid. `kind: 'bugfix'` reused (no `WorkflowRunType` extension). `runAcceptanceTraceabilityGate` made stage-history-aware in the same task (PR2) so flows without requirement/design steps don't fail the traceability rules — closes W2-3 R-Risk-2 (fastforward acceptance gate) as a side benefit. Confirms W2-1 thin abstraction holds across **work-kind** extension (`feature` → `bugfix`), not just **variant** extension within `feature`.
 - **Good** — W2-2b `refactor.standard` extension (now shipped): same recipe with two new `WorkflowStage` values (`scan` / `plan`), two new `executeXxx` inner functions, two placeholder `SkillSpec`s, and `skill.implementation.instructions` extended with refactor_plan fallback. **First flow to extend `WorkflowRunType`** (`+= 'refactor'`) — unlike W2-2a's `'bugfix'` reuse, refactor has no upstream Coordinator signal so adding the proper type is honest. `runAcceptanceTraceabilityGate` auto-adapts (no PR2 needed since W2-2a already shipped the stage-history-aware refactor). Result: W2-2b is the smallest of the three flow extensions (~2 PR vs W2-3's 3 PR vs W2-2a's 3 PR), proving the abstraction tightens as it accretes — each addition reuses prior infrastructure.
 - **Good** — W2-4 smart-router (now shipped): `flowId` and `startStage` both become *recommendations* the API computes from `(projectId, runType, title, knowledgeArtifacts)` rather than caller-supplied parameters. Implementation paths: (1) `apps/api/src/router.ts:recommend()` pure function, rules-only V1; (2) `POST /router/recommend` for UI dry-run; (3) `createWorkflowRun()` calls `recommend()` exactly when `params.flowId === undefined`; (4) `cmdOrchestrate` honors `run.startStage` via the pure helper `sliceStagesFromStartStage` (throws on unknown stage — never silently skips). Explicit `body.flowId` / explicit `params.flowId` always wins. Confirms the W2-1 thin abstraction is robust enough to support routing layered on top without touching the orchestrator's per-stage execution code.
+- **Good** — `profile.bootstrap` extension: adds `WorkflowRunType='profile'`,
+  `WorkflowStage='inventory' | 'profile'`, a `project-profile-bootstrap`
+  SkillSpec, direct dispatch cases, and report-sidecar conversion for profile
+  knowledge candidates. Inventory runs before backend preflight; profile
+  synthesis requires a real configured backend and fails closed otherwise.
 - **Base** — V1 feature run: route omits `flowId` -> `createWorkflowRun` defaults to `'feature.standard'` -> runner fetches the same 8-stage pipeline as V1 -> behavior byte-for-byte identical to pre-W2-1. This is the AC-2 zero-regression target.
 - **Base** — fastforward triggered via API: `POST /workflow-runs { ..., flowId: 'feature.fastforward' }` -> 201 with `run.flowId === 'feature.fastforward'` -> runner picks up the 4-stage subset -> 4 dispatched stages.
+- **Base** — profile bootstrap triggered via workflow request:
+  `POST /workflow-requests { projectId, title: 'Generate legacy project profile', type: 'profile', flowId: 'profile.bootstrap' }`
+  -> pending request with `flowId='profile.bootstrap'`; runner watch creates a
+  profile run and executes `inventory -> profile -> completion -> knowledge`.
 - **Bad** — adding `??` fallback in orchestrator: `const flowId = run.flowId ?? 'feature.standard';` is a contract violation. The DB column is NOT NULL with DEFAULT and the TS field is required; runtime fallback hides bugs. Q2 ADR explicitly forbids this.
 - **Bad** — re-introducing a hand-maintained `KNOWN_FLOW_IDS` literal at a trust boundary: the constant is derived from `FLOW_REGISTRY` keys in `@ainp/shared` precisely because the previous two hand-written copies (api route + runner CLI) could drift from the source-of-truth and reject flows the registry knew about (HTTP 400 / CLI exit 2). Always import the shared guard.
 - **Bad** — reading `step.kind` to dispatch in W2-1 / W2-3: e.g. `if (step.kind === 'engine') { await runEngine(step) }`. The kind field is unread placeholder data through W2-3; consuming it now creates contract drift between the structure and what W2-4 will actually deliver. Wait for W2-4.
 - **Bad** — splitting `dispatchStep` into per-stage helpers that the main loop calls: forks the dispatch surface and breaks the single-point-router invariant. Every stage MUST flow through `dispatchStep`.
 - **Bad** — making `flowId` optional on `WorkflowRun` (TS) to ease fixture construction: violates the NOT NULL DB invariant and the Q3 ADR. Update fixtures instead.
 - **Bad** — adding `requirement` / `design` to fastforward to "fix" a downstream gate or skill failure: defeats the fast-forward semantics. Fix the downstream component instead.
+- **Bad** — defaulting a missing backend to `native` or fabricating a profile
+  from inventory alone: profile.bootstrap must either use a real configured
+  backend or stop at the failed `profile` step with inventory preserved.
 
 ### 6. References
 

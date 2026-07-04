@@ -1,0 +1,367 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-spring-e2e",
+  "title": "Legacy project understanding keeps Spring monolith context focused",
+  "description": "Runs the real scanner against a small old Spring-style Java monolith, then verifies ContextPack selects the requested controller and tests without leaking unrelated domains.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_spring",
+    "title": "Update legacy Spring billing reconciliation",
+    "stage": "implementation",
+    "taskBrief": "Fix billing invoice reconciliation in the legacy Spring billing controller and update billing tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 32,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "src/main/java/com/acme/legacy/billing/BillingController.java",
+        "content": "package com.acme.legacy.billing;\n\n@RestController\n@RequestMapping(\"/api/v1/billing\")\npublic class BillingController {\n  private final BillingService billingService = new BillingService();\n\n  @PostMapping(\"/invoices/{invoiceId}/reconcile\")\n  public ResponseEntity<?> reconcileInvoice(String invoiceId) {\n    return ResponseEntity.ok(billingService.reconcile(invoiceId));\n  }\n\n  @GetMapping(\"/invoices/{invoiceId}/audit\")\n  public ResponseEntity<?> auditInvoice(String invoiceId) {\n    return ResponseEntity.ok(billingService.audit(invoiceId));\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/acme/legacy/billing/BillingService.java",
+        "content": "package com.acme.legacy.billing;\n\npublic class BillingService {\n  private final BillingRepository billingRepository = new BillingRepository();\n\n  public ReconciliationResult reconcile(String invoiceId) {\n    return billingRepository.markReconciled(invoiceId);\n  }\n\n  public AuditTrail audit(String invoiceId) {\n    return billingRepository.auditTrail(invoiceId);\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/acme/legacy/billing/BillingRepository.java",
+        "content": "package com.acme.legacy.billing;\n\npublic class BillingRepository {\n  public ReconciliationResult markReconciled(String invoiceId) {\n    return new ReconciliationResult(invoiceId, \"reconciled\");\n  }\n\n  public AuditTrail auditTrail(String invoiceId) {\n    return new AuditTrail(invoiceId);\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/acme/legacy/customer/CustomerController.java",
+        "content": "package com.acme.legacy.customer;\n\n@RestController\n@RequestMapping(\"/api/v1/customers\")\npublic class CustomerController {\n  @GetMapping(\"/{customerId}\")\n  public ResponseEntity<?> showCustomer(String customerId) {\n    return ResponseEntity.ok(customerId);\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/acme/legacy/reports/ReportController.java",
+        "content": "package com.acme.legacy.reports;\n\n@RestController\n@RequestMapping(\"/api/v1/reports\")\npublic class ReportController {\n  @GetMapping(\"/daily\")\n  public ResponseEntity<?> dailyReport() {\n    return ResponseEntity.ok(\"daily\");\n  }\n}\n"
+      },
+      {
+        "path": "src/test/java/com/acme/legacy/billing/BillingControllerTest.java",
+        "content": "package com.acme.legacy.billing;\n\nclass BillingControllerTest {\n  void reconcilesInvoicesThroughBillingController() {}\n}\n"
+      },
+      {
+        "path": "src/test/java/com/acme/legacy/customer/CustomerControllerTest.java",
+        "content": "package com.acme.legacy.customer;\n\nclass CustomerControllerTest {\n  void loadsCustomerProfile() {}\n}\n"
+      },
+      {
+        "path": "src/test/java/com/acme/legacy/reports/ReportControllerTest.java",
+        "content": "package com.acme.legacy.reports;\n\nclass ReportControllerTest {\n  void loadsDailyReports() {}\n}\n"
+      },
+      {
+        "path": ".env",
+        "content": "SPRING_DATASOURCE_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API",
+      "Reports API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API",
+      "V1 API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryCapabilityCountMax": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "POST /api/v1/billing/invoices/{invoiceId}/reconcile",
+      "GET /api/v1/billing/invoices/{invoiceId}/audit",
+      "GET /api/v1/customers/{customerId}",
+      "GET /api/v1/reports/daily"
+    ],
+    "inventoryEntrypointRouteCountMin": 4,
+    "inventorySymbolNamesInclude": [
+      "BillingController",
+      "reconcileInvoice",
+      "auditInvoice",
+      "BillingService",
+      "reconcile",
+      "BillingRepository",
+      "markReconciled",
+      "CustomerController",
+      "showCustomer",
+      "ReportController",
+      "dailyReport"
+    ],
+    "inventorySymbolCountMin": 11,
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 10,
+    "inventoryRouteHandlerEdgeCountMin": 4,
+    "inventorySourceChunkCountMin": 8,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers",
+      "inventory_capability_cap_api_reports"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_src_main_java_com_acme_legacy_billing",
+      "inventory_source_chunk_src_chunk_src_test_java_com_acme_legacy_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_billing_reconciliation_primary",
+      "file:src/main/java/com/acme/legacy/billing/BillingController.java#L8",
+      "file:src/main/java/com/acme/legacy/billing/BillingController.java#L9",
+      "file:src/main/java/com/acme/legacy/billing/BillingService.java#L3",
+      "file:src/main/java/com/acme/legacy/billing/BillingService.java#L6",
+      "file:src/main/java/com/acme/legacy/billing/BillingRepository.java#L3",
+      "file:src/test/java/com/acme/legacy/billing/BillingControllerTest.java"
+    ],
+    "sourceRefsExclude": [
+      "file:src/main/java/com/acme/legacy/customer/CustomerController.java#L6",
+      "file:src/main/java/com/acme/legacy/reports/ReportController.java#L6",
+      "file:src/test/java/com/acme/legacy/customer/CustomerControllerTest.java",
+      "file:src/test/java/com/acme/legacy/reports/ReportControllerTest.java"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedCountMin": 4,
+    "selectedCountMax": 11
+  },
+  "variants": [
+    {
+      "id": "billing-reconciliation-primary",
+      "label": "Spring billing reconciliation task stays focused on billing controller and tests",
+      "expectations": {
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_billing",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:src/main/java/com/acme/legacy/billing/BillingController.java#L8",
+              "file:src/main/java/com/acme/legacy/billing/BillingService.java#L6",
+              "file:src/main/java/com/acme/legacy/billing/BillingRepository.java#L3",
+              "file:src/test/java/com/acme/legacy/billing/BillingControllerTest.java"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/java/com/acme/legacy/customer/CustomerController.java#L6",
+              "file:src/main/java/com/acme/legacy/reports/ReportController.java#L6",
+              "file:src/test/java/com/acme/legacy/customer/CustomerControllerTest.java",
+              "file:src/test/java/com/acme/legacy/reports/ReportControllerTest.java"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_billing_api",
+            "sourceRefsInclude": [
+              "file:src/main/java/com/acme/legacy/billing/BillingController.java#L9",
+              "file:src/main/java/com/acme/legacy/billing/BillingService.java#L6",
+              "file:src/main/java/com/acme/legacy/billing/BillingRepository.java#L3"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/java/com/acme/legacy/customer/CustomerController.java#L6",
+              "file:src/main/java/com/acme/legacy/reports/ReportController.java#L6",
+              "file:src/test/java/com/acme/legacy/customer/CustomerControllerTest.java",
+              "file:src/test/java/com/acme/legacy/reports/ReportControllerTest.java"
+            ]
+          },
+          {
+            "ref": "inventory_tests_billing_api",
+            "sourceRefsInclude": [
+              "file:src/test/java/com/acme/legacy/billing/BillingControllerTest.java"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/java/com/acme/legacy/customer/CustomerController.java#L6",
+              "file:src/main/java/com/acme/legacy/reports/ReportController.java#L6",
+              "file:src/test/java/com/acme/legacy/customer/CustomerControllerTest.java",
+              "file:src/test/java/com/acme/legacy/reports/ReportControllerTest.java"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "customer-profile-primary",
+      "label": "Spring customer profile task selects customer controller evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix customer profile loading in the legacy Spring customer controller."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_customers",
+          "inventory_symbols_customers_api",
+          "inventory_tests_customers_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_billing",
+          "inventory_capability_cap_api_reports"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_customers",
+          "inventory_symbols_customers_api",
+          "inventory_tests_customers_api",
+          "inventory_hotspots_customers_api",
+          "inventory_source_chunk_src_chunk_src_main_java_com_acme_legacy_customer",
+          "inventory_source_chunk_src_chunk_src_test_java_com_acme_legacy_customer"
+        ],
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_customer_profile_primary",
+          "file:src/main/java/com/acme/legacy/customer/CustomerController.java#L6",
+          "file:src/main/java/com/acme/legacy/customer/CustomerController.java#L7",
+          "file:src/test/java/com/acme/legacy/customer/CustomerControllerTest.java"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/java/com/acme/legacy/billing/BillingController.java#L8",
+          "file:src/main/java/com/acme/legacy/reports/ReportController.java#L6",
+          "file:src/test/java/com/acme/legacy/billing/BillingControllerTest.java",
+          "file:src/test/java/com/acme/legacy/reports/ReportControllerTest.java"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_customers": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_customers",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:src/main/java/com/acme/legacy/customer/CustomerController.java#L6",
+              "file:src/main/java/com/acme/legacy/customer/CustomerController.java#L7",
+              "file:src/test/java/com/acme/legacy/customer/CustomerControllerTest.java"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/java/com/acme/legacy/billing/BillingController.java#L8",
+              "file:src/main/java/com/acme/legacy/reports/ReportController.java#L6",
+              "file:src/test/java/com/acme/legacy/billing/BillingControllerTest.java",
+              "file:src/test/java/com/acme/legacy/reports/ReportControllerTest.java"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_customers_api",
+            "sourceRefsInclude": [
+              "file:src/main/java/com/acme/legacy/customer/CustomerController.java#L6",
+              "file:src/main/java/com/acme/legacy/customer/CustomerController.java#L7"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/java/com/acme/legacy/billing/BillingController.java#L8",
+              "file:src/main/java/com/acme/legacy/reports/ReportController.java#L6",
+              "file:src/test/java/com/acme/legacy/billing/BillingControllerTest.java",
+              "file:src/test/java/com/acme/legacy/reports/ReportControllerTest.java"
+            ]
+          },
+          {
+            "ref": "inventory_tests_customers_api",
+            "sourceRefsInclude": [
+              "file:src/test/java/com/acme/legacy/customer/CustomerControllerTest.java"
+            ],
+            "sourceRefsExclude": [
+              "file:src/test/java/com/acme/legacy/billing/BillingControllerTest.java",
+              "file:src/test/java/com/acme/legacy/reports/ReportControllerTest.java"
+            ]
+          }
+        ],
+        "selectedCountMin": 4,
+        "selectedCountMax": 11
+      }
+    },
+    {
+      "id": "reports-daily-primary",
+      "label": "Spring reports task selects report controller evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix daily reports endpoint in the legacy Spring reports controller."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_reports",
+          "inventory_symbols_reports_api",
+          "inventory_tests_reports_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_billing",
+          "inventory_capability_cap_api_customers"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_reports",
+          "inventory_symbols_reports_api",
+          "inventory_tests_reports_api",
+          "inventory_hotspots_reports_api",
+          "inventory_source_chunk_src_chunk_src_main_java_com_acme_legacy_reports",
+          "inventory_source_chunk_src_chunk_src_test_java_com_acme_legacy_reports"
+        ],
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_reports_daily_primary",
+          "file:src/main/java/com/acme/legacy/reports/ReportController.java#L6",
+          "file:src/main/java/com/acme/legacy/reports/ReportController.java#L7",
+          "file:src/test/java/com/acme/legacy/reports/ReportControllerTest.java"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/java/com/acme/legacy/billing/BillingController.java#L8",
+          "file:src/main/java/com/acme/legacy/customer/CustomerController.java#L6",
+          "file:src/test/java/com/acme/legacy/billing/BillingControllerTest.java",
+          "file:src/test/java/com/acme/legacy/customer/CustomerControllerTest.java"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_reports": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_reports",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:src/main/java/com/acme/legacy/reports/ReportController.java#L6",
+              "file:src/main/java/com/acme/legacy/reports/ReportController.java#L7",
+              "file:src/test/java/com/acme/legacy/reports/ReportControllerTest.java"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/java/com/acme/legacy/billing/BillingController.java#L8",
+              "file:src/main/java/com/acme/legacy/customer/CustomerController.java#L6",
+              "file:src/test/java/com/acme/legacy/billing/BillingControllerTest.java",
+              "file:src/test/java/com/acme/legacy/customer/CustomerControllerTest.java"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_reports_api",
+            "sourceRefsInclude": [
+              "file:src/main/java/com/acme/legacy/reports/ReportController.java#L6",
+              "file:src/main/java/com/acme/legacy/reports/ReportController.java#L7"
+            ],
+            "sourceRefsExclude": [
+              "file:src/main/java/com/acme/legacy/billing/BillingController.java#L8",
+              "file:src/main/java/com/acme/legacy/customer/CustomerController.java#L6",
+              "file:src/test/java/com/acme/legacy/billing/BillingControllerTest.java",
+              "file:src/test/java/com/acme/legacy/customer/CustomerControllerTest.java"
+            ]
+          },
+          {
+            "ref": "inventory_tests_reports_api",
+            "sourceRefsInclude": [
+              "file:src/test/java/com/acme/legacy/reports/ReportControllerTest.java"
+            ],
+            "sourceRefsExclude": [
+              "file:src/test/java/com/acme/legacy/billing/BillingControllerTest.java",
+              "file:src/test/java/com/acme/legacy/customer/CustomerControllerTest.java"
+            ]
+          }
+        ],
+        "selectedCountMin": 4,
+        "selectedCountMax": 11
+      }
+    }
+  ]
+}

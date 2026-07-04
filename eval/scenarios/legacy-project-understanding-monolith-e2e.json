@@ -1,0 +1,331 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-monolith-e2e",
+  "title": "Legacy project understanding keeps a multi-domain monolith focused",
+  "description": "Runs the real scanner against a small old Express/CommonJS monolith with billing, customers, and reports domains, then verifies ContextPack selects billing evidence without leaking unrelated domain context.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_monolith",
+    "title": "Update legacy monolith billing reconciliation",
+    "stage": "implementation",
+    "taskBrief": "Fix billing invoice reconciliation and update billing tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 32,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\"name\":\"legacy-monolith\",\"scripts\":{\"test\":\"jest\",\"build\":\"tsc --noEmit\",\"lint\":\"eslint .\"}}"
+      },
+      {
+        "path": "src/app.js",
+        "content": "const express = require('express');\nconst billingRoutes = require('./routes/billing');\nconst customerRoutes = require('./routes/customers');\nconst reportRoutes = require('./routes/reports');\nconst app = express();\n\napp.use('/api/v1/billing', billingRoutes);\napp.use('/api/v1/customers', customerRoutes);\napp.use('/api/v1/reports', reportRoutes);\n\nmodule.exports = app;\n"
+      },
+      {
+        "path": "src/routes/billing.js",
+        "content": "const express = require('express');\nconst billingController = require('../controllers/billing-controller');\nconst router = express.Router();\n\nrouter.post('/invoices/:invoiceId/reconcile', billingController.reconcileInvoice);\nrouter.get('/invoices/:invoiceId/audit', billingController.auditInvoice);\n\nmodule.exports = router;\n"
+      },
+      {
+        "path": "src/controllers/billing-controller.js",
+        "content": "const BillingService = require('../services/billing-service');\n\nmodule.exports = {\n  reconcileInvoice(req, res) {\n    return BillingService.reconcile(req.params.invoiceId);\n  },\n\n  auditInvoice(req, res) {\n    return BillingService.audit(req.params.invoiceId);\n  }\n};\n"
+      },
+      {
+        "path": "src/services/billing-service.js",
+        "content": "const BillingRepository = require('../repositories/billing-repository');\n\nmodule.exports = {\n  reconcile(invoiceId) {\n    return BillingRepository.markReconciled(invoiceId);\n  },\n\n  audit(invoiceId) {\n    return BillingRepository.auditTrail(invoiceId);\n  }\n};\n"
+      },
+      {
+        "path": "src/repositories/billing-repository.js",
+        "content": "module.exports = {\n  markReconciled(invoiceId) {\n    return { invoiceId, status: 'reconciled' };\n  },\n\n  auditTrail(invoiceId) {\n    return [];\n  }\n};\n"
+      },
+      {
+        "path": "src/routes/customers.js",
+        "content": "const express = require('express');\nconst customerController = require('../controllers/customer-controller');\nconst router = express.Router();\n\nrouter.get('/:customerId', customerController.showCustomer);\nrouter.post('/', customerController.createCustomer);\n\nmodule.exports = router;\n"
+      },
+      {
+        "path": "src/controllers/customer-controller.js",
+        "content": "const CustomerService = require('../services/customer-service');\n\nmodule.exports = {\n  showCustomer(req, res) {\n    return CustomerService.show(req.params.customerId);\n  },\n\n  createCustomer(req, res) {\n    return CustomerService.create(req.body);\n  }\n};\n"
+      },
+      {
+        "path": "src/services/customer-service.js",
+        "content": "module.exports = {\n  show(customerId) {\n    return { customerId };\n  },\n\n  create(input) {\n    return { id: 'new-customer', ...input };\n  }\n};\n"
+      },
+      {
+        "path": "src/routes/reports.js",
+        "content": "const express = require('express');\nconst reportController = require('../controllers/report-controller');\nconst router = express.Router();\n\nrouter.get('/daily', reportController.dailyReport);\n\nmodule.exports = router;\n"
+      },
+      {
+        "path": "src/controllers/report-controller.js",
+        "content": "module.exports = {\n  dailyReport(req, res) {\n    return { status: 'ok' };\n  }\n};\n"
+      },
+      {
+        "path": "tests/billing-reconciliation.test.js",
+        "content": "describe('billing reconciliation', () => {\n  it('reconciles invoices through the legacy billing route', () => expect(true).toBe(true));\n});\n"
+      },
+      {
+        "path": "tests/customers.test.js",
+        "content": "describe('customers api', () => {\n  it('loads customer profile data', () => expect(true).toBe(true));\n});\n"
+      },
+      {
+        "path": "tests/reports.test.js",
+        "content": "describe('reports api', () => {\n  it('loads daily reports', () => expect(true).toBe(true));\n});\n"
+      },
+      {
+        "path": ".env",
+        "content": "DATABASE_URL=postgres://secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API",
+      "Reports API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryCapabilityCountMax": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "POST /api/v1/billing/invoices/:invoiceId/reconcile",
+      "GET /api/v1/billing/invoices/:invoiceId/audit",
+      "GET /api/v1/customers/:customerId",
+      "POST /api/v1/customers",
+      "GET /api/v1/reports/daily"
+    ],
+    "inventoryEntrypointRouteCountMin": 5,
+    "inventoryEntrypointRouteCountMax": 5,
+    "inventorySymbolNamesInclude": [
+      "reconcileInvoice",
+      "reconcile",
+      "markReconciled",
+      "showCustomer",
+      "dailyReport"
+    ],
+    "inventorySymbolCountMin": 10,
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 10,
+    "inventoryRouteHandlerEdgeCountMin": 5,
+    "inventorySourceChunkCountMin": 10,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers",
+      "inventory_capability_cap_api_reports"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_src_app_js",
+      "inventory_source_chunk_src_chunk_src_controllers_billing",
+      "inventory_source_chunk_src_chunk_src_routes_billing",
+      "inventory_source_chunk_src_chunk_src_services_billing",
+      "inventory_source_chunk_src_chunk_src_repositories_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_billing_reconciliation_primary",
+      "file:src/routes/billing.js#L5",
+      "file:src/controllers/billing-controller.js#L4",
+      "file:tests/billing-reconciliation.test.js"
+    ],
+    "sourceRefsExclude": [
+      "file:src/routes/customers.js#L5",
+      "file:src/routes/reports.js#L5",
+      "file:src/routes/billing.js#L6",
+      "file:src/controllers/billing-controller.js#L8",
+      "file:src/services/billing-service.js#L8",
+      "file:src/repositories/billing-repository.js#L6",
+      "file:tests/customers.test.js",
+      "file:tests/reports.test.js"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedCountMin": 5,
+    "selectedCountMax": 11
+  },
+  "variants": [
+    {
+      "id": "billing-reconciliation-primary",
+      "label": "Billing reconciliation task stays focused on billing route, service, and tests",
+      "expectations": {
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_billing",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:src/app.js#L7",
+              "file:src/routes/billing.js#L5",
+              "file:src/controllers/billing-controller.js#L4",
+              "file:src/controllers/billing-controller.js#L5",
+              "file:src/services/billing-service.js#L4",
+              "file:src/services/billing-service.js#L5",
+              "file:src/repositories/billing-repository.js#L2",
+              "file:tests/billing-reconciliation.test.js"
+            ],
+            "sourceRefsExclude": [
+              "file:src/routes/customers.js#L5",
+              "file:src/routes/reports.js#L5",
+              "file:src/routes/billing.js#L6",
+              "file:src/controllers/billing-controller.js#L8",
+              "file:src/services/billing-service.js#L8",
+              "file:src/repositories/billing-repository.js#L6",
+              "file:tests/customers.test.js",
+              "file:tests/reports.test.js"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_billing_api",
+            "sourceRefsInclude": [
+              "file:src/app.js#L7",
+              "file:src/routes/billing.js#L5",
+              "file:src/controllers/billing-controller.js#L4",
+              "file:src/controllers/billing-controller.js#L5",
+              "file:src/services/billing-service.js#L4",
+              "file:src/services/billing-service.js#L5",
+              "file:src/repositories/billing-repository.js#L2"
+            ],
+            "sourceRefsExclude": [
+              "file:src/routes/customers.js#L5",
+              "file:src/routes/reports.js#L5",
+              "file:src/routes/billing.js#L6",
+              "file:src/controllers/billing-controller.js#L8",
+              "file:src/services/billing-service.js#L8",
+              "file:src/repositories/billing-repository.js#L6",
+              "file:tests/customers.test.js",
+              "file:tests/reports.test.js"
+            ]
+          },
+          {
+            "ref": "inventory_tests_billing_api",
+            "sourceRefsInclude": [
+              "file:tests/billing-reconciliation.test.js"
+            ],
+            "sourceRefsExclude": [
+              "file:src/routes/customers.js#L5",
+              "file:src/routes/reports.js#L5",
+              "file:tests/customers.test.js",
+              "file:tests/reports.test.js"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "customer-profile-primary",
+      "label": "Customer task selects customer route and controller evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix customer profile loading in the legacy customers endpoint."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_customers",
+          "inventory_symbols_customers_api",
+          "inventory_tests_customers_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_billing",
+          "inventory_capability_cap_api_reports"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_customers",
+          "inventory_symbols_customers_api",
+          "inventory_tests_customers_api",
+          "inventory_hotspots_customers_api",
+          "inventory_source_chunk_src_chunk_src_app_js",
+          "inventory_source_chunk_src_chunk_src_controllers_customer",
+          "inventory_source_chunk_src_chunk_src_routes_customers",
+          "inventory_source_chunk_src_chunk_src_services_customer"
+        ],
+        "irrelevantContextRatioMax": 0.13,
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_customer_profile_primary",
+          "file:src/routes/customers.js#L5",
+          "file:src/controllers/customer-controller.js#L4",
+          "file:tests/customers.test.js"
+        ],
+        "sourceRefsExclude": [
+          "file:src/routes/billing.js#L5",
+          "file:src/routes/reports.js#L5",
+          "file:tests/billing-reconciliation.test.js",
+          "file:tests/reports.test.js"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_customers": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_customers",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:src/app.js#L8",
+              "file:src/routes/customers.js#L5",
+              "file:src/controllers/customer-controller.js#L4",
+              "file:src/controllers/customer-controller.js#L5",
+              "file:src/services/customer-service.js#L2",
+              "file:tests/customers.test.js"
+            ],
+            "sourceRefsExclude": [
+              "file:src/routes/billing.js#L5",
+              "file:src/routes/reports.js#L5",
+              "file:tests/billing-reconciliation.test.js",
+              "file:tests/reports.test.js"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_customers_api",
+            "sourceRefsInclude": [
+              "file:src/app.js#L8",
+              "file:src/routes/customers.js#L5",
+              "file:src/controllers/customer-controller.js#L4",
+              "file:src/controllers/customer-controller.js#L5",
+              "file:src/services/customer-service.js#L2"
+            ],
+            "sourceRefsExclude": [
+              "file:src/routes/billing.js#L5",
+              "file:src/routes/reports.js#L5",
+              "file:tests/billing-reconciliation.test.js",
+              "file:tests/reports.test.js"
+            ]
+          },
+          {
+            "ref": "inventory_tests_customers_api",
+            "sourceRefsInclude": [
+              "file:tests/customers.test.js"
+            ],
+            "sourceRefsExclude": [
+              "file:src/routes/billing.js#L5",
+              "file:src/routes/reports.js#L5",
+              "file:tests/billing-reconciliation.test.js",
+              "file:tests/reports.test.js"
+            ]
+          }
+        ],
+        "selectedCountMin": 5,
+        "selectedCountMax": 11
+      }
+    }
+  ]
+}

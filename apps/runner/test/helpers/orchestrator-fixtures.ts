@@ -99,6 +99,8 @@ export function runCtxFixture(overrides: Partial<RunCtx> = {}): RunCtx {
       acceptedKnowledge: '',
       knowledgeArtifacts: [],
       runHistory: [],
+      historicalInventoryArtifact: null,
+      historicalInventoryArtifactChecked: false,
     },
     contextPolicy: {
       budget: { maxTokens: 100_000, reservedForReasoning: 20_000, reservedForOutput: 8_000 },

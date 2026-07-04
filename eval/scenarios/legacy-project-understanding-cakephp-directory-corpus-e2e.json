@@ -1,0 +1,323 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-cakephp-directory-corpus-e2e",
+  "title": "Legacy project understanding scans a directory-backed old CakePHP commerce corpus",
+  "description": "Runs the real scanner against a checked-in CakePHP old commerce fixture with static routes, billing/orders/customers controller/service/repository layers, SQL schema/routine evidence, tests, credential-like config, and generated/vendor/tmp/log noise filtered by fixtureDir.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_cakephp_directory_corpus",
+    "title": "Update legacy CakePHP billing refund review",
+    "stage": "implementation",
+    "taskBrief": "Fix the legacy CakePHP billing refund review route, rebuild_cake_refund_review SQL routine, cake_refund_review_entries table, and tests/billing/RefundReviewCakePhpTest.php.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 42,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072
+    },
+    "fixtureDir": {
+      "path": "../fixtures/legacy-directory-backed-cakephp-commerce",
+      "maxFiles": 22,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072,
+      "excludePaths": [
+        ".gitignore",
+        "tmp",
+        "vendor",
+        "logs"
+      ]
+    }
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Orders API",
+      "Customers API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API",
+      "Php API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /billing/refunds/review",
+      "ANY /orders/fulfillment/reprice",
+      "ANY /customers/profile/risk"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventorySymbolNamesInclude": [
+      "BillingController",
+      "reviewRefund",
+      "BillingRefundService",
+      "rebuildCakeRefundReview",
+      "BillingRefundRepository",
+      "writeCakeRefundReviewEntry",
+      "OrdersController",
+      "OrderFulfillmentService",
+      "CustomersController",
+      "CustomerProfileService"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 9,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventorySourceChunkCountMin": 16,
+    "inventoryExclusionsInclude": [
+      "config/credentials.php:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_domain_entities_billing_api",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_orders",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_domain_entities_billing_api",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_app_config_routes",
+      "inventory_source_chunk_src_chunk_app_controller_billing",
+      "inventory_source_chunk_src_chunk_app_service_billing",
+      "inventory_source_chunk_src_chunk_app_repository_billing",
+      "inventory_source_chunk_src_chunk_db_billing",
+      "inventory_source_chunk_src_chunk_tests_billing"
+    ],
+    "irrelevantContextRatioMax": 0.16,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_cakephp_commerce_billing_refund_review",
+      "file:app/Config/routes.php#L2",
+      "file:app/Controller/BillingController.php#L2",
+      "file:app/Controller/BillingController.php#L4",
+      "file:app/Controller/BillingController.php#L5",
+      "file:app/Controller/BillingController.php#L6",
+      "file:app/Service/BillingRefundService.php#L2",
+      "file:app/Service/BillingRefundService.php#L4",
+      "file:app/Service/BillingRefundService.php#L5",
+      "file:app/Service/BillingRefundService.php#L6",
+      "file:app/Repository/BillingRefundRepository.php#L2",
+      "file:app/Repository/BillingRefundRepository.php#L4",
+      "file:app/Repository/BillingRefundRepository.php#L5",
+      "file:db/billing/schema.sql#L1",
+      "file:db/billing/routines.sql#L1",
+      "file:tests/billing/RefundReviewCakePhpTest.php"
+    ],
+    "sourceRefsExclude": [
+      "file:app/Config/routes.php#L3",
+      "file:app/Config/routes.php#L4",
+      "file:app/Config/routes.php#L5",
+      "file:app/Controller/OrdersController.php#L2",
+      "file:app/Controller/CustomersController.php#L2",
+      "file:db/orders/schema.sql#L1",
+      "file:db/customers/schema.sql#L1",
+      "file:tests/orders/FulfillmentRepriceCakePhpTest.php",
+      "file:tests/customers/ProfileRiskCakePhpTest.php",
+      "file:vendor/generated_gateway_client.php",
+      "file:tmp/cache/routes.php",
+      "file:logs/application.log"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary",
+      "inventory_domain_entities_billing_api": "summary"
+    },
+    "selectedCountMin": 5,
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "contentIncludes": [
+          "ANY /billing/refunds/review"
+        ],
+        "contentExcludes": [
+          "ANY /orders/fulfillment/reprice",
+          "ANY /customers/profile/risk",
+          "ANY /billing/:id"
+        ],
+        "sourceRefsInclude": [
+          "file:app/Config/routes.php#L2",
+          "file:app/Controller/BillingController.php#L2",
+          "file:app/Controller/BillingController.php#L4",
+          "file:app/Controller/BillingController.php#L5",
+          "file:app/Controller/BillingController.php#L6",
+          "file:app/Service/BillingRefundService.php#L2",
+          "file:app/Service/BillingRefundService.php#L4",
+          "file:app/Repository/BillingRefundRepository.php#L2",
+          "file:tests/billing/RefundReviewCakePhpTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:app/Config/routes.php#L3",
+          "file:app/Config/routes.php#L4",
+          "file:app/Config/routes.php#L5",
+          "file:app/Controller/OrdersController.php#L2",
+          "file:app/Controller/CustomersController.php#L2",
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1",
+          "file:tests/orders/FulfillmentRepriceCakePhpTest.php",
+          "file:tests/customers/ProfileRiskCakePhpTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_domain_entities_billing_api",
+        "contentIncludes": [
+          "Matched Domain Entities",
+          "routine | rebuild_cake_refund_review | db/billing/routines.sql",
+          "table | cake_refund_review_entries | db/billing/schema.sql",
+          "refs=file:app/Repository/BillingRefundRepository.php#L5"
+        ],
+        "contentExcludes": [
+          "cake_order_fulfillment_backlog",
+          "cake_customer_profile_snapshots"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/schema.sql#L1",
+          "file:app/Repository/BillingRefundRepository.php#L5"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:app/Config/routes.php#L2",
+          "file:app/Controller/BillingController.php#L2",
+          "file:app/Controller/BillingController.php#L4",
+          "file:app/Controller/BillingController.php#L5",
+          "file:app/Controller/BillingController.php#L6",
+          "file:app/Service/BillingRefundService.php#L2",
+          "file:app/Service/BillingRefundService.php#L4",
+          "file:app/Service/BillingRefundService.php#L5",
+          "file:app/Service/BillingRefundService.php#L6",
+          "file:app/Repository/BillingRefundRepository.php#L2",
+          "file:app/Repository/BillingRefundRepository.php#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:app/Config/routes.php#L3",
+          "file:app/Config/routes.php#L4",
+          "file:app/Config/routes.php#L5",
+          "file:app/Controller/OrdersController.php#L2",
+          "file:app/Controller/CustomersController.php#L2",
+          "file:tests/orders/FulfillmentRepriceCakePhpTest.php",
+          "file:tests/customers/ProfileRiskCakePhpTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/billing/RefundReviewCakePhpTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:tests/orders/FulfillmentRepriceCakePhpTest.php",
+          "file:tests/customers/ProfileRiskCakePhpTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_app_controller_billingcontroller_php_1_9",
+        "contentIncludes": [
+          "Source chunk: app/Controller/BillingController.php:1-9",
+          "Pointed by inventory evidence"
+        ],
+        "sourceRefsInclude": [
+          "file:app/Config/routes.php#L2",
+          "file:app/Controller/BillingController.php#L2",
+          "file:app/Controller/BillingController.php#L4",
+          "file:app/Controller/BillingController.php#L5",
+          "file:app/Controller/BillingController.php#L6"
+        ],
+        "sourceRefsExclude": [
+          "file:app/Config/routes.php#L3",
+          "file:app/Config/routes.php#L4",
+          "file:app/Controller/OrdersController.php#L2",
+          "file:app/Controller/CustomersController.php#L2"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_app_service_billingrefundservice_php_1_9",
+        "contentIncludes": [
+          "Source chunk: app/Service/BillingRefundService.php:1-9",
+          "calls_billingrefundservice_rebuildcakerefundreview"
+        ],
+        "sourceRefsInclude": [
+          "file:app/Service/BillingRefundService.php#L2",
+          "file:app/Service/BillingRefundService.php#L4",
+          "file:app/Service/BillingRefundService.php#L5",
+          "file:app/Service/BillingRefundService.php#L6",
+          "file:app/Repository/BillingRefundRepository.php#L2",
+          "file:app/Repository/BillingRefundRepository.php#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:app/Service/OrderFulfillmentService.php#L2",
+          "file:app/Service/CustomerProfileService.php#L2",
+          "file:app/Repository/OrderFulfillmentRepository.php#L2",
+          "file:app/Repository/CustomerProfileRepository.php#L2"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_app_repository_billingrefundrepository_php_1_9",
+        "contentIncludes": [
+          "Source chunk: app/Repository/BillingRefundRepository.php:1-9",
+          "cake_refund_review_entries"
+        ],
+        "sourceRefsInclude": [
+          "file:app/Repository/BillingRefundRepository.php#L2",
+          "file:app/Repository/BillingRefundRepository.php#L4",
+          "file:app/Repository/BillingRefundRepository.php#L5",
+          "file:db/billing/schema.sql#L1",
+          "file:db/billing/routines.sql#L3"
+        ],
+        "sourceRefsExclude": [
+          "file:app/Repository/OrderFulfillmentRepository.php#L2",
+          "file:app/Repository/CustomerProfileRepository.php#L2",
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_db_billing_routines_sql_1_8",
+        "contentIncludes": [
+          "Source chunk: db/billing/routines.sql:1-8",
+          "rebuild_cake_refund_review"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/routines.sql#L3",
+          "file:db/billing/routines.sql#L5",
+          "file:db/billing/schema.sql#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      }
+    ],
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.65,
+      "routeHandlerEdgeConfidenceMin": 0.78,
+      "sourceChunkContentSha256CoverageMin": 1,
+      "sourceChunkIndexCoverageMin": 1,
+      "sourceChunkLinkedRecordCoverageMin": 0.75,
+      "sourceFileExtensionCountMin": 3,
+      "sourcePathPatternCountMin": 5,
+      "sourceRecordKindCountMin": 7
+    }
+  },
+  "variants": [
+    {
+      "id": "cakephp-commerce-billing-refund-review",
+      "label": "Legacy CakePHP commerce task stays focused on billing refund route, SQL routine, and tests"
+    }
+  ]
+}

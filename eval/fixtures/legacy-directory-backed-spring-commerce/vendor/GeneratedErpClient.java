@@ -1,0 +1,3 @@
+class GeneratedErpClient {
+  void auditRefund() {}
+}

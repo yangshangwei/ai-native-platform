@@ -1,0 +1,235 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-go-directory-corpus-e2e",
+  "title": "Legacy project understanding scans a directory-backed old Go commerce corpus",
+  "description": "Runs the real scanner against a checked-in Go-style old commerce fixture with mux/http routes, billing/orders/customers handler/service/repository layers, SQL schema/routine evidence, tests, credential-like config, and generated/vendor/tmp/log noise filtered by fixtureDir.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_go_directory_corpus",
+    "title": "Update legacy Go billing refund audit",
+    "stage": "implementation",
+    "taskBrief": "Fix the legacy Go billing refund audit handler and rebuild_go_refund_audit SQL routine, then update billing refund audit tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 40,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072
+    },
+    "fixtureDir": {
+      "path": "../fixtures/legacy-directory-backed-go-commerce",
+      "maxFiles": 28,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072,
+      "excludePaths": [
+        "vendor",
+        "tmp",
+        "logs"
+      ]
+    }
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Orders API",
+      "Customers API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API",
+      "V7 API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "POST /api/v7/billing/refunds/{refundID}/audit",
+      "PATCH /api/v7/orders/fulfillment/{orderID}/reprice",
+      "GET /api/v7/customers/profiles/{customerID}/risk"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventorySymbolNamesInclude": [
+      "RegisterRoutes",
+      "auditRefund",
+      "BillingRefundService",
+      "NewBillingRefundService",
+      "RebuildRefundAudit",
+      "BillingRefundRepository",
+      "WriteRefundAuditEntry",
+      "repriceFulfillment",
+      "OrderFulfillmentService",
+      "reviewCustomerRisk",
+      "CustomerProfileService"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 9,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventorySourceChunkCountMin": 16,
+    "inventoryExclusionsInclude": [
+      "config/credentials.yml:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_domain_entities_billing_api",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_orders",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_domain_entities_billing_api",
+      "inventory_source_chunk_src_chunk_cmd_server_routes",
+      "inventory_source_chunk_src_chunk_internal_billing",
+      "inventory_source_chunk_src_chunk_db_billing"
+    ],
+    "irrelevantContextRatioMax": 0.16,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_go_commerce_billing_refund_audit",
+      "file:cmd/server/routes.go#L6",
+      "file:cmd/server/routes.go#L12",
+      "file:cmd/server/routes.go#L17",
+      "file:cmd/server/routes.go#L18",
+      "file:cmd/server/routes.go#L19",
+      "file:internal/billing/service.go#L3",
+      "file:internal/billing/service.go#L5",
+      "file:internal/billing/service.go#L7",
+      "file:internal/billing/service.go#L8",
+      "file:internal/billing/service.go#L9",
+      "file:internal/billing/repository.go#L3",
+      "file:internal/billing/repository.go#L5",
+      "file:internal/billing/repository.go#L6",
+      "file:db/billing/schema.sql#L1",
+      "file:db/billing/routines.sql#L1",
+      "file:internal/billing/refund_handler_test.go"
+    ],
+    "sourceRefsExclude": [
+      "file:cmd/server/routes.go#L13",
+      "file:cmd/server/routes.go#L14",
+      "file:internal/orders/service.go#L3",
+      "file:internal/customers/service.go#L3",
+      "file:db/orders/schema.sql#L1",
+      "file:db/customers/schema.sql#L1",
+      "file:internal/orders/fulfillment_handler_test.go",
+      "file:internal/customers/profile_handler_test.go",
+      "file:vendor/generated_gateway.go",
+      "file:tmp/generated_routes.go",
+      "file:logs/app.log"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary",
+      "inventory_domain_entities_billing_api": "summary"
+    },
+    "selectedCountMin": 5,
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:cmd/server/routes.go#L6",
+          "file:cmd/server/routes.go#L12",
+          "file:cmd/server/routes.go#L17",
+          "file:cmd/server/routes.go#L18",
+          "file:cmd/server/routes.go#L19",
+          "file:internal/billing/service.go#L3",
+          "file:internal/billing/service.go#L7",
+          "file:internal/billing/repository.go#L3",
+          "file:internal/billing/refund_handler_test.go"
+        ],
+        "sourceRefsExclude": [
+          "file:cmd/server/routes.go#L13",
+          "file:cmd/server/routes.go#L14",
+          "file:internal/orders/service.go#L3",
+          "file:internal/customers/service.go#L3",
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1",
+          "file:internal/orders/fulfillment_handler_test.go",
+          "file:internal/customers/profile_handler_test.go",
+          "file:vendor/generated_gateway.go",
+          "file:tmp/generated_routes.go",
+          "file:logs/app.log"
+        ]
+      },
+      {
+        "ref": "inventory_domain_entities_billing_api",
+        "contentIncludes": [
+          "Matched Domain Entities",
+          "routine | rebuild_go_refund_audit | db/billing/routines.sql",
+          "table | go_refund_audit_entries | db/billing/schema.sql",
+          "refs=file:internal/billing/repository.go#L6"
+        ],
+        "contentExcludes": [
+          "go_order_fulfillment_backlog",
+          "go_customer_profile_snapshots"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/schema.sql#L1",
+          "file:internal/billing/repository.go#L6"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:cmd/server/routes.go#L6",
+          "file:cmd/server/routes.go#L12",
+          "file:cmd/server/routes.go#L17",
+          "file:cmd/server/routes.go#L18",
+          "file:cmd/server/routes.go#L19",
+          "file:internal/billing/service.go#L3",
+          "file:internal/billing/service.go#L5",
+          "file:internal/billing/service.go#L7",
+          "file:internal/billing/service.go#L8",
+          "file:internal/billing/repository.go#L3",
+          "file:internal/billing/repository.go#L5"
+        ],
+        "sourceRefsExclude": [
+          "file:cmd/server/routes.go#L13",
+          "file:cmd/server/routes.go#L14",
+          "file:internal/orders/service.go#L3",
+          "file:internal/customers/service.go#L3",
+          "file:internal/orders/fulfillment_handler_test.go",
+          "file:internal/customers/profile_handler_test.go"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:internal/billing/refund_handler_test.go"
+        ],
+        "sourceRefsExclude": [
+          "file:internal/orders/fulfillment_handler_test.go",
+          "file:internal/customers/profile_handler_test.go"
+        ]
+      }
+    ],
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.65,
+      "routeHandlerEdgeConfidenceMin": 0.78,
+      "sourceChunkContentSha256CoverageMin": 1,
+      "sourceChunkIndexCoverageMin": 1,
+      "sourceChunkLinkedRecordCoverageMin": 1,
+      "sourceFileExtensionCountMin": 3,
+      "sourcePathPatternCountMin": 5,
+      "sourceRecordKindCountMin": 7
+    }
+  },
+  "variants": [
+    {
+      "id": "go-commerce-billing-refund-audit",
+      "label": "Legacy Go commerce task stays focused on billing refund handler, SQL routine, and tests"
+    }
+  ]
+}

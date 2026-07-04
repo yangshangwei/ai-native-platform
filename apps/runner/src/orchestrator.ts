@@ -9,6 +9,7 @@ import { getConfig } from './config-client';
 import { sendHeartbeat } from './heartbeat';
 import { selectAgentBackend } from './backend-selection';
 import { FLOW_REGISTRY } from './flows/registry';
+import type { AgentBackend } from './agents/types';
 import type {
   ContextPolicy,
   OkRef,
@@ -23,7 +24,9 @@ import {
   executeBuildTest,
   executeCompletion,
   executeImplementation,
+  executeInventory,
   executeKnowledgePromotion,
+  executeProfileBootstrap,
   executeVerifier,
   runContextPack,
   runStage,
@@ -103,19 +106,28 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
   console.log(`[runner] heartbeat from ${runnerId} (jdk=${tools.jdk}, mvn=${tools.maven})`);
 
   const project = await api.getProject(opts.project);
-  const backend = await selectAgentBackend(project);
+  let backend: AgentBackend = placeholderBackend(project, opts.agentBackend);
   let run: WorkflowRun;
   let existingRunDetail: Awaited<ReturnType<typeof api.getWorkflowRun>> | null = null;
   if (opts.workflowRunId) {
     // Resume an existing run (retry-step flow).
     existingRunDetail = await api.getWorkflowRun(opts.workflowRunId);
     run = existingRunDetail.run;
+    if (run.flowId !== 'profile.bootstrap') {
+      backend = await selectAgentBackend(project, opts.agentBackend);
+    }
     console.log(`[runner] resuming workflow-run ${run.id} at stage ${opts.startStage ?? run.currentStage} (flow=${run.flowId})`);
   } else {
     // 06-25 ask-flow: 'ask' requests never reach orchestrator (they have
     // status='awaiting_clarification', not 'pending'), but TypeScript doesn't
     // know that. Filter out 'ask' to satisfy createWorkflowRun's type constraint.
-    const executableRunType = opts.runType === 'ask' ? 'feature' : (opts.runType ?? 'feature');
+    const inferredRunType = opts.runType
+      ?? (opts.flowId ? FLOW_REGISTRY[opts.flowId]?.kind : undefined)
+      ?? 'feature';
+    const executableRunType = inferredRunType === 'ask' ? 'feature' : inferredRunType;
+    if (opts.flowId !== 'profile.bootstrap' && executableRunType !== 'profile') {
+      backend = await selectAgentBackend(project, opts.agentBackend);
+    }
     run = await api.createWorkflowRun({
       projectName: project.name,
       title: opts.title,
@@ -176,6 +188,8 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
         acceptedKnowledge: null,
         knowledgeArtifacts: null,
         runHistory: null,
+        historicalInventoryArtifact: null,
+        historicalInventoryArtifactChecked: false,
       },
       contextPolicy,
       contextRequestChain: [],
@@ -324,6 +338,8 @@ export interface DispatchDeps {
   executeAcceptance: (c: RunCtx) => Promise<void>;
   executeCompletion: (c: RunCtx) => Promise<void>;
   executeKnowledgePromotion: (c: RunCtx) => Promise<void>;
+  executeInventory: (c: RunCtx) => Promise<void>;
+  executeProfileBootstrap: (c: RunCtx) => Promise<void>;
   executeAgentMarkdownStage: (
     stage: 'report' | 'analyze' | 'scan' | 'plan',
     c: RunCtx,
@@ -340,6 +356,8 @@ const DEFAULT_DISPATCH_DEPS: DispatchDeps = {
   executeAcceptance: (c) => executeAcceptance(c),
   executeCompletion: (c) => executeCompletion(c),
   executeKnowledgePromotion: (c) => executeKnowledgePromotion(c),
+  executeInventory: (c) => executeInventory(c),
+  executeProfileBootstrap: (c) => executeProfileBootstrap(c),
   executeAgentMarkdownStage: (stage, c) => executeAgentMarkdownStage(stage, c),
 };
 
@@ -379,6 +397,12 @@ export async function dispatchStep(
     case 'knowledge':
       await deps.executeKnowledgePromotion(ctx);
       return;
+    case 'inventory':
+      await deps.executeInventory(ctx);
+      return;
+    case 'profile':
+      await deps.executeProfileBootstrap(ctx);
+      return;
     case 'report':
     case 'analyze':
     case 'scan':
@@ -392,6 +416,19 @@ export async function dispatchStep(
       throw new Error(`unknown stage: ${String(_exhaustive)}`);
     }
   }
+}
+
+function placeholderBackend(
+  project: Awaited<ReturnType<typeof api.getProject>>,
+  override?: Awaited<ReturnType<typeof api.getProject>>['agentBackend'],
+): AgentBackend {
+  const kind = override ?? project.agentBackend ?? 'codex';
+  return {
+    kind,
+    run: async () => {
+      throw new Error('Agent Backend is not ready for this stage.');
+    },
+  };
 }
 
 export function agentUserRequestForOrchestrate(

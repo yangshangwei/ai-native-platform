@@ -97,6 +97,10 @@ function recommendFlowId(input: RouterInput, rulesFired: string[]): FlowId {
     rulesFired.push('flow.refactor_to_refactor_standard');
     return 'refactor.standard';
   }
+  if (input.runType === 'profile') {
+    rulesFired.push('flow.profile_to_profile_bootstrap');
+    return 'profile.bootstrap';
+  }
   if (input.runType === 'smoke') {
     rulesFired.push('flow.smoke_to_feature_standard');
     return 'feature.standard';

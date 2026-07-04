@@ -1,0 +1,142 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-jsp-e2e",
+  "title": "Legacy project understanding keeps JSP page context focused",
+  "description": "Runs the real scanner against a small old JSP fixture, then verifies ContextPack selects the billing page and tests without leaking an unrelated customer page.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_jsp",
+    "title": "Update legacy JSP billing statement page",
+    "stage": "implementation",
+    "taskBrief": "Fix billing statement rendering in the legacy JSP billing page and update billing statement tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 12,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "src/main/webapp/Billing/Statement.jsp",
+        "content": "<%@ page import=\"com.example.billing.BillingService\" %>\n<%\n  BillingService service = new BillingService();\n  String statement = service.loadStatement(request.getParameter(\"statementId\"));\n%>\n<html><body><%= statement %></body></html>\n"
+      },
+      {
+        "path": "src/main/webapp/Customers/Profile.jsp",
+        "content": "<%@ page import=\"com.example.customers.CustomerService\" %>\n<html><body>profile</body></html>\n"
+      },
+      {
+        "path": "tests/Billing/BillingStatementJspTests.java",
+        "content": "public class BillingStatementJspTests {\n  public void rendersBillingStatementPage() {}\n}\n"
+      },
+      {
+        "path": "tests/Customers/CustomerProfileJspTests.java",
+        "content": "public class CustomerProfileJspTests {\n  public void rendersCustomerProfilePage() {}\n}\n"
+      },
+      {
+        "path": ".env",
+        "content": "DB_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /Billing/Statement.jsp",
+      "ANY /Customers/Profile.jsp"
+    ],
+    "inventoryEntrypointRouteCountMin": 2,
+    "inventoryEntrypointRouteCountMax": 2,
+    "inventorySourceChunkCountMin": 4,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_src_main_webapp_billing",
+      "inventory_source_chunk_src_chunk_tests_billing"
+    ],
+    "irrelevantContextRatioMax": 0.15,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_jsp_billing_statement_primary",
+      "file:src/main/webapp/Billing/Statement.jsp#L1",
+      "file:tests/Billing/BillingStatementJspTests.java"
+    ],
+    "sourceRefsExclude": [
+      "file:src/main/webapp/Customers/Profile.jsp#L1",
+      "file:tests/Customers/CustomerProfileJspTests.java"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_source_chunk_src_chunk_src_main_webapp_billing_statement_jsp_1_7",
+        "sourceRefsInclude": [
+          "file:src/main/webapp/Billing/Statement.jsp#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/webapp/Customers/Profile.jsp#L1",
+          "file:tests/Customers/CustomerProfileJspTests.java"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_tests_billing_billingstatementjsptests_java_1_4",
+        "sourceRefsInclude": [
+          "file:tests/Billing/BillingStatementJspTests.java"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/webapp/Customers/Profile.jsp#L1",
+          "file:tests/Customers/CustomerProfileJspTests.java"
+        ]
+      },
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:src/main/webapp/Billing/Statement.jsp#L1",
+          "file:tests/Billing/BillingStatementJspTests.java"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/webapp/Customers/Profile.jsp#L1",
+          "file:tests/Customers/CustomerProfileJspTests.java"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/Billing/BillingStatementJspTests.java"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/webapp/Customers/Profile.jsp#L1",
+          "file:tests/Customers/CustomerProfileJspTests.java"
+        ]
+      }
+    ],
+    "selectedCountMin": 3,
+    "selectedCountMax": 10
+  },
+  "variants": [
+    {
+      "id": "jsp-billing-statement-primary",
+      "label": "Legacy JSP billing statement task stays focused on billing page and tests"
+    }
+  ]
+}

@@ -1,0 +1,204 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-symfony-yaml-e2e",
+  "title": "Legacy project understanding keeps Symfony YAML route context focused",
+  "description": "Runs the real scanner against a small old Symfony YAML routing fixture, then verifies ContextPack selects the billing route and tests without leaking an unrelated customer route.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_symfony_yaml",
+    "title": "Update legacy Symfony billing statements",
+    "stage": "implementation",
+    "taskBrief": "Fix billing statement behavior in the legacy Symfony YAML route and update billing statement tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 16,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "app/config/routing.yml",
+        "content": "billing_statement:\n  path: /billing/statements\n  defaults: { _controller: AcmeBillingBundle:Statement:show }\ncustomer_profile:\n  pattern: /customers/profile\n  defaults:\n    _controller: 'AppBundle\\\\Controller\\\\CustomerController::profileAction'\nbilling_dynamic:\n  path: /billing/{id}\n  defaults: { _controller: AcmeBillingBundle:Statement:show }\nimported_bundle_routes:\n  resource: \"@AcmeBillingBundle/Resources/config/routing.yml\"\n"
+      },
+      {
+        "path": "src/Acme/BillingBundle/Controller/StatementController.php",
+        "content": "<?php\nclass StatementController\n{\n  public function showAction() {\n    $service = new BillingService();\n    return $service->statementList();\n  }\n}\n"
+      },
+      {
+        "path": "src/AppBundle/Controller/CustomerController.php",
+        "content": "<?php\nclass CustomerController\n{\n  public function profileAction() {\n    return null;\n  }\n}\n"
+      },
+      {
+        "path": "src/Acme/BillingBundle/Service/BillingService.php",
+        "content": "<?php\nclass BillingService\n{\n  public function statementList() {\n    $repository = new BillingRepository();\n    return $repository->fetchStatements();\n  }\n}\n"
+      },
+      {
+        "path": "src/Acme/BillingBundle/Repository/BillingRepository.php",
+        "content": "<?php\nclass BillingRepository\n{\n  public function fetchStatements() {\n    return [];\n  }\n}\n"
+      },
+      {
+        "path": "tests/BillingStatementSymfonyYamlTest.php",
+        "content": "<?php\nfunction test_billing_statement_symfony_yaml_route_returns_statement_list() {}\n"
+      },
+      {
+        "path": "tests/CustomerProfileSymfonyYamlTest.php",
+        "content": "<?php\nfunction test_customer_profile_symfony_yaml_route_returns_customer_profile() {}\n"
+      },
+      {
+        "path": ".env",
+        "content": "DB_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /billing/statements",
+      "ANY /customers/profile"
+    ],
+    "inventoryEntrypointRouteCountMin": 2,
+    "inventoryEntrypointRouteCountMax": 2,
+    "inventorySymbolNamesInclude": [
+      "StatementController",
+      "showAction",
+      "BillingService",
+      "statementList",
+      "BillingRepository",
+      "fetchStatements",
+      "CustomerController",
+      "profileAction"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 6,
+    "inventoryRouteHandlerEdgeCountMin": 2,
+    "inventorySourceChunkCountMin": 7,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_symfony_yaml_billing_statements_primary",
+      "file:app/config/routing.yml#L2",
+      "file:app/config/routing.yml#L3",
+      "file:src/Acme/BillingBundle/Controller/StatementController.php#L2",
+      "file:src/Acme/BillingBundle/Controller/StatementController.php#L4",
+      "file:src/Acme/BillingBundle/Controller/StatementController.php#L5",
+      "file:src/Acme/BillingBundle/Controller/StatementController.php#L6",
+      "file:src/Acme/BillingBundle/Service/BillingService.php#L2",
+      "file:src/Acme/BillingBundle/Service/BillingService.php#L4",
+      "file:src/Acme/BillingBundle/Repository/BillingRepository.php#L2",
+      "file:tests/BillingStatementSymfonyYamlTest.php"
+    ],
+    "sourceRefsExclude": [
+      "file:app/config/routing.yml#L5",
+      "file:app/config/routing.yml#L7",
+      "file:src/AppBundle/Controller/CustomerController.php#L2",
+      "file:src/AppBundle/Controller/CustomerController.php#L4",
+      "file:tests/CustomerProfileSymfonyYamlTest.php"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:app/config/routing.yml#L2",
+          "file:app/config/routing.yml#L3",
+          "file:src/Acme/BillingBundle/Controller/StatementController.php#L2",
+          "file:src/Acme/BillingBundle/Controller/StatementController.php#L4",
+          "file:src/Acme/BillingBundle/Controller/StatementController.php#L5",
+          "file:src/Acme/BillingBundle/Controller/StatementController.php#L6",
+          "file:src/Acme/BillingBundle/Service/BillingService.php#L2",
+          "file:src/Acme/BillingBundle/Service/BillingService.php#L4",
+          "file:src/Acme/BillingBundle/Service/BillingService.php#L5",
+          "file:src/Acme/BillingBundle/Service/BillingService.php#L6",
+          "file:src/Acme/BillingBundle/Repository/BillingRepository.php#L2",
+          "file:src/Acme/BillingBundle/Repository/BillingRepository.php#L4",
+          "file:tests/BillingStatementSymfonyYamlTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:app/config/routing.yml#L5",
+          "file:app/config/routing.yml#L7",
+          "file:src/AppBundle/Controller/CustomerController.php#L2",
+          "file:src/AppBundle/Controller/CustomerController.php#L4",
+          "file:tests/CustomerProfileSymfonyYamlTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:app/config/routing.yml#L2",
+          "file:app/config/routing.yml#L3",
+          "file:src/Acme/BillingBundle/Controller/StatementController.php#L2",
+          "file:src/Acme/BillingBundle/Controller/StatementController.php#L4",
+          "file:src/Acme/BillingBundle/Controller/StatementController.php#L5",
+          "file:src/Acme/BillingBundle/Controller/StatementController.php#L6",
+          "file:src/Acme/BillingBundle/Service/BillingService.php#L2",
+          "file:src/Acme/BillingBundle/Service/BillingService.php#L4",
+          "file:src/Acme/BillingBundle/Service/BillingService.php#L5",
+          "file:src/Acme/BillingBundle/Service/BillingService.php#L6",
+          "file:src/Acme/BillingBundle/Repository/BillingRepository.php#L2",
+          "file:src/Acme/BillingBundle/Repository/BillingRepository.php#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:app/config/routing.yml#L5",
+          "file:app/config/routing.yml#L7",
+          "file:src/AppBundle/Controller/CustomerController.php#L2",
+          "file:src/AppBundle/Controller/CustomerController.php#L4",
+          "file:tests/CustomerProfileSymfonyYamlTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/BillingStatementSymfonyYamlTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:app/config/routing.yml#L5",
+          "file:app/config/routing.yml#L7",
+          "file:src/AppBundle/Controller/CustomerController.php#L2",
+          "file:src/AppBundle/Controller/CustomerController.php#L4",
+          "file:tests/CustomerProfileSymfonyYamlTest.php"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 11,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_app_config_routing_yml",
+      "inventory_source_chunk_src_chunk_src_acme_billingbundle",
+      "inventory_source_chunk_src_chunk_tests_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13
+  },
+  "variants": [
+    {
+      "id": "symfony-yaml-billing-statements-primary",
+      "label": "Legacy Symfony YAML billing statement task stays focused on billing route and tests"
+    }
+  ]
+}

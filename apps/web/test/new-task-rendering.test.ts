@@ -50,6 +50,7 @@ function resetState(): void {
     title: 'Improve task creation',
     details: 'Keep draft and focus stable.',
     branch: 'feature/demo',
+    agentBackend: 'claude_code',
     flowId: '',
     startStage: '',
   });
@@ -70,6 +71,7 @@ describe('new-task rendering', () => {
     expect(page.querySelector<HTMLInputElement>('[data-new-task-title]')?.value).toBe('Improve task creation');
     expect(page.querySelector<HTMLTextAreaElement>('[data-new-task-details]')?.value).toBe('Keep draft and focus stable.');
     expect(page.querySelector<HTMLSelectElement>('select[name="branch"]')?.value).toBe('feature/demo');
+    expect(page.querySelector<HTMLSelectElement>('select[name="agentBackend"]')?.value).toBe('claude_code');
     expect(page.querySelector('details[data-details-key="new-task-advanced"]')).not.toBeNull();
     expect(page.querySelector('.new-task-submit-guard')?.textContent).toContain('创建前检查');
     expect(page.querySelector('.new-task-readiness')?.textContent).toContain('项目已选择');

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-fixturedir-not-directory",
+  "title": "Legacy project understanding red fixture rejects fixtureDir file paths",
+  "description": "Intentionally points fixtureDir.path at a checked-in file instead of a directory; the harness must fail during fixtureDir validation before scanner-to-context generation runs.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_fixturedir_not_directory_red",
+    "title": "Update legacy billing fixtureDir behavior",
+    "stage": "implementation",
+    "taskBrief": "Fix billing behavior in a directory-backed legacy fixture.",
+    "fixtureDir": {
+      "path": "../fixtures/legacy-fixturedir-billing/src/routes/legacy-router.ts"
+    }
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API"
+    ]
+  }
+}

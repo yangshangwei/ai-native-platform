@@ -1,0 +1,202 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-play-e2e",
+  "title": "Legacy project understanding keeps Play Framework route context focused",
+  "description": "Runs the real scanner against a small old Play Framework Java fixture, then verifies ContextPack selects the billing route and tests without leaking unrelated customer or asset routes.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_play",
+    "title": "Update legacy Play billing refunds",
+    "stage": "implementation",
+    "taskBrief": "Fix billing refund approval behavior in the legacy Play Framework route and update billing refund tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 18,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "conf/routes",
+        "content": "# Billing routes\nPOST   /billing/refunds/:refundId/approve   controllers.BillingController.approveRefund(refundId: String)\nGET    /customers/:customerId/profile       controllers.CustomerController.profile(customerId: String)\nGET    /assets/*file                        controllers.Assets.versioned(path=\"/public\", file: Asset)\n"
+      },
+      {
+        "path": "app/controllers/BillingController.java",
+        "content": "package controllers;\n\npublic class BillingController extends Controller {\n  private final BillingService billingService = new BillingService();\n\n  public Result approveRefund(String refundId) {\n    return ok(billingService.approveRefund(refundId));\n  }\n}\n"
+      },
+      {
+        "path": "app/controllers/CustomerController.java",
+        "content": "package controllers;\n\npublic class CustomerController extends Controller {\n  public Result profile(String customerId) {\n    return ok(customerId);\n  }\n}\n"
+      },
+      {
+        "path": "app/services/BillingService.java",
+        "content": "package services;\n\npublic class BillingService {\n  private final BillingRepository billingRepository = new BillingRepository();\n\n  public RefundApproval approveRefund(String refundId) {\n    return billingRepository.approveRefund(refundId);\n  }\n}\n"
+      },
+      {
+        "path": "app/repositories/BillingRepository.java",
+        "content": "package repositories;\n\npublic class BillingRepository {\n  public RefundApproval approveRefund(String refundId) {\n    return new RefundApproval(refundId);\n  }\n}\n"
+      },
+      {
+        "path": "test/controllers/BillingControllerTest.java",
+        "content": "package controllers;\n\nclass BillingControllerTest {\n  void approvesRefundsThroughPlayRoute() {}\n}\n"
+      },
+      {
+        "path": "test/controllers/CustomerControllerTest.java",
+        "content": "package controllers;\n\nclass CustomerControllerTest {\n  void loadsCustomerProfileThroughPlayRoute() {}\n}\n"
+      },
+      {
+        "path": ".env",
+        "content": "PLAY_SECRET=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "POST /billing/refunds/:refundId/approve",
+      "GET /customers/:customerId/profile"
+    ],
+    "inventoryEntrypointRouteCountMin": 2,
+    "inventoryEntrypointRouteCountMax": 2,
+    "inventorySymbolNamesInclude": [
+      "BillingController",
+      "approveRefund",
+      "BillingService",
+      "BillingRepository",
+      "CustomerController",
+      "profile"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 6,
+    "inventoryGraphEdgeConfidenceMin": 0.68,
+    "inventoryRouteHandlerEdgeCountMin": 2,
+    "inventoryRouteHandlerEdgeConfidenceMin": 0.8,
+    "inventorySourceChunkCountMin": 6,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_play_billing_refund_primary",
+      "file:conf/routes#L2",
+      "file:app/controllers/BillingController.java#L3",
+      "file:app/controllers/BillingController.java#L4",
+      "file:app/controllers/BillingController.java#L6",
+      "file:app/controllers/BillingController.java#L7",
+      "file:app/services/BillingService.java#L3",
+      "file:app/services/BillingService.java#L4",
+      "file:app/services/BillingService.java#L6",
+      "file:app/repositories/BillingRepository.java#L3",
+      "file:test/controllers/BillingControllerTest.java"
+    ],
+    "sourceRefsExclude": [
+      "file:conf/routes#L3",
+      "file:conf/routes#L4",
+      "file:app/controllers/CustomerController.java#L3",
+      "file:app/controllers/CustomerController.java#L4",
+      "file:test/controllers/CustomerControllerTest.java"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:conf/routes#L2",
+          "file:app/controllers/BillingController.java#L3",
+          "file:app/controllers/BillingController.java#L4",
+          "file:app/controllers/BillingController.java#L6",
+          "file:app/controllers/BillingController.java#L7",
+          "file:app/services/BillingService.java#L3",
+          "file:app/services/BillingService.java#L4",
+          "file:app/services/BillingService.java#L6",
+          "file:app/repositories/BillingRepository.java#L3",
+          "file:test/controllers/BillingControllerTest.java"
+        ],
+        "sourceRefsExclude": [
+          "file:conf/routes#L3",
+          "file:conf/routes#L4",
+          "file:app/controllers/CustomerController.java#L3",
+          "file:app/controllers/CustomerController.java#L4",
+          "file:test/controllers/CustomerControllerTest.java"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:conf/routes#L2",
+          "file:app/controllers/BillingController.java#L3",
+          "file:app/controllers/BillingController.java#L6",
+          "file:app/controllers/BillingController.java#L7",
+          "file:app/services/BillingService.java#L3",
+          "file:app/services/BillingService.java#L6",
+          "file:app/repositories/BillingRepository.java#L3"
+        ],
+        "sourceRefsExclude": [
+          "file:conf/routes#L3",
+          "file:conf/routes#L4",
+          "file:app/controllers/CustomerController.java#L3",
+          "file:app/controllers/CustomerController.java#L4",
+          "file:test/controllers/CustomerControllerTest.java"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:test/controllers/BillingControllerTest.java"
+        ],
+        "sourceRefsExclude": [
+          "file:conf/routes#L3",
+          "file:app/controllers/CustomerController.java#L3",
+          "file:app/controllers/CustomerController.java#L4",
+          "file:test/controllers/CustomerControllerTest.java"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 11,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_conf_routes",
+      "inventory_source_chunk_src_chunk_app_controllers_billing",
+      "inventory_source_chunk_src_chunk_app_services_billing",
+      "inventory_source_chunk_src_chunk_app_repositories_billing",
+      "inventory_source_chunk_src_chunk_test_controllers_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13,
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.68,
+      "routeHandlerEdgeConfidenceMin": 0.8
+    }
+  },
+  "variants": [
+    {
+      "id": "play-billing-refund-primary",
+      "label": "Legacy Play billing refund task stays focused on billing route and tests"
+    }
+  ]
+}

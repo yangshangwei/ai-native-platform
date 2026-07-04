@@ -190,7 +190,7 @@ export interface ContextGovernanceDto {
     supplement: unknown;
     manifest: ContextManifestDto[];
     retrievalHints: unknown[];
-    calibrationSignals: unknown[];
+    calibrationSignals: ContextCalibrationSignalDto[];
     contextPack: unknown | null;
   }>;
   manifest: ContextManifestDto[];
@@ -241,6 +241,17 @@ export interface ContextGovernanceDto {
       explanation: string;
     };
   };
+}
+
+export interface ContextCalibrationSignalDto {
+  id?: string;
+  kind?: string;
+  severity?: string;
+  message?: string;
+  recommendedAction?: string;
+  subjectRefs?: string[];
+  evidenceRefs?: string[];
+  [key: string]: unknown;
 }
 
 export interface ContextStageHandoffDto {

@@ -1,0 +1,179 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-jaxws-e2e",
+  "title": "Legacy project understanding keeps JAX-WS SOAP service context focused",
+  "description": "Runs the real scanner against a small static JAX-WS SOAP fixture, then verifies ContextPack selects the billing SOAP service without leaking an unrelated SOAP service.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_jaxws",
+    "title": "Update legacy billing SOAP service",
+    "stage": "implementation",
+    "taskBrief": "Fix billing invoice reconciliation in the legacy SOAP web service and update billing tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 12,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "src/main/java/com/example/soap/BillingStatementService.java",
+        "content": "package com.example.soap;\nimport javax.jws.WebMethod;\nimport javax.jws.WebService;\n\n@WebService(serviceName = \"BillingStatementService\")\npublic class BillingStatementService {\n  private final BillingStatementManager manager = new BillingStatementManager();\n\n  @WebMethod(operationName = \"ReconcileInvoice\")\n  public String reconcileInvoice(String invoiceId) {\n    return manager.reconcile(invoiceId);\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/example/soap/BillingStatementManager.java",
+        "content": "package com.example.soap;\npublic class BillingStatementManager {\n  private final BillingStatementRepository repository = new BillingStatementRepository();\n\n  public String reconcile(String invoiceId) {\n    return repository.markReconciled(invoiceId);\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/example/soap/BillingStatementRepository.java",
+        "content": "package com.example.soap;\npublic class BillingStatementRepository {\n  public String markReconciled(String invoiceId) {\n    return invoiceId;\n  }\n}\n"
+      },
+      {
+        "path": "src/main/java/com/example/soap/CustomerProfileService.java",
+        "content": "package com.example.soap;\nimport javax.jws.WebMethod;\nimport javax.jws.WebService;\n\n@WebService(name = \"CustomerProfileService\")\npublic class CustomerProfileService {\n  @WebMethod(operationName = \"LoadProfile\")\n  public String loadProfile(String customerId) {\n    return customerId;\n  }\n}\n"
+      },
+      {
+        "path": "src/test/java/billing_statement_serviceTest.java",
+        "content": "import org.junit.Test;\n\npublic class billing_statement_serviceTest {\n  @Test\n  public void reconcilesInvoiceThroughSoapService() {}\n}\n"
+      },
+      {
+        "path": ".env",
+        "content": "SECRET_TOKEN=do-not-capture\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing Statement Service API",
+      "Customer Profile Service API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /soap/billing_statement_service/reconcile_invoice",
+      "ANY /soap/customer_profile_service/load_profile"
+    ],
+    "inventoryEntrypointRouteCountMin": 2,
+    "inventoryEntrypointRouteCountMax": 2,
+    "inventorySymbolNamesInclude": [
+      "BillingStatementService",
+      "reconcileInvoice",
+      "BillingStatementManager",
+      "reconcile",
+      "BillingStatementRepository",
+      "markReconciled",
+      "CustomerProfileService",
+      "loadProfile"
+    ],
+    "inventorySymbolCountMin": 8,
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 6,
+    "inventoryRouteHandlerEdgeCountMin": 2,
+    "inventorySourceChunkCountMin": 4,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing_statement_service",
+      "inventory_symbols_billing_statement_service_api",
+      "inventory_tests_billing_statement_service_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customer_profile_service"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing_statement_service",
+      "inventory_symbols_billing_statement_service_api",
+      "inventory_tests_billing_statement_service_api",
+      "inventory_source_chunk_src_chunk_src_main_java_com_example_soap_billingstatement",
+      "inventory_source_chunk_src_chunk_src_test_java_billing_statement"
+    ],
+    "irrelevantContextRatioMax": 0.1,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_billing_soap_primary",
+      "file:src/main/java/com/example/soap/BillingStatementService.java#L5",
+      "file:src/main/java/com/example/soap/BillingStatementService.java#L9",
+      "file:src/main/java/com/example/soap/BillingStatementService.java#L10",
+      "file:src/main/java/com/example/soap/BillingStatementService.java#L11",
+      "file:src/main/java/com/example/soap/BillingStatementManager.java#L2",
+      "file:src/main/java/com/example/soap/BillingStatementManager.java#L3",
+      "file:src/main/java/com/example/soap/BillingStatementManager.java#L5",
+      "file:src/main/java/com/example/soap/BillingStatementManager.java#L6",
+      "file:src/main/java/com/example/soap/BillingStatementRepository.java#L2",
+      "file:src/main/java/com/example/soap/BillingStatementRepository.java#L3",
+      "file:src/test/java/billing_statement_serviceTest.java"
+    ],
+    "sourceRefsExclude": [
+      "file:src/main/java/com/example/soap/CustomerProfileService.java#L5",
+      "file:src/main/java/com/example/soap/CustomerProfileService.java#L7",
+      "file:src/main/java/com/example/soap/CustomerProfileService.java#L8"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing_statement_service": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing_statement_service",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:src/main/java/com/example/soap/BillingStatementService.java#L5",
+          "file:src/main/java/com/example/soap/BillingStatementService.java#L9",
+          "file:src/main/java/com/example/soap/BillingStatementService.java#L10",
+          "file:src/main/java/com/example/soap/BillingStatementService.java#L11",
+          "file:src/main/java/com/example/soap/BillingStatementManager.java#L2",
+          "file:src/main/java/com/example/soap/BillingStatementManager.java#L5",
+          "file:src/main/java/com/example/soap/BillingStatementRepository.java#L2",
+          "file:src/main/java/com/example/soap/BillingStatementRepository.java#L3",
+          "file:src/test/java/billing_statement_serviceTest.java"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/java/com/example/soap/CustomerProfileService.java#L5",
+          "file:src/main/java/com/example/soap/CustomerProfileService.java#L7",
+          "file:src/main/java/com/example/soap/CustomerProfileService.java#L8"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_statement_service_api",
+        "sourceRefsInclude": [
+          "file:src/main/java/com/example/soap/BillingStatementService.java#L5",
+          "file:src/main/java/com/example/soap/BillingStatementService.java#L9",
+          "file:src/main/java/com/example/soap/BillingStatementService.java#L10",
+          "file:src/main/java/com/example/soap/BillingStatementManager.java#L2",
+          "file:src/main/java/com/example/soap/BillingStatementManager.java#L5",
+          "file:src/main/java/com/example/soap/BillingStatementRepository.java#L2",
+          "file:src/main/java/com/example/soap/BillingStatementRepository.java#L3"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/java/com/example/soap/CustomerProfileService.java#L5",
+          "file:src/main/java/com/example/soap/CustomerProfileService.java#L7",
+          "file:src/main/java/com/example/soap/CustomerProfileService.java#L8"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_statement_service_api",
+        "sourceRefsInclude": [
+          "file:src/test/java/billing_statement_serviceTest.java"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/java/com/example/soap/CustomerProfileService.java#L5",
+          "file:src/main/java/com/example/soap/CustomerProfileService.java#L7",
+          "file:src/main/java/com/example/soap/CustomerProfileService.java#L8"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 10
+  },
+  "variants": [
+    {
+      "id": "billing-soap-primary",
+      "label": "Scanner-generated billing SOAP service is primary context"
+    }
+  ]
+}

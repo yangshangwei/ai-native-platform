@@ -10,8 +10,9 @@ import { preflightAgentBackend } from '@ainp/shared/node';
 
 export async function selectAgentBackend(
   project: Project,
+  override?: ProjectAgentBackendKind | null,
 ): Promise<AgentBackend> {
-  const backend = resolveBackendKind(project);
+  const backend = resolveBackendKind(project, override);
   const preflight = await preflightAgentBackend(backend);
   if (!preflight.runnable) {
     throw new Error([
@@ -29,7 +30,11 @@ export async function selectAgentBackend(
   return new ClaudeCodeBackend({ bin: preflight.bin ?? undefined });
 }
 
-function resolveBackendKind(project: Project): ProjectAgentBackendKind {
+function resolveBackendKind(
+  project: Project,
+  override?: ProjectAgentBackendKind | null,
+): ProjectAgentBackendKind {
+  if (override) return override;
   if (project.agentBackend) return project.agentBackend;
 
   throw new Error(

@@ -1,0 +1,203 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-webforms-e2e",
+  "title": "Legacy project understanding keeps ASP.NET Web Forms context focused",
+  "description": "Runs the real scanner against a small ASP.NET Web Forms fixture, then verifies ContextPack selects the billing page and code-behind graph without leaking an unrelated customer page.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_webforms",
+    "title": "Update legacy ASP.NET Web Forms billing statement page",
+    "stage": "implementation",
+    "taskBrief": "Fix billing statement generation in the legacy ASP.NET Web Forms page and update billing statement tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 16,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "Billing/Statement.aspx",
+        "content": "<%@ Page Language=\"C#\" AutoEventWireup=\"true\" CodeBehind=\"Statement.aspx.cs\" Inherits=\"Acme.Legacy.Billing.StatementPage\" %>\n<html><body>statement</body></html>\n"
+      },
+      {
+        "path": "Billing/Statement.aspx.cs",
+        "content": "namespace Acme.Legacy.Billing;\n\npublic partial class StatementPage : System.Web.UI.Page\n{\n  private readonly StatementService _statementService = new StatementService();\n\n  protected void Page_Load(object sender, EventArgs e)\n  {\n    _statementService.Generate(Request.QueryString[\"accountId\"]);\n  }\n}\n"
+      },
+      {
+        "path": "Billing/StatementService.cs",
+        "content": "namespace Acme.Legacy.Billing;\n\npublic class StatementService\n{\n  private readonly StatementRepository _statementRepository = new StatementRepository();\n\n  public string Generate(string accountId)\n  {\n    return _statementRepository.LoadStatement(accountId);\n  }\n}\n"
+      },
+      {
+        "path": "Billing/StatementRepository.cs",
+        "content": "namespace Acme.Legacy.Billing;\n\npublic class StatementRepository\n{\n  public string LoadStatement(string accountId)\n  {\n    return accountId;\n  }\n}\n"
+      },
+      {
+        "path": "Customers/Profile.aspx",
+        "content": "<%@ Page Language=\"C#\" CodeBehind=\"Profile.aspx.cs\" Inherits=\"Acme.Legacy.Customers.ProfilePage\" %>\n<html><body>profile</body></html>\n"
+      },
+      {
+        "path": "Customers/Profile.aspx.cs",
+        "content": "namespace Acme.Legacy.Customers;\n\npublic partial class ProfilePage : System.Web.UI.Page\n{\n  protected void Page_Load(object sender, EventArgs e) {}\n}\n"
+      },
+      {
+        "path": "tests/Billing/BillingStatementTests.cs",
+        "content": "namespace Acme.Legacy.Billing.Tests;\n\npublic class BillingStatementTests\n{\n  public void GeneratesStatementThroughWebFormsPage() {}\n}\n"
+      },
+      {
+        "path": "tests/Customers/ProfilePageTests.cs",
+        "content": "namespace Acme.Legacy.Customers.Tests;\n\npublic class ProfilePageTests\n{\n  public void ShowsCustomerProfilePage() {}\n}\n"
+      },
+      {
+        "path": ".env",
+        "content": "ConnectionStrings__Default=Server=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /Billing/Statement.aspx",
+      "ANY /Customers/Profile.aspx"
+    ],
+    "inventoryEntrypointRouteCountMin": 2,
+    "inventoryEntrypointRouteCountMax": 2,
+    "inventorySymbolNamesInclude": [
+      "StatementPage",
+      "Page_Load",
+      "StatementService",
+      "Generate",
+      "StatementRepository",
+      "LoadStatement",
+      "ProfilePage"
+    ],
+    "inventorySymbolCountMin": 8,
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 6,
+    "inventoryRouteHandlerEdgeCountMin": 2,
+    "inventorySourceChunkCountMin": 6,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_webforms_billing_statement_primary",
+      "file:Billing/Statement.aspx#L1",
+      "file:Billing/Statement.aspx.cs#L3",
+      "file:Billing/Statement.aspx.cs#L5",
+      "file:Billing/Statement.aspx.cs#L7",
+      "file:Billing/Statement.aspx.cs#L9",
+      "file:Billing/StatementService.cs#L3",
+      "file:Billing/StatementService.cs#L5",
+      "file:Billing/StatementService.cs#L7",
+      "file:Billing/StatementService.cs#L9",
+      "file:Billing/StatementRepository.cs#L3",
+      "file:Billing/StatementRepository.cs#L5",
+      "file:tests/Billing/BillingStatementTests.cs"
+    ],
+    "sourceRefsExclude": [
+      "file:Customers/Profile.aspx#L1",
+      "file:Customers/Profile.aspx.cs#L3",
+      "file:Customers/Profile.aspx.cs#L5",
+      "file:tests/Customers/ProfilePageTests.cs"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:Billing/Statement.aspx#L1",
+          "file:Billing/Statement.aspx.cs#L3",
+          "file:Billing/Statement.aspx.cs#L5",
+          "file:Billing/Statement.aspx.cs#L7",
+          "file:Billing/Statement.aspx.cs#L9",
+          "file:Billing/StatementService.cs#L3",
+          "file:Billing/StatementService.cs#L5",
+          "file:Billing/StatementService.cs#L7",
+          "file:Billing/StatementService.cs#L9",
+          "file:Billing/StatementRepository.cs#L3",
+          "file:Billing/StatementRepository.cs#L5",
+          "file:tests/Billing/BillingStatementTests.cs"
+        ],
+        "sourceRefsExclude": [
+          "file:Customers/Profile.aspx#L1",
+          "file:Customers/Profile.aspx.cs#L3",
+          "file:Customers/Profile.aspx.cs#L5",
+          "file:tests/Customers/ProfilePageTests.cs"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:Billing/Statement.aspx#L1",
+          "file:Billing/Statement.aspx.cs#L3",
+          "file:Billing/Statement.aspx.cs#L5",
+          "file:Billing/Statement.aspx.cs#L7",
+          "file:Billing/Statement.aspx.cs#L9",
+          "file:Billing/StatementService.cs#L3",
+          "file:Billing/StatementService.cs#L5",
+          "file:Billing/StatementService.cs#L7",
+          "file:Billing/StatementService.cs#L9",
+          "file:Billing/StatementRepository.cs#L3",
+          "file:Billing/StatementRepository.cs#L5"
+        ],
+        "sourceRefsExclude": [
+          "file:Customers/Profile.aspx#L1",
+          "file:Customers/Profile.aspx.cs#L3",
+          "file:Customers/Profile.aspx.cs#L5",
+          "file:tests/Customers/ProfilePageTests.cs"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/Billing/BillingStatementTests.cs"
+        ],
+        "sourceRefsExclude": [
+          "file:Customers/Profile.aspx#L1",
+          "file:Customers/Profile.aspx.cs#L3",
+          "file:Customers/Profile.aspx.cs#L5",
+          "file:tests/Customers/ProfilePageTests.cs"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 12,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_billing_statement",
+      "inventory_source_chunk_src_chunk_tests_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13
+  },
+  "variants": [
+    {
+      "id": "webforms-billing-statement-primary",
+      "label": "ASP.NET Web Forms billing statement task stays focused on billing page and code-behind"
+    }
+  ]
+}

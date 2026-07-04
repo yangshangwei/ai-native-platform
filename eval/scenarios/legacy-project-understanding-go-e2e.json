@@ -1,0 +1,361 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-go-e2e",
+  "title": "Legacy project understanding keeps Go monolith context focused",
+  "description": "Runs the real scanner against a small old Go monolith, then verifies ContextPack selects the requested handler, service/repository graph evidence, and tests without leaking unrelated domains.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_go",
+    "title": "Update legacy Go billing reconciliation",
+    "stage": "implementation",
+    "taskBrief": "Fix billing invoice reconciliation in the legacy Go billing handler and update billing tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 32,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "internal/billing/routes.go",
+        "content": "package billing\n\nfunc RegisterRoutes() {\n  mux.HandleFunc(\"/api/v1/billing/invoices/{invoiceID}/reconcile\", reconcileInvoice).Methods(http.MethodPost)\n  mux.HandleFunc(\"/api/v1/billing/invoices/{invoiceID}/audit\", auditInvoice).Methods(\"GET\")\n}\n\nfunc reconcileInvoice() {\n  service := NewBillingService()\n  service.ReconcileInvoice(\"inv_1\")\n}\n\nfunc auditInvoice() {\n  service := NewBillingService()\n  service.AuditInvoice(\"inv_1\")\n}\n"
+      },
+      {
+        "path": "internal/billing/service.go",
+        "content": "package billing\n\ntype BillingService struct {}\n\nfunc NewBillingService() *BillingService { return &BillingService{} }\n\nfunc (s *BillingService) ReconcileInvoice(invoiceID string) string {\n  repo := &BillingRepository{}\n  return repo.MarkReconciled(invoiceID)\n}\n\nfunc (s *BillingService) AuditInvoice(invoiceID string) string {\n  repo := &BillingRepository{}\n  return repo.LoadAudit(invoiceID)\n}\n"
+      },
+      {
+        "path": "internal/billing/repository.go",
+        "content": "package billing\n\ntype BillingRepository struct {}\n\nfunc (r *BillingRepository) MarkReconciled(invoiceID string) string {\n  return invoiceID\n}\n\nfunc (r *BillingRepository) LoadAudit(invoiceID string) string {\n  return invoiceID\n}\n"
+      },
+      {
+        "path": "internal/customers/routes.go",
+        "content": "package customers\n\nfunc RegisterRoutes() {\n  http.HandleFunc(\"/api/v1/customers/{customerID}\", showCustomer)\n}\n\nfunc showCustomer() {}\n"
+      },
+      {
+        "path": "internal/reports/routes.go",
+        "content": "package reports\n\nfunc RegisterRoutes() {\n  mux.HandleFunc(\"/api/v1/reports/daily\", dailyReport).Methods(\"GET\")\n}\n\nfunc dailyReport() {}\n"
+      },
+      {
+        "path": "internal/billing/billing_handler_test.go",
+        "content": "package billing\n\nfunc TestReconcilesInvoicesThroughBillingHandler() {}\n"
+      },
+      {
+        "path": "internal/customers/customer_handler_test.go",
+        "content": "package customers\n\nfunc TestShowsCustomerProfile() {}\n"
+      },
+      {
+        "path": "internal/reports/report_handler_test.go",
+        "content": "package reports\n\nfunc TestLoadsDailyReports() {}\n"
+      },
+      {
+        "path": ".env",
+        "content": "LEGACY_GO_SECRET=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API",
+      "Reports API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API",
+      "V1 API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryCapabilityCountMax": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "POST /api/v1/billing/invoices/{invoiceID}/reconcile",
+      "GET /api/v1/billing/invoices/{invoiceID}/audit",
+      "GET /api/v1/customers/{customerID}",
+      "GET /api/v1/reports/daily"
+    ],
+    "inventoryEntrypointRouteCountMin": 4,
+    "inventoryEntrypointRouteCountMax": 4,
+    "inventorySymbolNamesInclude": [
+      "RegisterRoutes",
+      "reconcileInvoice",
+      "auditInvoice",
+      "BillingService",
+      "NewBillingService",
+      "ReconcileInvoice",
+      "BillingRepository",
+      "MarkReconciled",
+      "showCustomer",
+      "dailyReport"
+    ],
+    "inventorySymbolCountMin": 14,
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 12,
+    "inventoryRouteHandlerEdgeCountMin": 4,
+    "inventorySourceChunkCountMin": 8,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers",
+      "inventory_capability_cap_api_reports"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_internal_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_go_billing_reconciliation_primary",
+      "file:internal/billing/routes.go#L8",
+      "file:internal/billing/routes.go#L9",
+      "file:internal/billing/service.go#L3",
+      "file:internal/billing/service.go#L7",
+      "file:internal/billing/repository.go#L3",
+      "file:internal/billing/billing_handler_test.go"
+    ],
+    "sourceRefsExclude": [
+      "file:internal/customers/routes.go#L4",
+      "file:internal/reports/routes.go#L4",
+      "file:internal/customers/customer_handler_test.go",
+      "file:internal/reports/report_handler_test.go"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedCountMin": 4,
+    "selectedCountMax": 11
+  },
+  "variants": [
+    {
+      "id": "go-billing-reconciliation-primary",
+      "label": "Go billing reconciliation task stays focused on billing handler and tests",
+      "expectations": {
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_billing",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:internal/billing/routes.go#L8",
+              "file:internal/billing/service.go#L7",
+              "file:internal/billing/billing_handler_test.go"
+            ],
+            "sourceRefsExclude": [
+              "file:internal/customers/routes.go#L4",
+              "file:internal/reports/routes.go#L4",
+              "file:internal/customers/customer_handler_test.go",
+              "file:internal/reports/report_handler_test.go"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_billing_api",
+            "sourceRefsInclude": [
+              "file:internal/billing/routes.go#L8",
+              "file:internal/billing/service.go#L7",
+              "file:internal/billing/repository.go#L3"
+            ],
+            "sourceRefsExclude": [
+              "file:internal/customers/routes.go#L4",
+              "file:internal/reports/routes.go#L4",
+              "file:internal/customers/customer_handler_test.go",
+              "file:internal/reports/report_handler_test.go"
+            ]
+          },
+          {
+            "ref": "inventory_tests_billing_api",
+            "sourceRefsInclude": [
+              "file:internal/billing/billing_handler_test.go"
+            ],
+            "sourceRefsExclude": [
+              "file:internal/customers/customer_handler_test.go",
+              "file:internal/reports/report_handler_test.go"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": "go-customer-profile-primary",
+      "label": "Go customer profile task selects customer handler evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix customer profile response in the legacy Go customers handler."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_customers",
+          "inventory_symbols_customers_api",
+          "inventory_tests_customers_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_billing",
+          "inventory_capability_cap_api_reports"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_customers",
+          "inventory_symbols_customers_api",
+          "inventory_tests_customers_api",
+          "inventory_hotspots_customers_api",
+          "inventory_source_chunk_src_chunk_internal_customers"
+        ],
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_go_customer_profile_primary",
+          "file:internal/customers/routes.go#L4",
+          "file:internal/customers/routes.go#L7",
+          "file:internal/customers/customer_handler_test.go"
+        ],
+        "sourceRefsExclude": [
+          "file:internal/billing/routes.go#L8",
+          "file:internal/reports/routes.go#L4",
+          "file:internal/billing/billing_handler_test.go",
+          "file:internal/reports/report_handler_test.go"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_customers": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_customers",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:internal/customers/routes.go#L4",
+              "file:internal/customers/routes.go#L7",
+              "file:internal/customers/customer_handler_test.go"
+            ],
+            "sourceRefsExclude": [
+              "file:internal/billing/routes.go#L8",
+              "file:internal/reports/routes.go#L4",
+              "file:internal/billing/billing_handler_test.go",
+              "file:internal/reports/report_handler_test.go"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_customers_api",
+            "sourceRefsInclude": [
+              "file:internal/customers/routes.go#L4",
+              "file:internal/customers/routes.go#L7"
+            ],
+            "sourceRefsExclude": [
+              "file:internal/billing/routes.go#L8",
+              "file:internal/reports/routes.go#L4",
+              "file:internal/billing/billing_handler_test.go",
+              "file:internal/reports/report_handler_test.go"
+            ]
+          },
+          {
+            "ref": "inventory_tests_customers_api",
+            "sourceRefsInclude": [
+              "file:internal/customers/customer_handler_test.go"
+            ],
+            "sourceRefsExclude": [
+              "file:internal/billing/billing_handler_test.go",
+              "file:internal/reports/report_handler_test.go"
+            ]
+          }
+        ],
+        "selectedCountMin": 4,
+        "selectedCountMax": 11
+      }
+    },
+    {
+      "id": "go-reports-daily-primary",
+      "label": "Go reports task selects report handler evidence",
+      "inputOverrides": {
+        "taskBrief": "Fix daily reports endpoint in the legacy Go reports handler."
+      },
+      "expectations": {
+        "manifestRefsInclude": [
+          "inventory_capability_cap_api_reports",
+          "inventory_symbols_reports_api",
+          "inventory_tests_reports_api"
+        ],
+        "manifestRefsExclude": [
+          "input_project_inventory_json",
+          "inventory_capability_cap_api_billing",
+          "inventory_capability_cap_api_customers"
+        ],
+        "relevantManifestRefPrefixes": [
+          "task_brief",
+          "workflow_run",
+          "inventory_capability_cap_api_reports",
+          "inventory_symbols_reports_api",
+          "inventory_tests_reports_api",
+          "inventory_hotspots_reports_api",
+          "inventory_source_chunk_src_chunk_internal_reports"
+        ],
+        "sourceRefsInclude": [
+          "artifact:art_eval_legacy_inventory_go_reports_daily_primary",
+          "file:internal/reports/routes.go#L4",
+          "file:internal/reports/routes.go#L7",
+          "file:internal/reports/report_handler_test.go"
+        ],
+        "sourceRefsExclude": [
+          "file:internal/billing/routes.go#L8",
+          "file:internal/customers/routes.go#L4",
+          "file:internal/billing/billing_handler_test.go",
+          "file:internal/customers/customer_handler_test.go"
+        ],
+        "sectionModes": {
+          "inventory_capability_cap_api_reports": "summary"
+        },
+        "selectedSectionsInclude": [
+          {
+            "ref": "inventory_capability_cap_api_reports",
+            "mode": "summary",
+            "sourceRefsInclude": [
+              "file:internal/reports/routes.go#L4",
+              "file:internal/reports/routes.go#L7",
+              "file:internal/reports/report_handler_test.go"
+            ],
+            "sourceRefsExclude": [
+              "file:internal/billing/routes.go#L8",
+              "file:internal/customers/routes.go#L4",
+              "file:internal/billing/billing_handler_test.go",
+              "file:internal/customers/customer_handler_test.go"
+            ]
+          },
+          {
+            "ref": "inventory_symbols_reports_api",
+            "sourceRefsInclude": [
+              "file:internal/reports/routes.go#L4",
+              "file:internal/reports/routes.go#L7"
+            ],
+            "sourceRefsExclude": [
+              "file:internal/billing/routes.go#L8",
+              "file:internal/customers/routes.go#L4",
+              "file:internal/billing/billing_handler_test.go",
+              "file:internal/customers/customer_handler_test.go"
+            ]
+          },
+          {
+            "ref": "inventory_tests_reports_api",
+            "sourceRefsInclude": [
+              "file:internal/reports/report_handler_test.go"
+            ],
+            "sourceRefsExclude": [
+              "file:internal/billing/billing_handler_test.go",
+              "file:internal/customers/customer_handler_test.go"
+            ]
+          }
+        ],
+        "selectedCountMin": 4,
+        "selectedCountMax": 11
+      }
+    }
+  ]
+}

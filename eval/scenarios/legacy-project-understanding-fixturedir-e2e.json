@@ -1,0 +1,136 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-fixturedir-e2e",
+  "title": "Legacy project understanding scans checked-in fixture directories",
+  "description": "Reads source files from eval/fixtures, merges a small inline package file, runs the real scanner, and feeds the generated inventory into ContextPack selection.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_fixturedir",
+    "title": "Fix legacy billing refund approvals",
+    "stage": "implementation",
+    "taskBrief": "Fix approving billing refunds in the legacy billing endpoint and update refund tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 16,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "fixtureDir": {
+      "path": "../fixtures/legacy-fixturedir-billing",
+      "maxFiles": 8,
+      "maxFileBytes": 8192,
+      "excludePaths": [
+        "tmp"
+      ]
+    },
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\"name\":\"legacy-fixturedir-eval\",\"scripts\":{\"start\":\"node src/routes/legacy-router.ts\",\"test\":\"vitest run\",\"build\":\"tsc --noEmit\"}}"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "POST /api/v1/billing/refunds/:refundId/approve",
+      "GET /api/v1/customers/:customerId"
+    ],
+    "inventorySymbolNamesInclude": [
+      "approveRefund",
+      "BillingRefundService",
+      "BillingRefundRepository",
+      "markApproved",
+      "showCustomer"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryRouteHandlerEdgeCountMin": 2,
+    "inventoryGraphEdgeCountMin": 4,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_src_billing",
+      "inventory_source_chunk_src_chunk_src_routes_legacy_router_ts",
+      "inventory_source_chunk_src_chunk_test_billing"
+    ],
+    "irrelevantContextRatioMax": 0.15,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_default",
+      "file:src/routes/legacy-router.ts#L6",
+      "file:src/billing/refund-controller.ts#L3",
+      "file:src/billing/refund-service.ts#L4",
+      "file:src/billing/refund-repository.ts#L1",
+      "file:test/billing-refunds.test.ts"
+    ],
+    "sourceRefsExclude": [
+      "file:src/routes/legacy-router.ts#L7",
+      "file:src/customers/customer-controller.ts#L1",
+      "file:tmp/generated-noise.ts"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedCountMin": 4,
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:src/routes/legacy-router.ts#L6",
+          "file:src/billing/refund-controller.ts#L3",
+          "file:src/billing/refund-service.ts#L4",
+          "file:test/billing-refunds.test.ts"
+        ],
+        "sourceRefsExclude": [
+          "file:src/routes/legacy-router.ts#L7",
+          "file:src/customers/customer-controller.ts#L1",
+          "file:tmp/generated-noise.ts"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:src/billing/refund-controller.ts#L3",
+          "file:src/billing/refund-service.ts#L4",
+          "file:src/billing/refund-repository.ts#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:src/customers/customer-controller.ts#L1",
+          "file:tmp/generated-noise.ts"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:test/billing-refunds.test.ts"
+        ],
+        "sourceRefsExclude": [
+          "file:src/customers/customer-controller.ts#L1",
+          "file:tmp/generated-noise.ts"
+        ]
+      }
+    ]
+  }
+}

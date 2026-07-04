@@ -1,0 +1,218 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-jaxws-directory-corpus-e2e",
+  "title": "Legacy project understanding scans a directory-backed old JAX-WS commerce corpus",
+  "description": "Runs the real scanner against a checked-in JAX-WS/SOAP old commerce fixture with billing/orders/customers SOAP service, manager, repository, SQL schema/routine evidence, tests, credential-like config, and generated/vendor/log noise filtered by fixtureDir.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_jaxws_directory_corpus",
+    "title": "Update legacy JAX-WS billing refund audit",
+    "stage": "implementation",
+    "taskBrief": "Fix the legacy JAX-WS BillingRefundService AuditRefund SOAP operation, rebuild_jaxws_refund_audit SQL routine, jaxws_refund_audit_entries table, and BillingRefundServiceTest.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 40,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072
+    },
+    "fixtureDir": {
+      "path": "../fixtures/legacy-directory-backed-jaxws-commerce",
+      "maxFiles": 32,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072,
+      "excludePaths": [
+        "target",
+        "vendor",
+        "logs"
+      ]
+    }
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing Refund Service API",
+      "Order Fulfillment Service API",
+      "Customer Profile Service API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API",
+      "Soap API",
+      "Service API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /soap/billing_refund_service/audit_refund",
+      "ANY /soap/order_fulfillment_service/reprice_fulfillment",
+      "ANY /soap/customer_profile_service/review_profile_risk"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventorySymbolNamesInclude": [
+      "BillingRefundService",
+      "auditRefund",
+      "BillingRefundManager",
+      "rebuildRefundAudit",
+      "BillingRefundRepository",
+      "writeRefundAuditEntry",
+      "OrderFulfillmentService",
+      "repriceFulfillment",
+      "CustomerProfileService",
+      "reviewProfileRisk"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 9,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventorySourceChunkCountMin": 16,
+    "inventoryExclusionsInclude": [
+      "config/credentials.yml:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing_refund_service",
+      "inventory_symbols_billing_refund_service_api",
+      "inventory_source_chunk_src_chunk_src_main_java_com_acme_legacy_billing_billingrefundservice_java_1_15",
+      "inventory_source_chunk_src_chunk_src_main_java_com_acme_legacy_billing_billingrefundrepository_java_1_10"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_order_fulfillment_service",
+      "inventory_capability_cap_api_customer_profile_service"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing_refund_service",
+      "inventory_symbols_billing_refund_service_api",
+      "inventory_tests_billing_refund_service_api",
+      "inventory_hotspots_billing_refund_service_api",
+      "inventory_domain_entities_billing_refund_service_api",
+      "inventory_source_chunk_src_chunk_src_main_java_com_acme_legacy_billing",
+      "inventory_source_chunk_src_chunk_db_billing",
+      "inventory_source_chunk_src_chunk_src_test_java_com_acme_legacy_billing"
+    ],
+    "irrelevantContextRatioMax": 0.16,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_jaxws_commerce_billing_refund_audit",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L5",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L9",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L10",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L11",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundManager.java#L3",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundManager.java#L6",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundRepository.java#L3",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundRepository.java#L4"
+    ],
+    "sourceRefsExclude": [
+      "file:src/main/java/com/acme/legacy/orders/OrderFulfillmentService.java#L5",
+      "file:src/main/java/com/acme/legacy/orders/OrderFulfillmentService.java#L9",
+      "file:src/main/java/com/acme/legacy/customers/CustomerProfileService.java#L5",
+      "file:src/main/java/com/acme/legacy/customers/CustomerProfileService.java#L9",
+      "file:db/orders/schema.sql#L1",
+      "file:db/customers/schema.sql#L1",
+      "file:src/test/java/com/acme/legacy/orders/OrderFulfillmentServiceTest.java",
+      "file:src/test/java/com/acme/legacy/customers/CustomerProfileServiceTest.java",
+      "file:target/generated-sources/GeneratedJaxWsClient.java",
+      "file:vendor/GeneratedErpClient.java",
+      "file:logs/application.log"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing_refund_service": "summary"
+    },
+    "selectedCountMin": 5,
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing_refund_service",
+        "mode": "summary",
+        "contentIncludes": [
+          "ANY /soap/billing_refund_service/audit_refund"
+        ],
+        "contentExcludes": [
+          "ANY /soap/order_fulfillment_service/reprice_fulfillment",
+          "ANY /soap/customer_profile_service/review_profile_risk"
+        ],
+        "sourceRefsInclude": [
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L5",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L9",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L10",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L11",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundManager.java#L3",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundManager.java#L6",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundRepository.java#L3",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundRepository.java#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/java/com/acme/legacy/orders/OrderFulfillmentService.java#L5",
+          "file:src/main/java/com/acme/legacy/orders/OrderFulfillmentService.java#L9",
+          "file:src/main/java/com/acme/legacy/customers/CustomerProfileService.java#L5",
+          "file:src/main/java/com/acme/legacy/customers/CustomerProfileService.java#L9",
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1",
+          "file:src/test/java/com/acme/legacy/orders/OrderFulfillmentServiceTest.java",
+          "file:src/test/java/com/acme/legacy/customers/CustomerProfileServiceTest.java",
+          "file:target/generated-sources/GeneratedJaxWsClient.java",
+          "file:vendor/GeneratedErpClient.java",
+          "file:logs/application.log"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_refund_service_api",
+        "sourceRefsInclude": [
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L5",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L9",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L10",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundManager.java#L3",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundManager.java#L6",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundRepository.java#L3",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundRepository.java#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/java/com/acme/legacy/orders/OrderFulfillmentService.java#L5",
+          "file:src/main/java/com/acme/legacy/orders/OrderFulfillmentService.java#L9",
+          "file:src/main/java/com/acme/legacy/customers/CustomerProfileService.java#L5",
+          "file:src/main/java/com/acme/legacy/customers/CustomerProfileService.java#L9",
+          "file:src/test/java/com/acme/legacy/orders/OrderFulfillmentServiceTest.java",
+          "file:src/test/java/com/acme/legacy/customers/CustomerProfileServiceTest.java"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_src_main_java_com_acme_legacy_billing_billingrefundservice_java_1_15",
+        "sourceRefsInclude": [
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L5",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L9",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L10"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/java/com/acme/legacy/orders/OrderFulfillmentService.java#L5",
+          "file:src/main/java/com/acme/legacy/customers/CustomerProfileService.java#L5"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_src_main_java_com_acme_legacy_billing_billingrefundrepository_java_1_10",
+        "sourceRefsInclude": [
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundRepository.java#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      }
+    ],
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.65,
+      "routeHandlerEdgeConfidenceMin": 0.78,
+      "sourceChunkContentSha256CoverageMin": 1,
+      "sourceChunkIndexCoverageMin": 1,
+      "sourceChunkLinkedRecordCoverageMin": 0.75,
+      "sourceFileExtensionCountMin": 3,
+      "sourcePathPatternCountMin": 4,
+      "sourceRecordKindCountMin": 7
+    }
+  },
+  "variants": [
+    {
+      "id": "jaxws-commerce-billing-refund-audit",
+      "label": "Legacy JAX-WS commerce task stays focused on billing SOAP operation, SQL routine, and tests"
+    }
+  ]
+}

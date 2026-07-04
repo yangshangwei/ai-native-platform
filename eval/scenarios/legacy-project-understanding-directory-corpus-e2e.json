@@ -1,0 +1,210 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-directory-corpus-e2e",
+  "title": "Legacy project understanding scans a directory-backed old billing corpus",
+  "description": "Runs the real scanner against a checked-in multi-layer old project fixture with route/controller/service/repository/test and SQL table/view/routine evidence, while fixtureDir filtering removes generated/vendor noise.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_directory_corpus",
+    "title": "Update legacy billing refund settlement",
+    "stage": "implementation",
+    "taskBrief": "Fix the legacy billing refund settlement route and apply_refund_settlement routine, then update refund settlement tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 24,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 98304
+    },
+    "fixtureDir": {
+      "path": "../fixtures/legacy-directory-backed-billing",
+      "maxFiles": 18,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 98304,
+      "excludePaths": [
+        "tmp",
+        "vendor"
+      ]
+    },
+    "files": [
+      {
+        "path": "package.json",
+        "content": "{\"name\":\"legacy-directory-billing\",\"scripts\":{\"start\":\"node src/app.js\",\"test\":\"jest test/billing/refund-settlement.test.js\",\"build\":\"webpack --mode production\"}}"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "POST /api/v1/billing/refunds/:refundId/settle",
+      "GET /api/v1/customers/:customerId/ledger"
+    ],
+    "inventorySymbolNamesInclude": [
+      "settleRefund",
+      "BillingRefundService",
+      "applySettlement",
+      "BillingRefundRepository",
+      "recordSettlement",
+      "showLedger"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 6,
+    "inventoryRouteHandlerEdgeCountMin": 2,
+    "inventorySourceChunkCountMin": 10,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_domain_entities_billing_api",
+      "inventory_source_chunk_src_chunk_db_billing_routines_sql_1_12",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_domain_entities_billing_api",
+      "inventory_source_chunk_src_chunk_src_app_js",
+      "inventory_source_chunk_src_chunk_src_routes_billing",
+      "inventory_source_chunk_src_chunk_src_controllers_billing",
+      "inventory_source_chunk_src_chunk_src_services_billing",
+      "inventory_source_chunk_src_chunk_src_repositories_billing",
+      "inventory_source_chunk_src_chunk_db_billing",
+      "inventory_source_chunk_src_chunk_test_billing"
+    ],
+    "irrelevantContextRatioMax": 0.15,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_default",
+      "file:src/app.js#L7",
+      "file:src/routes/billing-routes.js#L6",
+      "file:src/controllers/billing-controller.js#L4",
+      "file:src/services/billing-refund-service.js#L4",
+      "file:src/repositories/billing-refund-repository.js#L3",
+      "file:db/billing/schema.sql#L1",
+      "file:db/billing/routines.sql#L1",
+      "file:test/billing/refund-settlement.test.js"
+    ],
+    "sourceRefsExclude": [
+      "file:src/routes/customer-routes.js#L6",
+      "file:src/controllers/customer-controller.js#L4",
+      "file:src/repositories/customer-ledger-repository.js#L3",
+      "file:db/customer/schema.sql#L1",
+      "file:test/customers/customer-ledger.test.js",
+      "file:vendor/generated-report-client.js",
+      "file:tmp/generated-ledger-cache.js"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary",
+      "inventory_domain_entities_billing_api": "summary",
+      "inventory_source_chunk_src_chunk_db_billing_routines_sql_1_12": "summary"
+    },
+    "selectedCountMin": 5,
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:src/app.js#L7",
+          "file:src/routes/billing-routes.js#L6",
+          "file:src/controllers/billing-controller.js#L4",
+          "file:src/services/billing-refund-service.js#L4",
+          "file:src/repositories/billing-refund-repository.js#L3",
+          "file:test/billing/refund-settlement.test.js"
+        ],
+        "sourceRefsExclude": [
+          "file:src/routes/customer-routes.js#L6",
+          "file:src/controllers/customer-controller.js#L4",
+          "file:db/customer/schema.sql#L1",
+          "file:vendor/generated-report-client.js",
+          "file:tmp/generated-ledger-cache.js"
+        ]
+      },
+      {
+        "ref": "inventory_domain_entities_billing_api",
+        "contentIncludes": [
+          "Matched Domain Entities",
+          "routine | apply_refund_settlement | db/billing/routines.sql",
+          "table | refund_ledger_entries | db/billing/schema.sql",
+          "refs=file:src/repositories/billing-refund-repository.js#L3"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/schema.sql#L1",
+          "file:src/repositories/billing-refund-repository.js#L3"
+        ],
+        "sourceRefsExclude": [
+          "file:db/customer/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_db_billing_routines_sql_1_12",
+        "contentIncludes": [
+          "Pointed by inventory evidence: domain_routine_db_billing_routines_sql_apply_refund_settlement_1",
+          "CREATE PROCEDURE apply_refund_settlement"
+        ],
+        "contentExcludes": [
+          "customer_account_ledgers"
+        ],
+        "reasonIncludes": [
+          "hybrid inventory evidence points to this chunk"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/schema.sql#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:db/customer/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:src/routes/billing-routes.js#L6",
+          "file:src/controllers/billing-controller.js#L4",
+          "file:src/services/billing-refund-service.js#L4",
+          "file:src/repositories/billing-refund-repository.js#L2"
+        ],
+        "sourceRefsExclude": [
+          "file:src/controllers/customer-controller.js#L4",
+          "file:src/repositories/customer-ledger-repository.js#L3",
+          "file:vendor/generated-report-client.js",
+          "file:tmp/generated-ledger-cache.js"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:test/billing/refund-settlement.test.js"
+        ],
+        "sourceRefsExclude": [
+          "file:test/customers/customer-ledger.test.js"
+        ]
+      }
+    ],
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.65,
+      "routeHandlerEdgeConfidenceMin": 0.78,
+      "sourceChunkContentSha256CoverageMin": 1,
+      "sourceChunkIndexCoverageMin": 1,
+      "sourceChunkLinkedRecordCoverageMin": 1,
+      "sourceFileExtensionCountMin": 2,
+      "sourcePathPatternCountMin": 5,
+      "sourceRecordKindCountMin": 7
+    }
+  }
+}

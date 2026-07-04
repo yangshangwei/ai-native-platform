@@ -1,0 +1,258 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-webforms-directory-corpus-e2e",
+  "title": "Legacy project understanding scans a directory-backed old ASP.NET Web Forms commerce corpus",
+  "description": "Runs the real scanner against a checked-in ASP.NET Web Forms old commerce fixture with .aspx page directives, billing/orders/customers page code-behind/service/repository layers, SQL schema/routine evidence, tests, credential-like config, and generated/bin/obj/log noise filtered by fixtureDir.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_webforms_directory_corpus",
+    "title": "Update legacy Web Forms billing refund audit",
+    "stage": "implementation",
+    "taskBrief": "Fix the legacy ASP.NET Web Forms Billing/RefundAudit.aspx page, rebuild_webforms_refund_audit SQL routine, webforms_refund_audit_entries table, and tests/Billing/RefundAuditPageTests.cs.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 42,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072
+    },
+    "fixtureDir": {
+      "path": "../fixtures/legacy-directory-backed-webforms-commerce",
+      "maxFiles": 34,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072,
+      "excludePaths": [
+        "bin",
+        "obj",
+        "logs"
+      ]
+    }
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Orders API",
+      "Customers API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API",
+      "Aspx API",
+      "Page API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /Billing/RefundAudit.aspx",
+      "ANY /Orders/Fulfillment.aspx",
+      "ANY /Customers/ProfileRisk.aspx"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventorySymbolNamesInclude": [
+      "RefundAuditPage",
+      "Page_Load",
+      "BillingRefundService",
+      "RebuildRefundAudit",
+      "BillingRefundRepository",
+      "WriteRefundAuditEntry",
+      "FulfillmentPage",
+      "ProfileRiskPage"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 9,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventorySourceChunkCountMin": 18,
+    "inventoryExclusionsInclude": [
+      "config/credentials.json:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_domain_entities_billing_api",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_source_chunk_src_chunk_db_billing_routines_sql_1_10",
+      "inventory_source_chunk_src_chunk_billing_refundaudit_aspx_cs_1_13",
+      "inventory_source_chunk_src_chunk_billing_billingrefundrepository_cs_1_12"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_orders",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_domain_entities_billing_api",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_billing",
+      "inventory_source_chunk_src_chunk_db_billing",
+      "inventory_source_chunk_src_chunk_tests_billing"
+    ],
+    "irrelevantContextRatioMax": 0.16,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_webforms_commerce_billing_refund_audit",
+      "file:Billing/RefundAudit.aspx#L1",
+      "file:Billing/RefundAudit.aspx.cs#L3",
+      "file:Billing/RefundAudit.aspx.cs#L5",
+      "file:Billing/RefundAudit.aspx.cs#L7",
+      "file:Billing/RefundAudit.aspx.cs#L9",
+      "file:Billing/BillingRefundService.cs#L3",
+      "file:Billing/BillingRefundService.cs#L7",
+      "file:Billing/BillingRefundRepository.cs#L3",
+      "file:Billing/BillingRefundRepository.cs#L5"
+    ],
+    "sourceRefsExclude": [
+      "file:Orders/Fulfillment.aspx#L1",
+      "file:Customers/ProfileRisk.aspx#L1",
+      "file:Orders/Fulfillment.aspx.cs#L3",
+      "file:Customers/ProfileRisk.aspx.cs#L3",
+      "file:db/orders/schema.sql#L1",
+      "file:db/customers/schema.sql#L1",
+      "file:tests/Orders/FulfillmentPageTests.cs",
+      "file:tests/Customers/ProfileRiskPageTests.cs",
+      "file:bin/Debug/GeneratedWebFormsClient.cs",
+      "file:obj/GeneratedPages.cs",
+      "file:logs/application.log"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary",
+      "inventory_domain_entities_billing_api": "summary"
+    },
+    "selectedCountMin": 5,
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "contentIncludes": [
+          "ANY /Billing/RefundAudit.aspx"
+        ],
+        "contentExcludes": [
+          "ANY /Orders/Fulfillment.aspx",
+          "ANY /Customers/ProfileRisk.aspx"
+        ],
+        "sourceRefsInclude": [
+          "file:Billing/RefundAudit.aspx#L1",
+          "file:Billing/RefundAudit.aspx.cs#L3",
+          "file:Billing/RefundAudit.aspx.cs#L5",
+          "file:Billing/RefundAudit.aspx.cs#L7",
+          "file:Billing/RefundAudit.aspx.cs#L9",
+          "file:Billing/BillingRefundService.cs#L3",
+          "file:Billing/BillingRefundService.cs#L7",
+          "file:Billing/BillingRefundRepository.cs#L3"
+        ],
+        "sourceRefsExclude": [
+          "file:Orders/Fulfillment.aspx#L1",
+          "file:Customers/ProfileRisk.aspx#L1",
+          "file:Orders/Fulfillment.aspx.cs#L3",
+          "file:Customers/ProfileRisk.aspx.cs#L3",
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1",
+          "file:tests/Orders/FulfillmentPageTests.cs",
+          "file:tests/Customers/ProfileRiskPageTests.cs",
+          "file:bin/Debug/GeneratedWebFormsClient.cs",
+          "file:obj/GeneratedPages.cs",
+          "file:logs/application.log"
+        ]
+      },
+      {
+        "ref": "inventory_domain_entities_billing_api",
+        "contentIncludes": [
+          "Matched Domain Entities",
+          "routine | rebuild_webforms_refund_audit | db/billing/routines.sql",
+          "table | webforms_refund_audit_entries | db/billing/schema.sql",
+          "refs=file:Billing/BillingRefundRepository.cs#L7"
+        ],
+        "contentExcludes": [
+          "webforms_order_fulfillment_backlog",
+          "webforms_customer_profile_snapshots"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/schema.sql#L1",
+          "file:Billing/BillingRefundRepository.cs#L7"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:Billing/RefundAudit.aspx#L1",
+          "file:Billing/RefundAudit.aspx.cs#L3",
+          "file:Billing/RefundAudit.aspx.cs#L7",
+          "file:Billing/BillingRefundService.cs#L3",
+          "file:Billing/BillingRefundService.cs#L7",
+          "file:Billing/BillingRefundRepository.cs#L3"
+        ],
+        "sourceRefsExclude": [
+          "file:Orders/Fulfillment.aspx#L1",
+          "file:Customers/ProfileRisk.aspx#L1",
+          "file:Orders/Fulfillment.aspx.cs#L3",
+          "file:Customers/ProfileRisk.aspx.cs#L3",
+          "file:tests/Orders/FulfillmentPageTests.cs",
+          "file:tests/Customers/ProfileRiskPageTests.cs"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_db_billing_routines_sql_1_10",
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/routines.sql#L4",
+          "file:db/billing/schema.sql#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_billing_refundaudit_aspx_cs_1_13",
+        "sourceRefsInclude": [
+          "file:Billing/RefundAudit.aspx#L1",
+          "file:Billing/RefundAudit.aspx.cs#L3",
+          "file:Billing/RefundAudit.aspx.cs#L7",
+          "file:Billing/RefundAudit.aspx.cs#L9"
+        ],
+        "sourceRefsExclude": [
+          "file:Orders/Fulfillment.aspx#L1",
+          "file:Customers/ProfileRisk.aspx#L1",
+          "file:Orders/Fulfillment.aspx.cs#L3",
+          "file:Customers/ProfileRisk.aspx.cs#L3"
+        ]
+      },
+      {
+        "ref": "inventory_source_chunk_src_chunk_billing_billingrefundrepository_cs_1_12",
+        "sourceRefsInclude": [
+          "file:Billing/BillingRefundRepository.cs#L5",
+          "file:Billing/BillingRefundRepository.cs#L7"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      }
+    ],
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.65,
+      "routeHandlerEdgeConfidenceMin": 0.78,
+      "sourceChunkContentSha256CoverageMin": 1,
+      "sourceChunkIndexCoverageMin": 1,
+      "sourceChunkLinkedRecordCoverageMin": 0.75,
+      "sourceFileExtensionCountMin": 4,
+      "sourcePathPatternCountMin": 5,
+      "sourceRecordKindCountMin": 7
+    }
+  },
+  "variants": [
+    {
+      "id": "webforms-commerce-billing-refund-audit",
+      "label": "Legacy ASP.NET Web Forms commerce task stays focused on billing refund page, SQL routine, and tests"
+    }
+  ]
+}

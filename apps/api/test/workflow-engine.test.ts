@@ -1,4 +1,4 @@
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, expect, test } from 'vitest';
@@ -184,6 +184,123 @@ test('createWorkflowRun.flowId round-trips through SQLite when supplied explicit
   const reloaded = storeMod.store.workflowRuns.get(run.id);
   expect(reloaded).toBeDefined();
   expect(reloaded!.flowId).toBe('feature.standard');
+});
+
+test('source chunk index artifacts populate the durable lexical catalog', () => {
+  const run = workflow.createWorkflowRun({
+    projectId: 'proj_source_index_catalog',
+    type: 'profile',
+    title: 'profile legacy project',
+    sourceBranch: 'main',
+  });
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-source-index-catalog-'));
+  const path = join(dir, 'source-chunk-index.json');
+  const index = {
+    schemaVersion: 'ainp.source_chunk_index.v1',
+    generatedAt: '2026-07-04T00:00:00.000Z',
+    source: 'project_inventory.sourceChunks',
+    chunkCount: 1,
+    maxEntries: 120,
+    entries: [
+      {
+        id: 'src_chunk_idx_billing_refund',
+        sourceChunkRef: 'src_chunk_billing_refund',
+        contentSha256: 'b'.repeat(64),
+        path: 'app/services/billing/refunds.rb',
+        language: 'ruby',
+        startLine: 10,
+        endLine: 18,
+        lexicalTokens: ['billing', 'refund', 'reconcile'],
+        searchText: 'billing refund reconcile',
+        linkedRecordRefs: ['sym_billing_refund', 'edge_refund_repo'],
+        sourceRefs: ['file:app/services/billing/refunds.rb#L10'],
+        entrypointRefs: ['ent_refund_route'],
+        symbolRefs: ['sym_billing_refund'],
+        domainEntityRefs: ['domain_refund_ledger'],
+        graphEdgeRefs: ['edge_refund_repo'],
+        testRefs: ['test_refund_service'],
+        hotspotRefs: ['hotspot_refunds'],
+        capabilityRefs: ['cap_billing_refunds'],
+        embeddingModel: 'fixture-cosine-v1',
+        embeddingDimensions: 3,
+        embeddingVector: [0.25, 0.5, 0.75],
+      },
+    ],
+  };
+  writeFileSync(path, `${JSON.stringify(index, null, 2)}\n`, 'utf8');
+
+  const artifact = workflow.createArtifact({
+    workflowRunId: run.id,
+    stepRunId: null,
+    kind: 'other',
+    uri: `file://${path}`,
+    size: 1,
+    contentType: 'application/json',
+    metadata: {
+      role: 'source_chunk_index',
+      schemaVersion: 'ainp.source_chunk_index.v1',
+      output: 'source-chunk-index.json',
+      sourceInventoryArtifactId: 'art_project_inventory',
+    },
+  });
+
+  const rows = storeMod.store.sourceChunkIndexEntries.byArtifact(artifact.id);
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    projectId: 'proj_source_index_catalog',
+    workflowRunId: run.id,
+    sourceChunkIndexArtifactId: artifact.id,
+    sourceInventoryArtifactId: 'art_project_inventory',
+    sourceChunkRef: 'src_chunk_billing_refund',
+    contentSha256: 'b'.repeat(64),
+    path: 'app/services/billing/refunds.rb',
+    language: 'ruby',
+    startLine: 10,
+    endLine: 18,
+    lexicalTokens: ['billing', 'refund', 'reconcile'],
+    searchText: 'billing refund reconcile',
+    linkedRecordRefs: ['sym_billing_refund', 'edge_refund_repo'],
+    sourceRefs: ['file:app/services/billing/refunds.rb#L10'],
+    capabilityRefs: ['cap_billing_refunds'],
+    embeddingModel: 'fixture-cosine-v1',
+    embeddingDimensions: 3,
+    embeddingVector: [0.25, 0.5, 0.75],
+  });
+  expect(
+    storeMod.store.sourceChunkIndexEntries.byProjectContentSha256(
+      'proj_source_index_catalog',
+      'b'.repeat(64),
+    ).map((row) => row.id),
+  ).toEqual([rows[0]!.id]);
+});
+
+test('malformed source chunk index artifacts persist without catalog rows', () => {
+  const run = workflow.createWorkflowRun({
+    projectId: 'proj_source_index_malformed',
+    type: 'profile',
+    title: 'profile malformed source index',
+    sourceBranch: 'main',
+  });
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-source-index-malformed-'));
+  const path = join(dir, 'source-chunk-index.json');
+  writeFileSync(path, '{"schemaVersion":"ainp.source_chunk_index.v1","entries":[{"path":"missing"}]}\n', 'utf8');
+
+  const artifact = workflow.createArtifact({
+    workflowRunId: run.id,
+    stepRunId: null,
+    kind: 'other',
+    uri: `file://${path}`,
+    size: 1,
+    contentType: 'application/json',
+    metadata: {
+      role: 'source_chunk_index',
+      schemaVersion: 'ainp.source_chunk_index.v1',
+      output: 'source-chunk-index.json',
+    },
+  });
+
+  expect(storeMod.store.artifacts.get(artifact.id)).toBeDefined();
+  expect(storeMod.store.sourceChunkIndexEntries.byArtifact(artifact.id)).toEqual([]);
 });
 
 // ---------------------------------------------------------------------------

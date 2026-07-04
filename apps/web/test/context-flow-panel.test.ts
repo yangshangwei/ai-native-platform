@@ -6,7 +6,7 @@
 // the context-governance loading vs. loaded branches, and the empty state.
 import { Window } from 'happy-dom';
 import { afterEach, describe, expect, it } from 'vitest';
-import { renderContextFlowPanel } from '../src/page-task-detail';
+import { renderContextFlowPanel, renderContextGovernancePanel } from '../src/page-task-detail';
 import { contextGovernanceByRun } from '../src/state';
 import type { RunDetail } from '../src/projection';
 import type { ContextGovernanceDto } from '../src/types';
@@ -312,5 +312,36 @@ describe('renderContextFlowPanel', () => {
     expect(panel.querySelectorAll('.context-flow-relation').length).toBe(0);
     expect(panel.textContent).toContain('0 关系');
     expect(panel.textContent).toContain('等待上下文治理资料');
+  });
+
+  it('renders knowledge review calibration signal details in the governance panel', () => {
+    const model = governanceModel();
+    model.contextPacks[0]?.calibrationSignals.push({
+      id: 'signal_capability_drift',
+      kind: 'stale',
+      severity: 'review_required',
+      recommendedAction: 'mark_stale_or_supersede',
+      message: 'Accepted correction points at a capability that the current project inventory no longer contains.',
+      subjectRefs: [
+        'knowledge_artifact:kart_eval_cap_orders_rename_drift',
+        'capability:cap_api_orders',
+      ],
+      evidenceRefs: [
+        'artifact:art_eval_current_inventory_without_orders',
+        'artifact:art_eval_legacy_inventory',
+        'file:apps/api/src/orders-route.ts#L12',
+      ],
+    });
+    contextGovernanceByRun.set('run_governance', model);
+
+    const panel = renderContextGovernancePanel(governanceDetail());
+
+    expect(panel.textContent).toContain('校准信号');
+    expect(panel.textContent).toContain('Knowledge Review Signals (1)');
+    expect(panel.textContent).toContain('review_required');
+    expect(panel.textContent).toContain('stale');
+    expect(panel.textContent).toContain('mark_stale_or_supersede');
+    expect(panel.textContent).toContain('knowledge_artifact:kart_eval_cap_orders_rename_drift');
+    expect(panel.textContent).toContain('file:apps/api/src/orders-route.ts#L12');
   });
 });

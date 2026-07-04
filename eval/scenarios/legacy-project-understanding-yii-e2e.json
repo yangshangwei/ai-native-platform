@@ -1,0 +1,212 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-yii-e2e",
+  "title": "Legacy project understanding keeps Yii route context focused",
+  "description": "Runs the real scanner against a small old Yii/Yii2 fixture, then verifies ContextPack selects the billing route and tests without leaking an unrelated customer route.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_yii",
+    "title": "Update legacy Yii billing refund approval",
+    "stage": "implementation",
+    "taskBrief": "Fix billing refund approval behavior in the legacy billing refund route and update billing refund tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 16,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "config/web.php",
+        "content": "<?php\nreturn [\n  'components' => [\n    'urlManager' => [\n      'rules' => [\n        'billing/statements' => 'billing/statement/index',\n        [\n          'pattern' => 'POST billing/refunds/<id:\\d+>',\n          'route' => 'billing/refund/approve',\n        ],\n        [\n          'pattern' => 'customers/profile',\n          'route' => 'customer/profile/view',\n        ],\n        [\n          'pattern' => 'billing/dynamic',\n          'route' => $dynamicRoute,\n        ],\n      ],\n    ],\n  ],\n];\n"
+      },
+      {
+        "path": "controllers/BillingStatementController.php",
+        "content": "<?php\nclass BillingStatementController extends \\yii\\web\\Controller\n{\n  public function actionIndex() {\n    return [];\n  }\n}\n"
+      },
+      {
+        "path": "controllers/BillingRefundController.php",
+        "content": "<?php\nclass BillingRefundController extends \\yii\\web\\Controller\n{\n  public function actionApprove($id) {\n    $service = new BillingRefundService();\n    return $service->approveRefund($id);\n  }\n}\n"
+      },
+      {
+        "path": "controllers/CustomerProfileController.php",
+        "content": "<?php\nclass CustomerProfileController extends \\yii\\web\\Controller\n{\n  public function actionView() {\n    return null;\n  }\n}\n"
+      },
+      {
+        "path": "services/BillingRefundService.php",
+        "content": "<?php\nclass BillingRefundService\n{\n  public function approveRefund($refundId) {\n    $repository = new BillingRefundRepository();\n    return $repository->approveRefund($refundId);\n  }\n}\n"
+      },
+      {
+        "path": "repositories/BillingRefundRepository.php",
+        "content": "<?php\nclass BillingRefundRepository\n{\n  public function approveRefund($refundId) {\n    return $refundId;\n  }\n}\n"
+      },
+      {
+        "path": "tests/BillingRefundYiiTest.php",
+        "content": "<?php\nfunction test_billing_refund_yii_route_approves_refunds() {}\n"
+      },
+      {
+        "path": "tests/CustomerProfileYiiTest.php",
+        "content": "<?php\nfunction test_customer_profile_yii_route_returns_customer_profile() {}\n"
+      },
+      {
+        "path": ".env",
+        "content": "DB_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "ANY /billing/statements",
+      "POST /billing/refunds/<id:\\d+>",
+      "ANY /customers/profile"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventoryEntrypointRouteCountMax": 3,
+    "inventorySymbolNamesInclude": [
+      "BillingStatementController",
+      "actionIndex",
+      "BillingRefundController",
+      "actionApprove",
+      "BillingRefundService",
+      "approveRefund",
+      "BillingRefundRepository",
+      "CustomerProfileController",
+      "actionView"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 7,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventorySourceChunkCountMin": 8,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_yii_billing_refund_primary",
+      "file:config/web.php#L8",
+      "file:config/web.php#L9",
+      "file:controllers/BillingRefundController.php#L2",
+      "file:controllers/BillingRefundController.php#L4",
+      "file:controllers/BillingRefundController.php#L5",
+      "file:controllers/BillingRefundController.php#L6",
+      "file:services/BillingRefundService.php#L2",
+      "file:services/BillingRefundService.php#L4",
+      "file:repositories/BillingRefundRepository.php#L2",
+      "file:tests/BillingRefundYiiTest.php"
+    ],
+    "sourceRefsExclude": [
+      "file:config/web.php#L12",
+      "file:config/web.php#L13",
+      "file:controllers/CustomerProfileController.php#L2",
+      "file:controllers/CustomerProfileController.php#L4",
+      "file:tests/CustomerProfileYiiTest.php"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:config/web.php#L8",
+          "file:config/web.php#L9",
+          "file:controllers/BillingRefundController.php#L2",
+          "file:controllers/BillingRefundController.php#L4",
+          "file:controllers/BillingRefundController.php#L5",
+          "file:controllers/BillingRefundController.php#L6",
+          "file:services/BillingRefundService.php#L2",
+          "file:services/BillingRefundService.php#L4",
+          "file:services/BillingRefundService.php#L5",
+          "file:services/BillingRefundService.php#L6",
+          "file:repositories/BillingRefundRepository.php#L2",
+          "file:repositories/BillingRefundRepository.php#L4",
+          "file:tests/BillingRefundYiiTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:config/web.php#L12",
+          "file:config/web.php#L13",
+          "file:controllers/CustomerProfileController.php#L2",
+          "file:controllers/CustomerProfileController.php#L4",
+          "file:tests/CustomerProfileYiiTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:config/web.php#L8",
+          "file:config/web.php#L9",
+          "file:controllers/BillingRefundController.php#L2",
+          "file:controllers/BillingRefundController.php#L4",
+          "file:controllers/BillingRefundController.php#L5",
+          "file:controllers/BillingRefundController.php#L6",
+          "file:services/BillingRefundService.php#L2",
+          "file:services/BillingRefundService.php#L4",
+          "file:services/BillingRefundService.php#L5",
+          "file:services/BillingRefundService.php#L6",
+          "file:repositories/BillingRefundRepository.php#L2",
+          "file:repositories/BillingRefundRepository.php#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:config/web.php#L12",
+          "file:config/web.php#L13",
+          "file:controllers/CustomerProfileController.php#L2",
+          "file:controllers/CustomerProfileController.php#L4",
+          "file:tests/CustomerProfileYiiTest.php"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:tests/BillingRefundYiiTest.php"
+        ],
+        "sourceRefsExclude": [
+          "file:config/web.php#L12",
+          "file:config/web.php#L13",
+          "file:controllers/CustomerProfileController.php#L2",
+          "file:controllers/CustomerProfileController.php#L4",
+          "file:tests/CustomerProfileYiiTest.php"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 11,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_config_web",
+      "inventory_source_chunk_src_chunk_controllers_billingrefund",
+      "inventory_source_chunk_src_chunk_services_billingrefund",
+      "inventory_source_chunk_src_chunk_repositories_billingrefund",
+      "inventory_source_chunk_src_chunk_tests_billing_refund"
+    ],
+    "irrelevantContextRatioMax": 0.13
+  },
+  "variants": [
+    {
+      "id": "yii-billing-refund-primary",
+      "label": "Legacy Yii billing refund task stays focused on billing route and tests"
+    }
+  ]
+}

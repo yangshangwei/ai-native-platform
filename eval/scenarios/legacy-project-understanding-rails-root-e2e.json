@@ -1,0 +1,206 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-rails-root-e2e",
+  "title": "Legacy project understanding keeps Rails root route context focused",
+  "description": "Runs the real scanner against a small legacy Rails fixture, then verifies ContextPack selects the billing root route and tests without leaking customer, redirect, or dynamic root routes.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_rails_root",
+    "title": "Update legacy Rails billing root dashboard",
+    "stage": "implementation",
+    "taskBrief": "Fix billing dashboard behavior in the legacy Rails root route and update billing dashboard root tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 18,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 65536
+    },
+    "files": [
+      {
+        "path": "config/routes.rb",
+        "content": "Rails.application.routes.draw do\n  scope \"/billing\" do\n    root to: \"billing/dashboard#index\"\n  end\n  scope \"/customers\" do\n    root \"customer/dashboard#index\"\n  end\n  root redirect(\"/login\")\n  root to: dynamic_home\nend\n"
+      },
+      {
+        "path": "app/controllers/billing/dashboard_controller.rb",
+        "content": "class Billing::DashboardController < ApplicationController\n  def index\n    service = BillingHomeService.new\n    service.load_dashboard\n  end\nend\n"
+      },
+      {
+        "path": "app/controllers/customer/dashboard_controller.rb",
+        "content": "class Customer::DashboardController < ApplicationController\n  def index\n    render json: {}\n  end\nend\n"
+      },
+      {
+        "path": "app/services/billing_home_service.rb",
+        "content": "class BillingHomeService\n  def load_dashboard\n    repository = BillingHomeRepository.new\n    repository.load_dashboard\n  end\nend\n"
+      },
+      {
+        "path": "app/repositories/billing_home_repository.rb",
+        "content": "class BillingHomeRepository\n  def load_dashboard\n    []\n  end\nend\n"
+      },
+      {
+        "path": "test/billing_dashboard_root_test.rb",
+        "content": "def test_billing_dashboard_root_loads_home\nend\n"
+      },
+      {
+        "path": "test/customer_dashboard_root_test.rb",
+        "content": "def test_customer_dashboard_root_loads_home\nend\n"
+      },
+      {
+        "path": ".env",
+        "content": "DB_PASSWORD=secret\n"
+      }
+    ]
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Customers API"
+    ],
+    "inventoryCapabilityCountMin": 2,
+    "inventoryCapabilityCountMax": 2,
+    "inventoryEntrypointRoutesInclude": [
+      "GET /billing",
+      "GET /customers"
+    ],
+    "inventoryEntrypointRouteCountMin": 2,
+    "inventoryEntrypointRouteCountMax": 2,
+    "inventorySymbolNamesInclude": [
+      "DashboardController",
+      "index",
+      "BillingHomeService",
+      "BillingHomeRepository"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 4,
+    "inventoryGraphEdgeConfidenceMin": 0.68,
+    "inventoryRouteHandlerEdgeCountMin": 2,
+    "inventoryRouteHandlerEdgeConfidenceMin": 0.78,
+    "inventorySourceChunkCountMin": 7,
+    "inventoryExclusionsInclude": [
+      ".env:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_customers"
+    ],
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_rails_root_billing_primary",
+      "file:config/routes.rb#L2",
+      "file:config/routes.rb#L3",
+      "file:app/controllers/billing/dashboard_controller.rb#L1",
+      "file:app/controllers/billing/dashboard_controller.rb#L2",
+      "file:app/controllers/billing/dashboard_controller.rb#L3",
+      "file:app/controllers/billing/dashboard_controller.rb#L4",
+      "file:app/services/billing_home_service.rb#L1",
+      "file:app/services/billing_home_service.rb#L2",
+      "file:app/repositories/billing_home_repository.rb#L1",
+      "file:test/billing_dashboard_root_test.rb"
+    ],
+    "sourceRefsExclude": [
+      "file:config/routes.rb#L5",
+      "file:config/routes.rb#L6",
+      "file:config/routes.rb#L8",
+      "file:config/routes.rb#L9",
+      "file:app/controllers/customer/dashboard_controller.rb#L1",
+      "file:app/controllers/customer/dashboard_controller.rb#L2",
+      "file:test/customer_dashboard_root_test.rb"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary"
+    },
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:config/routes.rb#L2",
+          "file:config/routes.rb#L3",
+          "file:app/controllers/billing/dashboard_controller.rb#L1",
+          "file:app/controllers/billing/dashboard_controller.rb#L2",
+          "file:app/controllers/billing/dashboard_controller.rb#L3",
+          "file:app/controllers/billing/dashboard_controller.rb#L4",
+          "file:app/services/billing_home_service.rb#L1",
+          "file:app/repositories/billing_home_repository.rb#L1",
+          "file:test/billing_dashboard_root_test.rb"
+        ],
+        "sourceRefsExclude": [
+          "file:config/routes.rb#L5",
+          "file:config/routes.rb#L6",
+          "file:config/routes.rb#L8",
+          "file:config/routes.rb#L9",
+          "file:app/controllers/customer/dashboard_controller.rb#L1",
+          "file:app/controllers/customer/dashboard_controller.rb#L2",
+          "file:test/customer_dashboard_root_test.rb"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:config/routes.rb#L2",
+          "file:config/routes.rb#L3",
+          "file:app/controllers/billing/dashboard_controller.rb#L1",
+          "file:app/controllers/billing/dashboard_controller.rb#L2",
+          "file:app/controllers/billing/dashboard_controller.rb#L3",
+          "file:app/controllers/billing/dashboard_controller.rb#L4",
+          "file:app/services/billing_home_service.rb#L1",
+          "file:app/services/billing_home_service.rb#L2",
+          "file:app/repositories/billing_home_repository.rb#L1"
+        ],
+        "sourceRefsExclude": [
+          "file:config/routes.rb#L5",
+          "file:config/routes.rb#L6",
+          "file:config/routes.rb#L8",
+          "file:config/routes.rb#L9",
+          "file:app/controllers/customer/dashboard_controller.rb#L1",
+          "file:app/controllers/customer/dashboard_controller.rb#L2",
+          "file:test/customer_dashboard_root_test.rb"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:test/billing_dashboard_root_test.rb"
+        ],
+        "sourceRefsExclude": [
+          "file:config/routes.rb#L5",
+          "file:app/controllers/customer/dashboard_controller.rb#L1",
+          "file:test/customer_dashboard_root_test.rb"
+        ]
+      }
+    ],
+    "selectedCountMin": 4,
+    "selectedCountMax": 11,
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_source_chunk_src_chunk_config_routes",
+      "inventory_source_chunk_src_chunk_app_controllers_billing",
+      "inventory_source_chunk_src_chunk_app_services_billing",
+      "inventory_source_chunk_src_chunk_app_repositories_billing",
+      "inventory_source_chunk_src_chunk_test_billing"
+    ],
+    "irrelevantContextRatioMax": 0.13,
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.68,
+      "routeHandlerEdgeConfidenceMin": 0.78
+    }
+  },
+  "variants": [
+    {
+      "id": "rails-root-billing-primary",
+      "label": "Legacy Rails root billing dashboard task stays focused on billing route and tests"
+    }
+  ]
+}

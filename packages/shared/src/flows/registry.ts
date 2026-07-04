@@ -177,12 +177,31 @@ const REFACTOR_STANDARD: FlowDef = {
 };
 
 /**
+ * Read-only project profile bootstrap pipeline.
+ *
+ * Captures repository inventory before asking the profile agent to synthesize
+ * human/machine profile artifacts. Completion and knowledge remain engine
+ * stages so the workflow reuses the existing report and Knowledge Gate path.
+ */
+const PROFILE_BOOTSTRAP: FlowDef = {
+  id: 'profile.bootstrap',
+  kind: 'profile',
+  description: 'Read-only project profile bootstrap for existing codebases.',
+  stages: [
+    { stage: 'inventory', kind: 'engine' },
+    { stage: 'profile', kind: 'agent', skillId: 'project-profile-bootstrap' },
+    { stage: 'completion', kind: 'engine' },
+    { stage: 'knowledge', kind: 'engine' },
+  ],
+};
+
+/**
  * Single source of truth for V2 flow definitions, keyed by {@link FlowId}.
  *
  * W2-1 shipped `'feature.standard'`. W2-3 adds `'feature.fastforward'`.
  * W2-2a adds `'issue.standard'`. W2-2b adds `'refactor.standard'`.
  * W2-4 (this PR) moves the registry to shared (cross-layer access) but
- * does NOT add new entries.
+ * does NOT add new entries. Profile bootstrap adds `'profile.bootstrap'`.
  *
  * Typed as `Readonly<Record<FlowId, FlowDef>>` so that:
  *   1. Adding a new FlowId literal in `../types/workflow` without
@@ -194,6 +213,7 @@ export const FLOW_REGISTRY: Readonly<Record<FlowId, FlowDef>> = {
   'feature.fastforward': FEATURE_FASTFORWARD,
   'issue.standard': ISSUE_STANDARD,
   'refactor.standard': REFACTOR_STANDARD,
+  'profile.bootstrap': PROFILE_BOOTSTRAP,
 };
 
 /**

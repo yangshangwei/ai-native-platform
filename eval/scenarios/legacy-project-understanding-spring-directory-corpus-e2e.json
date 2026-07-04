@@ -1,0 +1,227 @@
+{
+  "schemaVersion": "ainp.eval.scenario.v1",
+  "id": "legacy-project-understanding-spring-directory-corpus-e2e",
+  "title": "Legacy project understanding scans a directory-backed old Spring commerce corpus",
+  "description": "Runs the real scanner against a checked-in Spring-style old commerce fixture with annotation routes, billing/orders/customers controller/service/repository layers, SQL schema/routine evidence, tests, credential-like config, and generated/vendor/log noise filtered by fixtureDir.",
+  "kind": "legacy_project_understanding_fixture",
+  "input": {
+    "projectId": "proj_eval_legacy_spring_directory_corpus",
+    "title": "Update legacy Spring billing refund audit",
+    "stage": "implementation",
+    "taskBrief": "Fix the legacy Spring billing refund audit route and rebuild_spring_refund_audit SQL routine, then update billing refund audit tests.",
+    "inventoryLimits": {
+      "maxCapturedFiles": 36,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072
+    },
+    "fixtureDir": {
+      "path": "../fixtures/legacy-directory-backed-spring-commerce",
+      "maxFiles": 28,
+      "maxFileBytes": 8192,
+      "maxTotalBytes": 131072,
+      "excludePaths": [
+        "target",
+        "vendor",
+        "logs"
+      ]
+    }
+  },
+  "expectations": {
+    "inventoryCapabilityLabelsInclude": [
+      "Billing API",
+      "Orders API",
+      "Customers API"
+    ],
+    "inventoryCapabilityLabelsExclude": [
+      "Api API"
+    ],
+    "inventoryCapabilityCountMin": 3,
+    "inventoryEntrypointRoutesInclude": [
+      "POST /api/v5/billing/refunds/{refundId}/audit",
+      "PATCH /api/v5/orders/fulfillment/{orderId}/reprice",
+      "GET /api/v5/customers/profiles/{customerId}/risk"
+    ],
+    "inventoryEntrypointRouteCountMin": 3,
+    "inventorySymbolNamesInclude": [
+      "BillingRefundController",
+      "auditRefund",
+      "BillingRefundService",
+      "rebuildRefundAudit",
+      "BillingRefundRepository",
+      "writeRefundAuditEntry",
+      "OrderFulfillmentController",
+      "OrderFulfillmentService",
+      "CustomerProfileController",
+      "CustomerProfileService"
+    ],
+    "inventoryGraphEdgeKindsInclude": [
+      "route_handler",
+      "symbol_reference"
+    ],
+    "inventoryGraphEdgeCountMin": 9,
+    "inventoryRouteHandlerEdgeCountMin": 3,
+    "inventorySourceChunkCountMin": 16,
+    "inventoryExclusionsInclude": [
+      "config/credentials.yml:sensitive"
+    ],
+    "inventoryExclusionCountMin": 1,
+    "manifestRefsInclude": [
+      "inventory_capability_cap_api_billing",
+      "inventory_domain_entities_billing_api",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api"
+    ],
+    "manifestRefsExclude": [
+      "input_project_inventory_json",
+      "inventory_capability_cap_api_orders",
+      "inventory_capability_cap_api_customers"
+    ],
+    "relevantManifestRefPrefixes": [
+      "task_brief",
+      "workflow_run",
+      "inventory_capability_cap_api_billing",
+      "inventory_symbols_billing_api",
+      "inventory_tests_billing_api",
+      "inventory_hotspots_billing_api",
+      "inventory_domain_entities_billing_api",
+      "inventory_source_chunk_src_chunk_src_main_java_com_acme_legacy_billing",
+      "inventory_source_chunk_src_chunk_db_billing",
+      "inventory_source_chunk_src_chunk_src_test_java_com_acme_legacy_billing"
+    ],
+    "irrelevantContextRatioMax": 0.16,
+    "sourceRefsInclude": [
+      "artifact:art_eval_legacy_inventory_spring_commerce_billing_refund_audit",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L4",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L5",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L6",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L8",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L9",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L10",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L3",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L4",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L6",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L7",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundRepository.java#L3",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundRepository.java#L4",
+      "file:src/main/java/com/acme/legacy/billing/BillingRefundRepository.java#L5",
+      "file:db/billing/schema.sql#L1",
+      "file:db/billing/routines.sql#L1",
+      "file:src/test/java/com/acme/legacy/billing/BillingRefundControllerTest.java"
+    ],
+    "sourceRefsExclude": [
+      "file:src/main/java/com/acme/legacy/orders/OrderFulfillmentController.java#L3",
+      "file:src/main/java/com/acme/legacy/customers/CustomerProfileController.java#L3",
+      "file:db/orders/schema.sql#L1",
+      "file:db/customers/schema.sql#L1",
+      "file:src/test/java/com/acme/legacy/orders/OrderFulfillmentControllerTest.java",
+      "file:src/test/java/com/acme/legacy/customers/CustomerProfileControllerTest.java",
+      "file:target/generated-sources/GeneratedBillingClient.java",
+      "file:vendor/GeneratedErpClient.java",
+      "file:logs/application.log"
+    ],
+    "sectionModes": {
+      "inventory_capability_cap_api_billing": "summary",
+      "inventory_domain_entities_billing_api": "summary"
+    },
+    "selectedCountMin": 5,
+    "selectedSectionsInclude": [
+      {
+        "ref": "inventory_capability_cap_api_billing",
+        "mode": "summary",
+        "sourceRefsInclude": [
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L4",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L5",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L6",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L8",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L9",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L3",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L6",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundRepository.java#L3",
+          "file:src/test/java/com/acme/legacy/billing/BillingRefundControllerTest.java"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/java/com/acme/legacy/orders/OrderFulfillmentController.java#L3",
+          "file:src/main/java/com/acme/legacy/customers/CustomerProfileController.java#L3",
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1",
+          "file:src/test/java/com/acme/legacy/orders/OrderFulfillmentControllerTest.java",
+          "file:src/test/java/com/acme/legacy/customers/CustomerProfileControllerTest.java",
+          "file:target/generated-sources/GeneratedBillingClient.java",
+          "file:vendor/GeneratedErpClient.java",
+          "file:logs/application.log"
+        ]
+      },
+      {
+        "ref": "inventory_domain_entities_billing_api",
+        "contentIncludes": [
+          "Matched Domain Entities",
+          "routine | rebuild_spring_refund_audit | db/billing/routines.sql",
+          "table | spring_refund_audit_entries | db/billing/schema.sql",
+          "refs=file:src/main/java/com/acme/legacy/billing/BillingRefundRepository.java#L5"
+        ],
+        "contentExcludes": [
+          "spring_order_fulfillment_backlog",
+          "spring_customer_profile_snapshots"
+        ],
+        "sourceRefsInclude": [
+          "file:db/billing/routines.sql#L1",
+          "file:db/billing/schema.sql#L1",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundRepository.java#L5"
+        ],
+        "sourceRefsExclude": [
+          "file:db/orders/schema.sql#L1",
+          "file:db/customers/schema.sql#L1"
+        ]
+      },
+      {
+        "ref": "inventory_symbols_billing_api",
+        "sourceRefsInclude": [
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L4",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L5",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L6",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L8",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L9",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundController.java#L10",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L3",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L4",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundService.java#L6",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundRepository.java#L3",
+          "file:src/main/java/com/acme/legacy/billing/BillingRefundRepository.java#L4"
+        ],
+        "sourceRefsExclude": [
+          "file:src/main/java/com/acme/legacy/orders/OrderFulfillmentController.java#L3",
+          "file:src/main/java/com/acme/legacy/customers/CustomerProfileController.java#L3",
+          "file:src/test/java/com/acme/legacy/orders/OrderFulfillmentControllerTest.java",
+          "file:src/test/java/com/acme/legacy/customers/CustomerProfileControllerTest.java"
+        ]
+      },
+      {
+        "ref": "inventory_tests_billing_api",
+        "sourceRefsInclude": [
+          "file:src/test/java/com/acme/legacy/billing/BillingRefundControllerTest.java"
+        ],
+        "sourceRefsExclude": [
+          "file:src/test/java/com/acme/legacy/orders/OrderFulfillmentControllerTest.java",
+          "file:src/test/java/com/acme/legacy/customers/CustomerProfileControllerTest.java"
+        ]
+      }
+    ],
+    "inventoryQualityGates": {
+      "measuredVariantsMin": 1,
+      "graphEdgeConfidenceMin": 0.65,
+      "routeHandlerEdgeConfidenceMin": 0.78,
+      "sourceChunkContentSha256CoverageMin": 1,
+      "sourceChunkIndexCoverageMin": 1,
+      "sourceChunkLinkedRecordCoverageMin": 1,
+      "sourceFileExtensionCountMin": 3,
+      "sourcePathPatternCountMin": 4,
+      "sourceRecordKindCountMin": 7
+    }
+  },
+  "variants": [
+    {
+      "id": "spring-commerce-billing-refund-audit",
+      "label": "Legacy Spring commerce task stays focused on billing refund route, SQL routine, and tests"
+    }
+  ]
+}

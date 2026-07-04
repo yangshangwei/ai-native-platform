@@ -1,0 +1,5 @@
+{"file":".trellis/tasks/archive/2026-07/07-01-legacy-project-understanding-evolution-roadmap/prd.md","reason":"Verifier must check shipped work against V1.1 acceptance criteria and deferred scope boundaries."}
+{"file":".trellis/tasks/archive/2026-07/07-01-legacy-project-understanding-evolution-roadmap/roadmap.md","reason":"Verifier must confirm V1.2+ are documented as follow-up milestones, not falsely claimed."}
+{"file":".trellis/tasks/archive/2026-07/07-01-legacy-project-understanding-evolution-roadmap/regression-test-plan.md","reason":"Verifier must run or assess required focused and regression checks."}
+{"file":".trellis/spec/runner/backend/flow-registry.md","reason":"Verify profile bootstrap flow and inventory invariants remain intact."}
+{"file": ".trellis/tasks/archive/2026-07/07-01-legacy-project-understanding-evolution-roadmap/research/github-codebase-understanding-patterns.md", "reason": "Verifier should ensure future work follows the layered static graph plus supplemental hybrid retrieval direction."}

@@ -294,6 +294,12 @@ function stageScore(stage: WorkflowStage, candidate: ContextCandidate): number {
     case 'completion':
     case 'knowledge':
       return source === 'run_artifact' ? 26 : 12;
+    case 'inventory':
+      return source === 'workflow_metadata' || source === 'project_profile' ? 20 : 10;
+    case 'profile':
+      return includesAny(text, ['inventory', 'project_profile'])
+        ? 28
+        : source === 'project_profile' || source === 'knowledge_artifact' ? 22 : 12;
     case 'report':
     case 'analyze':
       return source === 'task_brief' || source === 'project_profile' ? 20 : 12;
@@ -311,6 +317,8 @@ function sourceTypeScore(sourceType: ContextSourceType): number {
       return 30;
     case 'workflow_metadata':
       return 26;
+    case 'code_probe':
+      return 25;
     case 'run_artifact':
       return 24;
     case 'current_input':
