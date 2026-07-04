@@ -1,0 +1,6 @@
+{"file":".trellis/tasks/07-01-legacy-project-capability-map-bootstrap/prd.md","reason":"Verifier must check implementation against requirements and acceptance criteria."}
+{"file":".trellis/tasks/07-01-legacy-project-capability-map-bootstrap/solution-design.md","reason":"Verifier must confirm shipped scanner contract, safety behavior, and profile prompt integration."}
+{"file":".trellis/tasks/07-01-legacy-project-capability-map-bootstrap/task-breakdown.md","reason":"Verifier should map completed work back to planned phases and identify incomplete slices."}
+{"file":".trellis/tasks/07-01-legacy-project-capability-map-bootstrap/regression-test-plan.md","reason":"Verifier must run/assess focused and full regression checks."}
+{"file":".trellis/spec/runner/backend/flow-registry.md","reason":"Verify profile.bootstrap flow and inventory/profile invariants remain intact."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Verify profile-derived evidence remains governed and non-authoritative until accepted."}

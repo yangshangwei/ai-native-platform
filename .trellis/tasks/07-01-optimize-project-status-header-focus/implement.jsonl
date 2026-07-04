@@ -1,0 +1,4 @@
+{"file":".trellis/spec/web/frontend/component-guidelines.md","reason":"Renderer and CSS conventions for the vanilla TypeScript Web SPA."}
+{"file":".trellis/spec/web/frontend/quality-guidelines.md","reason":"Required web quality gates and DOM safety expectations."}
+{"file":".trellis/spec/web/frontend/type-safety.md","reason":"DTO/type-safety rules for project rendering changes."}
+{"file":".trellis/spec/web/frontend/agent-backend-ui.md","reason":"Project card backend status/preflight contracts must remain intact."}

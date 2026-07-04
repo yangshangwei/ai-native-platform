@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Frontend package guideline index for web UI changes."}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Sidebar collapsed state must survive render() like other user-owned UI state."}

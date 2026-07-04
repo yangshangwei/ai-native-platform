@@ -349,29 +349,69 @@
       .eyebrow { color: var(--primary); text-transform: uppercase; letter-spacing: .08em; font-weight: 700; font-size: 11px; }
       .topbar h1 { margin: 2px 0 0; font-size: clamp(22px, 2vw, 32px); line-height: 1.15; }
       .topbar-right { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
-      .global-status-strip { display: flex; gap: 8px; align-items: center; }
-      .global-status-badge {
-        display: flex; align-items: center; gap: 6px;
-        padding: 6px 10px; border-radius: var(--radius);
-        font-size: 12px; font-weight: 700;
-        border: 1px solid;
+      .global-status-strip {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(88px, max-content));
+        gap: 2px;
+        align-items: stretch;
+        padding: 4px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: color-mix(in srgb, var(--surface) 88%, var(--bg));
       }
-      .global-status-badge.bad { background: var(--bad-bg); border-color: color-mix(in srgb, var(--bad) 35%, var(--line)); color: var(--bad); }
-      .global-status-badge.info { background: var(--info-bg); border-color: color-mix(in srgb, var(--info) 35%, var(--line)); color: var(--info); }
-      .global-status-badge.good { background: var(--good-bg); border-color: color-mix(in srgb, var(--good) 35%, var(--line)); color: var(--good); }
-      .global-status-badge.warn { background: var(--warn-bg); border-color: color-mix(in srgb, var(--warn) 35%, var(--line)); color: var(--warn); }
-      .status-badge-count {
-        min-width: 20px; height: 20px; border-radius: 999px;
-        display: grid; place-items: center;
-        font-weight: 900; font-size: 11px;
+      .global-status-item {
+        min-width: 88px;
+        display: grid;
+        grid-template-columns: 8px minmax(0, 1fr);
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px;
+        border-radius: var(--radius-sm);
       }
-      .global-status-badge.bad .status-badge-count { background: var(--bad); color: white; }
-      .global-status-badge.info .status-badge-count { background: var(--info); color: white; }
-      .global-status-badge.good .status-badge-count { background: var(--good); color: white; }
-      .global-status-badge.warn .status-badge-count { background: var(--warn); color: white; }
-      .status-badge-label { white-space: nowrap; }
+      .global-status-item.bad { background: color-mix(in srgb, var(--bad-bg) 70%, transparent); }
+      .global-status-item.info { background: color-mix(in srgb, var(--info-bg) 70%, transparent); }
+      .global-status-item.good { background: color-mix(in srgb, var(--good-bg) 70%, transparent); }
+      .global-status-item.warn { background: color-mix(in srgb, var(--warn-bg) 70%, transparent); }
+      .global-status-indicator {
+        width: 8px;
+        height: 28px;
+        border-radius: var(--radius-full);
+        background: var(--muted);
+      }
+      .global-status-item.bad .global-status-indicator { background: var(--bad); }
+      .global-status-item.info .global-status-indicator { background: var(--info); }
+      .global-status-item.good .global-status-indicator { background: var(--good); }
+      .global-status-item.warn .global-status-indicator { background: var(--warn); }
+      .global-status-copy { min-width: 0; display: grid; gap: 1px; }
+      .global-status-label {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1.1;
+        white-space: nowrap;
+      }
+      .global-status-value {
+        min-width: 0;
+        color: var(--text);
+        font-size: 15px;
+        font-weight: 900;
+        line-height: 1.15;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .global-status-item.bad .global-status-value { color: var(--bad); }
+      .global-status-item.info .global-status-value { color: var(--info); }
+      .global-status-item.good .global-status-value { color: var(--good); }
+      .global-status-item.warn .global-status-value { color: var(--warn); }
       .topbar h1 { margin: 2px 0 0; font-size: clamp(22px, 2vw, 32px); line-height: 1.15; }
-      .context-strip { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 760px; }
+      .context-strip {
+        display: grid;
+        grid-template-columns: minmax(240px, 1.4fr) minmax(220px, 1fr) minmax(190px, .85fr);
+        justify-content: flex-end;
+        gap: 8px;
+        width: min(760px, 100%);
+      }
 
       /* Welcome Guide */
       .welcome-guide {
@@ -399,11 +439,16 @@
       }
 
       .context-item {
-        min-width: 118px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius);
-        background: var(--surface); box-shadow: var(--shadow);
+        min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--radius);
+        background: var(--surface); box-shadow: var(--shadow); display: grid; gap: 2px; align-content: center;
       }
+      .context-item.primary { border-color: color-mix(in srgb, var(--info) 28%, var(--line)); background: var(--info-bg); }
+      .context-item.primary strong { font-size: 15px; }
+      .context-item.focus { border-color: color-mix(in srgb, var(--primary) 34%, var(--line)); }
+      .context-item.supporting { background: var(--surface-2); box-shadow: none; }
       .context-item span { display: block; color: var(--muted); font-size: 11px; }
-      .context-item strong { display: block; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+      .context-item strong { display: block; min-width: 0; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+      .context-item small { display: block; min-width: 0; color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .good { color: var(--good); } .bad { color: var(--bad); } .warn { color: var(--warn); } .info { color: var(--info); } .muted { color: var(--muted); }
 
       .workbench-grid { padding: 24px 28px 36px; display: grid; grid-template-columns: minmax(0, 1fr) 390px; gap: 20px; align-items: start; }
@@ -1091,7 +1136,7 @@
         .nav-list { grid-template-columns: repeat(5, minmax(0, 1fr)); }
         .nav-item { min-height: 70px; grid-template-columns: 1fr; }
         .topbar { grid-template-columns: 1fr; }
-        .context-strip { justify-content: flex-start; }
+        .context-strip { justify-content: flex-start; width: 100%; }
         .workbench-grid, .task-detail-grid, .page-grid.two-col { grid-template-columns: 1fr; }
         .mobile-next-action { display: block; }
         .desktop-next-action { display: none; }
@@ -1103,6 +1148,10 @@
         .nav-list { grid-template-columns: 1fr 1fr; }
         .workbench-grid, .task-detail-grid, .page-grid { padding: 16px; }
         .topbar { padding: 16px; }
+        .topbar-right { align-items: stretch; }
+        .global-status-strip { width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .global-status-item { min-width: 0; }
+        .global-status-value { white-space: normal; overflow-wrap: anywhere; }
         .stage-panel-grid, .metric-grid, .test-grid, .evidence-summary-grid { grid-template-columns: 1fr; }
         .context-flow-stage-grid { grid-template-columns: 1fr; }
         .context-flow-artifact-label { max-width: 100%; white-space: normal; }
@@ -1112,7 +1161,8 @@
         .action-queue-item .button { width: 100%; }
         .action-queue-copy strong, .action-queue-copy small { white-space: normal; overflow-wrap: anywhere; }
         .new-task-readiness { justify-content: flex-start; }
-        .context-item { min-width: calc(50% - 4px); }
+        .context-strip { grid-template-columns: 1fr; }
+        .context-item { min-width: 0; }
         .project-form-actions .button { width: 100%; }
         .project-card-footer { align-items: stretch; flex-direction: column; }
         .project-card-actions { width: 100%; margin-left: 0; }

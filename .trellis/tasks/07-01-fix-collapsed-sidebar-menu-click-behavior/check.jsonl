@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Frontend package guideline index for review context."}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Review should verify collapsed sidebar is modeled as render-stable UI state."}

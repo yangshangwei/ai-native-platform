@@ -1,0 +1,2 @@
+{"file":".trellis/spec/web/frontend/component-guidelines.md","reason":"Check the topbar label remains rendered through DOM construction."}
+{"file":".trellis/spec/web/frontend/quality-guidelines.md","reason":"Check targeted shell test and typecheck evidence."}

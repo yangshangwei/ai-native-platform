@@ -6,7 +6,7 @@
     <title>AI Native Platform · 可验证的 AI 软件交付工作台</title>
     <meta
       name="description"
-      content="从一句话需求到验收报告的闭环。标准功能流、真实构建测试、Gate 把关、Completion Report —— AI 交付，可被证明。"
+      content="从一句话需求到验收报告的闭环。多流程编排、白名单命令执行、Gate 把关、Completion Report —— AI 交付，可被证明。"
     />
     <link rel="stylesheet" href="/design-tokens.css" />
     <link rel="stylesheet" href="/landing.css" />
@@ -48,18 +48,18 @@
             <span class="eyebrow">AI 软件交付工作台 · MVP</span>
             <h1>一句话需求，到<span class="accent">可被证明</span>的交付。</h1>
             <p class="hero-lede">
-              AI Native Platform 把软件交付收敛成可审计的标准功能流：需求 → 设计 → AI 开发 →
-              本地构建测试 → 验收 → 报告 → 知识沉淀。Agent 负责执行，<strong>但不能自己宣布通过</strong>——
-              每一步都有 Gate 把关，测试来自真实 <code>mvn</code> 命令，每次交付都生成 Completion Report。
+              AI Native Platform 把软件交付收敛成可审计的流程编排：需求 → 设计 → AI 开发 →
+              构建测试 → 验收 → 报告 → 知识沉淀。Agent 只写代码，<strong>不能跑命令、不能推进状态</strong>——
+              构建测试由 Runner 白名单命令执行，支持任意构建工具，每次交付都生成 Completion Report。
             </p>
             <div class="hero-actions">
               <a class="btn btn-primary btn-lg" href="#cta">开始使用</a>
               <a class="btn btn-ghost btn-lg" href="#how">看它怎么工作 →</a>
             </div>
             <div class="hero-proof">
-              <div class="proof-item"><strong>8</strong><span>标准功能阶段</span></div>
-              <div class="proof-item"><strong>0</strong><span>Agent 自报状态</span></div>
-              <div class="proof-item"><strong>100%</strong><span>真实命令证据</span></div>
+              <div class="proof-item"><strong>5</strong><span>流程编排模板</span></div>
+              <div class="proof-item"><strong>0</strong><span>Agent 可执行命令</span></div>
+              <div class="proof-item"><strong>100%</strong><span>白名单命令证据</span></div>
             </div>
           </div>
           <div class="hero-visual reveal" data-delay="1" aria-hidden="true">
@@ -73,7 +73,8 @@
                 <p><span class="t-muted">design</span> <span class="t-good">✓ human approved</span></p>
                 <p><span class="t-muted">implementation</span> <span class="t-good">✓ diff scope ok</span></p>
                 <p><span class="t-muted">build_test</span> <span class="t-good">✓ mvn -B test · 3/3 surefire</span></p>
-                <p><span class="t-muted">review</span> <span class="t-warn">⧗ awaiting acceptance</span></p>
+                <p><span class="t-muted">review</span> <span class="t-good">✓ AC matrix 4/4 proven</span></p>
+                <p><span class="t-muted">acceptance</span> <span class="t-warn">⧗ awaiting human approval</span></p>
                 <p class="t-cursor"><span class="t-prompt">▸</span> completion report ready_</p>
               </div>
             </div>
@@ -92,7 +93,7 @@
           <div class="problem-grid">
             <div class="problem-card reveal">
               <h3>Agent 自报 ≠ 事实</h3>
-              <p>LLM 说「测试通过」不等于测试真的跑了。本平台的 Build/Test 来自 Runner 实际 spawn 的 <code>mvn</code>，证据是 exitCode + 解析后的 Surefire XML。</p>
+              <p>LLM 说「测试通过」不等于测试真的跑了，测试真的跑了也不等于业务验收。本平台的构建测试来自 Runner 白名单命令实际 spawn，而验收要求每条 AC 都有具体业务证据——"命令跑过"类 AC 被自动拒绝。</p>
             </div>
             <div class="problem-card reveal" data-delay="1">
               <h3>状态写入失控</h3>
@@ -106,26 +107,29 @@
         </div>
       </section>
 
-      <!-- ============ How it works · feature.standard pipeline ============ -->
+      <!-- ============ How it works · flow registry ============ -->
       <section class="band band-alt" id="how">
         <div class="section-inner">
-          <h2 class="reveal">标准功能流，每步都有把关</h2>
+          <h2 class="reveal">图驱动流程编排，每步都有把关</h2>
           <p class="section-lede reveal" data-delay="1">
-            一条流水线串起从需求到知识沉淀的全过程。绿色阶段产出 Artifact，灰色菱形是必须通过的 Gate。
+            5 种流程模板覆盖功能开发、快速迭代、Bug 修复、重构和项目画像。每个写代码的流程都包含 <code>build_test</code> 阶段。
+            以下是最完整的 <code>feature.standard</code>——
           </p>
           <div class="pipeline" role="list">
             <div class="stage reveal" role="listitem"><span class="stage-idx">1</span><strong>context_pack</strong><small>上下文打包</small></div>
             <div class="stage reveal" data-delay="1" role="listitem"><span class="stage-idx">2</span><strong>requirement</strong><small>需求草稿 + Gate</small></div>
             <div class="stage reveal" data-delay="2" role="listitem"><span class="stage-idx">3</span><strong>design</strong><small>设计 + 人工批准</small></div>
             <div class="stage reveal" data-delay="3" role="listitem"><span class="stage-idx">4</span><strong>implementation</strong><small>AI 开发 + Diff Gate</small></div>
-            <div class="stage stage-hot reveal" data-delay="4" role="listitem"><span class="stage-idx">5</span><strong>build_test</strong><small>真实 mvn 编译测试</small></div>
-            <div class="stage reveal" data-delay="5" role="listitem"><span class="stage-idx">6</span><strong>review</strong><small>验收 Gate</small></div>
+            <div class="stage stage-hot reveal" data-delay="4" role="listitem"><span class="stage-idx">5</span><strong>build_test</strong><small>白名单命令编译测试</small></div>
+            <div class="stage stage-hot reveal" data-delay="5" role="listitem"><span class="stage-idx">6</span><strong>review</strong><small>AC 矩阵验证 + 人工验收</small></div>
             <div class="stage reveal" data-delay="6" role="listitem"><span class="stage-idx">7</span><strong>completion</strong><small>Completion Report</small></div>
             <div class="stage reveal" data-delay="7" role="listitem"><span class="stage-idx">8</span><strong>knowledge</strong><small>知识候选入库</small></div>
           </div>
           <p class="pipeline-note reveal">
-            所有产物（Artifact、CommandRun、BuildRun/TestRun、GateRun、Approval、AuditLog）持久化到 SQLite，
-            可被 Web UI 和 Completion Report 引用。
+            除 <code>feature.standard</code> 外，还有 <code>feature.fastforward</code>（4 阶段快速通道）、
+            <code>issue.standard</code>（Bug 修复）、<code>refactor.standard</code>（重构）、
+            <code>profile.bootstrap</code>（项目画像）共 5 条注册流程。
+            所有产物持久化到 SQLite，可被 Web UI 和 Completion Report 引用。
           </p>
         </div>
       </section>
@@ -142,18 +146,18 @@
             </div>
             <div class="value-card reveal" data-delay="1">
               <div class="value-icon">🛡</div>
-              <h3>Gate Engine 把关</h3>
-              <p>每个 GateRun 由 gate-engine 判定 pass/warn/fail：Diff Scope、Sensitive Change、Compile、Test、Acceptance。Agent 只能附注，不能改 status。</p>
+              <h3>Business Acceptance Matrix</h3>
+              <p>测试通过 ≠ 业务验收。每条 AC 必须有证据证明业务行为——Verifier 逐条构建证据矩阵（core / boundary / exception 场景全覆盖），"命令跑过"类 AC 被自动拒绝。</p>
             </div>
             <div class="value-card reveal" data-delay="2">
               <div class="value-icon">🧪</div>
-              <h3>真实构建测试</h3>
-              <p>Runner 实际跑 <code>mvn -B -DskipTests compile</code> → <code>mvn -B test</code>，TestRun 来自解析的 Surefire XML，不是 LLM 自报。</p>
+              <h3>白名单命令构建</h3>
+              <p>项目可配置任意构建/测试命令（Maven、Gradle、npm、Cargo…），Runner 通过 <code>runWhitelistedCommand</code> 执行，Agent 的 Bash 工具被显式禁用——只有平台能跑命令。</p>
             </div>
             <div class="value-card reveal">
               <div class="value-icon">🌿</div>
               <h3>本地 Worktree 执行</h3>
-              <p>每个 WorkflowRun 一个独立 Git worktree，用本机 JDK / Maven / Git 环境编译测试。隔离代码工作区，贴近真实开发。</p>
+              <p>每个 WorkflowRun 一个独立 Git worktree，用本机构建工具链编译测试。隔离代码工作区，贴近真实开发。</p>
             </div>
             <div class="value-card reveal" data-delay="1">
               <div class="value-icon">📄</div>
@@ -196,7 +200,7 @@
               <span class="arch-tag">Local Runner</span>
               <div class="arch-cards">
                 <span>Git Worktree Manager</span><span>Agent Backend Adapter</span>
-                <span>Command / Maven Runner</span><span>Artifact Collector</span>
+                <span>Whitelisted Command Runner</span><span>Artifact Collector</span>
               </div>
             </div>
           </div>
@@ -214,11 +218,11 @@
           <div class="backend-grid">
             <div class="backend-card reveal">
               <div class="backend-head"><span class="backend-mark">CC</span><strong>Claude Code</strong></div>
-              <p>真实 CLI Agent Backend，流式事件回传，按阶段注入平台 SkillSpec。</p>
+              <p>真实 CLI Agent Backend，流式事件回传，按阶段注入平台 SkillSpec。Bash / Skill 工具被显式禁用——Agent 只能写代码，不能执行命令。</p>
             </div>
             <div class="backend-card reveal" data-delay="1">
               <div class="backend-head"><span class="backend-mark">CX</span><strong>Codex</strong></div>
-              <p>同一套适配契约，跨平台 CLI 解析；Windows 优先尝试 shim 与可执行文件。</p>
+              <p>同一套适配契约，跨平台 CLI 解析；同样隔离 Agent 与命令执行层。Windows 优先尝试 shim 与可执行文件。</p>
             </div>
           </div>
           <p class="pipeline-note reveal">
@@ -247,20 +251,29 @@
             </figure>
             <figure class="evidence-card reveal" data-delay="1">
               <div class="evidence-mock mock-stream">
-                <p><span class="t-prompt">$</span> mvn -B test</p>
+                <p><span class="t-prompt">$</span> mvn -B test <span class="t-muted">← whitelisted</span></p>
                 <p class="t-muted">[INFO] BUILD SUCCESS</p>
                 <p class="t-good">Tests run: 3, Failures: 0</p>
               </div>
-              <figcaption>Stream 日志 · 真实命令的 stdout/stderr</figcaption>
+              <figcaption>Stream 日志 · 白名单命令 stdout/stderr（支持自定义命令）</figcaption>
             </figure>
             <figure class="evidence-card reveal" data-delay="2">
+              <div class="evidence-mock mock-matrix">
+                <div class="report-line report-title">verifier-ac-matrix.json</div>
+                <div class="report-line"><span class="t-good">AC-001</span> core · passed · refs: [req, diff, test]</div>
+                <div class="report-line"><span class="t-good">AC-002</span> boundary · passed · refs: [design, diff]</div>
+                <div class="report-line"><span class="t-warn">AC-003</span> exception · at_risk · refs: [diff]</div>
+              </div>
+              <figcaption>Business Acceptance Matrix · 每条 AC 独立证明业务行为</figcaption>
+            </figure>
+            <figure class="evidence-card reveal" data-delay="3">
               <div class="evidence-mock mock-report">
                 <div class="report-line report-title"># Completion Report</div>
                 <div class="report-line">## Artifacts · 6</div>
                 <div class="report-line">## Gates · 5 passed</div>
-                <div class="report-line">## Tests · 3/3</div>
+                <div class="report-line">## AC Matrix · 3/3 proven</div>
               </div>
-              <figcaption>Completion Report · 引用每个 Artifact / Gate / CommandRun</figcaption>
+              <figcaption>Completion Report · 引用 Artifact / Gate / AC Matrix</figcaption>
             </figure>
           </div>
         </div>
@@ -302,7 +315,7 @@
           <a href="#evidence">交付证据</a>
         </nav>
       </div>
-      <p class="footer-fine">MVP · Web 平台 + Local Runner + Git Worktree + Java/Maven 本地构建 + Gate + Report + Knowledge</p>
+      <p class="footer-fine">MVP · Web 平台 + Local Runner + Git Worktree + 可配置构建命令 + Gate + Report + Knowledge</p>
     </footer>
 
     <script src="/landing.js" defer></script>

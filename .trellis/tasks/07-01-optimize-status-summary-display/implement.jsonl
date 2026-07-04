@@ -1,0 +1,4 @@
+{"file":".trellis/spec/web/frontend/component-guidelines.md","reason":"Renderer and DOM construction conventions for apps/web."}
+{"file":".trellis/spec/web/frontend/quality-guidelines.md","reason":"Web test, DOM safety, and quality gate expectations."}
+{"file":".trellis/spec/web/frontend/type-safety.md","reason":"TypeScript and DTO safety conventions for apps/web."}
+{"file":".trellis/spec/web/frontend/agent-backend-ui.md","reason":"Topbar/backend readiness and execution status UX constraints."}

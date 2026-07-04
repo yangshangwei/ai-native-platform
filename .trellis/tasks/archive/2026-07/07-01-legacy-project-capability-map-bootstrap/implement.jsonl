@@ -1,0 +1,8 @@
+{"file":".trellis/tasks/07-01-legacy-project-capability-map-bootstrap/prd.md","reason":"Canonical requirements, scope, acceptance criteria, and no-new-dependency MVP boundary."}
+{"file":".trellis/tasks/07-01-legacy-project-capability-map-bootstrap/solution-design.md","reason":"Implementation-level scanner contract, data shapes, safety rules, and prompt update guidance."}
+{"file":".trellis/tasks/07-01-legacy-project-capability-map-bootstrap/task-breakdown.md","reason":"Phased implementation order and done conditions."}
+{"file":".trellis/tasks/07-01-legacy-project-capability-map-bootstrap/regression-test-plan.md","reason":"Focused and full regression coverage required for the change."}
+{"file":".trellis/tasks/07-01-legacy-project-capability-map-bootstrap/research-oss-codebase-understanding.md","reason":"OSS pattern research supporting the deterministic capability-map approach."}
+{"file":".trellis/spec/runner/backend/flow-registry.md","reason":"Profile bootstrap inventory/profile stage contract and flow invariants."}
+{"file":".trellis/spec/shared/backend/context-injection-protocol.md","reason":"Context, source refs, profile-derived knowledge, and review-gate constraints."}
+{"file":".trellis/spec/api/backend/workflow-requests.md","reason":"Profile bootstrap request creation and backend-unavailable behavior."}

@@ -91,6 +91,7 @@ export const ui = {
   lastError: null as string | null,
   projectsLoadError: null as string | null,
   isLoadingData: false,
+  sidebarCollapsed: false,
   knowledgeEditComposing: null as { key: string } | null,
   knowledgeEditRenderDeferred: false,
   coordinatorReplyComposing: null as { requestId: string } | null,

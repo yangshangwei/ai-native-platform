@@ -178,6 +178,46 @@ el('details', {
 });
 ```
 
+### Convention: Preserve app chrome state across navigation renders
+
+**What**: App-shell chrome preferences, such as whether the sidebar is
+collapsed, must live in module state and be reflected by `renderShell()`.
+
+**Why**: Navigation calls `setHash()` and the app can rebuild the root after
+hash changes, polling, or explicit renders. A class toggled only on the current
+DOM node is lost when the node is replaced, so a menu click can accidentally
+reset the sidebar width.
+
+**Required contract**:
+
+- Store the chrome state in `ui`, not only in a transient DOM class.
+- Have the shell renderer derive the root class from that state.
+- Navigation controls must only navigate; they must not expand or collapse the
+  sidebar as a side effect.
+- Only the explicit sidebar collapse/expand controls should mutate the sidebar
+  collapsed state.
+
+**Wrong**:
+
+```typescript
+collapseButton.onclick = () => {
+  document.querySelector('.app-shell')?.classList.toggle('sidebar-collapsed');
+};
+```
+
+**Correct**:
+
+```typescript
+const shell = el('div', {
+  class: `app-shell${ui.sidebarCollapsed ? ' sidebar-collapsed' : ''}`,
+});
+
+collapseButton.onclick = () => {
+  ui.sidebarCollapsed = true;
+  document.querySelector('.app-shell')?.classList.add('sidebar-collapsed');
+};
+```
+
 ---
 
 ## State Categories

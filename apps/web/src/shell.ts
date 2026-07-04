@@ -57,9 +57,16 @@ import { renderSettingsPage, settingsConfig } from './page-settings';
 import { renderWorkbenchPage, workbenchEnvironmentSummary } from './page-workbench';
 import { renderMyTodosPage } from './page-my-todos';
 
+type ContextItemTone = 'default' | 'primary' | 'focus' | 'supporting';
+
+interface ContextItemOptions {
+  hint?: string;
+  tone?: ContextItemTone;
+}
+
 export function renderShell(): HTMLElement {
   return el('div', {
-    class: 'app-shell',
+    class: `app-shell${ui.sidebarCollapsed ? ' sidebar-collapsed' : ''}`,
     children: [
       renderSidebar(),
       el('main', { class: 'main-shell', children: [renderTopbar(), renderPage()] }),
@@ -141,7 +148,8 @@ function renderSidebar(): HTMLElement {
     ],
   });
   collapseButton.onclick = () => {
-    document.querySelector('.app-shell')?.classList.toggle('sidebar-collapsed');
+    ui.sidebarCollapsed = true;
+    document.querySelector('.app-shell')?.classList.add('sidebar-collapsed');
   };
 
   return el('aside', {
@@ -206,12 +214,18 @@ function renderQueueConsoleStat(label: string, value: string, kind: StatusKind):
   });
 }
 
-function renderGlobalStatusBadge(label: string, count: number, kind: StatusKind): HTMLElement {
+function renderGlobalStatusItem(label: string, value: string, kind: StatusKind): HTMLElement {
   return el('div', {
-    class: `global-status-badge ${kind}`,
+    class: `global-status-item ${kind}`,
     children: [
-      count > 0 ? el('span', { class: 'status-badge-count', text: String(count) }) : null,
-      el('span', { class: 'status-badge-label', text: label }),
+      el('span', { class: 'global-status-indicator', attrs: { 'aria-hidden': 'true' } }),
+      el('span', {
+        class: 'global-status-copy',
+        children: [
+          el('span', { class: 'global-status-label', text: label }),
+          el('strong', { class: 'global-status-value', text: value }),
+        ],
+      }),
     ],
   });
 }
@@ -250,13 +264,7 @@ function renderTopbar(): HTMLElement | null {
       ? [contextItem('知识状态', knowledgeStatus.value, knowledgeStatus.kind)]
     : ui.activePage === 'settings'
       ? [contextItem('运行状态', settingsRuntime.value, settingsRuntime.kind)]
-    : [
-        contextItem('Project', project?.name ?? '未接入', 'info'),
-        contextItem('Branch', run?.branch ?? project?.defaultBranch ?? '—', 'muted'),
-        contextItem('Runner', runner ? runner.status : 'offline', runner ? statusKind(runner.status) : 'bad'),
-        contextItem('Agent Backend', backend.value, backend.kind),
-        contextItem('Build Env', buildEnvLabel(), runner ? 'good' : 'warn'),
-      ];
+    : taskExecutionContextItems(project, run, runner, backend);
 
   // 我的待办页面不显示 topbar
   if (ui.activePage === 'my-todos') {
@@ -278,10 +286,11 @@ function renderTopbar(): HTMLElement | null {
         children: [
           el('div', {
             class: 'global-status-strip',
+            attrs: { 'aria-live': 'polite' },
             children: [
-              pending > 0 ? renderGlobalStatusBadge('待处理', pending, 'bad') : null,
-              running > 0 ? renderGlobalStatusBadge('运行中', running, 'info') : null,
-              renderGlobalStatusBadge(workbenchEnvironment.value, 0, workbenchEnvironment.kind),
+              renderGlobalStatusItem('待处理', String(pending), pending > 0 ? 'bad' : 'muted'),
+              renderGlobalStatusItem('运行中', String(running), running > 0 ? 'info' : 'muted'),
+              renderGlobalStatusItem('系统状态', workbenchEnvironment.value, workbenchEnvironment.kind),
             ],
           }),
           el('div', {
@@ -353,6 +362,45 @@ function settingsRuntimeSummary(project: ProjectDto | null, runner: RunnerDto | 
   return { value: '可运行', kind: 'good' };
 }
 
+function taskExecutionContextItems(
+  project: ProjectDto | null,
+  run: (typeof data.runs)[number] | null,
+  runner: RunnerDto | null,
+  backend: { value: string; kind: StatusKind },
+): HTMLElement[] {
+  const branch = run?.branch ?? project?.defaultBranch ?? '—';
+  const readiness = taskExecutionReadiness(project, runner);
+  const runnerLabel = runner ? runner.status : 'offline';
+  const runnerKind = runner ? statusKind(runner.status) : 'bad';
+
+  return [
+    contextItem('当前项目', project?.name ?? '未接入项目', project ? 'info' : 'warn', {
+      hint: `执行分支 ${branch}`,
+      tone: 'primary',
+    }),
+    contextItem('运行就绪', readiness.value, readiness.kind, {
+      hint: `Runner ${runnerLabel} · ${backend.value}`,
+      tone: 'focus',
+    }),
+    contextItem('构建环境', buildEnvLabel(), runner ? 'good' : 'warn', {
+      hint: runner ? `Runner ${runnerLabel}` : '等待 Runner 心跳',
+      tone: runnerKind === 'bad' ? 'focus' : 'supporting',
+    }),
+  ];
+}
+
+function taskExecutionReadiness(project: ProjectDto | null, runner: RunnerDto | null): { value: string; kind: StatusKind } {
+  if (!project) return { value: '需要接入项目', kind: 'warn' };
+  if (!project.agentBackend) return { value: '需要配置 AI 后端', kind: 'warn' };
+  if (!runner) return { value: 'Runner 待启动', kind: 'warn' };
+
+  const backend = agentBackendStatusForProject(project);
+  if (backend.kind === 'bad') return { value: 'AI 后端异常', kind: 'bad' };
+  if (backend.kind === 'warn') return { value: 'AI 后端待处理', kind: 'warn' };
+  if (backend.kind === 'muted') return { value: 'AI 后端待检测', kind: 'warn' };
+  return { value: '可运行', kind: 'good' };
+}
+
 function titleForPage(): string {
   switch (ui.activePage) {
     case 'task':
@@ -372,10 +420,14 @@ function titleForPage(): string {
   }
 }
 
-function contextItem(label: string, value: string, kind: StatusKind): HTMLElement {
+function contextItem(label: string, value: string, kind: StatusKind, options: ContextItemOptions = {}): HTMLElement {
   return el('div', {
-    class: 'context-item',
-    children: [el('span', { text: label }), el('strong', { class: kind, text: value })],
+    class: `context-item ${options.tone ?? 'default'}`,
+    children: [
+      el('span', { text: label }),
+      el('strong', { class: kind, text: value }),
+      options.hint ? el('small', { text: options.hint }) : null,
+    ],
   });
 }
 
@@ -529,6 +581,7 @@ function renderSidebarCollapsedIcons(): HTMLElement {
     children: [icon('M9 5l7 7-7 7')],
   });
   expandButton.onclick = () => {
+    ui.sidebarCollapsed = false;
     document.querySelector('.app-shell')?.classList.remove('sidebar-collapsed');
   };
 

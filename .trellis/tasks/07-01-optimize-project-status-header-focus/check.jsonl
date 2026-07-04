@@ -1,0 +1,2 @@
+{"file":".trellis/spec/web/frontend/quality-guidelines.md","reason":"Defines web test/typecheck verification expectations."}
+{"file":".trellis/spec/web/frontend/agent-backend-ui.md","reason":"Check that backend status and project-card profile behavior remain compliant."}
