@@ -37,6 +37,10 @@
   `verificationMethod`, `businessStatus` (`passed | missing | at_risk |
   failed`), `risk` / `riskAccepted`, and evidence refs. `status` remains the
   verifier execution status (`pass | fail | blocked`) for compatibility.
+- The authoritative AC id set comes only from explicit `AC-###` declaration
+  lines in requirement markdown or ids in structured
+  `requirement.json.acceptanceCriteria`. Prose references and design-only ids
+  are not requirement declarations.
 - Verifier media roles:
   - `screenshot_before`
   - `screenshot_after`
@@ -69,6 +73,15 @@
   without stating the business behavior being verified. `test_gate=pass`
   remains necessary command evidence for code changes, but it is not
   sufficient for business acceptance.
+- Requirement and design validation is universal, not existential: every
+  declared requirement AC must describe business behavior, and design must
+  contain an explicit verification mapping for every requirement AC.
+- Matrix reconciliation is exact: each requirement AC appears once, with no
+  missing, unknown, or duplicate matrix rows. A range/prose mention such as
+  `AC-001 ~ AC-003` is not a per-AC verification mapping.
+- When `businessStatus` is present, it is authoritative even if legacy
+  `status='pass'`. Invalid explicit values fail closed. Legacy `status` is used
+  only when `businessStatus` is absent.
 - `evidence_gate` must fail when:
   - a passing rule has no evidence refs unless it is explicitly non-evidentiary, such as a manual decision or a not-applicable rule;
   - a passing rule cites refs that do not resolve to an `Artifact` or `CommandRun`;
@@ -78,6 +91,10 @@
   - a UI run requires verifier evidence but lacks a verifier AC matrix, tagged media refs, or verifier artifact digests.
 - `POST /workflow-runs/:id/completion-report` must run `evidence_gate` before report generation and return HTTP 409 if it fails.
 - Completion report generation must create both the markdown report and the structured JSON sidecar from the same stored run/evidence snapshot. UI code should prefer the JSON sidecar when available and use markdown parsing only as a fallback.
+- Completion report matrix rows must preserve structured
+  `evidenceRefs[{ artifactId, claim, role? }]`. Human-readable evidence labels
+  may be derived as `claim (artifactId)`, but must not replace the structured
+  refs in the JSON sidecar.
 - Completion report summaries must label run state as `Status at report generation` in markdown and JSON summary entries. Do not use a bare `Status` label because the artifact is a point-in-time snapshot, not a live workflow state contract.
 - Completion report generation must include persisted Handoff records and their
   adoption decisions. Handoff evidence can explain review/debug findings, but
@@ -121,6 +138,12 @@
 - Feature run with requirement/design ACs but no business acceptance matrix -> `acceptance.business_matrix_present` fail.
 - Feature run with only `test_gate=pass` and no AC matrix evidence -> `acceptance.business_matrix_present` fail.
 - Matrix row with `businessStatus=missing` / `failed` or `status=blocked` -> `acceptance.business_matrix_criteria_proven` fail.
+- Explicit `businessStatus=failed|missing|at_risk` plus legacy `status=pass` ->
+  keep the explicit result; never promote it to passed.
+- Requirement AC missing from design verification mappings ->
+  `design.acceptance_criteria_reconciled` fail.
+- Matrix omits a requirement AC, adds an undeclared AC, or duplicates an AC ->
+  `acceptance.business_matrix_criteria_reconciled` fail.
 - Matrix missing any of `core`, `boundary`, or `exception` rows -> `acceptance.business_matrix_scenarios_present` fail.
 - UI-titled run has no verifier matrix -> `evidence.ui_verifier_matrix_present` fail.
 - Verifier matrix row lacks video or before+after screenshots -> `evidence.ui_verifier_media_refs_present` fail.
@@ -136,6 +159,9 @@
   business scenario rows, evidence refs, and `businessStatus=passed` for each
   required AC; `acceptance_gate` can pass when the other traceability/test
   rules also pass.
+- Good: requirement declares AC-001/002/003 and design has one explicit,
+  substantive verification row per id; Runner emits exactly those three
+  matrix rows.
 - Good: a UI run has a review artifact, a verifier matrix, tagged `screenshot_before` and `screenshot_after` artifacts, and all three artifacts carry `sha256`; `evidence_gate` passes.
 - Good: a UI run has one tagged `video` verifier artifact and a matrix row citing it; media coverage passes.
 - Base: a non-UI run has no verifier artifacts; verifier rules pass as not applicable.
@@ -143,6 +169,10 @@
 - Base: a completed run with `run.status='passed'` generates a markdown report plus JSON sidecar; both summaries include `Status at report generation: passed`.
 - Bad: `mvn test` / `bun test` is the only acceptance statement and no matrix
   row explains which business behavior the command proves.
+- Bad: design mentions `AC-001 ~ AC-003` in prose and provides a strategy only
+  for AC-001; AC-002/003 must remain unmapped/missing.
+- Bad: a completion sidecar stores only evidence claim strings and drops the
+  artifact ids used by the gate.
 - Bad: a generated verifier matrix is the newest `kind='other'` artifact and is treated as the review artifact.
 - Bad: a matrix cites two plain `image/png` artifacts with before/after roles but no verifier metadata; the UI verifier rule must fail.
 - Bad: completion report generation skips Evidence Gate because the runner already ran it earlier.
@@ -160,6 +190,10 @@
     matrix fails `acceptance_gate`;
   - feature run with complete matrix rows passes the matrix-specific
     acceptance rules;
+  - requirement/design validation checks every declared AC;
+  - missing, unknown, and duplicate matrix AC ids fail reconciliation;
+  - explicit business status overrides legacy status and invalid explicit
+    values fail closed;
   - matrix missing core/boundary/exception coverage fails the scenario rule;
   - UI run without verifier matrix/media fails;
   - tagged before+after screenshot matrix passes;
@@ -176,6 +210,8 @@
   - completion report sidecar includes handoff evidence and adoption decisions.
   - completion report includes the business acceptance matrix when a verifier
     AC matrix artifact exists.
+  - completion report JSON preserves every matrix evidence `artifactId` and
+    claim.
 - Content route tests:
   - command log tampering flips digest verification to false;
   - artifact file tampering flips digest verification to false.
@@ -217,6 +253,22 @@ Plain screenshots are not enough; the artifact must be tagged as verifier eviden
 const isVerifierMedia =
   artifact.metadata.schemaVersion === VERIFIER_MEDIA_SCHEMA_VERSION
   || artifact.metadata.reportKind === 'verifier_media';
+```
+
+#### Wrong
+
+```ts
+const passed = row.businessStatus === 'passed' || row.status === 'pass';
+```
+
+This lets a legacy pass override an explicit failure or risk decision.
+
+#### Correct
+
+```ts
+const passed = row.businessStatus === undefined
+  ? row.status === 'pass'
+  : row.businessStatus === 'passed';
 ```
 
 #### Wrong

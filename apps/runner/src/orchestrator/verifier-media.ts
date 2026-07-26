@@ -67,13 +67,61 @@ export function shouldRequireUiVerifier(title: string): boolean {
 
 export function acceptanceCriterionIdsFromInputs(inputs: Record<string, string>): string[] {
   const seen = new Set<string>();
-  for (const text of Object.values(inputs)) {
-    for (const match of text.matchAll(/\bAC-\d{3}\b/g)) {
-      seen.add(match[0].toUpperCase());
+  const requirementJson = inputs['requirement.json'];
+  if (requirementJson) {
+    for (const id of acceptanceCriterionIdsFromRequirementJson(requirementJson)) seen.add(id);
+  }
+  const requirementMarkdown = inputs['requirement.md'];
+  if (requirementMarkdown) {
+    for (const line of requirementMarkdown.split('\n')) {
+      for (const id of declaredAcceptanceCriterionIds(line.trim())) seen.add(id);
     }
   }
-  const ids = [...seen].sort().slice(0, 50);
+  const ids = [...seen].sort();
   return ids.length > 0 ? ids : ['AC-UI-001'];
+}
+
+function acceptanceCriterionIdsFromRequirementJson(text: string): string[] {
+  try {
+    const parsed = JSON.parse(text) as { acceptanceCriteria?: unknown };
+    if (!Array.isArray(parsed.acceptanceCriteria)) return [];
+    return parsed.acceptanceCriteria.flatMap((criterion) => {
+      if (typeof criterion === 'string') return declaredAcceptanceCriterionIds(criterion.trim());
+      if (!criterion || typeof criterion !== 'object') return [];
+      const id = (criterion as { id?: unknown }).id;
+      return typeof id === 'string' && /^AC-\d{3}$/i.test(id.trim())
+        ? [id.trim().toUpperCase()]
+        : [];
+    });
+  } catch {
+    return [];
+  }
+}
+
+export function declaredAcceptanceCriterionIds(line: string): string[] {
+  if (line.includes('|')) {
+    const ids = line
+      .slice(line.startsWith('|') ? 1 : 0, line.endsWith('|') ? -1 : undefined)
+      .split('|')
+      .map((cell) => cell.trim())
+      .map((cell) => /^(?:\*\*)?(AC-\d{3})(?:\*\*)?$/i.exec(cell)?.[1]?.toUpperCase() ?? null)
+      .filter((id): id is string => Boolean(id));
+    if (ids.length > 0) return ids;
+  }
+  const declaration = /^(?:#{1,6}\s+|[-*+]\s+(?:\[[ xX]\]\s*)?|\d+[.)]\s*)?(?:\*\*)?(AC-\d{3})\b/i.exec(line)
+    ?? /^(?:[-*+]\s+(?:\[[ xX]\]\s*)?|\d+[.)]\s*)?(?:\*\*)?(?:acceptance criteri(?:on|a)|验收标准)(?:\*\*)?\s*[:：-]?\s*(?:\*\*)?(AC-\d{3})\b/i.exec(line);
+  return declaration?.[1] ? [declaration[1].toUpperCase()] : [];
+}
+
+export function designVerificationCriterionIds(line: string): string[] {
+  const declaredIds = declaredAcceptanceCriterionIds(line);
+  if (declaredIds.length > 0) return declaredIds;
+  if (!/^(?:[-*+]\s+|\d+[.)]\s*)?(?:\*\*)?(?:test strategy|verification(?: method| strategy)?|测试策略|验证(?:方法|策略))\b/i.test(line)) {
+    return [];
+  }
+  return [...new Set(
+    [...line.matchAll(/\bAC-\d{3}\b/gi)].map((match) => match[0].toUpperCase()),
+  )];
 }
 
 export function verifierMediaSatisfiesCoverage(

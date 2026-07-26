@@ -2,7 +2,7 @@ import { Window } from 'happy-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildRunProjection, type RunDetail } from '../src/projection';
 import { renderEvidencePanel, renderStageTimeline, renderTaskDetailPage } from '../src/page-task-detail';
-import { data, ui } from '../src/state';
+import { artifactContent, contextGovernanceByRun, data, ui } from '../src/state';
 import type { WorkflowRequestDto } from '../src/types';
 
 const testWindow = new Window();
@@ -194,6 +194,8 @@ describe('task-detail reviewer rendering', () => {
     data.runs = [];
     data.activeDetail = null;
     data.runnerControl = null;
+    artifactContent.clear();
+    contextGovernanceByRun.clear();
     ui.activeTaskRequestId = null;
     ui.activeRunId = null;
     ui.lastError = null;
@@ -280,5 +282,94 @@ describe('task-detail reviewer rendering', () => {
       workflowRunId: detail.run.id,
       stage: detail.run.currentStage,
     });
+  });
+
+  it('renders the same persisted acceptance matrix in the main panel and approval preview', () => {
+    const detail = reviewerDetail();
+    detail.run = { ...detail.run, currentStage: 'review', status: 'awaiting_human' };
+    detail.steps.push({ id: 'step_review', stage: 'review', name: 'review', status: 'passed' });
+    detail.gates.push({
+      id: 'gate_acceptance',
+      gateId: 'acceptance_gate',
+      stepRunId: null,
+      status: 'pass',
+      decidedAt: '2026-06-29T00:00:01.000Z',
+      ruleResults: [],
+    });
+    const matrixArtifact = {
+      id: 'art_acceptance_matrix',
+      kind: 'other' as const,
+      stepRunId: 'step_review',
+      uri: 'file:///tmp/verifier-ac-matrix.json',
+      createdAt: '2026-06-29T00:00:02.000Z',
+      contentType: 'application/json',
+      sha256: 'matrix-sha',
+      metadata: {
+        schemaVersion: 'ainp.verifier_ac_matrix.v1',
+        reportKind: 'verifier_ac_matrix',
+        verifierArtifactType: 'ac_matrix',
+      },
+    };
+    detail.artifacts.push(matrixArtifact);
+    artifactContent.set(matrixArtifact.id, {
+      artifact: matrixArtifact,
+      text: JSON.stringify({
+        schemaVersion: 'ainp.verifier_ac_matrix.v1',
+        acceptanceCriteria: [{
+          id: 'AC-007',
+          text: 'Invalid configuration keeps captcha enabled.',
+          scenarioType: 'exception',
+          verificationMethod: 'Browser fixture submits an invalid configuration.',
+          businessStatus: 'failed',
+          status: 'pass',
+          evidenceRefs: [{ artifactId: 'art_browser_fixture', claim: 'invalid config browser result' }],
+          risk: 'Safe fallback was not observed.',
+        }],
+      }),
+      contentType: 'application/json',
+      filename: 'verifier-ac-matrix.json',
+      digest: {
+        algorithm: 'sha256',
+        expected: 'matrix-sha',
+        actual: 'matrix-sha',
+        verified: true,
+      },
+    });
+    const request: WorkflowRequestDto = {
+      id: 'wreq_acceptance_matrix',
+      projectId: detail.run.projectId,
+      type: 'feature',
+      title: detail.run.title,
+      branch: detail.run.sourceBranch,
+      status: 'awaiting_human',
+      claimedBy: 'runner@test',
+      workflowRunId: detail.run.id,
+      error: null,
+      agentBackend: null,
+      flowId: detail.run.flowId,
+      startStage: null,
+      kind: null,
+      createdAt: detail.run.createdAt,
+      updatedAt: detail.run.createdAt,
+    };
+    data.requests = [request];
+    data.runs = [detail.run];
+    data.activeDetail = detail;
+    ui.activeTaskRequestId = request.id;
+    ui.activeRunId = detail.run.id;
+
+    const page = renderTaskDetailPage();
+    const mainRow = page.querySelector<HTMLElement>('.workspace-main .acceptance-card');
+    const previewRow = page.querySelector<HTMLElement>('.desktop-next-action .acceptance-card');
+
+    for (const row of [mainRow, previewRow]) {
+      expect(row).not.toBeNull();
+      expect(row?.classList.contains('failed')).toBe(true);
+      expect(row?.textContent).toContain('失败');
+      expect(row?.textContent).toContain('场景: exception');
+      expect(row?.textContent).toContain('验证方法: Browser fixture submits an invalid configuration.');
+      expect(row?.textContent).toContain('invalid config browser result (art_browser_fixture)');
+      expect(row?.textContent).toContain('风险: Safe fallback was not observed.');
+    }
   });
 });

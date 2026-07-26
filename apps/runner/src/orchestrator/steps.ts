@@ -60,6 +60,7 @@ import {
 } from './stage-handoff';
 import {
   acceptanceCriterionIdsFromInputs,
+  designVerificationCriterionIds,
   persistVerifierMediaArtifacts,
   shouldRequireUiVerifier,
   verifierMediaSatisfiesCoverage,
@@ -786,17 +787,29 @@ function acceptanceCriterionText(inputs: Record<string, string>, id: string): st
 
 function verificationMethodForCriterion(inputs: Record<string, string>, id: string): string | undefined {
   const design = inputs['design.md'] ?? '';
-  const escaped = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const row = design
-    .split('\n')
-    .find((line) => line.includes('|') && new RegExp(String.raw`\b${escaped}\b`, 'i').test(line));
+  const lines = design.split('\n');
+  const row = lines.find((line) =>
+    line.includes('|') && designVerificationCriterionIds(line.trim()).includes(id));
   if (row) {
     const cells = row.slice(1, row.endsWith('|') ? -1 : undefined).split('|').map((cell) => cell.trim());
     const verification = cells[3] ?? cells.at(-1);
     if (verification) return verification.slice(0, 500);
   }
-  const window = new RegExp(String.raw`\b${escaped}\b[\s\S]{0,240}`, 'i').exec(design)?.[0]?.trim();
-  return window ? window.slice(0, 500) : undefined;
+  const declarationIndex = lines.findIndex((line) =>
+    !line.includes('|') && designVerificationCriterionIds(line.trim()).includes(id));
+  if (declarationIndex < 0) return undefined;
+
+  const block: string[] = [];
+  for (let index = declarationIndex; index < lines.length; index += 1) {
+    const line = lines[index]!.trim();
+    if (index > declarationIndex) {
+      if (designVerificationCriterionIds(line).length > 0 || /^#{1,6}\s+/.test(line)) break;
+    }
+    if (line) block.push(line);
+    if (block.join(' ').length >= 500) break;
+  }
+  const verification = block.join(' ').trim();
+  return verification ? verification.slice(0, 500) : undefined;
 }
 
 function businessAcceptanceStatus(input: {
@@ -805,8 +818,11 @@ function businessAcceptanceStatus(input: {
   uiVerifierRequired: boolean;
   mediaSatisfied: boolean;
 }): AcceptanceBusinessStatus {
-  const body = `${input.text ?? ''} ${input.verificationMethod ?? ''}`;
-  if (!input.text || !input.verificationMethod || commandOnlyVerifierText(body)) return 'missing';
+  if (
+    !input.text
+    || !input.verificationMethod
+    || commandOnlyVerifierText(input.verificationMethod)
+  ) return 'missing';
   if (input.uiVerifierRequired && !input.mediaSatisfied) return 'missing';
   return 'passed';
 }

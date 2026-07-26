@@ -37,6 +37,7 @@ import {
   parseDesignArtifact,
   parseRequirementArtifact,
   type ArtifactDto,
+  type AcceptanceChecklistItem,
   type ContextFlowArtifactRef,
   type ContextFlowRelation,
   type ContextFlowStage,
@@ -1866,27 +1867,7 @@ function renderAcceptancePanel(detail: RunDetail): HTMLElement {
     children: [
       panelHeader('验收确认', 'AC 覆盖、测试证据与风险确认'),
       checklist.length
-        ? el('div', {
-            class: 'acceptance-list',
-            children: checklist.map((item) =>
-              el('div', {
-                class: `acceptance-card ${item.status}`,
-                children: [
-                  el('div', { children: [pill(item.id, item.status === 'passed' ? 'good' : item.status === 'at_risk' ? 'warn' : 'bad'), el('strong', { text: item.text })] }),
-                  item.scenarioType || item.verificationMethod
-                    ? el('small', {
-                        text: [
-                          item.scenarioType ? `Scenario: ${item.scenarioType}` : null,
-                          item.verificationMethod ? `Verification: ${item.verificationMethod}` : null,
-                        ].filter(Boolean).join(' · '),
-                      })
-                    : null,
-                  item.evidence.length ? el('small', { text: `Evidence: ${item.evidence.join(' · ')}` }) : null,
-                  item.risk ? el('small', { class: 'warn', text: item.risk }) : null,
-                ],
-              }),
-            ),
-          })
+        ? renderAcceptanceChecklist(checklist)
         : el('p', { class: 'muted', text: '暂无 AC checklist。' }),
       reviewText ? el('details', { class: 'raw-details', children: [el('summary', { text: '查看 Review 原文' }), el('pre', { class: 'doc-preview', text: previewText(reviewText) })] }) : null,
     ],
@@ -1923,11 +1904,7 @@ function acceptanceMatrixChecklist(detail: RunDetail): ReturnType<typeof buildAc
     return rows
       .map((row) => {
         if (typeof row.id !== 'string') return null;
-        const status: 'passed' | 'at_risk' | 'missing' = row.businessStatus === 'passed' || row.status === 'pass'
-          ? 'passed'
-          : row.businessStatus === 'at_risk'
-            ? 'at_risk'
-            : 'missing';
+        const status = acceptanceRowStatus(row.businessStatus, row.status);
         return {
           id: row.id,
           text: typeof row.text === 'string' && row.text.trim() ? row.text.trim() : row.id,
@@ -1936,12 +1913,13 @@ function acceptanceMatrixChecklist(detail: RunDetail): ReturnType<typeof buildAc
           verificationMethod: typeof row.verificationMethod === 'string' ? row.verificationMethod : undefined,
           evidence: Array.isArray(row.evidenceRefs)
             ? row.evidenceRefs
-                .map((ref) => typeof ref.claim === 'string'
-                  ? ref.claim
-                  : typeof ref.artifactId === 'string'
-                    ? ref.artifactId
-                    : null)
-                .filter((claim): claim is string => Boolean(claim))
+                .map((ref) => {
+                  const artifactId = typeof ref.artifactId === 'string' ? ref.artifactId : null;
+                  const claim = typeof ref.claim === 'string' ? ref.claim : null;
+                  if (artifactId && claim) return `${claim} (${artifactId})`;
+                  return claim ?? artifactId;
+                })
+                .filter((label): label is string => Boolean(label))
             : [],
           risk: typeof row.risk === 'string'
             ? row.risk
@@ -1954,6 +1932,69 @@ function acceptanceMatrixChecklist(detail: RunDetail): ReturnType<typeof buildAc
   } catch {
     return null;
   }
+}
+
+function acceptanceRowStatus(
+  businessStatus: unknown,
+  legacyStatus: unknown,
+): AcceptanceChecklistItem['status'] {
+  if (businessStatus !== undefined) {
+    if (
+      businessStatus === 'passed'
+      || businessStatus === 'at_risk'
+      || businessStatus === 'missing'
+      || businessStatus === 'failed'
+    ) {
+      return businessStatus;
+    }
+    return 'missing';
+  }
+  if (legacyStatus === 'pass') return 'passed';
+  if (legacyStatus === 'fail') return 'failed';
+  return 'missing';
+}
+
+function acceptanceStatusDisplay(status: AcceptanceChecklistItem['status']): {
+  label: string;
+  kind: StatusKind;
+} {
+  if (status === 'passed') return { label: '已通过', kind: 'good' };
+  if (status === 'at_risk') return { label: '风险接受', kind: 'warn' };
+  if (status === 'failed') return { label: '失败', kind: 'bad' };
+  return { label: '缺失', kind: 'bad' };
+}
+
+function renderAcceptanceChecklist(
+  checklist: AcceptanceChecklistItem[],
+  limit = checklist.length,
+): HTMLElement {
+  return el('div', {
+    class: 'acceptance-list',
+    children: checklist.slice(0, limit).map((item) => {
+      const status = acceptanceStatusDisplay(item.status);
+      return el('div', {
+        class: `acceptance-card ${item.status}`,
+        children: [
+          el('div', {
+            children: [
+              pill(item.id, status.kind),
+              pill(status.label, status.kind),
+              el('strong', { text: item.text }),
+            ],
+          }),
+          el('small', { text: `场景: ${item.scenarioType ?? '未标注'}` }),
+          el('small', { text: `验证方法: ${item.verificationMethod ?? '未标注'}` }),
+          item.evidence.length
+            ? el('small', { text: `证据: ${item.evidence.join(' · ')}` })
+            : el('small', { class: 'warn', text: '证据: 缺失' }),
+          el('small', {
+            class: item.risk ? 'warn' : undefined,
+            text: `风险: ${item.risk ?? '无'}`,
+          }),
+        ],
+      });
+    }),
+  });
 }
 
 function renderKnowledgeSuggestionsPanel(detail: RunDetail): HTMLElement {
@@ -2165,7 +2206,7 @@ function renderGateDocumentPreview(detail: RunDetail, gateId: string): HTMLEleme
   if (gateId === 'acceptance_gate') {
     const req = parsedRequirement(detail);
     const design = parsedDesign(detail);
-    const checklist = buildAcceptanceChecklist(req, design, detail);
+    const checklist = acceptanceMatrixChecklist(detail) ?? buildAcceptanceChecklist(req, design, detail);
     const passedCount = checklist.filter(ac => ac.status === 'passed').length;
     const totalCount = checklist.length;
 
@@ -2181,19 +2222,7 @@ function renderGateDocumentPreview(detail: RunDetail, gateId: string): HTMLEleme
         el('div', {
           class: 'checkpoint-doc-content',
           children: [
-            el('div', {
-              class: 'acceptance-list',
-              children: checklist.slice(0, 8).map(ac =>
-                el('div', {
-                  class: `acceptance-card ${ac.status}`,
-                  children: [
-                    el('div', { children: [pill(ac.id, ac.status === 'passed' ? 'good' : ac.status === 'at_risk' ? 'warn' : 'bad'), el('strong', { text: ` ${ac.text}` })] }),
-                    ac.evidence.length ? el('small', { class: 'muted', text: `证据: ${ac.evidence.join(' · ')}` }) : el('small', { class: 'warn', text: '缺少证据' }),
-                    ac.risk ? el('small', { class: 'warn', text: ac.risk }) : null,
-                  ],
-                }),
-              ),
-            }),
+            renderAcceptanceChecklist(checklist, 8),
             totalCount > 8 ? el('p', { class: 'muted compact', text: `还有 ${totalCount - 8} 项验收标准，查看主面板了解详情。` }) : null,
           ],
         }),

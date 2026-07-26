@@ -86,6 +86,45 @@ describe('runDesignGate cs-feat-design rules', () => {
     expect(findRule(gate.ruleResults, 'design.rollout_section_present')?.status).toBe('pass');
   });
 
+  test('rejects a coverage matrix when any AC has only a command verification', () => {
+    const mixedVerification = VALID_CS_DESIGN.replace(
+      '- AC-003: divide(1,0) 抛 ArithmeticException',
+      '- AC-003: `mvn test` 通过',
+    );
+    const a = artifactFor(mixedVerification);
+    const gate = gates.runDesignGate({
+      workflowRunId: 'run_csdesign',
+      stepRunId: 'step_csdesign',
+      artifact: a,
+    });
+
+    expect(gate.status).toBe('fail');
+    expect(findRule(gate.ruleResults, 'design.business_verification_strategy_present')?.status).toBe('fail');
+  });
+
+  test('accepts explicit Test strategy labels used by existing agent output', () => {
+    const labeledStrategies = VALID_CS_DESIGN.replace(
+      [
+        '- AC-001: divide(6,2) == 3 — `mvn test` 用例',
+        '- AC-002: divide(7,2) == 3 — 测试策略覆盖整数截断',
+        '- AC-003: divide(1,0) 抛 ArithmeticException',
+      ].join('\n'),
+      [
+        '- Test strategy: REQ-001 / AC-001 is verified by divide(6,2) returning 3.',
+        '- Test strategy: REQ-001 / AC-002 is verified by integer truncation behavior.',
+        '- Test strategy: REQ-001 / AC-003 is verified by the divide-by-zero exception.',
+      ].join('\n'),
+    );
+    const gate = gates.runDesignGate({
+      workflowRunId: 'run_csdesign_labeled_strategy',
+      stepRunId: 'step_csdesign_labeled_strategy',
+      artifact: artifactFor(labeledStrategies),
+    });
+
+    expect(gate.status).toBe('pass');
+    expect(findRule(gate.ruleResults, 'design.business_verification_strategy_present')?.status).toBe('pass');
+  });
+
   test('accepts numbered and bolded Markdown headings from real agent output', () => {
     const decorated = VALID_CS_DESIGN
       .replace('## 现状', '## 1. **现状 (Current State)**')

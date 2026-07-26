@@ -115,6 +115,83 @@ test('design gate requires coverage, test strategy, risks, and existing context 
   expect(gate.ruleResults.every((r) => r.status === 'pass')).toBe(true);
 });
 
+test('design gate rejects omitted per-AC verification mappings hidden by a range reference', () => {
+  const workflowRunId = 'run_design_missing_ac_mappings';
+  const stepRunId = 'step_design_missing_ac_mappings';
+  const requirementPath = join(tmpdir(), `requirement-design-mapping-${Date.now()}.md`);
+  const designPath = join(tmpdir(), `design-missing-mapping-${Date.now()}.md`);
+  writeFileSync(
+    requirementPath,
+    [
+      '# Requirement',
+      '- AC-001: Disabling captcha lets a valid login proceed without a challenge.',
+      '- AC-002: Enabling captcha still requires a challenge.',
+      '- AC-003: Invalid configuration falls back to requiring captcha.',
+    ].join('\n'),
+  );
+  writeFileSync(
+    designPath,
+    [
+      '---',
+      'doc_type: design',
+      'design_id: DSN-001',
+      'related_req: REQ-001',
+      'status: draft',
+      '---',
+      '',
+      '# Captcha design',
+      'Coverage references AC-001 ~ AC-003 for the captcha toggle.',
+      '',
+      '## 现状',
+      'Existing login behavior lives in `src/auth/captcha.ts`.',
+      '',
+      '## 变化',
+      'Add a configuration-aware captcha decision.',
+      '',
+      '## 挂载点',
+      '- `src/auth/captcha.ts` adds the toggle branch',
+      '- Login integration fixture covers configured behavior',
+      '- Configuration validation preserves the safe default',
+      '',
+      '## 推进策略',
+      '1. add configuration parsing',
+      '2. update login behavior',
+      '3. run the integration fixture',
+      '',
+      '## Test Strategy',
+      '- AC-001: Login integration fixture verifies captcha-disabled behavior.',
+      '',
+      '## Risks',
+      '- Invalid configuration must remain fail-safe.',
+      '',
+      '## Context Evidence',
+      '- `src/auth/captcha.ts:1`',
+    ].join('\n'),
+  );
+  const requirement = {
+    ...artifact('requirement_draft', requirementPath),
+    workflowRunId,
+    stepRunId,
+  };
+  storeMod.store.artifacts.insert(requirement);
+
+  const gate = gates.runDesignGate({
+    workflowRunId,
+    stepRunId,
+    artifact: {
+      ...artifact('design_doc', designPath),
+      workflowRunId,
+      stepRunId,
+    },
+  });
+  const reconciliation = gate.ruleResults.find((rule) =>
+    rule.ruleId === 'design.acceptance_criteria_reconciled');
+
+  expect(gate.status).toBe('fail');
+  expect(reconciliation?.status).toBe('fail');
+  expect(reconciliation?.message).toContain('AC-002, AC-003');
+});
+
 test('requirement gate rejects command-only acceptance criteria without business behavior', () => {
   const path = join(tmpdir(), `requirement-command-only-${Date.now()}.md`);
   writeFileSync(
@@ -219,7 +296,17 @@ test('acceptance traceability gate requires requirement, design, diff, review, a
   const designPath = join(tmpdir(), `design-${Date.now()}.md`);
   const diffPath = join(tmpdir(), `diff-${Date.now()}.diff`);
   const reviewPath = join(tmpdir(), `review-${Date.now()}.md`);
-  writeFileSync(reqPath, '# Requirement\nREQ-001\nAC-001\nContext Pack');
+  writeFileSync(
+    reqPath,
+    [
+      '# Requirement',
+      'REQ-001',
+      'AC-001: Normal integer subtraction returns the arithmetic difference.',
+      'AC-002: Subtracting zero preserves the other operand.',
+      'AC-003: Unsupported overflow behavior is documented as an exception risk.',
+      'Context Pack',
+    ].join('\n'),
+  );
   writeFileSync(designPath, '# Design\nREQ-001\nAC-001\nTest Strategy');
   writeFileSync(diffPath, 'diff --git a/src/main/java/sample/Calculator.java b/src/main/java/sample/Calculator.java\n');
   writeFileSync(reviewPath, '# Review\nLGTM');
@@ -376,6 +463,7 @@ test('acceptance traceability gate requires requirement, design, diff, review, a
     'acceptance.review_present',
     'acceptance.test_gate_passed',
     'acceptance.business_matrix_present',
+    'acceptance.business_matrix_criteria_reconciled',
     'acceptance.business_matrix_criteria_proven',
     'acceptance.business_matrix_scenarios_present',
   ]);
@@ -629,6 +717,198 @@ function insertWorkflowRun(workflowRunId: string, title: string) {
   };
   storeMod.store.workflowRuns.set(run.id, run);
 }
+
+function runBusinessMatrixFixture(input: {
+  name: string;
+  requirementIds: string[];
+  requirementNotes?: string[];
+  rows: Array<{
+    id: string;
+    scenarioType: 'core' | 'boundary' | 'exception' | 'regression';
+    businessStatus?: string;
+    status: 'pass' | 'fail' | 'blocked';
+  }>;
+}) {
+  const workflowRunId = `run_business_matrix_${input.name}`;
+  const stepRunId = `step_business_matrix_${input.name}`;
+  const dir = mkdtempSync(join(tmpdir(), `ainp-business-matrix-${input.name}-`));
+  const requirementPath = join(dir, 'requirement.md');
+  const diffPath = join(dir, 'changes.diff');
+  const reviewPath = join(dir, 'review.md');
+  const matrixPath = join(dir, 'verifier-ac-matrix.json');
+  writeFileSync(
+    requirementPath,
+    [
+      '# Requirement',
+      'REQ-001',
+      ...input.requirementIds.map((id) => `- ${id}: Business behavior for ${id}.`),
+      ...(input.requirementNotes ?? []),
+    ].join('\n'),
+  );
+  writeFileSync(diffPath, 'diff --git a/src/auth.ts b/src/auth.ts\n');
+  writeFileSync(reviewPath, '# Review\nBusiness behavior reviewed.\n');
+
+  const requirementArtifact = {
+    ...artifact('requirement_draft', requirementPath),
+    workflowRunId,
+    stepRunId,
+  };
+  for (const candidate of [
+    requirementArtifact,
+    { ...artifact('diff', diffPath), workflowRunId, stepRunId },
+    { ...artifact('other', reviewPath), workflowRunId, stepRunId },
+  ]) {
+    storeMod.store.artifacts.insert(candidate);
+  }
+  writeFileSync(
+    matrixPath,
+    `${JSON.stringify({
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      workflowRunId,
+      stepRunId,
+      verifierRequired: false,
+      verifierStatus: 'pass',
+      acceptanceCriteria: input.rows.map((row) => ({
+        ...row,
+        text: `Business behavior for ${row.id}.`,
+        verificationMethod: `Integration fixture verifies business behavior for ${row.id}.`,
+        evidenceRefs: [{
+          artifactId: requirementArtifact.id,
+          claim: `requirement evidence for ${row.id}`,
+        }],
+      })),
+      createdAt: new Date().toISOString(),
+    }, null, 2)}\n`,
+  );
+  storeMod.store.artifacts.insert({
+    ...artifact('other', matrixPath),
+    workflowRunId,
+    stepRunId,
+    contentType: 'application/json',
+    metadata: {
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      reportKind: 'verifier_ac_matrix',
+      verifierArtifactType: 'ac_matrix',
+    },
+  });
+  insertStepRun(workflowRunId, 'requirement');
+  insertPassingTestGate(workflowRunId, stepRunId);
+  return gates.runAcceptanceTraceabilityGate({ workflowRunId, stepRunId });
+}
+
+test.each([
+  ['failed', 'fail'],
+  ['missing', 'fail'],
+  ['at_risk', 'warn'],
+] as const)('acceptance gate keeps explicit businessStatus=%s authoritative over legacy status=pass', (
+  businessStatus,
+  expectedStatus,
+) => {
+  const gate = runBusinessMatrixFixture({
+    name: `explicit_${businessStatus}_precedence`,
+    requirementIds: ['AC-001', 'AC-002', 'AC-003'],
+    rows: [
+      { id: 'AC-001', scenarioType: 'core', businessStatus, status: 'pass' },
+      { id: 'AC-002', scenarioType: 'boundary', businessStatus: 'passed', status: 'pass' },
+      { id: 'AC-003', scenarioType: 'exception', businessStatus: 'passed', status: 'pass' },
+    ],
+  });
+  const rule = gate.ruleResults.find((candidate) =>
+    candidate.ruleId === 'acceptance.business_matrix_criteria_proven');
+
+  expect(rule?.status).toBe(expectedStatus);
+  expect(rule?.message).toContain('AC-001');
+});
+
+test('acceptance gate fails closed when an explicit businessStatus is invalid', () => {
+  const gate = runBusinessMatrixFixture({
+    name: 'invalid_explicit_business_status',
+    requirementIds: ['AC-001', 'AC-002', 'AC-003'],
+    rows: [
+      { id: 'AC-001', scenarioType: 'core', businessStatus: 'approved', status: 'pass' },
+      { id: 'AC-002', scenarioType: 'boundary', businessStatus: 'passed', status: 'pass' },
+      { id: 'AC-003', scenarioType: 'exception', businessStatus: 'passed', status: 'pass' },
+    ],
+  });
+  const rule = gate.ruleResults.find((candidate) =>
+    candidate.ruleId === 'acceptance.business_matrix_criteria_proven');
+
+  expect(rule?.status).toBe('fail');
+  expect(rule?.message).toContain('AC-001');
+});
+
+test('acceptance gate rejects a matrix missing an AC declared by the requirement', () => {
+  const gate = runBusinessMatrixFixture({
+    name: 'missing_required_id',
+    requirementIds: ['AC-001', 'AC-002', 'AC-003', 'AC-004'],
+    rows: [
+      { id: 'AC-001', scenarioType: 'core', businessStatus: 'passed', status: 'pass' },
+      { id: 'AC-002', scenarioType: 'boundary', businessStatus: 'passed', status: 'pass' },
+      { id: 'AC-003', scenarioType: 'exception', businessStatus: 'passed', status: 'pass' },
+    ],
+  });
+  const rule = gate.ruleResults.find((candidate) =>
+    candidate.ruleId === 'acceptance.business_matrix_criteria_reconciled');
+
+  expect(rule?.status).toBe('fail');
+  expect(rule?.message).toContain('missing: AC-004');
+});
+
+test('acceptance gate rejects matrix AC ids not declared by the requirement', () => {
+  const gate = runBusinessMatrixFixture({
+    name: 'unknown_matrix_id',
+    requirementIds: ['AC-001', 'AC-002', 'AC-003'],
+    rows: [
+      { id: 'AC-001', scenarioType: 'core', businessStatus: 'passed', status: 'pass' },
+      { id: 'AC-002', scenarioType: 'boundary', businessStatus: 'passed', status: 'pass' },
+      { id: 'AC-003', scenarioType: 'exception', businessStatus: 'passed', status: 'pass' },
+      { id: 'AC-999', scenarioType: 'regression', businessStatus: 'passed', status: 'pass' },
+    ],
+  });
+  const rule = gate.ruleResults.find((candidate) =>
+    candidate.ruleId === 'acceptance.business_matrix_criteria_reconciled');
+
+  expect(rule?.status).toBe('fail');
+  expect(rule?.message).toContain('unknown: AC-999');
+});
+
+test('acceptance gate rejects duplicate matrix rows for the same AC id', () => {
+  const gate = runBusinessMatrixFixture({
+    name: 'duplicate_matrix_id',
+    requirementIds: ['AC-001', 'AC-002', 'AC-003'],
+    rows: [
+      { id: 'AC-001', scenarioType: 'core', businessStatus: 'passed', status: 'pass' },
+      { id: 'AC-001', scenarioType: 'regression', businessStatus: 'passed', status: 'pass' },
+      { id: 'AC-002', scenarioType: 'boundary', businessStatus: 'passed', status: 'pass' },
+      { id: 'AC-003', scenarioType: 'exception', businessStatus: 'passed', status: 'pass' },
+    ],
+  });
+  const rule = gate.ruleResults.find((candidate) =>
+    candidate.ruleId === 'acceptance.business_matrix_criteria_reconciled');
+
+  expect(rule?.status).toBe('fail');
+  expect(rule?.message).toContain('duplicate: AC-001');
+});
+
+test('acceptance gate ignores non-declaration AC references in requirement prose', () => {
+  const gate = runBusinessMatrixFixture({
+    name: 'requirement_prose_reference',
+    requirementIds: ['AC-001', 'AC-002', 'AC-003'],
+    requirementNotes: [
+      'Migration notes compare the implementation with AC-999: that historical id is not a criterion declaration.',
+    ],
+    rows: [
+      { id: 'AC-001', scenarioType: 'core', businessStatus: 'passed', status: 'pass' },
+      { id: 'AC-002', scenarioType: 'boundary', businessStatus: 'passed', status: 'pass' },
+      { id: 'AC-003', scenarioType: 'exception', businessStatus: 'passed', status: 'pass' },
+    ],
+  });
+  const rule = gate.ruleResults.find((candidate) =>
+    candidate.ruleId === 'acceptance.business_matrix_criteria_reconciled');
+
+  expect(rule?.status).toBe('pass');
+  expect(rule?.message).toContain('all 3 requirement AC(s)');
+});
 
 test('AC-14: feature.standard regression — requirement step scheduled but artifact missing → fail', () => {
   const workflowRunId = 'run_acceptance_trace_missing_req';

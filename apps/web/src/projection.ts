@@ -1011,7 +1011,7 @@ export interface DesignDoc {
 export interface AcceptanceChecklistItem {
   id: string;
   text: string;
-  status: 'passed' | 'at_risk' | 'missing';
+  status: 'passed' | 'at_risk' | 'missing' | 'failed';
   scenarioType?: string;
   verificationMethod?: string;
   evidence: string[];

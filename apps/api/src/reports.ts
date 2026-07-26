@@ -419,6 +419,11 @@ interface AcceptanceMatrixReportRow {
   scenarioType: string;
   status: string;
   verificationMethod: string;
+  evidenceRefs: Array<{
+    artifactId: string;
+    claim: string;
+    role?: string;
+  }>;
   evidence: string[];
   risk: string | null;
 }
@@ -450,7 +455,27 @@ function latestAcceptanceMatrixSummary(artifacts: Artifact[]): { body: string; r
     .map((raw): AcceptanceMatrixReportRow | null => {
       const row = asRecord(raw);
       if (!row || typeof row.id !== 'string') return null;
-      const evidenceRefs = Array.isArray(row.evidenceRefs) ? row.evidenceRefs : [];
+      const evidenceRefs = (Array.isArray(row.evidenceRefs) ? row.evidenceRefs : [])
+        .map((ref) => {
+          if (typeof ref === 'string' && ref.trim()) {
+            return {
+              artifactId: ref.startsWith('artifact:') ? ref.slice('artifact:'.length) : ref,
+              claim: 'business acceptance evidence',
+            };
+          }
+          const refRecord = asRecord(ref);
+          if (!refRecord || typeof refRecord.artifactId !== 'string' || !refRecord.artifactId.trim()) {
+            return null;
+          }
+          return {
+            artifactId: refRecord.artifactId,
+            claim: typeof refRecord.claim === 'string'
+              ? refRecord.claim
+              : 'business acceptance evidence',
+            ...(typeof refRecord.role === 'string' ? { role: refRecord.role } : {}),
+          };
+        })
+        .filter((ref): ref is NonNullable<typeof ref> => Boolean(ref));
       return {
         id: row.id,
         text: typeof row.text === 'string' ? row.text : '',
@@ -461,17 +486,8 @@ function latestAcceptanceMatrixSummary(artifacts: Artifact[]): { body: string; r
             ? row.status
             : 'missing',
         verificationMethod: typeof row.verificationMethod === 'string' ? row.verificationMethod : '',
-        evidence: evidenceRefs
-          .map((ref) => {
-            const refRecord = asRecord(ref);
-            if (!refRecord) return null;
-            return typeof refRecord.claim === 'string'
-              ? refRecord.claim
-              : typeof refRecord.artifactId === 'string'
-                ? refRecord.artifactId
-                : null;
-          })
-          .filter((value): value is string => Boolean(value)),
+        evidenceRefs,
+        evidence: evidenceRefs.map((ref) => `${ref.claim} (${ref.artifactId})`),
         risk: typeof row.risk === 'string'
           ? row.risk
           : typeof row.notes === 'string' && row.businessStatus !== 'passed'

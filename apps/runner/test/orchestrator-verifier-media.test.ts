@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import type { Artifact } from '@ainp/shared';
 import {
   acceptanceCriterionIdsFromInputs,
+  designVerificationCriterionIds,
   safeVerifierFilename,
   shouldRequireUiVerifier,
   verifierContentType,
@@ -93,16 +94,50 @@ describe('verifierMediaSatisfiesCoverage', () => {
 });
 
 describe('acceptanceCriterionIdsFromInputs', () => {
-  test('collects unique sorted AC ids across inputs, capped at 50', () => {
+  test('collects unique sorted AC declarations from requirement inputs only', () => {
     expect(acceptanceCriterionIdsFromInputs({
-      'requirement.md': 'AC-002 then AC-001 then AC-002 again',
+      'requirement.md': '- AC-002: boundary\n- AC-001: core\nSee AC-999: historical reference only',
       'design.md': 'covers AC-010',
-    })).toEqual(['AC-001', 'AC-002', 'AC-010']);
+    })).toEqual(['AC-001', 'AC-002']);
+  });
+
+  test('keeps every declared AC id when a requirement has more than 50 criteria', () => {
+    const ids = Array.from(
+      { length: 75 },
+      (_, index) => `AC-${String(index + 1).padStart(3, '0')}`,
+    );
+
+    expect(acceptanceCriterionIdsFromInputs({ 'requirement.md': ids.join('\n') }))
+      .toEqual(ids);
   });
 
   test('falls back to AC-UI-001 when no ids are present', () => {
     expect(acceptanceCriterionIdsFromInputs({ 'notes.md': 'no criteria here' }))
       .toEqual(['AC-UI-001']);
+  });
+
+  test('reads structured requirement JSON ids without treating prose refs as declarations', () => {
+    expect(acceptanceCriterionIdsFromInputs({
+      'requirement.json': JSON.stringify({
+        acceptanceCriteria: [
+          { id: 'ac-002', text: 'Boundary behavior' },
+          'AC-001: Core behavior',
+          { id: 'not-an-ac', text: 'Ignore this row' },
+        ],
+      }),
+      user_request: 'Compare the result with AC-999.',
+    })).toEqual(['AC-001', 'AC-002']);
+  });
+});
+
+describe('designVerificationCriterionIds', () => {
+  test('accepts explicit strategy labels but rejects prose and range references', () => {
+    expect(designVerificationCriterionIds(
+      '- Test strategy: REQ-001 / AC-001 is verified by the login integration fixture.',
+    )).toEqual(['AC-001']);
+    expect(designVerificationCriterionIds(
+      'Coverage references AC-001 ~ AC-003 and prose mentions AC-002.',
+    )).toEqual([]);
   });
 });
 

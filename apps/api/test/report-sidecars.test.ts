@@ -238,7 +238,12 @@ test('completion report route emits markdown plus structured JSON sidecar artifa
     contextRequests: Array<{ id: string; supplementContextPackId: string }>;
     handoffs: Array<{ toRole: string; adoptionDecision: string; outputArtifactIds: string[] }>;
     stepCheckpoints: Array<{ stepRunId: string; contextPackId: string; agentSessionIds: string[] }>;
-    businessAcceptanceMatrix: Array<{ id: string; status: string; scenarioType: string }>;
+    businessAcceptanceMatrix: Array<{
+      id: string;
+      status: string;
+      scenarioType: string;
+      evidenceRefs: Array<{ artifactId: string; claim: string }>;
+    }>;
     knowledgeReviewSignals: Array<{ kind: string; recommendedAction: string }>;
   };
   expect(parsed.schemaVersion).toBe('ainp.completion_report.v1');
@@ -274,8 +279,18 @@ test('completion report route emits markdown plus structured JSON sidecar artifa
     .toContain(step.id);
   expect(parsed.sections.find((section) => section.title === 'Business Acceptance Matrix')?.body)
     .toContain('AC-001');
+  expect(parsed.sections.find((section) => section.title === 'Business Acceptance Matrix')?.body)
+    .toContain(handoffOutput.id);
   expect(parsed.businessAcceptanceMatrix).toEqual([
-    expect.objectContaining({ id: 'AC-001', status: 'passed', scenarioType: 'core' }),
+    expect.objectContaining({
+      id: 'AC-001',
+      status: 'passed',
+      scenarioType: 'core',
+      evidenceRefs: [{
+        artifactId: handoffOutput.id,
+        claim: 'review confirms filtered export evidence',
+      }],
+    }),
   ]);
   expect(parsed.knowledgeReviewSignals).toEqual(
     expect.arrayContaining([

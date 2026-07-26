@@ -76,7 +76,7 @@ describe('runRequirementGate cs-req rules', () => {
     expect(findRule(gate.ruleResults, 'requirement.boundary_present')?.status).toBe('pass');
   });
 
-  test('passes explicit AC bullet lines without requiring a prose acceptance label', () => {
+  test('rejects mixed AC bullets when any criterion is only a command', () => {
     const a = artifactFor(`---
 doc_type: requirement
 id: REQ-001
@@ -111,8 +111,9 @@ status: draft
       artifact: a,
     });
 
-    expect(gate.status).toBe('pass');
+    expect(gate.status).toBe('fail');
     expect(findRule(gate.ruleResults, 'requirement.acceptance_criteria_present')?.status).toBe('pass');
+    expect(findRule(gate.ruleResults, 'requirement.acceptance_business_meaning_present')?.status).toBe('fail');
   });
 
   test('passes numbered level-2 cs-req headings from real agent output', () => {

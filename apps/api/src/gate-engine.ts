@@ -389,23 +389,74 @@ function hasAcceptanceCriteria(text: string): boolean {
 function hasBusinessAcceptanceCriteria(text: string): boolean {
   const lines = acceptanceCriterionLines(text);
   if (lines.length === 0) return false;
-  return lines.some((line) => !isCommandOnlyText(line) && businessTextScore(line) >= 8);
+  return lines.every((line) => !isCommandOnlyText(line) && businessTextScore(line) >= 8);
 }
 
 function hasBusinessVerificationStrategy(text: string): boolean {
-  const lines = acceptanceCriterionLines(text);
+  const lines = designVerificationStrategyLines(text);
   if (lines.length === 0) return false;
-  return lines.some((line) => {
+  return lines.every((line) => {
     const verificationText = verificationTextFromPotentialTableRow(line);
     return !isCommandOnlyText(verificationText) && businessTextScore(verificationText) >= 12;
   });
+}
+
+function designVerificationStrategyLines(text: string): string[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) =>
+      isAcceptanceCriterionDeclarationLine(line)
+      || isExplicitVerificationStrategyLine(line));
+}
+
+function designVerificationCriterionIds(text: string): string[] {
+  const ids = designVerificationStrategyLines(text).flatMap((line) => {
+    const declaredIds = declaredAcceptanceCriterionIds(line);
+    if (declaredIds.length > 0) return declaredIds;
+    return [...line.matchAll(/\bAC-\d{3}\b/gi)].map((match) => match[0].toUpperCase());
+  });
+  return [...new Set(ids)];
+}
+
+function isExplicitVerificationStrategyLine(line: string): boolean {
+  return /^(?:[-*+]\s+|\d+[.)]\s*)?(?:\*\*)?(?:test strategy|verification(?: method| strategy)?|测试策略|验证(?:方法|策略))\b[^\n]*\bAC-\d{3}\b/i
+    .test(line);
 }
 
 function acceptanceCriterionLines(text: string): string[] {
   return text
     .split('\n')
     .map((line) => line.trim())
-    .filter((line) => /\bAC-\d{3}\b/i.test(line));
+    .filter(isAcceptanceCriterionDeclarationLine);
+}
+
+function acceptanceCriterionIds(text: string): string[] {
+  const ids = acceptanceCriterionLines(text).flatMap(declaredAcceptanceCriterionIds);
+  return [...new Set(ids)];
+}
+
+function isAcceptanceCriterionDeclarationLine(line: string): boolean {
+  if (declaredAcceptanceCriterionIdsFromTableRow(line).length > 0) return true;
+  return /^(?:#{1,6}\s+|[-*+]\s+(?:\[[ xX]\]\s*)?|\d+[.)]\s*)?(?:\*\*)?AC-\d{3}\b/i.test(line)
+    || /^(?:[-*+]\s+(?:\[[ xX]\]\s*)?|\d+[.)]\s*)?(?:\*\*)?(?:acceptance criteri(?:on|a)|验收标准)(?:\*\*)?\s*[:：-]?\s*(?:\*\*)?AC-\d{3}\b/i.test(line);
+}
+
+function declaredAcceptanceCriterionIds(line: string): string[] {
+  const tableIds = declaredAcceptanceCriterionIdsFromTableRow(line);
+  if (tableIds.length > 0) return tableIds;
+  const match = /\bAC-\d{3}\b/i.exec(line);
+  return match ? [match[0].toUpperCase()] : [];
+}
+
+function declaredAcceptanceCriterionIdsFromTableRow(line: string): string[] {
+  if (!line.includes('|')) return [];
+  return line
+    .slice(line.startsWith('|') ? 1 : 0, line.endsWith('|') ? -1 : undefined)
+    .split('|')
+    .map((cell) => cell.trim())
+    .map((cell) => /^(?:\*\*)?(AC-\d{3})(?:\*\*)?$/i.exec(cell)?.[1]?.toUpperCase() ?? null)
+    .filter((id): id is string => Boolean(id));
 }
 
 function verificationTextFromPotentialTableRow(line: string): string {
@@ -458,6 +509,14 @@ export function runDesignGate(params: {
   const text = readArtifactText(params.artifact);
   const evidence = artifactEvidence(params.artifact, 'design markdown');
   const hasArtifact = Boolean(params.artifact);
+  const requirement = store.artifacts
+    .byKind(params.workflowRunId, 'requirement_draft')
+    .at(-1) ?? null;
+  const requiredAcIds = requirement
+    ? acceptanceCriterionIds(readArtifactText(requirement))
+    : [];
+  const mappedAcIds = new Set(designVerificationCriterionIds(text));
+  const unmappedAcIds = requiredAcIds.filter((id) => !mappedAcIds.has(id));
   const hasCoverage =
     /requirement coverage|coverage matrix|需求覆盖|对应需求/i.test(text) ||
     /\bREQ-\d{3}\b[\s\S]{0,200}\b(?:D-\d{3}|DSN-\d{3}|AC-\d{3})\b/i.test(text);
@@ -508,6 +567,21 @@ export function runDesignGate(params: {
       fail: 'test strategy does not describe business behavior beyond command execution',
       evidenceRefs: evidence,
     }),
+    {
+      ruleId: 'design.acceptance_criteria_reconciled',
+      status: requiredAcIds.length === 0 || unmappedAcIds.length === 0 ? 'pass' : 'fail',
+      message: requiredAcIds.length === 0
+        ? 'not applicable: no requirement AC declarations available'
+        : unmappedAcIds.length === 0
+          ? `design maps all ${requiredAcIds.length} requirement AC(s) to verification strategies`
+          : `design is missing explicit verification mappings for: ${unmappedAcIds.join(', ')}`,
+      evidenceRefs: requiredAcIds.length === 0
+        ? []
+        : [
+            ...artifactEvidence(requirement, 'requirement AC source of truth'),
+            ...evidence,
+          ],
+    },
     textRule({
       ruleId: 'design.risks_present',
       ok: hasRisk,
@@ -602,6 +676,24 @@ export function runAcceptanceTraceabilityGate(params: {
   const matrix = matrixArtifact ? parseVerifierAcMatrix(matrixArtifact) : null;
   const matrixRequired = stagesRun.has('requirement') || stagesRun.has('design');
   const matrixEvaluation = evaluateBusinessAcceptanceMatrix(matrix);
+  const requiredAcIds = requirement ? acceptanceCriterionIds(readArtifactText(requirement)) : [];
+  const requiredAcIdSet = new Set(requiredAcIds);
+  const matrixAcIdCounts = new Map<string, number>();
+  for (const criterion of matrixEvaluation.criteria) {
+    const id = criterion.id.toUpperCase();
+    matrixAcIdCounts.set(id, (matrixAcIdCounts.get(id) ?? 0) + 1);
+  }
+  const matrixAcIds = new Set(matrixAcIdCounts.keys());
+  const missingAcIds = requiredAcIds.filter((id) => !matrixAcIds.has(id));
+  const unknownAcIds = [...matrixAcIds].filter((id) => !requiredAcIdSet.has(id));
+  const duplicateAcIds = [...matrixAcIdCounts]
+    .filter(([, count]) => count > 1)
+    .map(([id]) => id);
+  const reconciliationIssues = [
+    missingAcIds.length > 0 ? `missing: ${missingAcIds.join(', ')}` : null,
+    unknownAcIds.length > 0 ? `unknown: ${unknownAcIds.join(', ')}` : null,
+    duplicateAcIds.length > 0 ? `duplicate: ${duplicateAcIds.join(', ')}` : null,
+  ].filter((issue): issue is string => Boolean(issue));
   const scenarioTypes = new Set(matrixEvaluation.criteria.map((criterion) => criterion.scenarioType));
   const missingScenarioTypes = ['core', 'boundary', 'exception']
     .filter((scenarioType) => !scenarioTypes.has(scenarioType as AcceptanceScenarioType));
@@ -668,6 +760,25 @@ export function runAcceptanceTraceabilityGate(params: {
       evidenceRefs: matrixArtifact
         ? [{ artifactId: matrixArtifact.id, claim: 'business acceptance matrix' }]
         : [],
+    },
+    {
+      ruleId: 'acceptance.business_matrix_criteria_reconciled',
+      status: !matrixRequired
+        ? 'pass'
+        : requiredAcIds.length > 0 && reconciliationIssues.length === 0
+          ? 'pass'
+          : 'fail',
+      message: !matrixRequired
+        ? 'not applicable: no requirement/design AC stage in this flow'
+        : requiredAcIds.length === 0
+          ? 'requirement artifact contains no AC-### identifiers to reconcile'
+          : reconciliationIssues.length > 0
+            ? `business acceptance matrix AC mismatch (${reconciliationIssues.join('; ')})`
+            : `business acceptance matrix covers all ${requiredAcIds.length} requirement AC(s)`,
+      evidenceRefs: [
+        ...artifactEvidence(requirement, 'requirement AC source of truth'),
+        ...artifactEvidence(matrixArtifact, 'business acceptance matrix'),
+      ],
     },
     {
       ruleId: 'acceptance.business_matrix_criteria_proven',
@@ -1181,6 +1292,7 @@ interface ParsedVerifierCriterion {
   scenarioType?: AcceptanceScenarioType;
   verificationMethod?: string;
   businessStatus?: AcceptanceBusinessStatus;
+  businessStatusDeclared: boolean;
   risk?: string | null;
   riskAccepted?: boolean;
   evidenceRefs: Array<EvidenceRef & { role?: VerifierMediaRole | 'ac_matrix' }>;
@@ -1317,6 +1429,7 @@ function parseVerifierCriterion(value: unknown): ParsedVerifierCriterion | null 
       ? recordValue.verificationMethod
       : undefined,
     businessStatus: parseAcceptanceBusinessStatus(recordValue.businessStatus),
+    businessStatusDeclared: Object.hasOwn(recordValue, 'businessStatus'),
     risk: typeof recordValue.risk === 'string' ? recordValue.risk : null,
     riskAccepted: recordValue.riskAccepted === true,
     evidenceRefs: refs,
@@ -1350,10 +1463,15 @@ function evaluateBusinessAcceptanceMatrix(
 
   for (const criterion of criteria) {
     const hasEvidence = criterion.evidenceRefs.length > 0;
-    const passed = (criterion.businessStatus === 'passed' || criterion.status === 'pass')
+    const passedStatus = criterion.businessStatusDeclared
+      ? criterion.businessStatus === 'passed'
+      : criterion.status === 'pass';
+    const passed = passedStatus
       && hasEvidence
       && !isCommandOnlyText(`${criterion.text ?? ''} ${criterion.verificationMethod ?? ''}`);
-    const risk = criterion.businessStatus === 'at_risk' && hasEvidence;
+    const risk = criterion.businessStatusDeclared
+      && criterion.businessStatus === 'at_risk'
+      && hasEvidence;
     if (passed) continue;
     if (risk) {
       atRisk.push(criterion.id);
