@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 65
-- **Last Active**: 2026-06-30
+- **Total Sessions**: 66
+- **Last Active**: 2026-07-26
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~467 | Active |
+| `journal-2.md` | ~500 | Active |
 | `journal-1.md` | ~1983 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 66 | 2026-07-26 | Test integrity gate (UMA-DV UD-QA-001 借鉴 #1) | `09dd8a2` | `feat/design-md-workbench-ui-ralph-finish` |
 | 65 | 2026-06-30 | design-md Web workbench UI | `dc7a070`, `1d5432c` | `feat/design-md-workbench-ui-ralph-finish` |
 | 64 | 2026-06-29 | Finish docs audit and router calibration tasks | `055cee0` | `feat/context-injection-layer-mvp` |
 | 63 | 2026-06-28 | Memory lifecycle contract | `65b31b2` | `feat/context-injection-layer-mvp` |

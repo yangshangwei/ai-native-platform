@@ -465,3 +465,36 @@ Implemented and documented the design-md Web workbench UI direction: Linear-styl
 ### Next Steps
 
 - None - task complete
+
+
+## Session 66: Test integrity gate (UMA-DV UD-QA-001 借鉴 #1)
+
+**Date**: 2026-07-26
+**Task**: Test integrity gate (UMA-DV UD-QA-001 借鉴 #1)
+**Branch**: `feat/design-md-workbench-ui-ralph-finish`
+
+### Summary
+
+新增 test_integrity_gate 反测试面弱化守卫：runner 在 build_test 先做 HEAD vs 工作区测试面快照（rename-aware 含未暂存移动），API 侧 5 条确定性规则（删测试/删用例/断言弱化/新增跳过标记/harness 配置弱化）任一命中即在 Maven spawn 前阻断；新增测试永不违规、基线不可得 fail-open。复核修复 2 处（未暂存 rename 误报、rename-in 降级噪音），1216 测试 + typecheck 全绿。Follow-ups 已沉淀在任务 PRD。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `09dd8a2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
