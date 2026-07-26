@@ -2,7 +2,13 @@ import { describe, expect, test, vi } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { CommandRun, StepRun, TestSurfaceReport } from '@ainp/shared';
+import { isOperationalError, type CommandRun, type StepRun, type TestSurfaceReport } from '@ainp/shared';
+import {
+  finalizeOrchestration,
+  handleOrchestrationError,
+  type OperationalPauseDeps,
+  type OrchestrationFinalizationDeps,
+} from '../src/orchestrator';
 import { executeBuildTest, executeImplementation, type StepDeps } from '../src/orchestrator/steps';
 import type { RunCommandInput } from '../src/command-runner';
 import { projectFixture, runCtxFixture, skillFixture } from './helpers/orchestrator-fixtures';
@@ -69,6 +75,63 @@ function buildTestDeps() {
     collectReports: vi.fn(async () => []),
   };
   return { deps: deps as unknown as StepDeps, raw: deps, commandInputs, mavenBuildCalls };
+}
+
+async function expectHistoricalBusinessFailure(params: {
+  execute: () => Promise<void>;
+  c: ReturnType<typeof runCtxFixture>;
+  stage: 'implementation' | 'build_test';
+}): Promise<Error> {
+  let caught: unknown;
+  try {
+    await params.execute();
+  } catch (err) {
+    caught = err;
+  }
+
+  expect(caught).toBeInstanceOf(Error);
+  expect(isOperationalError(caught)).toBe(false);
+  expect(params.c.ok.value).toBe(false);
+
+  const workflowPaused = vi.fn(async () => ({}));
+  const paused = await handleOrchestrationError({
+    err: caught,
+    workflowRunId: params.c.run.id,
+    stage: params.stage,
+    workspacePath: params.c.workspace.path,
+    deps: {
+      workflowPaused: workflowPaused as unknown as OperationalPauseDeps['workflowPaused'],
+      isWorkflowPaused: vi.fn(async () => false),
+      resolveWorktreeHead: vi.fn(async () => 'business-head'),
+      log: vi.fn(),
+    },
+  });
+  expect(paused).toBe(false);
+  expect(workflowPaused).not.toHaveBeenCalled();
+
+  const workflowCompleted = vi.fn(async () => ({}));
+  const cleanup = vi.fn(async () => {});
+  const setExitCode = vi.fn();
+  const result = await finalizeOrchestration({
+    workflowRunId: params.c.run.id,
+    workspacePath: params.c.workspace.path,
+    ok: params.c.ok.value,
+    paused,
+    cleanupEnabled: true,
+    setFailureExitCode: true,
+    deps: {
+      workflowCompleted: workflowCompleted as unknown as OrchestrationFinalizationDeps['workflowCompleted'],
+      cleanup,
+      setExitCode,
+      log: vi.fn(),
+    },
+  });
+
+  expect(result).toEqual({ workflowRunId: params.c.run.id, ok: false, paused: false });
+  expect(workflowCompleted).toHaveBeenCalledWith({ workflowRunId: params.c.run.id, ok: false });
+  expect(cleanup).toHaveBeenCalledTimes(1);
+  expect(setExitCode).toHaveBeenCalledWith(1);
+  return caught as Error;
 }
 
 describe('executeBuildTest (T3.2 command source)', () => {
@@ -181,6 +244,31 @@ describe('executeBuildTest (T3.2 command source)', () => {
     }
   });
 
+  test('compile command failure remains a historical business failure', async () => {
+    const { deps, raw } = buildTestDeps();
+    raw.runWhitelistedCommand.mockResolvedValueOnce({
+      id: 'cmd_compile_failed',
+      command: 'mvn -B -DskipTests compile',
+      stage: 'compile',
+      status: 'failed',
+      exitCode: 1,
+      finishedAt: '2026-07-27T00:00:01.000Z',
+      durationMs: 1,
+      combinedSha256: 'digest_compile_failed',
+    } as unknown as CommandRun);
+    const c = runCtxFixture({
+      runArtifactsDir: mkdtempSync(join(tmpdir(), 'ainp-bt-compile-failed-')),
+    });
+
+    const error = await expectHistoricalBusinessFailure({
+      execute: () => executeBuildTest(c, deps),
+      c,
+      stage: 'build_test',
+    });
+
+    expect(error.message).toBe('compile command failed');
+  });
+
   test('test gate failure records debugger handoff evidence without applying a fix', async () => {
     const { deps, raw } = buildTestDeps();
     raw.api.mavenBuild.mockResolvedValueOnce({
@@ -192,8 +280,13 @@ describe('executeBuildTest (T3.2 command source)', () => {
       runArtifactsDir: mkdtempSync(join(tmpdir(), 'ainp-bt-debugger-')),
     });
 
-    await expect(executeBuildTest(c, deps)).rejects.toThrow('test_gate failed');
+    const error = await expectHistoricalBusinessFailure({
+      execute: () => executeBuildTest(c, deps),
+      c,
+      stage: 'build_test',
+    });
 
+    expect(error.message).toBe('test_gate failed');
     expect(raw.api.postArtifact).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'other',
       contentType: 'application/json',
@@ -385,5 +478,66 @@ describe('executeImplementation ToolInvocation evidence', () => {
       'implementation produced 2 changed file(s)',
     );
     expect(c.inputs.diff).toBe('diff --git a/src/app.ts b/src/app.ts\n');
+  });
+
+  test('diff_scope gate failure remains a historical business failure', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'ainp-impl-diff-scope-failed-'));
+    const diffPath = join(workspace, 'diff.patch');
+    const changedFilesPath = join(workspace, 'changed-files.txt');
+    writeFileSync(diffPath, 'diff --git a/README.md b/README.md\n', 'utf8');
+    writeFileSync(changedFilesPath, 'README.md\n', 'utf8');
+    const c = runCtxFixture({
+      workspace: {
+        workflowRunId: 'run_orch',
+        path: workspace,
+        branch: 'ai/run-1',
+        environmentKind: 'trusted_local_worktree',
+      },
+      runArtifactsDir: workspace,
+    });
+    const deps = {
+      api: {
+        stepStarted: vi.fn(async () => ({ step: { id: 'step_impl_diff_scope' } as unknown as StepRun })),
+        postArtifact: vi.fn(async () => ({ id: 'art_diff_scope', sha256: 'diff_scope_sha' })),
+        toolInvocation: vi.fn(async () => ({})),
+        stepCheckpoint: vi.fn(async () => ({ checkpoint: { id: 'scp_impl_diff_scope' } })),
+        runGate: vi.fn(async (params: { gateId: string }) => ({
+          gate: { status: params.gateId === 'diff_scope_gate' ? 'fail' : 'pass' },
+        })),
+        stepFinished: vi.fn(async () => ({})),
+        awaitHuman: vi.fn(async () => ({})),
+      },
+      mustSkill: vi.fn(async () => skillFixture('implementation')),
+      invokeSkill: vi.fn(async () => ({
+        taskId: 'agtask_impl_diff_scope',
+        sessionId: 'ags_impl_diff_scope',
+        invocationId: 'ctxinv_impl_diff_scope',
+        contextPackArtifactId: 'art_ctxpack_impl_diff_scope',
+        contextPack: { id: 'ctxpack_impl_diff_scope' },
+        contextRequest: null,
+        outputs: [
+          { name: 'diff', path: diffPath, size: 36, contentType: 'text/x-diff' },
+          { name: 'changed-files', path: changedFilesPath, size: 10, contentType: 'text/plain' },
+        ],
+      })),
+      finishAgentSuccess: vi.fn(async () => ({})),
+      enforceSensitiveChangeCheckpoint: vi.fn(async () => ({})),
+      awaitApproval: vi.fn(async () => ({})),
+      postRejectionFeedback: vi.fn(async () => ({})),
+    };
+
+    const error = await expectHistoricalBusinessFailure({
+      execute: () => executeImplementation(c, deps as unknown as StepDeps),
+      c,
+      stage: 'implementation',
+    });
+
+    expect(error.message).toBe('diff_scope_gate failed; aborting');
+    expect(deps.api.runGate).toHaveBeenCalledWith(expect.objectContaining({ gateId: 'diff_scope_gate' }));
+    expect(deps.api.stepFinished).toHaveBeenCalledWith({
+      stepRunId: 'step_impl_diff_scope',
+      status: 'failed',
+      failureReason: 'diff_scope_gate failed; aborting',
+    });
   });
 });

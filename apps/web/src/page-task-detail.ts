@@ -296,6 +296,7 @@ function taskFocusSummary(
     if (request.status === 'awaiting_clarification') return { label: '等待补充', hint: '请先回答需求澄清问题', kind: 'warn' };
     if (request.status === 'pending') return { label: '等待开始', hint: 'Runner 会自动认领任务', kind: 'info' };
     if (request.status === 'claimed') return { label: '准备运行', hint: 'Runner 正在创建工作流', kind: 'info' };
+    if (request.status === 'paused') return { label: '已暂停（运维）', hint: '运行环境故障，等待人工恢复', kind: 'warn' };
     if (request.status === 'failed') return { label: '需要处理', hint: '任务创建或认领失败', kind: 'bad' };
     if (request.status === 'completed') return { label: '已完成', hint: '任务已经结束', kind: 'good' };
     return { label: requestStatusLabel(request.status), hint: '查看详情确认当前状态', kind: statusKind(request.status) };
@@ -315,6 +316,9 @@ function taskFocusSummary(
   if (widenedRun.status === 'passed' || widenedRun.status === 'completed') {
     return { label: '已完成', hint: '可以查看交付报告和知识沉淀', kind: 'good' };
   }
+  // 07-26 operational pause: an operational failure (backend CLI unavailable /
+  // timeout / protocol) paused the run — not a business failure.
+  if (detail.run.status === 'paused') return { label: '已暂停（运维）', hint: `${STAGE_LABELS[projection.currentStage]}因运维故障暂停，可恢复运行`, kind: 'warn' };
   if (detail.run.status === 'failed') return { label: '需要处理', hint: `${STAGE_LABELS[projection.currentStage]}出现失败`, kind: 'bad' };
   return { label: detail.run.status, hint: `${STAGE_LABELS[projection.currentStage]}当前状态`, kind: statusKind(detail.run.status) };
 }
@@ -453,7 +457,7 @@ function renderTaskTechnicalSummary(request: WorkflowRequestDto, detail: RunDeta
       el('summary', { text: '查看技术标识' }),
       field('Request', el('code', { text: request.id })),
       detail ? field('Run', el('code', { text: detail.run.id })) : null,
-      field('状态', status),
+      field('状态', status === 'paused' ? requestStatusLabel(status) : status),
       field('Source Branch', detail?.run.sourceBranch ?? request.branch),
       detail ? field('工作分支', detail.run.branch) : null,
       detail ? field('Worktree', detail.run.workspacePath ?? '尚未准备') : null,
@@ -1181,6 +1185,12 @@ function renderTaskNextActionPanel(
     });
   }
   if (projection.pendingGate) return renderApprovalPanel(detail, projection.pendingGate, projection.currentStage);
+
+  // 07-26 operational pause: paused runs surface the pause reason + a manual
+  // resume button (retry-run at the run's current stage).
+  if (detail.run.status === 'paused') {
+    return renderPausedRunActionPanel(detail);
+  }
 
   // When current stage is failed, show actionable guidance
   if (detail.run.status === 'failed') {
@@ -2712,6 +2722,77 @@ async function submitRequirementAction(
   } finally {
     render();
   }
+}
+
+// ---- operational pause (07-26 operational-unavailable-state) --------------
+
+/** Latest `workflow_run.paused` audit payload: reason / detail for display. */
+function pausedAuditPayload(detail: RunDetail): { reason: string | null; detail: string | null } {
+  const entry = [...detail.audit].reverse().find((item) => item.kind === 'workflow_run.paused');
+  const payload = entry?.payload ?? {};
+  const read = (key: string): string | null => {
+    const value = payload[key];
+    return typeof value === 'string' && value.length > 0 ? value : null;
+  };
+  return { reason: read('reason'), detail: read('detail') };
+}
+
+function pauseReasonLabel(reason: string | null): string {
+  if (reason === 'backend_unavailable') return 'Agent 后端不可用（CLI 缺失或未登录）';
+  if (reason === 'backend_timeout') return 'Agent 后端执行超时';
+  if (reason === 'backend_protocol') return 'Agent 后端协议异常（无有效输出）';
+  return '运维故障';
+}
+
+function renderPausedRunActionPanel(detail: RunDetail): HTMLElement {
+  const pause = pausedAuditPayload(detail);
+  const stage = detail.run.currentStage;
+  const retryKey = `${detail.run.id}:resume`;
+
+  const resumeBtn = button(retryInFlight.has(retryKey) ? '正在恢复…' : '恢复运行', 'button primary');
+  resumeBtn.disabled = retryInFlight.has(retryKey);
+  resumeBtn.onclick = async () => {
+    retryInFlight.add(retryKey);
+    render();
+    try {
+      // Reset the paused stage (step → pending, run → running), then spawn a
+      // one-shot orchestrate resuming at the run's current stage. Completed
+      // stages are never replayed (start-stage slice).
+      await api(`/workflow-runs/${encodeURIComponent(detail.run.id)}/retry-step`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ stage, actor: 'web' }),
+      });
+      await api('/runner/control/retry-run', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ workflowRunId: detail.run.id, stage }),
+      });
+      await loadRunDetail(detail.run.id, false);
+      await loadData({ render: false, keepDetail: true });
+    } catch (err) {
+      ui.lastError = errorMessage(err);
+    } finally {
+      retryInFlight.delete(retryKey);
+      render();
+    }
+  };
+
+  return el('section', {
+    class: 'panel side-panel checkpoint',
+    children: [
+      panelHeader('已暂停（运维）', `${STAGE_LABELS[stage]}因运维故障暂停`),
+      el('p', { text: '运行环境故障（非业务失败）。执行现场已保留，修复环境后可从当前阶段恢复，已完成阶段不会重跑。' }),
+      el('ul', {
+        class: 'clean-list',
+        children: [
+          el('li', { text: `暂停原因：${pauseReasonLabel(pause.reason)}` }),
+          pause.detail ? el('li', { text: `详情：${pause.detail}` }) : null,
+        ],
+      }),
+      el('div', { class: 'button-row', children: [resumeBtn] }),
+    ],
+  });
 }
 
 function renderFailedStageActionPanel(

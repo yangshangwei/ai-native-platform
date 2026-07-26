@@ -20,6 +20,7 @@ import { mkdir, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  OperationalError,
   buildResolvedAgentBackendCliSpawn,
   maskSecrets,
   type SkillSpec,
@@ -101,19 +102,25 @@ export class ClaudeCodeBackend implements AgentBackend {
       outputName: expected.name,
     });
 
-    const { exitCode, lastMessage } = await this.invokeCli(systemPrompt, userPrompt, ctx, skill);
+    const { exitCode, lastMessage, timedOut } = await this.invokeCli(systemPrompt, userPrompt, ctx, skill);
     if (exitCode !== 0) {
-      throw new Error(`claude exited ${exitCode} for stage ${skill.stage}`);
+      // 07-26 operational pause (R2): backend CLI failures are operational —
+      // a hard-timeout kill is `backend_timeout`, any other non-zero exit is
+      // `backend_protocol`. Original message preserved in `detail`.
+      throw new OperationalError(
+        timedOut ? 'backend_timeout' : 'backend_protocol',
+        `claude exited ${exitCode} for stage ${skill.stage}`,
+      );
     }
 
     if (!existsSync(targetPath)) {
       if (isStructuredContextRequest(lastMessage, ctx, skill)) return { outputs: [], lastMessage };
-      throw new Error(`claude did not write expected artifact at ${targetPath}`);
+      throw new OperationalError('backend_protocol', `claude did not write expected artifact at ${targetPath}`);
     }
     const buf = await readFile(targetPath);
     if (buf.byteLength === 0) {
       if (isStructuredContextRequest(lastMessage, ctx, skill)) return { outputs: [], lastMessage };
-      throw new Error(`claude produced empty artifact at ${targetPath}`);
+      throw new OperationalError('backend_protocol', `claude produced empty artifact at ${targetPath}`);
     }
     return {
       outputs: [
@@ -134,9 +141,12 @@ export class ClaudeCodeBackend implements AgentBackend {
   ): Promise<AgentRunResult> {
     const { systemPrompt, userPrompt } = buildPrompts(skill, ctx, { mode: 'implementation' });
 
-    const { exitCode, lastMessage } = await this.invokeCli(systemPrompt, userPrompt, ctx, skill);
+    const { exitCode, lastMessage, timedOut } = await this.invokeCli(systemPrompt, userPrompt, ctx, skill);
     if (exitCode !== 0) {
-      throw new Error(`claude exited ${exitCode} during implementation`);
+      throw new OperationalError(
+        timedOut ? 'backend_timeout' : 'backend_protocol',
+        `claude exited ${exitCode} during implementation`,
+      );
     }
 
     return {
@@ -150,7 +160,7 @@ export class ClaudeCodeBackend implements AgentBackend {
     userPrompt: string,
     ctx: AgentTaskContext,
     skill: SkillSpec,
-  ): Promise<{ exitCode: number; lastMessage: string | null }> {
+  ): Promise<{ exitCode: number; lastMessage: string | null; timedOut: boolean }> {
     const allowedTools = computeAllowedTools(skill);
     const disallowedTools = ['WebFetch', 'WebSearch', 'Bash', 'Skill'];
     const allowedToolArg = allowedTools.join(',');
@@ -304,15 +314,40 @@ export class ClaudeCodeBackend implements AgentBackend {
       await emit(ctx, { type: 'stderr', payload: { line: safeLine }, text: safeLine });
     });
 
+    let spawnError: Error | null = null;
     const exit = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>(
       (resolve) => {
         child.once('exit', (code, signal) => resolve({ code, signal }));
+        // Spawn failures (ENOENT etc.) emit 'error' without a matching
+        // 'exit'; without this handler the runner would hang on the hard
+        // timeout for a process that never started.
+        child.once('error', (err) => {
+          spawnError = err;
+          resolve({ code: null, signal: null });
+        });
       },
     );
     await Promise.allSettled([stdoutDone, stderrDone]);
     clearTimeout(hardTimer);
     if (graceTimer) clearTimeout(graceTimer);
     if (hardKillTimer) clearTimeout(hardKillTimer);
+
+    if (spawnError !== null) {
+      const spawnMessage = (spawnError as Error).message;
+      await emitMeta(ctx, 'finished', {
+        exitCode: -1,
+        rawExitCode: null,
+        signal: null,
+        timedOut,
+        resultSeen,
+        resultSubtype,
+        graceShutdown: graceShutdownInitiated,
+        spawnError: spawnMessage,
+      });
+      // 07-26 operational pause (R2): failing to spawn the backend CLI is a
+      // protocol-level operational failure.
+      throw new OperationalError('backend_protocol', `claude spawn failed: ${spawnMessage}`);
+    }
 
     // Exit code reconciliation:
     //   - Natural exit (code !== null) wins regardless of how we got here.
@@ -340,7 +375,13 @@ export class ClaudeCodeBackend implements AgentBackend {
       resultSubtype,
       graceShutdown: graceShutdownInitiated,
     });
-    return { exitCode: effectiveExitCode, lastMessage };
+    if (effectiveExitCode === 0 && !resultSeen) {
+      throw new OperationalError(
+        'backend_protocol',
+        `claude exited 0 without a terminal result for stage ${skill.stage}`,
+      );
+    }
+    return { exitCode: effectiveExitCode, lastMessage, timedOut };
   }
 }
 

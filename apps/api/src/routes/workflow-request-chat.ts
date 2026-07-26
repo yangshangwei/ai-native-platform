@@ -21,6 +21,7 @@ const ALLOWED_STATUSES: readonly WorkflowRequestStatus[] = [
   'pending',
   'awaiting_clarification',
   'claimed',
+  'paused',
   'completed',
   'failed',
   'cancelled',
@@ -42,6 +43,9 @@ const ALLOWED_TRANSITIONS: Record<WorkflowRequestStatus, readonly WorkflowReques
   pending: ['awaiting_clarification', 'claimed', 'cancelled'],
   awaiting_clarification: ['pending', 'cancelled'],
   claimed: ['completed', 'failed', 'cancelled'],
+  // 07-26 operational pause: humans may abandon a paused request; resuming
+  // (paused → completed/failed) is engine-owned via completeWorkflowRun.
+  paused: ['cancelled'],
   completed: [],
   failed: [],
   cancelled: [],

@@ -126,7 +126,7 @@ export function shortId(id: string): string {
 export function statusKind(status: string): StatusKind {
   if (['passed', 'pass', 'success', 'approved', 'online', 'completed'].includes(status)) return 'good';
   if (['failed', 'fail', 'rejected', 'offline', 'cancelled'].includes(status)) return 'bad';
-  if (['warn', 'stale', 'awaiting_human', 'awaiting_clarification'].includes(status)) return 'warn';
+  if (['warn', 'stale', 'awaiting_human', 'awaiting_clarification', 'paused'].includes(status)) return 'warn';
   if (['running', 'pending', 'claimed'].includes(status)) return 'info';
   return 'muted';
 }

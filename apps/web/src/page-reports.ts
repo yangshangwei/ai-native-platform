@@ -69,6 +69,9 @@ function reportNextAction(run: Omit<WorkflowRunDto, 'status'> & { status: Report
   if (run.status === 'failed') return '查看失败证据并决定是否重试。';
   if (run.status === 'awaiting_human') return '处理人工确认点，确认后继续流转。';
   if (run.status === 'awaiting_clarification') return '补充澄清信息后继续。';
+  // 07-26 operational pause: not a business failure — fix the environment,
+  // then resume from the task detail page.
+  if (run.status === 'paused') return '修复运行环境后，从任务详情恢复运行。';
   if (reportIsAcceptable(run)) return '查看交付摘要，决定是否验收。';
   if (reportIsRunning(run)) return '等待 Runner 完成，报告会持续更新。';
   return '查看任务详情确认状态。';
@@ -103,6 +106,12 @@ function reportInboxMeta(run: WorkflowRunDto): ReportInboxMeta {
   }
   if (run.status === 'awaiting_human') {
     return { rank: 1, label: '等待确认', hint: '需要人工决定', kind: 'warn' };
+  }
+  // 07-26 operational pause: paused runs are in the attention view
+  // (reportNeedsAttention) and must not fall through to the muted
+  // "已归档" default.
+  if (run.status === 'paused') {
+    return { rank: 1, label: '已暂停（运维）', hint: '运维故障，待人工恢复', kind: 'warn' };
   }
   if (reportIsAcceptable(run)) {
     return { rank: 2, label: '可验收', hint: '查看交付摘要', kind: 'good' };

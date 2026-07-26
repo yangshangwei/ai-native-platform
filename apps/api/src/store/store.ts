@@ -367,6 +367,16 @@ const workflowRequests = {
       'SELECT * FROM workflow_requests WHERE status = ? ORDER BY created_at ASC',
       status,
     ),
+  /**
+   * 07-26 operational pause: reverse lookup from a run to its owning request
+   * so `pauseWorkflowRun` / `completeWorkflowRun` can keep the request status
+   * in sync. Latest request wins if a run were ever re-attached.
+   */
+  byWorkflowRunId: (workflowRunId: string): WorkflowRequest | undefined =>
+    workflowRequestsTable.all(
+      'SELECT * FROM workflow_requests WHERE workflow_run_id = ? ORDER BY created_at DESC',
+      workflowRunId,
+    )[0],
   pending(): WorkflowRequest[] {
     return this.byStatus('pending');
   },

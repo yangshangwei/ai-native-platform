@@ -79,7 +79,10 @@ function pendingCount(): number {
   const awaitingClarification = data.requests.filter((r) => r.status === 'awaiting_clarification').length;
   const awaitingHuman = data.runs.filter((r) => r.status === 'awaiting_human').length;
   const failed = data.requests.filter((r) => r.status === 'failed').length;
-  return awaitingClarification + awaitingHuman + failed;
+  // 07-26 operational pause: paused requests wait on a manual resume — keep
+  // this badge consistent with myTodos(), which also counts them.
+  const paused = data.requests.filter((r) => r.status === 'paused').length;
+  return awaitingClarification + awaitingHuman + failed + paused;
 }
 
 function renderSidebar(): HTMLElement {

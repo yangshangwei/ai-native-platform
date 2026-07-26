@@ -669,8 +669,10 @@ function normalizeOptional(value: string | null): string | null {
 function deletePreview(project: Project): DeletePreview {
   const requests = store.workflowRequests.values().filter((req) => req.projectId === project.id);
   const runs = store.workflowRunsByProject(project.id);
-  const activeRequests = requests.filter((req) => req.status === 'pending' || req.status === 'claimed').length;
-  const activeRuns = runs.filter((run) => run.status === 'pending' || run.status === 'running' || run.status === 'awaiting_human').length;
+  // 07-26 operational pause: paused requests/runs are still active work — the
+  // worktree is kept on disk awaiting a manual resume.
+  const activeRequests = requests.filter((req) => req.status === 'pending' || req.status === 'claimed' || req.status === 'paused').length;
+  const activeRuns = runs.filter((run) => run.status === 'pending' || run.status === 'running' || run.status === 'awaiting_human' || run.status === 'paused').length;
   const totalRequests = requests.length;
   const totalRuns = runs.length;
   const canHardDelete = totalRequests === 0 && totalRuns === 0;

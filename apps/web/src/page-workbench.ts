@@ -197,7 +197,14 @@ function buildWorkbenchActionItems(): WorkbenchActionItem[] {
       meta: `${projectName(request.projectId)} · ${fmtTime(request.updatedAt)}`,
       statusLabel: requestStatusLabel(request.status),
       statusKind: statusKind(request.status),
-      actionLabel: request.status === 'awaiting_clarification' ? '补充信息' : '查看失败',
+      // 07-26 operational pause: myTodos() includes paused requests — send
+      // the user to the task detail where the resume button lives, instead
+      // of the misleading "查看失败" default.
+      actionLabel: request.status === 'awaiting_clarification'
+        ? '补充信息'
+        : request.status === 'paused'
+          ? '恢复运行'
+          : '查看失败',
       onClick: () => setHash('task', request.id),
     }));
 

@@ -2,8 +2,9 @@ import { join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import type { FlowId, GraphDefinition, GraphNodeDefinition, GraphNodeRun, StageStep, WorkflowRun, WorkflowStage } from '@ainp/shared';
-import { flowToGraphDefinition } from '@ainp/shared';
+import { errorMessage, flowToGraphDefinition, isOperationalError } from '@ainp/shared';
 import { api } from './api-client';
+import { sh } from './sh';
 import { TrustedLocalWorktreeEnvironment } from './worktree';
 import { getConfig } from './config-client';
 import { sendHeartbeat } from './heartbeat';
@@ -109,13 +110,16 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
   let backend: AgentBackend = placeholderBackend(project, opts.agentBackend);
   let run: WorkflowRun;
   let existingRunDetail: Awaited<ReturnType<typeof api.getWorkflowRun>> | null = null;
+  // 07-26 operational pause (AC-002): backend selection/preflight runs INSIDE
+  // the run lifecycle try-block below, so a failed preflight pauses the run
+  // (worktree kept, resume via retry-run) instead of throwing before the run
+  // exists. Here we only decide whether selection is needed.
+  let needsBackendSelection: boolean;
   if (opts.workflowRunId) {
     // Resume an existing run (retry-step flow).
     existingRunDetail = await api.getWorkflowRun(opts.workflowRunId);
     run = existingRunDetail.run;
-    if (run.flowId !== 'profile.bootstrap') {
-      backend = await selectAgentBackend(project, opts.agentBackend);
-    }
+    needsBackendSelection = run.flowId !== 'profile.bootstrap';
     console.log(`[runner] resuming workflow-run ${run.id} at stage ${opts.startStage ?? run.currentStage} (flow=${run.flowId})`);
   } else {
     // 06-25 ask-flow: 'ask' requests never reach orchestrator (they have
@@ -125,9 +129,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       ?? (opts.flowId ? FLOW_REGISTRY[opts.flowId]?.kind : undefined)
       ?? 'feature';
     const executableRunType = inferredRunType === 'ask' ? 'feature' : inferredRunType;
-    if (opts.flowId !== 'profile.bootstrap' && executableRunType !== 'profile') {
-      backend = await selectAgentBackend(project, opts.agentBackend);
-    }
+    needsBackendSelection = opts.flowId !== 'profile.bootstrap' && executableRunType !== 'profile';
     run = await api.createWorkflowRun({
       projectName: project.name,
       title: opts.title,
@@ -150,9 +152,15 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
 
   // R1.4: Variables declared outside try block for access in catch/finally
   const ok: OkRef = { value: true };
+  // 07-26 operational pause: the stage the run should resume from when an
+  // operational error pauses it. Tracks the node being dispatched; before the
+  // first dispatch it points at the first stage of the slice (preflight case).
+  let pauseStage: WorkflowStage | null = null;
+  let paused = false;
   let runArtifactsDir: string;
   let contextPolicy: ContextPolicy;
   let ctx: RunCtx;
+  let finalizedResult: OrchestrateResult | null = null;
 
   // R1.4: try block starts immediately after env.prepare to ensure cleanup
   // protects all subsequent operations (workspacePrepared, mkdir, loadContextPolicy,
@@ -165,6 +173,35 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
     await mkdir(runArtifactsDir, { recursive: true });
 
     contextPolicy = await loadContextPolicy();
+
+    const flow = FLOW_REGISTRY[run.flowId];
+    if (!flow) {
+      throw new Error(
+        `unknown flowId in registry: ${String(run.flowId)} (run=${run.id})`,
+      );
+    }
+
+    const dispatchStartStage = opts.workflowRunId
+      ? (opts.startStage ?? run.startStage ?? (run.currentStage === 'init' ? null : run.currentStage))
+      : run.startStage;
+
+    const stagesToRun = sliceStagesFromStartStage({
+      flowId: run.flowId,
+      runId: run.id,
+      stages: flow.stages,
+      startStage: dispatchStartStage,
+      log: (m) => console.log(m),
+    });
+    pauseStage = stagesToRun[0]?.stage ?? null;
+
+    // 07-26 operational pause (AC-002): preflight failures throw
+    // OperationalError('backend_unavailable') from here — inside the run
+    // lifecycle — so the catch below pauses the run at the first stage of
+    // the slice instead of failing before the run exists.
+    if (needsBackendSelection) {
+      backend = await selectAgentBackend(project, opts.agentBackend);
+    }
+
     /**
      * V2 P0-1 / PR3: `draftsToPromote` captures requirement_draft / design_doc
      * stage outputs for promoteToKnowledge after acceptance. Promotion lifts
@@ -201,25 +238,6 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
       ok,
     };
 
-    const flow = FLOW_REGISTRY[run.flowId];
-    if (!flow) {
-      throw new Error(
-        `unknown flowId in registry: ${String(run.flowId)} (run=${run.id})`,
-      );
-    }
-
-    const dispatchStartStage = opts.workflowRunId
-      ? (opts.startStage ?? run.startStage ?? (run.currentStage === 'init' ? null : run.currentStage))
-      : run.startStage;
-
-    const stagesToRun = sliceStagesFromStartStage({
-      flowId: run.flowId,
-      runId: run.id,
-      stages: flow.stages,
-      startStage: dispatchStartStage,
-      log: (m) => console.log(m),
-    });
-
     const graph = flowToGraphDefinition(flow);
     const existingGraph = existingRunDetail?.graph;
     const graphRun = existingGraph?.graphRun
@@ -247,6 +265,7 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
         throw new Error(`graph scheduler found no runnable node (run=${run.id}, flow=${run.flowId})`);
       }
       const step = stageStepForGraphNode(stagesToRun, node);
+      pauseStage = node.stage;
       const latestNodeRun = latestNodeRunsByNode(graphNodeRuns).get(node.id);
       const attempt = latestNodeRun?.status === 'ready'
         ? latestNodeRun.attempt
@@ -284,33 +303,199 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
           stepCheckpointId: null,
           resumeCursor: null,
         }));
-        const finishedNodeRun = await api.graphNodeFinished({
+        const finishedNodeRun = await recordGraphNodeFailure({
+          err,
           nodeRunId: startedNodeRun.id,
-          status: 'failed',
           stepRunId: evidence.stepRunId,
           stepCheckpointId: evidence.stepCheckpointId,
           resumeCursor: evidence.resumeCursor,
-          metadata: { error: err instanceof Error ? err.message : String(err) },
+          deps: {
+            stepFinished: (params) => api.stepFinished(params),
+            graphNodeFinished: (params) => api.graphNodeFinished(params),
+          },
         });
         graphNodeRuns = upsertLocalGraphNodeRun(graphNodeRuns, finishedNodeRun);
         throw err;
       }
     }
   } catch (err) {
-    ok.value = false;
-    console.error('[runner] orchestration failed:', err instanceof Error ? err.message : err);
-  } finally {
-    await api.workflowCompleted({ workflowRunId: run.id, ok: ok.value });
-    if (opts.cleanup !== false) {
-      await env.cleanup(workspace);
-      console.log(`[runner] worktree removed: ${workspace.path}`);
+    // 07-26 operational pause (R3/R7): operational errors pause the run;
+    // every other error keeps the historical failure path byte-for-byte.
+    paused = await handleOrchestrationError({
+      err,
+      workflowRunId: run.id,
+      stage: pauseStage ?? run.currentStage,
+      workspacePath: workspace.path,
+    });
+    if (paused) {
+      console.error(`[runner] orchestration paused (operational): ${err instanceof Error ? err.message : err}`);
     } else {
-      console.log(`[runner] worktree kept at ${workspace.path}`);
+      ok.value = false;
+      console.error('[runner] orchestration failed:', err instanceof Error ? err.message : err);
+    }
+  } finally {
+    finalizedResult = await finalizeOrchestration({
+      workflowRunId: run.id,
+      workspacePath: workspace.path,
+      ok: ok.value,
+      paused,
+      cleanupEnabled: opts.cleanup !== false,
+      setFailureExitCode: opts.setExitCode !== false,
+      deps: {
+        workflowCompleted: (params) => api.workflowCompleted(params),
+        cleanup: () => env.cleanup(workspace),
+        setExitCode: (code) => {
+          process.exitCode = code;
+        },
+        log: (message) => console.log(message),
+      },
+    });
+  }
+
+  return finalizedResult!;
+}
+
+// ---- operational pause (07-26 operational-unavailable-state) ---------------
+
+export interface OrchestrationFinalizationDeps {
+  workflowCompleted: typeof api.workflowCompleted;
+  cleanup: () => Promise<void>;
+  setExitCode: (code: number) => void;
+  log: (message: string) => void;
+}
+
+/** Apply the mutually-exclusive paused vs completed lifecycle side effects. */
+export async function finalizeOrchestration(params: {
+  workflowRunId: string;
+  workspacePath: string;
+  ok: boolean;
+  paused: boolean;
+  cleanupEnabled: boolean;
+  setFailureExitCode: boolean;
+  deps: OrchestrationFinalizationDeps;
+}): Promise<OrchestrateResult> {
+  if (params.paused) {
+    params.deps.log(
+      `[runner] workflow-run ${params.workflowRunId} paused; worktree kept for resume at ${params.workspacePath}`,
+    );
+  } else {
+    await params.deps.workflowCompleted({ workflowRunId: params.workflowRunId, ok: params.ok });
+    if (params.cleanupEnabled) {
+      await params.deps.cleanup();
+      params.deps.log(`[runner] worktree removed: ${params.workspacePath}`);
+    } else {
+      params.deps.log(`[runner] worktree kept at ${params.workspacePath}`);
     }
   }
 
-  if (!ok.value && opts.setExitCode !== false) process.exitCode = 1;
-  return { workflowRunId: run.id, ok: ok.value };
+  // R4: a pause is not a process failure, even when it interrupted the work.
+  if (!params.paused && !params.ok && params.setFailureExitCode) params.deps.setExitCode(1);
+  return {
+    workflowRunId: params.workflowRunId,
+    ok: params.paused ? true : params.ok,
+    paused: params.paused,
+  };
+}
+
+export interface OrchestrationGraphFailureDeps {
+  stepFinished: typeof api.stepFinished;
+  graphNodeFinished: typeof api.graphNodeFinished;
+}
+
+/** Record R10 failure evidence without adding step or graph status values. */
+export async function recordGraphNodeFailure(params: {
+  err: unknown;
+  nodeRunId: string;
+  stepRunId: string | null;
+  stepCheckpointId: string | null;
+  resumeCursor: string | null;
+  deps: OrchestrationGraphFailureDeps;
+}): Promise<Awaited<ReturnType<typeof api.graphNodeFinished>>> {
+  const operational = isOperationalError(params.err);
+  if (operational && params.stepRunId) {
+    await params.deps.stepFinished({
+      stepRunId: params.stepRunId,
+      status: 'failed',
+      failureReason: `operational: ${errorMessage(params.err)}`,
+    }).catch(() => {});
+  }
+  return params.deps.graphNodeFinished({
+    nodeRunId: params.nodeRunId,
+    status: 'failed',
+    stepRunId: params.stepRunId,
+    stepCheckpointId: params.stepCheckpointId,
+    resumeCursor: params.resumeCursor,
+    metadata: {
+      error: params.err instanceof Error ? params.err.message : String(params.err),
+      ...(operational ? { operational: true } : {}),
+    },
+  });
+}
+
+export interface OperationalPauseDeps {
+  workflowPaused: typeof api.workflowPaused;
+  isWorkflowPaused: (workflowRunId: string) => Promise<boolean>;
+  resolveWorktreeHead: (workspacePath: string) => Promise<string | null>;
+  log: (msg: string) => void;
+}
+
+const DEFAULT_OPERATIONAL_PAUSE_DEPS: OperationalPauseDeps = {
+  workflowPaused: (params) => api.workflowPaused(params),
+  isWorkflowPaused: async (workflowRunId) => {
+    const detail = await api.getWorkflowRun(workflowRunId);
+    return detail.run.status === 'paused';
+  },
+  resolveWorktreeHead: (workspacePath) => worktreeHeadCommit(workspacePath),
+  log: (msg) => console.error(msg),
+};
+
+/**
+ * Classify an orchestration error (R3). Operational errors report the
+ * `workflow-paused` event (run/request → `paused`, worktree kept) and return
+ * true; anything else — including a failed pause report itself — returns
+ * false so the caller keeps the historical failure path (R7). No retry loop
+ * is started here or anywhere else: resume is manual only (R5).
+ */
+export async function handleOrchestrationError(params: {
+  err: unknown;
+  workflowRunId: string;
+  stage: WorkflowStage;
+  workspacePath: string;
+  deps?: OperationalPauseDeps;
+}): Promise<boolean> {
+  if (!isOperationalError(params.err)) return false;
+  const deps = params.deps ?? DEFAULT_OPERATIONAL_PAUSE_DEPS;
+  try {
+    const worktreeHead = await deps.resolveWorktreeHead(params.workspacePath).catch(() => null);
+    await deps.workflowPaused({
+      workflowRunId: params.workflowRunId,
+      stage: params.stage,
+      reason: params.err.reason,
+      detail: params.err.detail,
+      worktreeHead,
+    });
+    return true;
+  } catch (reportErr) {
+    const pauseCommitted = await deps.isWorkflowPaused(params.workflowRunId).catch(() => false);
+    if (pauseCommitted) {
+      deps.log(
+        `[runner] workflow-paused response failed (${errorMessage(reportErr)}), but run was confirmed paused after response failure`,
+      );
+      return true;
+    }
+    deps.log(
+      `[runner] workflow-paused report failed (${errorMessage(reportErr)}); falling back to failure handling`,
+    );
+    return false;
+  }
+}
+
+/** Best-effort HEAD commit of the run worktree, recorded in the pause audit. */
+async function worktreeHeadCommit(workspacePath: string): Promise<string | null> {
+  const result = await sh('git', ['rev-parse', 'HEAD'], { cwd: workspacePath, timeoutMs: 10_000 });
+  if (result.exitCode !== 0) return null;
+  const head = result.stdout.trim();
+  return head.length > 0 ? head : null;
 }
 
 // ---- dispatcher ------------------------------------------------------------

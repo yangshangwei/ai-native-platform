@@ -1,8 +1,9 @@
 import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { newId, nowIso, type Project } from '@ainp/shared';
+import { handleOrchestrationError, type OperationalPauseDeps } from '../src/orchestrator';
 
 const ORIGINAL_CODEX_BIN = process.env.AINP_CODEX_BIN;
 const ORIGINAL_CLAUDE_BIN = process.env.AINP_CLAUDE_BIN;
@@ -68,6 +69,44 @@ describe('runner backend selection', () => {
     process.env.AINP_CODEX_BIN = fakeCodexBin({ loginStatus: 'invalid' });
 
     await expect(selectAgentBackend(project({ agentBackend: 'codex' }))).rejects.toThrow(/login status output was not recognized/);
+  });
+
+  it('07-26 operational pause: missing CLI becomes backend_unavailable and reports pause', async () => {
+    const { selectAgentBackend } = await import('../src/backend-selection');
+    process.env.AINP_CODEX_BIN = join(mkdtempSync(join(tmpdir(), 'ainp-missing-codex-')), 'codex');
+
+    let caught: unknown;
+    try {
+      await selectAgentBackend(project({ agentBackend: 'codex' }));
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toMatchObject({
+      name: 'OperationalError',
+      reason: 'backend_unavailable',
+      message: expect.stringContaining('missing_cli'),
+    });
+
+    const workflowPaused = vi.fn(async () => ({}));
+    const paused = await handleOrchestrationError({
+      err: caught,
+      workflowRunId: 'run_missing_cli',
+      stage: 'implementation',
+      workspacePath: '/tmp/worktree-missing-cli',
+      deps: {
+        workflowPaused: workflowPaused as unknown as OperationalPauseDeps['workflowPaused'],
+        isWorkflowPaused: vi.fn(async () => false),
+        resolveWorktreeHead: vi.fn(async () => 'head-missing-cli'),
+        log: vi.fn(),
+      },
+    });
+
+    expect(paused).toBe(true);
+    expect(workflowPaused).toHaveBeenCalledWith(expect.objectContaining({
+      workflowRunId: 'run_missing_cli',
+      reason: 'backend_unavailable',
+      worktreeHead: 'head-missing-cli',
+    }));
   });
 
   it('fails fast when a project has no real backend configured', async () => {

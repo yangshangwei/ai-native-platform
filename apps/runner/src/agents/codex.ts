@@ -24,6 +24,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
+  OperationalError,
   buildResolvedAgentBackendCliSpawn,
   maskSecrets,
   type SkillSpec,
@@ -82,17 +83,25 @@ export class CodexBackend implements AgentBackend {
       targetPath: stagedPath,
       outputName: expected.name,
     });
-    const { exitCode, lastMessage } = await this.invokeCli(prompt, ctx, skill);
-    if (exitCode !== 0) throw new Error(`codex exited ${exitCode} for stage ${skill.stage}`);
+    const { exitCode, lastMessage, timedOut } = await this.invokeCli(prompt, ctx, skill);
+    if (exitCode !== 0) {
+      // 07-26 operational pause (R2): backend CLI failures are operational —
+      // a hard-timeout kill is `backend_timeout`, any other non-zero exit is
+      // `backend_protocol`. Original message preserved in `detail`.
+      throw new OperationalError(
+        timedOut ? 'backend_timeout' : 'backend_protocol',
+        `codex exited ${exitCode} for stage ${skill.stage}`,
+      );
+    }
 
     const produced = await adoptStagedArtifact(stagedPath, finalPath);
     if (!produced) {
       if (isStructuredContextRequest(lastMessage, ctx, skill)) return { outputs: [], lastMessage };
-      throw new Error(`codex did not write expected artifact at ${stagedPath}`);
+      throw new OperationalError('backend_protocol', `codex did not write expected artifact at ${stagedPath}`);
     }
     if (produced.size === 0) {
       if (isStructuredContextRequest(lastMessage, ctx, skill)) return { outputs: [], lastMessage };
-      throw new Error(`codex produced empty artifact at ${stagedPath}`);
+      throw new OperationalError('backend_protocol', `codex produced empty artifact at ${stagedPath}`);
     }
     return {
       outputs: [
@@ -112,8 +121,13 @@ export class CodexBackend implements AgentBackend {
     ctx: AgentTaskContext,
   ): Promise<AgentRunResult> {
     const prompt = buildPrompt(skill, ctx, { mode: 'implementation' });
-    const { exitCode, lastMessage } = await this.invokeCli(prompt, ctx, skill);
-    if (exitCode !== 0) throw new Error(`codex exited ${exitCode} during implementation`);
+    const { exitCode, lastMessage, timedOut } = await this.invokeCli(prompt, ctx, skill);
+    if (exitCode !== 0) {
+      throw new OperationalError(
+        timedOut ? 'backend_timeout' : 'backend_protocol',
+        `codex exited ${exitCode} during implementation`,
+      );
+    }
 
     return {
       outputs: await captureWorktreeDiffOutputs(ctx.workspacePath, ctx.artifactsDir),
@@ -125,7 +139,7 @@ export class CodexBackend implements AgentBackend {
     prompt: string,
     ctx: AgentTaskContext,
     skill: SkillSpec,
-  ): Promise<{ exitCode: number; lastMessage: string | null }> {
+  ): Promise<{ exitCode: number; lastMessage: string | null; timedOut: boolean }> {
     // Keep Codex's sidecar write inside the workspace so the router's
     // "inside project" check succeeds — same reason we stage produce-file
     // artifacts there.
@@ -188,6 +202,7 @@ export class CodexBackend implements AgentBackend {
 
     const timeoutMs = this.opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     let timedOut = false;
+    let resultSeen = false;
     let hardKillTimer: ReturnType<typeof setTimeout> | null = null;
     const timer = setTimeout(() => {
       timedOut = true;
@@ -204,6 +219,7 @@ export class CodexBackend implements AgentBackend {
       const parsed = parseCodexJsonLine(line);
       if (parsed.text) process.stdout.write(`${parsed.text}\n`);
       await emit(ctx, parsed);
+      if (parsed.type === 'result') resultSeen = true;
     });
     const stderrDone = consumeLines(child.stderr, async (line) => {
       const safeLine = maskSecrets(line);
@@ -211,16 +227,44 @@ export class CodexBackend implements AgentBackend {
       await emit(ctx, { type: 'stderr', payload: { line: safeLine }, text: safeLine });
     });
 
+    let spawnError: Error | null = null;
     const exitCode: number = await new Promise((resolve) => {
       child.once('exit', (code) => resolve(code ?? -1));
+      // Spawn failures (ENOENT etc.) emit 'error' without a matching 'exit';
+      // without this handler the runner would hang on the hard timeout for a
+      // process that never started.
+      child.once('error', (err) => {
+        spawnError = err;
+        resolve(-1);
+      });
     });
     await Promise.allSettled([stdoutDone, stderrDone]);
     clearTimeout(timer);
     if (hardKillTimer) clearTimeout(hardKillTimer);
 
+    if (spawnError !== null) {
+      const spawnMessage = (spawnError as Error).message;
+      await emitMeta(ctx, 'finished', {
+        exitCode: -1,
+        timedOut,
+        resultSeen,
+        lastMessagePath,
+        spawnError: spawnMessage,
+      });
+      // 07-26 operational pause (R2): failing to spawn the backend CLI is a
+      // protocol-level operational failure.
+      throw new OperationalError('backend_protocol', `codex spawn failed: ${spawnMessage}`);
+    }
+
     const lastMessage = await readOptionalText(lastMessagePath);
-    await emitMeta(ctx, 'finished', { exitCode, timedOut, lastMessagePath });
-    return { exitCode, lastMessage };
+    await emitMeta(ctx, 'finished', { exitCode, timedOut, resultSeen, lastMessagePath });
+    if (exitCode === 0 && !resultSeen) {
+      throw new OperationalError(
+        'backend_protocol',
+        `codex exited 0 without a terminal result for stage ${skill.stage}`,
+      );
+    }
+    return { exitCode, lastMessage, timedOut };
   }
 }
 

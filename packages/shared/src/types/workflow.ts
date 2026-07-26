@@ -59,6 +59,13 @@ export type WorkflowRunStatus =
   | 'pending'
   | 'running'
   | 'awaiting_human'
+  /**
+   * 07-26 operational-unavailable-state: an operational failure (backend CLI
+   * unavailable / hard timeout / protocol failure) paused the run. The
+   * worktree is kept on disk; resume is manual via `POST
+   * /runner/control/retry-run`. Business failures never use this status.
+   */
+  | 'paused'
   | 'passed'
   | 'failed'
   | 'cancelled';
@@ -219,6 +226,12 @@ export type WorkflowRequestStatus =
   | 'pending'
   | 'awaiting_clarification'
   | 'claimed'
+  /**
+   * 07-26 operational-unavailable-state: the linked run entered `paused`
+   * because of an operational failure. The engine moves the request back to
+   * `completed` / `failed` when the resumed run finishes.
+   */
+  | 'paused'
   | 'completed'
   | 'failed'
   | 'cancelled';

@@ -1076,7 +1076,8 @@ export function reportStats(runs: WorkflowRunDto[]): ReportStats {
 export type ReportableStatus = WorkflowRunStatus | WorkflowRequestStatus;
 
 export function reportNeedsAttention(run: { status: ReportableStatus }): boolean {
-  return run.status === 'failed' || run.status === 'awaiting_human' || run.status === 'awaiting_clarification';
+  // 07-26 operational pause: paused runs/requests wait on a manual resume.
+  return run.status === 'failed' || run.status === 'awaiting_human' || run.status === 'awaiting_clarification' || run.status === 'paused';
 }
 
 export function reportIsAcceptable(run: { status: ReportableStatus }): boolean {
@@ -1092,6 +1093,7 @@ export function reportStatusLabel(status: string): string {
   if (status === 'failed') return '失败';
   if (status === 'awaiting_human') return '待确认';
   if (status === 'awaiting_clarification') return '待澄清';
+  if (status === 'paused') return '已暂停（运维）';
   if (status === 'running' || status === 'claimed') return '执行中';
   if (status === 'pending') return '等待执行';
   return status;

@@ -125,6 +125,29 @@ describe('web workflow run projection', () => {
     });
   });
 
+  it('07-26 operational pause: paused runs get the operations-pause label and need attention', () => {
+    const pausedRun: WorkflowRunDto = {
+      id: 'run_paused',
+      title: 'Paused by backend timeout',
+      type: 'feature',
+      status: 'paused',
+      currentStage: 'implementation',
+      flowId: 'feature.standard',
+      startStage: null,
+      sourceBranch: 'main',
+      branch: 'ai/run_paused',
+      workspacePath: '/tmp/worktree',
+      projectId: 'proj_1',
+      createdAt: '2026-07-26T00:00:00.000Z',
+    };
+
+    expect(reportStatusLabel('paused')).toBe('已暂停（运维）');
+    const stats = reportStats([pausedRun]);
+    // A paused run awaits a manual resume — it is neither acceptable,
+    // running, nor failed; it needs attention.
+    expect(stats).toMatchObject({ total: 1, attention: 1, acceptable: 0, running: 0, failed: 0 });
+  });
+
   it('does not mark stages as done when completion is only a failed terminal override', () => {
     const projection = buildRunProjection({
       run: {

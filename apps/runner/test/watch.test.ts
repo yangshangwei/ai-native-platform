@@ -216,6 +216,27 @@ describe('runner watch workflow request processing', () => {
     expect(calls).toEqual([]);
   });
 
+  it('07-26 operational pause: does NOT complete the request when orchestrate returns paused', async () => {
+    const { processNextWorkflowRequest } = await import('../src/cmd/watch');
+    const completions: string[] = [];
+
+    const result = await processNextWorkflowRequest({
+      runnerId: 'runner@test',
+      listPending: async () => [testRequest({ id: 'wreq_op_pause', title: 'operational pause task' })],
+      triage: async () => ({ action: 'proceed', runType: 'feature', decision: fakeDecision() }),
+      claim: async (requestId) => testRequest({ id: requestId, title: 'operational pause task' }),
+      orchestrate: async () => ({ workflowRunId: 'run_op_pause', ok: false, paused: true }),
+      complete: async (requestId) => {
+        completions.push(requestId);
+      },
+    });
+
+    // The engine already linked the request (claimed → paused) via the
+    // workflow-paused event; completing it here would overwrite that state.
+    expect(result).toBe('paused');
+    expect(completions).toEqual([]);
+  });
+
   it('returns aborted and skips downstream when triage aborts', async () => {
     const { processNextWorkflowRequest } = await import('../src/cmd/watch');
     const calls: string[] = [];

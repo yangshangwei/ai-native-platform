@@ -45,7 +45,7 @@ export interface ProcessNextWorkflowRequestDeps {
     request: ClaimedRequest,
     runType: WorkflowRunType,
     agentTaskBrief?: string,
-  ): Promise<{ workflowRunId: string; ok: boolean }>;
+  ): Promise<{ workflowRunId: string; ok: boolean; paused?: boolean }>;
   complete(
     requestId: string,
     completion: { workflowRunId: string | null; ok: boolean; error: string | null },
@@ -95,6 +95,15 @@ export async function processNextWorkflowRequest(
       ? await deps.buildAgentTaskBrief(claimed)
       : undefined;
     const result = await deps.orchestrate(claimed, runType, agentTaskBrief);
+    // 07-26 operational pause (R4): a paused run must NOT complete the
+    // request — the engine already linked it (claimed → paused) when the
+    // runner reported workflow-paused. Resume is manual via retry-run.
+    if (result.paused) {
+      console.log(
+        `[runner] request ${claimed.id} paused (operational) with run ${result.workflowRunId}; awaiting manual resume`,
+      );
+      return 'paused';
+    }
     await deps.complete(claimed.id, {
       workflowRunId: result.workflowRunId,
       ok: result.ok,

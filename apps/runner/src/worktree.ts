@@ -31,20 +31,29 @@ export class TrustedLocalWorktreeEnvironment implements ExecutionEnvironment {
 
   async prepare(run: WorkflowRun): Promise<WorkspaceRef> {
     const sourceBranch = run.sourceBranch || this.project.defaultBranch;
-    await this.ensureSourceRepository(sourceBranch);
-
     const workspacePath = this.workspacePath(run.id);
+
+    // 07-26 operational pause (R6): resuming a paused run reuses the kept
+    // worktree. If the same run's path already holds a valid git worktree on
+    // the run's branch, return it as-is — no rebuild, no error. Any other
+    // pre-existing path keeps the historical hard failure.
     if (existsSync(workspacePath)) {
+      const existing = await this.existingWorkspaceForRun(run, workspacePath);
+      if (existing) return existing;
       throw new Error(`worktree path already exists: ${workspacePath}`);
     }
+
+    await this.ensureSourceRepository(sourceBranch);
     await mkdir(join(this.worktreesDir(), this.project.id, run.id), { recursive: true });
 
-    // Create the worktree from the project's source repo.
-    const result = await sh(
-      'git',
-      ['worktree', 'add', '-b', run.branch, workspacePath, sourceBranch || 'HEAD'],
-      { cwd: this.project.localPath },
-    );
+    // Create the worktree from the project's source repo. When the run's
+    // branch survived a partial cleanup (worktree dir gone, branch kept),
+    // check it out instead of failing on `-b` branch creation.
+    const branchExists = await this.runBranchExists(run.branch);
+    const addArgs = branchExists
+      ? ['worktree', 'add', workspacePath, run.branch]
+      : ['worktree', 'add', '-b', run.branch, workspacePath, sourceBranch || 'HEAD'];
+    const result = await sh('git', addArgs, { cwd: this.project.localPath });
     if (result.exitCode !== 0) {
       throw new Error(
         `git worktree add failed (exit=${result.exitCode}): ${result.stderr || result.stdout}`,
@@ -56,6 +65,35 @@ export class TrustedLocalWorktreeEnvironment implements ExecutionEnvironment {
       branch: run.branch,
       environmentKind: 'trusted_local_worktree',
     };
+  }
+
+  /**
+   * Returns the WorkspaceRef when `workspacePath` is a valid git worktree
+   * checked out on the run's branch (paused-run resume), otherwise null.
+   */
+  private async existingWorkspaceForRun(
+    run: WorkflowRun,
+    workspacePath: string,
+  ): Promise<WorkspaceRef | null> {
+    const inside = await sh('git', ['rev-parse', '--is-inside-work-tree'], { cwd: workspacePath });
+    if (inside.exitCode !== 0 || inside.stdout.trim() !== 'true') return null;
+    const branch = await sh('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd: workspacePath });
+    if (branch.exitCode !== 0 || branch.stdout.trim() !== run.branch) return null;
+    return {
+      workflowRunId: run.id,
+      path: workspacePath,
+      branch: run.branch,
+      environmentKind: 'trusted_local_worktree',
+    };
+  }
+
+  private async runBranchExists(branch: string): Promise<boolean> {
+    const result = await sh(
+      'git',
+      ['rev-parse', '--verify', '--quiet', `refs/heads/${branch}`],
+      { cwd: this.project.localPath },
+    );
+    return result.exitCode === 0;
   }
 
   async runCommand(_workspace: WorkspaceRef, _spec: CommandSpec): Promise<CommandRun> {

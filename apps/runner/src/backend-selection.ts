@@ -1,4 +1,5 @@
 import {
+  OperationalError,
   agentBackendDisplayName,
   type Project,
   type ProjectAgentBackendKind,
@@ -15,7 +16,10 @@ export async function selectAgentBackend(
   const backend = resolveBackendKind(project, override);
   const preflight = await preflightAgentBackend(backend);
   if (!preflight.runnable) {
-    throw new Error([
+    // 07-26 operational pause (R2): a failed preflight (CLI missing / not
+    // logged in / not runnable) is an operational condition, not a business
+    // failure — the orchestrator pauses the run instead of failing it.
+    throw new OperationalError('backend_unavailable', [
       `${preflight.label} is not ready (${preflight.status}).`,
       preflight.error,
       preflight.remediationHint,

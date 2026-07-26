@@ -1,8 +1,9 @@
 /**
  * My Todos page — personal task inbox for action items.
  *
- * Displays tasks that need user attention: awaiting_clarification or failed
- * status. Supports filtering by status/project and sorting by time.
+ * Displays tasks that need user attention: awaiting_clarification, paused
+ * (operational pause awaiting manual resume), or failed status. Supports
+ * filtering by status/project and sorting by time.
  * Complements the workbench overview page by focusing on execution rather
  * than trends.
  */
@@ -13,7 +14,7 @@ import { data, myTodos, projectName, requestStatusLabel } from './state';
 import { setHash } from './router';
 import { render } from './render-core';
 
-type TodoFilter = 'all' | 'awaiting_clarification' | 'failed';
+type TodoFilter = 'all' | 'awaiting_clarification' | 'paused' | 'failed';
 type TodoSort = 'newest' | 'oldest';
 
 // Page-private state
@@ -47,7 +48,7 @@ function renderPageHeader(count: number): HTMLElement {
               el('h1', { class: 'page-title', text: '我的待办' }),
               el('p', {
                 class: 'muted compact',
-                text: '这里显示所有需要你补充信息或处理失败的任务。',
+                text: '这里显示所有需要你补充信息、恢复运行或处理失败的任务。',
               }),
             ],
           }),
@@ -74,6 +75,7 @@ function renderFilters(allProjects: string[]): HTMLElement {
           el('label', { text: '状态：' }),
           renderFilterButton('全部', 'all', currentFilter),
           renderFilterButton('等待补充信息', 'awaiting_clarification', currentFilter),
+          renderFilterButton('已暂停（运维）', 'paused', currentFilter),
           renderFilterButton('失败', 'failed', currentFilter),
         ],
       }),

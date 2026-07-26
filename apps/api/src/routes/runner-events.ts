@@ -26,6 +26,7 @@ import {
   isHandoffAdoptionDecision,
   isHandoffRole,
   isHandoffStatus,
+  isOperationalErrorReason,
   isPerRunArtifactKind,
   isStepCheckpointStatus,
   isRunnerToolId,
@@ -45,6 +46,7 @@ import {
   startStep,
   transitionStage,
   completeWorkflowRun,
+  pauseWorkflowRun,
   recordHeartbeat,
   recordMavenBuild,
   createArtifact,
@@ -523,6 +525,43 @@ runnerEvents.post('/workflow-completed', async (c) => {
   const body = (await c.req.json()) as { workflowRunId: string; ok: boolean };
   const run = completeWorkflowRun(body.workflowRunId, body.ok);
   return c.json({ ok: true, run });
+});
+
+/**
+ * 07-26 operational pause (R3): the runner reports an operational failure
+ * (backend unavailable / timeout / protocol). The engine pauses the run,
+ * links the owning request, and keeps the worktree for manual resume.
+ */
+runnerEvents.post('/workflow-paused', async (c) => {
+  const body = (await c.req.json()) as {
+    workflowRunId?: string;
+    stage?: string;
+    reason?: string;
+    detail?: string | null;
+    worktreeHead?: string | null;
+  };
+  if (!body.workflowRunId || !body.stage || !body.reason) {
+    return c.json({ error: 'workflowRunId, stage, reason required' }, 400);
+  }
+  if (!isWorkflowStage(body.stage)) {
+    return c.json({ error: `unknown stage: ${body.stage}` }, 400);
+  }
+  if (!isOperationalErrorReason(body.reason)) {
+    return c.json({ error: `unknown pause reason: ${body.reason}` }, 400);
+  }
+  try {
+    const run = pauseWorkflowRun({
+      workflowRunId: body.workflowRunId,
+      stage: body.stage,
+      reason: body.reason,
+      detail: body.detail ?? null,
+      worktreeHead: body.worktreeHead ?? null,
+    });
+    return c.json({ ok: true, run });
+  } catch (err) {
+    const message = errorMessage(err);
+    return c.json({ error: message }, message.includes('not found') ? 404 : 400);
+  }
 });
 
 runnerEvents.post('/heartbeat', async (c) => {

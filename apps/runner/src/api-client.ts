@@ -21,6 +21,7 @@ import type {
   AgentSessionStatus,
   AgentTaskKind,
   ContextRequest,
+  OperationalErrorReason,
   ToolInvocation,
   HandoffAdoptionDecision,
   HandoffExpectedOutput,
@@ -383,6 +384,18 @@ export const api = {
 
   workflowCompleted: (params: { workflowRunId: string; ok: boolean }) =>
     request('POST', '/runner/events/workflow-completed', params),
+
+  /**
+   * 07-26 operational pause (R3): report an operational failure so the engine
+   * parks the run as `paused` (worktree kept, manual resume via retry-run).
+   */
+  workflowPaused: (params: {
+    workflowRunId: string;
+    stage: WorkflowStage;
+    reason: OperationalErrorReason;
+    detail?: string | null;
+    worktreeHead?: string | null;
+  }) => request('POST', '/runner/events/workflow-paused', params),
 
   /** Ask the API to assemble + persist the completion report artifact. */
   generateCompletionReport: (workflowRunId: string) =>

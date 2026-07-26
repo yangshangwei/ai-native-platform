@@ -37,6 +37,7 @@ import {
   type KnowledgeArtifactKind,
   type KnowledgeArtifactStatus,
   type MessageRole,
+  type OperationalErrorReason,
   type ProjectId,
   type RequestMessage,
   type StepRun,
@@ -532,6 +533,10 @@ function assertHandoffReferences(
 export function completeWorkflowRun(workflowRunId: string, ok: boolean): WorkflowRun {
   const run = store.workflowRuns.get(workflowRunId);
   if (!run) throw new Error(`workflow run not found: ${workflowRunId}`);
+  // 07-26 operational pause (R8): a paused run must not be demoted to
+  // `failed` by a late / duplicate `workflow-completed(ok=false)` event.
+  // Success evidence (ok=true) still passes through normally.
+  if (run.status === 'paused' && !ok) return run;
   run.status = ok ? 'passed' : 'failed';
   if (ok) {
     run.currentStage = 'completion';
@@ -539,6 +544,75 @@ export function completeWorkflowRun(workflowRunId: string, ok: boolean): Workflo
   run.updatedAt = nowIso();
   store.workflowRuns.set(run.id, run);
   audit(workflowRunId, 'workflow_run.completed', { ok, stage: run.currentStage });
+  // 07-26 operational pause (R6): a resumed run's completion must close the
+  // paused request. Only `paused` requests are touched here — the normal
+  // watch-loop path still completes claimed requests itself, byte-for-byte
+  // unchanged (R7).
+  const request = store.workflowRequests.byWorkflowRunId(workflowRunId);
+  if (request && request.status === 'paused') {
+    store.workflowRequests.set(request.id, {
+      ...request,
+      status: ok ? 'completed' : 'failed',
+      error: ok ? null : request.error,
+      updatedAt: nowIso(),
+    });
+    audit(workflowRunId, 'workflow_request.completed', {
+      requestId: request.id,
+      ok,
+      error: ok ? null : request.error,
+      resumedFrom: 'paused',
+    });
+  }
+  return run;
+}
+
+/**
+ * 07-26 operational pause (R3): mark a run `paused` because an operational
+ * failure (backend unavailable / timeout / protocol) interrupted it. Writes a
+ * `workflow_run.paused` audit row with the full pause context and moves the
+ * owning request `claimed → paused` so the queue reflects the pause.
+ *
+ * Semantics:
+ *   - idempotent: pausing an already-paused run returns it without a second
+ *     audit row (AC-007);
+ *   - cancelled runs cannot be paused (AC-007);
+ *   - resume is manual only (retry-run); the engine never schedules retries.
+ */
+export function pauseWorkflowRun(input: {
+  workflowRunId: string;
+  stage: WorkflowStage;
+  reason: OperationalErrorReason;
+  detail?: string | null;
+  worktreeHead?: string | null;
+}): WorkflowRun {
+  const run = store.workflowRuns.get(input.workflowRunId);
+  if (!run) throw new Error(`workflow run not found: ${input.workflowRunId}`);
+  if (run.status === 'cancelled') throw new Error('cannot pause a cancelled run');
+  if (run.status === 'paused') return run;
+  run.status = 'paused';
+  run.currentStage = input.stage;
+  run.updatedAt = nowIso();
+  store.workflowRuns.set(run.id, run);
+  audit(run.id, 'workflow_run.paused', {
+    stage: input.stage,
+    reason: input.reason,
+    detail: input.detail ?? null,
+    worktreeHead: input.worktreeHead ?? null,
+  });
+  const request = store.workflowRequests.byWorkflowRunId(run.id);
+  if (request && request.status === 'claimed') {
+    store.workflowRequests.set(request.id, {
+      ...request,
+      status: 'paused',
+      error: input.detail ?? input.reason,
+      updatedAt: nowIso(),
+    });
+    audit(run.id, 'workflow_request.paused', {
+      requestId: request.id,
+      reason: input.reason,
+      detail: input.detail ?? null,
+    });
+  }
   return run;
 }
 
@@ -553,6 +627,10 @@ export function awaitHuman(workflowRunId: string, stage: WorkflowStage): Workflo
  * back to `running` at the given stage and marks the latest step for that
  * stage as `pending` (or creates a fresh one if none exists). The runner's
  * watch loop will pick it up on the next poll.
+ *
+ * 07-26 operational pause (R6): `paused` runs are explicitly allowed here —
+ * manual resume flows through the same retry path (only `cancelled` is
+ * rejected).
  */
 export function retryStage(params: {
   workflowRunId: WorkflowRunId;

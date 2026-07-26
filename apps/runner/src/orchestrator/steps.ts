@@ -16,6 +16,7 @@ import type {
   WorkflowStage,
 } from '@ainp/shared';
 import {
+  OperationalError,
   REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT,
   RUNNER_TOOL_SPECS,
   STAGE_HANDOFF_SCHEMA_VERSION,
@@ -319,7 +320,12 @@ export async function executeImplementation(
   const out = { outputs: agent.outputs };
   const diffOut = out.outputs.find((o) => o.name === 'diff');
   const namesOut = out.outputs.find((o) => o.name === 'changed-files');
-  if (!diffOut || !namesOut) throw new Error('implementation: missing diff outputs');
+  // 07-26 operational pause (R2): the backend finished without the required
+  // outputs — no artifact ≠ bad artifact; pausing + manual retry is the
+  // correct disposition, not a business `failed`.
+  if (!diffOut || !namesOut) {
+    throw new OperationalError('backend_protocol', 'implementation: missing diff outputs');
+  }
   const diffArtifact = await deps.api.postArtifact({
     workflowRunId: c.run.id,
     stepRunId: stepId,
@@ -1102,8 +1108,9 @@ export async function executeProfileBootstrap(
 
   const markdownOut = agent.outputs.find((out) => out.name === 'project-profile.md');
   const jsonOut = agent.outputs.find((out) => out.name === 'project-profile.json');
+  // 07-26 operational pause (R2): required outputs missing → operational.
   if (!markdownOut || !jsonOut) {
-    throw new Error('profile: missing project-profile.md or project-profile.json outputs');
+    throw new OperationalError('backend_protocol', 'profile: missing project-profile.md or project-profile.json outputs');
   }
 
   const jsonText = await Bun.file(jsonOut.path).text();

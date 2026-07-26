@@ -34,6 +34,7 @@ const STATUSES: readonly WorkflowRequestStatus[] = [
   'pending',
   'awaiting_clarification',
   'claimed',
+  'paused',
   'completed',
   'failed',
   'cancelled',

@@ -66,6 +66,13 @@ export interface OrchestrateOpts {
 export interface OrchestrateResult {
   workflowRunId: string;
   ok: boolean;
+  /**
+   * 07-26 operational pause (R3/R4): true when an operational failure paused
+   * the run (`workflow-paused` reported, worktree kept, no
+   * `workflow-completed`). The watch loop must NOT complete the request —
+   * the engine already linked it to `paused`.
+   */
+  paused: boolean;
 }
 
 // ---------------------------------------------------------------------------

@@ -215,6 +215,7 @@ describe('CodexBackend runtime invocation', () => {
         'hello from codex',
         'ARTIFACT_EOF',
         'printf "%s\\n" \'{"type":"item.completed","item":{"type":"agent_message","text":"wrote context_pack.md"}}\'',
+        'printf "%s\\n" \'{"type":"turn.completed","usage":{}}\'',
         'exit 0',
         '',
       ].join('\n'),
@@ -241,6 +242,77 @@ describe('CodexBackend runtime invocation', () => {
     expect(readFileSync(finalPath, 'utf8')).toBe(producedBody);
     // Staging file is cleaned up so future stages don't pick up stale content.
     expect(() => readFileSync(stagedPath, 'utf8')).toThrow();
+  });
+
+  it('07-26 operational pause: non-zero CLI exit throws OperationalError(backend_protocol)', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ainp-codex-backend-exit-'));
+    const workspacePath = join(root, 'workspace');
+    const artifactsDir = join(root, 'artifacts');
+    mkdirSync(workspacePath, { recursive: true });
+    mkdirSync(artifactsDir, { recursive: true });
+
+    vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
+
+    const bin = join(root, 'codex');
+    writeFileSync(bin, [
+      '#!/bin/sh',
+      'cat >/dev/null',
+      'printf "%s\\n" "403 insufficient balance" >&2',
+      'exit 3',
+      '',
+    ].join('\n'), 'utf8');
+    chmodSync(bin, 0o755);
+
+    await expect(
+      new CodexBackend({ bin, timeoutMs: TEST_CODEX_TIMEOUT_MS }).run(implementationSkill(), {
+        workflowRunId: 'run_codex_exit',
+        stepRunId: 'step_codex_exit',
+        workspacePath,
+        branch: 'main',
+        title: 'exercise non-zero exit classification',
+        artifactsDir,
+        inputs: {},
+      }),
+    ).rejects.toMatchObject({
+      name: 'OperationalError',
+      reason: 'backend_protocol',
+      message: 'codex exited 3 during implementation',
+    });
+  });
+
+  it('classifies exit 0 without a terminal result as backend_protocol', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ainp-codex-backend-no-result-'));
+    const workspacePath = join(root, 'workspace');
+    const artifactsDir = join(root, 'artifacts');
+    mkdirSync(workspacePath, { recursive: true });
+    mkdirSync(artifactsDir, { recursive: true });
+    vi.spyOn(api, 'postAgentEvent').mockResolvedValue({ ok: true });
+
+    const bin = join(root, 'codex-no-result');
+    writeFileSync(bin, [
+      '#!/bin/sh',
+      'cat >/dev/null',
+      'printf "%s\\n" \'{"type":"item.completed","item":{"type":"agent_message","text":"partial reply only"}}\'',
+      'exit 0',
+      '',
+    ].join('\n'), 'utf8');
+    chmodSync(bin, 0o755);
+
+    await expect(
+      new CodexBackend({ bin, timeoutMs: TEST_CODEX_TIMEOUT_MS }).run(implementationSkill(), {
+        workflowRunId: 'run_codex_no_result',
+        stepRunId: 'step_codex_no_result',
+        workspacePath,
+        branch: 'main',
+        title: 'reject incomplete Codex protocol output',
+        artifactsDir,
+        inputs: {},
+      }),
+    ).rejects.toMatchObject({
+      name: 'OperationalError',
+      reason: 'backend_protocol',
+      message: 'codex exited 0 without a terminal result for stage implementation',
+    });
   });
 });
 

@@ -72,6 +72,9 @@ describe('ClaudeCodeBackend post-result grace shutdown', () => {
       postResultGraceMs: 5_000,
     });
 
+    // 07-26 operational pause (R2): a hard-timeout kill is classified as an
+    // OperationalError with reason `backend_timeout` — the orchestrator
+    // pauses the run instead of failing it.
     await expect(
       backend.run(implementationSkill(), {
         workflowRunId: 'run_no_result_test',
@@ -82,7 +85,11 @@ describe('ClaudeCodeBackend post-result grace shutdown', () => {
         artifactsDir,
         inputs: {},
       }),
-    ).rejects.toThrow(/claude exited/);
+    ).rejects.toMatchObject({
+      name: 'OperationalError',
+      reason: 'backend_timeout',
+      message: expect.stringMatching(/claude exited/),
+    });
   });
 });
 

@@ -223,6 +223,7 @@ export function requestStatusLabel(status: WorkflowRequestDto['status']): string
   if (status === 'pending') return '等待开始';
   if (status === 'awaiting_clarification') return '等待补充信息';
   if (status === 'claimed') return '执行中';
+  if (status === 'paused') return '已暂停（运维）';
   if (status === 'completed') return '已完成';
   if (status === 'failed') return '需要处理';
   if (status === 'cancelled') return '已取消';
@@ -231,12 +232,14 @@ export function requestStatusLabel(status: WorkflowRequestDto['status']): string
 
 /**
  * Get all todos (tasks that need user action).
- * Returns requests with status awaiting_clarification or failed, and claimedBy is null or matches current user.
- * For MVP: we don't have user identity yet, so return all awaiting_clarification/failed tasks.
+ * Returns requests with status awaiting_clarification, paused, or failed, and
+ * claimedBy is null or matches current user. For MVP: we don't have user
+ * identity yet, so return all such tasks. `paused` (07-26 operational pause)
+ * is included because resuming is a manual human action.
  */
 export function myTodos(): WorkflowRequestDto[] {
   return data.requests.filter(
-    (request) => request.status === 'awaiting_clarification' || request.status === 'failed'
+    (request) => request.status === 'awaiting_clarification' || request.status === 'failed' || request.status === 'paused'
   );
 }
 
