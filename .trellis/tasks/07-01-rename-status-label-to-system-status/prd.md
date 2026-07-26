@@ -12,10 +12,10 @@ Rename the top-right global status label from `状态` to `系统状态` and exp
 
 ## Acceptance Criteria
 
-* [ ] The top-right status summary shows `系统状态`.
-* [ ] Existing status value such as `正常` still renders.
-* [ ] The shell rendering test covers the new label.
-* [ ] Targeted test and Web typecheck pass.
+* [x] The top-right status summary shows `系统状态`.
+* [x] Existing status value such as `正常` still renders.
+* [x] The shell rendering test covers the new label.
+* [x] Targeted test and Web typecheck pass.
 
 ## Technical Notes
 

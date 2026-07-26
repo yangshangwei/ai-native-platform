@@ -36,13 +36,13 @@ Improve the topbar project/status display so an operator can quickly decide whet
 
 ## Acceptance Criteria
 
-- [ ] The task/workflow topbar visually emphasizes the project name and a single readiness/status message before secondary metadata.
-- [ ] Branch, Runner, Agent Backend, and Build Env are grouped by business meaning instead of equal unrelated tiles.
-- [ ] Missing/needs-attention states are visually stronger than healthy secondary details.
-- [ ] Existing project rendering tests are updated or extended for the new readiness surface.
-- [ ] `bun test apps/web/test/projects-rendering.test.ts` passes.
-- [ ] `bun run typecheck` passes, or any unrelated pre-existing failure is documented.
-- [ ] A browser/manual screenshot check confirms the card is readable at desktop and mobile widths if a dev server can run.
+- [x] The task/workflow topbar visually emphasizes the project name and a single readiness/status message before secondary metadata.
+- [x] Branch, Runner, Agent Backend, and Build Env are grouped by business meaning instead of equal unrelated tiles.
+- [x] Missing/needs-attention states are visually stronger than healthy secondary details.
+- [x] Existing project rendering tests are updated or extended for the new readiness surface.
+- [x] `bun test apps/web/test/projects-rendering.test.ts` passes.
+- [x] `bun run typecheck` passes, or any unrelated pre-existing failure is documented.
+- [x] A browser/manual screenshot check confirms the card is readable at desktop and mobile widths if a dev server can run.
 
 ## Out of Scope
 

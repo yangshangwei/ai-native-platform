@@ -35,12 +35,12 @@ Improve the top-right global status summary in the Web app so pending work, runn
 
 ## Acceptance Criteria
 
-* [ ] The top-right summary still displays pending count, running count, and health/readiness text.
-* [ ] When pending or running counts are zero, the summary remains visually coherent and does not show misleading empty badges.
-* [ ] The status group reads as a dashboard summary, not as three clickable buttons.
-* [ ] Mobile/narrow layout wraps or stacks without text clipping.
-* [ ] Relevant Web shell tests pass.
-* [ ] Typecheck for the Web package passes after the change.
+* [x] The top-right summary still displays pending count, running count, and health/readiness text.
+* [x] When pending or running counts are zero, the summary remains visually coherent and does not show misleading empty badges.
+* [x] The status group reads as a dashboard summary, not as three clickable buttons.
+* [x] Mobile/narrow layout wraps or stacks without text clipping.
+* [x] Relevant Web shell tests pass.
+* [x] Typecheck for the Web package passes after the change.
 
 ## Definition of Done
 
