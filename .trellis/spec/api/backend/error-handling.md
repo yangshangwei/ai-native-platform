@@ -101,6 +101,88 @@ The pattern: **expected failures become rows; unexpected failures become
 exceptions**. The HTTP surface only sees the unexpected ones (and only when a
 synchronous route is involved).
 
+### Scenario: Operational pause ingress and state transitions
+
+#### 1. Scope / Trigger
+
+Use this contract when the runner classifies a backend CLI failure as an
+`OperationalError`. Operational unavailability is a recoverable fourth run
+outcome; it must not be persisted as a business `failed` conclusion.
+
+#### 2. Signatures
+
+```ts
+POST /runner/events/workflow-paused {
+  workflowRunId: string;
+  stage: WorkflowStage;
+  reason: 'backend_unavailable' | 'backend_timeout' | 'backend_protocol';
+  detail?: string | null;
+  worktreeHead?: string | null;
+}
+
+pauseWorkflowRun(input): WorkflowRun
+completeWorkflowRun(workflowRunId: string, ok: boolean): WorkflowRun
+retryStage({ workflowRunId, stage, actor }): { run: WorkflowRun; step: StepRun }
+```
+
+#### 3. Contracts
+
+- `pauseWorkflowRun` sets the run to `paused`, records its current stage, and
+  writes one `workflow_run.paused` audit row containing
+  `reason/detail/stage/worktreeHead`.
+- The owning request moves `claimed -> paused`; other request states are not
+  rewritten. A resumed run's completion closes `paused -> completed|failed`.
+- Repeating pause on an already-paused run is idempotent and writes no second
+  audit row. A cancelled run cannot be paused.
+- A late `completeWorkflowRun(id, false)` cannot demote `paused` to `failed` or
+  write a completion audit. `ok=true` is allowed after recovery.
+- Resume is manual only. `retryStage` accepts `paused`, resets the selected
+  step to `pending`, and returns the run to `running`; `cancelled` remains
+  terminal. SQLite stores statuses as unrestricted `TEXT`, so no migration is
+  needed for the new literal.
+
+#### 4. Validation & Error Matrix
+
+| Input / state | Result |
+|---|---|
+| Missing `workflowRunId`, `stage`, or `reason` | `400` |
+| Unknown `stage` or operational reason | `400` |
+| Unknown workflow run | `404` |
+| Run is `cancelled` | `400`, state unchanged |
+| Run is already `paused` | `200`, same run, no duplicate audit |
+| Run is active | `200 { ok: true, run }`, run and claimed request pause |
+| Paused run receives late `ok=false` completion | No-op; remains paused |
+
+#### 5. Good / Base / Bad Cases
+
+- Good: a hard backend timeout pauses the run and claimed request, preserving
+  the stage, detail, and worktree HEAD for manual recovery.
+- Base: a paused run is resumed with `retryStage`, then ordinary successful or
+  failed completion closes the linked request.
+- Bad: treating a gate failure as operational would corrupt business audit
+  semantics; gate, compile, test, and diff-scope failures stay on `failed`.
+
+#### 6. Tests Required
+
+- Route tests: valid payload, trust-boundary guards, unknown run, and cancelled
+  run (`apps/api/test/workflow-paused-route.test.ts`).
+- Engine tests: request linkage, single audit, cancelled/idempotent guards,
+  late completion defense, retry reset, and resumed completion closure
+  (`apps/api/test/operational-pause.test.ts`).
+- Cross-layer tests must also assert that the runner skips completion and
+  cleanup for pauses while preserving the historical business-failure path.
+
+#### 7. Wrong vs Correct
+
+```ts
+// Wrong: late delivery converts an operational pause into a business failure.
+run.status = ok ? 'passed' : 'failed';
+
+// Correct: preserve the typed pause until a real recovery succeeds.
+if (run.status === 'paused' && !ok) return run;
+run.status = ok ? 'passed' : 'failed';
+```
+
 ---
 
 ## Runner-event ingress (`routes/runner-events.ts`)

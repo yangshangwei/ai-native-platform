@@ -105,9 +105,11 @@ Core endpoints:
 - `GET /runner/control/status`, `POST /runner/control/{start,stop}` — API-managed local Runner watch supervision for Web UI flows
 - `GET /artifacts/:id/content`, `GET /artifacts/workflow-runs/:workflowRunId/:kind/latest/content` — local file artifact text for UI drill-down
 - `GET /command-runs/:id/logs` — stdout/stderr text for Build/Test evidence drill-down
-- `POST /runner/events/{workspace-prepared,step-started,step-finished,command-run,stage-transition,await-human,workflow-completed,heartbeat,maven-build,artifact,run-gate}` — runner ingress; only path that touches the Workflow Engine
+- `POST /runner/events/{workspace-prepared,step-started,step-finished,command-run,stage-transition,await-human,workflow-completed,workflow-paused,heartbeat,maven-build,artifact,run-gate}` — runner ingress; only path that touches the Workflow Engine
 - `GET /workflow-runs/:id/{context,agent-sessions,handoffs,step-checkpoints,graph,agent-events,agent-stream}` — governance, resume, and streaming diagnostics
 - `POST /workflow-runs/:id/{requirement-actions,acceptance-decision,knowledge-actions,retro-actions,retry-step,re-evaluate-gate}` plus `POST /runner/control/retry-run` — human actions and retry/debug operations
+
+Operational failures (backend CLI missing/not logged in, hard-timeout kill, spawn/protocol errors, missing required outputs) are NOT business failures: the runner reports `POST /runner/events/workflow-paused {workflowRunId, stage, reason, detail, worktreeHead}` and the run + request park as `paused` with the worktree kept on disk. There is no automatic retry — a human resumes via `retry-step` + `POST /runner/control/retry-run` (already-completed stages are never replayed). Gate/compile/test/diff failures keep the historical `failed` path unchanged.
 
 ## Non-goals (still)
 

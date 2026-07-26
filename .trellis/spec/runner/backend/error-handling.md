@@ -21,6 +21,110 @@ ability to investigate.
 
 ---
 
+## Scenario: Operational vs business failures
+
+### 1. Scope / Trigger
+
+Apply this contract to backend preflight, CLI execution, response parsing, and
+required-output validation inside a workflow run. Classify before finalizing:
+operational failures pause for manual recovery; business failures remain final
+`failed` outcomes.
+
+### 2. Signatures
+
+```ts
+class OperationalError extends Error {
+  reason: 'backend_unavailable' | 'backend_timeout' | 'backend_protocol';
+  detail: string;
+}
+
+isOperationalError(value: unknown): value is OperationalError
+handleOrchestrationError(input): Promise<boolean> // true means paused
+finalizeOrchestration(input): Promise<{ workflowRunId; ok; paused }>
+POST /runner/events/workflow-paused {
+  workflowRunId, stage, reason, detail, worktreeHead
+}
+```
+
+Use the shared shape guard at package boundaries; never rely on
+cross-bundle `instanceof OperationalError`.
+
+### 3. Contracts
+
+- A backend invocation is successful only after exit `0` **and** a parseable
+  terminal result event. Assistant/item output without the terminal result is
+  `backend_protocol`, even if artifacts exist.
+- `handleOrchestrationError` posts the pause event with the current stage and
+  best-effort worktree HEAD. If the POST throws, it reads the run once: a
+  confirmed server-side `paused` state is accepted as success; otherwise it
+  falls back to historical failure handling.
+- A pause skips `workflow-completed`, skips worktree cleanup, does not set a
+  failure exit code, and returns `{ ok: true, paused: true }` to the watch loop.
+- Step and graph schemas do not gain a new state. The step is `failed` with an
+  `operational:` reason; the graph node is `failed` with
+  `metadata.operational=true`.
+- Business gate, compile, test, and diff-scope failures are never wrapped in
+  `OperationalError`; they keep `workflow-completed(ok=false)`, cleanup, and
+  exit code `1`.
+- Recovery is manual: Web calls `retry-step`, then `retry-run`; worktree
+  `prepare` reuses the valid same-run worktree and the start-stage slice avoids
+  replaying completed stages.
+
+> **Warning**: the two Web recovery mutations are not atomic. If `retry-step`
+> succeeds and `retry-run` fails before spawning the runner, the run can remain
+> `running` while its request is still `paused`. Do not claim atomic resume
+> until the API owns both transition and spawn/rollback semantics.
+
+### 4. Validation & Error Matrix
+
+| Condition | Classification / action |
+|---|---|
+| CLI missing or not logged in during preflight | `backend_unavailable` |
+| Hard timeout kills Claude/Codex | `backend_timeout` |
+| Spawn error or non-zero CLI exit | `backend_protocol` |
+| Exit `0` without parseable terminal result | `backend_protocol` |
+| Missing/empty expected artifact or required stage output | `backend_protocol` |
+| Pause POST fails, read-back says run is paused | Keep pause; preserve worktree |
+| Pause POST fails and read-back cannot confirm | Historical failed + cleanup path |
+| Gate / compile / test / diff-scope failure | Business `failed`; never operational |
+
+### 5. Good / Base / Bad Cases
+
+- Good: timeout -> typed pause event -> run/request paused -> worktree kept ->
+  operator fixes backend and resumes the current stage.
+- Base: non-zero CLI exit or malformed protocol pauses with original message in
+  `detail`, while durable agent events retain exit/stderr evidence.
+- Bad: wrapping `diff_scope_gate failed` as `backend_protocol` would make an
+  actual business rejection recoverable and pollute the audit model.
+
+### 6. Tests Required
+
+- Shared taxonomy and cross-bundle guard:
+  `packages/shared/test/operational-error.test.ts`.
+- Backend unavailable, timeout, non-zero exit, and missing terminal result:
+  `apps/runner/test/{backend-selection,claude-code-backend,claude-code-backend-grace,codex-backend}.test.ts`.
+- Pause reporting, response-loss read-back, lifecycle finalization, R10 graph
+  evidence, and missing outputs:
+  `apps/runner/test/orchestrator-operational-pause.test.ts`.
+- Watch must not complete a paused request; worktree prepare must be idempotent;
+  Web must render the pause and issue retry-step before retry-run.
+
+### 7. Wrong vs Correct
+
+```ts
+// Wrong: every thrown backend error becomes a business conclusion.
+ok.value = false;
+await api.workflowCompleted({ workflowRunId, ok: false });
+await env.cleanup(workspace);
+
+// Correct: only typed operational failures preserve a recoverable scene.
+paused = await handleOrchestrationError({ err, workflowRunId, stage, workspacePath });
+if (!paused) ok.value = false;
+await finalizeOrchestration({ workflowRunId, ok: ok.value, paused, ...deps });
+```
+
+---
+
 ## API-call errors
 
 `api-client.ts:25-36` throws on non-2xx. Callers handle in three ways:
