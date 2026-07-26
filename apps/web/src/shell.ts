@@ -13,12 +13,13 @@
  */
 
 import { reportStats } from './projection';
-import type { Page, ProjectDto, RunnerDto, StatusKind } from './types';
+import type { Page, ProjectDto, RunnerDto, StatusKind, WorkflowRequestDto } from './types';
 import { button, el, icon, shortId, statusKind, octopusIcon } from './dom';
 import {
   activeProjects,
   activeTaskRequest,
   agentBackendContextLabel,
+  agentBackendDisplayName,
   agentBackendStatusForProject,
   buildEnvLabel,
   data,
@@ -234,18 +235,30 @@ function renderGlobalStatusItem(label: string, value: string, kind: StatusKind):
 }
 
 function renderTopbar(): HTMLElement | null {
+  const taskRequest = ui.activePage === 'task' ? activeTaskRequest() : null;
+  const taskRun = taskRequest?.workflowRunId
+    ? data.activeDetail?.run.id === taskRequest.workflowRunId
+      ? data.activeDetail.run
+      : data.runs.find((candidate) => candidate.id === taskRequest.workflowRunId) ?? null
+    : null;
   const project = ui.activePage === 'new-task'
     ? activeProjects().find((p) => p.id === newTaskFormDraft.projectId) ?? activeProjects()[0] ?? null
+    : taskRequest
+      ? data.projects.find((candidate) => candidate.id === taskRequest.projectId) ?? null
     : selectedProject();
-  const run = data.activeDetail?.run ?? data.runs[0] ?? null;
+  const run = taskRequest ? taskRun : data.activeDetail?.run ?? data.runs[0] ?? null;
+  const executionProject = taskRequest ? taskExecutionProject(project, taskRequest) : project;
   const runner = latestRunner();
-  const backend = agentBackendContextLabel(project);
-  const newTaskReadiness = newTaskReadinessSummary(project, runner);
-  const workbenchEnvironment = workbenchEnvironmentSummary(project, runner);
+  const onlineRunner = runner?.status === 'online' ? runner : null;
+  const backend = taskRequest
+    ? taskBackendContextLabel(project, taskRequest)
+    : agentBackendContextLabel(project);
+  const newTaskReadiness = newTaskReadinessSummary(project, onlineRunner);
+  const workbenchEnvironment = workbenchEnvironmentSummary(executionProject, onlineRunner);
   const projectOnboarding = projectOnboardingSummary();
   const reportStatus = reportStatusSummary();
   const knowledgeStatus = knowledgeStatusSummary();
-  const settingsRuntime = settingsRuntimeSummary(project, runner);
+  const settingsRuntime = settingsRuntimeSummary(project, onlineRunner);
 
   // 全局状态统计
   const pending = pendingCount();
@@ -267,7 +280,7 @@ function renderTopbar(): HTMLElement | null {
       ? [contextItem('知识状态', knowledgeStatus.value, knowledgeStatus.kind)]
     : ui.activePage === 'settings'
       ? [contextItem('运行状态', settingsRuntime.value, settingsRuntime.kind)]
-    : taskExecutionContextItems(project, run, runner, backend);
+    : taskExecutionContextItems(project, run, taskRequest, runner, backend);
 
   // 我的待办页面不显示 topbar
   if (ui.activePage === 'my-todos') {
@@ -368,11 +381,13 @@ function settingsRuntimeSummary(project: ProjectDto | null, runner: RunnerDto | 
 function taskExecutionContextItems(
   project: ProjectDto | null,
   run: (typeof data.runs)[number] | null,
+  request: WorkflowRequestDto | null,
   runner: RunnerDto | null,
   backend: { value: string; kind: StatusKind },
 ): HTMLElement[] {
-  const branch = run?.branch ?? project?.defaultBranch ?? '—';
-  const readiness = taskExecutionReadiness(project, runner);
+  const branch = run?.branch ?? request?.branch ?? project?.defaultBranch ?? '—';
+  const readiness = taskExecutionReadiness(taskExecutionProject(project, request), runner);
+  const runnerOnline = runner?.status === 'online';
   const runnerLabel = runner ? runner.status : 'offline';
   const runnerKind = runner ? statusKind(runner.status) : 'bad';
 
@@ -385,17 +400,40 @@ function taskExecutionContextItems(
       hint: `Runner ${runnerLabel} · ${backend.value}`,
       tone: 'focus',
     }),
-    contextItem('构建环境', buildEnvLabel(), runner ? 'good' : 'warn', {
+    contextItem('构建环境', buildEnvLabel(), runnerOnline ? 'good' : 'warn', {
       hint: runner ? `Runner ${runnerLabel}` : '等待 Runner 心跳',
       tone: runnerKind === 'bad' ? 'focus' : 'supporting',
     }),
   ];
 }
 
+function taskExecutionProject(
+  project: ProjectDto | null,
+  request: WorkflowRequestDto | null,
+): ProjectDto | null {
+  if (!project || !request?.agentBackend || request.agentBackend === project.agentBackend) return project;
+  return { ...project, agentBackend: request.agentBackend };
+}
+
+function taskBackendContextLabel(
+  project: ProjectDto | null,
+  request: WorkflowRequestDto | null,
+): { value: string; kind: StatusKind } {
+  const executionProject = taskExecutionProject(project, request);
+  const requestedBackend = executionProject?.agentBackend ?? request?.agentBackend ?? null;
+  if (!requestedBackend) return { value: '待配置', kind: 'warn' };
+
+  const displayName = agentBackendDisplayName(requestedBackend);
+  const status = executionProject
+    ? agentBackendStatusForProject(executionProject)
+    : { label: '未检测', kind: 'muted' } as const;
+  return { value: `${displayName} · ${status.label}`, kind: status.kind };
+}
+
 function taskExecutionReadiness(project: ProjectDto | null, runner: RunnerDto | null): { value: string; kind: StatusKind } {
   if (!project) return { value: '需要接入项目', kind: 'warn' };
   if (!project.agentBackend) return { value: '需要配置 AI 后端', kind: 'warn' };
-  if (!runner) return { value: 'Runner 待启动', kind: 'warn' };
+  if (runner?.status !== 'online') return { value: 'Runner 待启动', kind: 'warn' };
 
   const backend = agentBackendStatusForProject(project);
   if (backend.kind === 'bad') return { value: 'AI 后端异常', kind: 'bad' };

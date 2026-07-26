@@ -734,7 +734,7 @@
       .build-card, .project-card, .runner-card, .report-row, .approval-row, .evidence-row {
         border: 1px solid var(--line); border-radius: 14px; padding: 12px; background: var(--surface);
       }
-      .project-card { cursor: pointer; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
+      .project-card { min-width: 0; cursor: pointer; transition: border-color .16s ease, background .16s ease, transform .16s ease; }
       .project-card:hover, .project-card.active { border-color: var(--primary-2); background: var(--info-bg); transform: translateY(-1px); }
       .build-card div, .project-card div:first-child, .runner-card div:first-child, .report-row { display: flex; justify-content: space-between; gap: 10px; align-items: center; }
       .project-card-footer { display: flex; justify-content: space-between; gap: 10px; align-items: center; margin-top: 4px; }
@@ -1130,6 +1130,9 @@
       .empty-state h2 { font-size: 28px; margin: 0; }
       .empty-state p { color: var(--muted); max-width: 620px; }
 
+      @media (min-width: 1181px) and (max-width: 1245px) {
+        .app-shell:not(.sidebar-collapsed) .topbar { grid-template-columns: minmax(0, 1fr); }
+      }
       @media (max-width: 1180px) {
         .app-shell { grid-template-columns: 1fr; }
         .sidebar { position: static; height: auto; display: grid; grid-template-columns: 1fr; }
@@ -1165,8 +1168,8 @@
         .context-item { min-width: 0; }
         .project-form-actions .button { width: 100%; }
         .project-card-footer { align-items: stretch; flex-direction: column; }
-        .project-card-actions { width: 100%; margin-left: 0; }
-        .project-card-actions .button { flex: 1 1 auto; }
+        .project-card-actions { width: 100%; margin-left: 0; display: grid; grid-template-columns: 1fr; }
+        .project-card-actions .button, .project-card-actions .btn { width: 100%; min-width: 0; white-space: normal; }
         .coordinator-action-head, .chat-composer { grid-template-columns: 1fr; }
         .coordinator-action-head { display: grid; }
         .coordinator-question-card { grid-template-columns: 1fr; }

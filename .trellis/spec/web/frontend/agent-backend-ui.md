@@ -32,6 +32,15 @@
 - The project card owns persistent backend selection; task creation may override
   the execution backend for a single request without mutating the project
   default.
+- On task pages, project, branch, and backend context come from the active
+  request and its linked run. A pending request without a run must never fall
+  back to an unrelated newest run/project.
+- Task readiness and the global system-health summary use the effective
+  execution backend (`request.agentBackend ?? project.agentBackend`). The
+  backend label, readiness message, and health status must not disagree when a
+  request overrides an unconfigured or different project default.
+- Only a Runner heartbeat with `status='online'` counts as runnable. A stored
+  offline Runner row is an attention state, not proof of readiness.
 - The New Task advanced section defaults execution backend to the selected
   project's current default, but must allow switching between exactly
   `Claude Code` and `Codex` for the request.
@@ -106,6 +115,13 @@
 ### 4. Validation & Error Matrix
 
 - User chooses no backend -> show setup hint and block save/submit where applicable.
+- Pending task has a request backend override but no project default -> show
+  the override as the effective backend and evaluate task readiness from it;
+  project-level setup UI may still recommend persisting a default.
+- Pending task has no run while another project's run is newest -> render the
+  pending request's project/branch/backend only.
+- Latest Runner row is offline -> show Runner-start attention and do not mark
+  build/runtime readiness healthy.
 - Preflight returns `missing_cli` -> show install hint.
 - Preflight returns `needs_login` -> show login hint.
 - Preflight returns `not_runnable` -> show raw diagnostic preview plus remediation hint.
@@ -123,6 +139,9 @@
 ### 5. Good/Base/Bad Cases
 
 - Good: project configured as Codex; task form shows `Codex · Connected`; run detail opens `Codex 执行日志` and streams events live.
+- Good: a pending request overrides an unconfigured project to Claude Code;
+  task context and system health consistently use Claude Code while the
+  project card may separately offer to persist a default.
 - Base: project not configured; project card shows Agent Backend select and task form tells the user to configure it first.
 - Good: project card `Generate legacy profile` posts
   `type='profile'`/`flowId='profile.bootstrap'`, then opens the existing task
@@ -130,10 +149,15 @@
 - Base: active profile request exists; project card shows latest profile status
   and disables duplicate generation.
 - Bad: project was changed from Claude Code to Codex but UI reuses an old Claude preflight cache; always key/validate cache by matching backend.
+- Bad: a pending task displays its own title but shows the branch, backend, or
+  health state from `data.runs[0]` belonging to another project.
 
 ### 6. Tests Required
 
 - Projection/render tests for backend label/status helpers where practical.
+- Shell DOM tests must cover a multi-project pending request with no run,
+  request-level backend overrides, missing/offline Runner states, and backend
+  preflight warning/failure states.
 - Project rendering tests should cover profile bootstrap action POST body and
   duplicate-action disabling while a profile request is active. They should
   also cover visible profile/inventory artifact controls when the matching
@@ -165,6 +189,27 @@ return tasks.at(-1)?.backend ?? 'native / codex / claude_code';
 
 ```ts
 return project.agentBackend ? agentBackendDisplayName(project.agentBackend) : '未配置';
+```
+
+#### Wrong
+
+```ts
+const run = data.activeDetail?.run ?? data.runs[0];
+const project = selectedProject();
+```
+
+This leaks unrelated execution context into a pending task.
+
+#### Correct
+
+```ts
+const request = activeTaskRequest();
+const run = request?.workflowRunId
+  ? data.runs.find((candidate) => candidate.id === request.workflowRunId)
+  : null;
+const project = request
+  ? data.projects.find((candidate) => candidate.id === request.projectId)
+  : selectedProject();
 ```
 
 ## Scenario: new-task API failure handling
