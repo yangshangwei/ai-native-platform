@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/shared/backend/evidence-verifier-protocol.md", "reason": "GateRun/evidenceRefs/evidence_gate 契约——新 gate 的 pass 规则必须挂可解析证据"}
+{"file": ".trellis/spec/api/backend/build-commands.md", "reason": "build/test 命令契约；test_integrity_gate 插在 compile 之前，不得破坏既有命令语义"}
+{"file": ".trellis/spec/runner/backend/flow-registry.md", "reason": "flow stage 语义与扩展约束——不新增 stage，守卫挂在 build_test step 内"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "共享层纯函数/类型扩展（GateId、ArtifactKind、test-surface 工具）的编码规范"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "gate fail / fail-open (skipped) 的错误处理与消息约定"}

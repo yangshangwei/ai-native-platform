@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/shared/backend/evidence-verifier-protocol.md", "reason": "复核新 gate 证据链完整（evidenceRefs 可解析、digest 存在、evidence_gate 兼容）"}
+{"file": ".trellis/spec/api/backend/build-commands.md", "reason": "复核 build_test 既有行为不回归（自定义命令、mvnw 回退、日志上限）"}
+{"file": ".trellis/spec/runner/backend/flow-registry.md", "reason": "复核 4 条 flow 的 build_test 均获得守卫且 stage 顺序未变"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "复核共享工具纯函数无副作用、测试覆盖正反例"}
