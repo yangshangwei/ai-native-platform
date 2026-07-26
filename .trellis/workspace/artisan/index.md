@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 67
+- **Total Sessions**: 68
 - **Last Active**: 2026-07-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~534 | Active |
+| `journal-2.md` | ~568 | Active |
 | `journal-1.md` | ~1983 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 68 | 2026-07-27 | Close status UI, sidebar, and business acceptance tasks | `4d819fe`, `1ec24e2` | `feat/design-md-workbench-ui-ralph-finish` |
 | 67 | 2026-07-27 | Operational pause acceptance and browser recovery verification | `35b878a`, `f2926f6` | `feat/design-md-workbench-ui-ralph-finish` |
 | 66 | 2026-07-26 | Test integrity gate (UMA-DV UD-QA-001 借鉴 #1) | `09dd8a2` | `feat/design-md-workbench-ui-ralph-finish` |
 | 65 | 2026-06-30 | design-md Web workbench UI | `dc7a070`, `1d5432c` | `feat/design-md-workbench-ui-ralph-finish` |

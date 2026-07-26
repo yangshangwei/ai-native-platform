@@ -532,3 +532,37 @@ Verified operational failures pause runs without cleanup, exercised manual brows
 ### Next Steps
 
 - None - task complete
+
+
+## Session 68: Close status UI, sidebar, and business acceptance tasks
+
+**Date**: 2026-07-27
+**Task**: Close status UI, sidebar, and business acceptance tasks
+**Branch**: `feat/design-md-workbench-ui-ralph-finish`
+
+### Summary
+
+Fixed pending-task context leakage and responsive overflow, hardened per-AC acceptance/design/matrix reconciliation and report traceability, completed real Chromium QA for status/sidebar/approval/report flows, passed full tests/typecheck/captcha eval, and archived all five remaining tasks.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4d819fe` | (see git log) |
+| `1ec24e2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
