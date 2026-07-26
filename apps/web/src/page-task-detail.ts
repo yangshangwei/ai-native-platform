@@ -277,6 +277,7 @@ function gateDisplayLabel(gateId: string): string {
   if (gateId === 'compile_gate') return '编译检查';
   if (gateId === 'test_gate') return '测试检查';
   if (gateId === 'diff_scope_gate') return '变更范围检查';
+  if (gateId === 'test_integrity_gate') return '测试完整性检查';
   if (gateId === 'evidence_gate') return '证据检查';
   return gateId;
 }
@@ -1344,7 +1345,7 @@ function artifactForStage(artifact: ArtifactDto, stage: Stage): boolean {
     requirement: ['requirement_draft'],
     design: ['design_doc', 'traceability'],
     implementation: ['diff'],
-    build_test: ['surefire_report', 'failsafe_report', 'command_log'],
+    build_test: ['test_surface_report', 'surefire_report', 'failsafe_report', 'command_log'],
     review: ['other'],
     completion: ['completion_report'],
     knowledge: ['knowledge_candidate'],
@@ -2246,6 +2247,7 @@ function artifactKindLabel(kind: string): string {
   if (kind === 'diff') return '代码变更';
   if (kind === 'surefire_report') return '单测报告';
   if (kind === 'failsafe_report') return '集成测试报告';
+  if (kind === 'test_surface_report') return '测试面快照';
   if (kind === 'completion_report') return '交付报告';
   if (kind === 'knowledge_candidate') return '知识候选';
   if (kind === 'context_pack') return '上下文包';

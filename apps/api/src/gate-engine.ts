@@ -12,6 +12,11 @@ import {
   type WorkflowRunId,
   type StepRunId,
   type EvidenceRef,
+  TEST_SURFACE_REPORT_SCHEMA_VERSION,
+  type TestSurfaceCounts,
+  type TestSurfaceFileEntry,
+  type TestSurfaceReport,
+  isJavaTestFile,
   VERIFIER_AC_MATRIX_SCHEMA_VERSION,
   VERIFIER_MEDIA_SCHEMA_VERSION,
   type AcceptanceBusinessStatus,
@@ -754,6 +759,176 @@ export function runSensitiveChangeGate(params: {
     },
   ];
   return record(params.workflowRunId, params.stepRunId, 'sensitive_change_gate', results);
+}
+
+// ---- Test Integrity Gate ---------------------------------------------------
+
+const TEST_INTEGRITY_RULE_IDS = [
+  'integrity.test_files_deleted',
+  'integrity.test_cases_removed',
+  'integrity.assertions_weakened',
+  'integrity.skip_markers_added',
+  'integrity.harness_config_modified',
+] as const;
+
+/**
+ * Test Integrity Gate — decides whether the doer turn weakened the test
+ * surface it is about to claim green on. Consumes the runner-produced
+ * `test_surface_report` artifact (worktree HEAD vs working tree, see
+ * `apps/runner/src/test-surface.ts`); new tests never violate; an
+ * unavailable baseline fails open (all rules `skipped`, PRD R6).
+ */
+export function runTestIntegrityGate(params: {
+  workflowRunId: WorkflowRunId;
+  stepRunId: StepRunId | null;
+  reportArtifact: Artifact | null;
+}): GateRun {
+  const skipAll = (reason: string): GateRun =>
+    record(
+      params.workflowRunId,
+      params.stepRunId,
+      'test_integrity_gate',
+      TEST_INTEGRITY_RULE_IDS.map((ruleId) => ({
+        ruleId,
+        status: 'skipped' as const,
+        message: `not applicable: ${reason}`,
+        evidenceRefs: artifactEvidence(params.reportArtifact, 'test surface report'),
+      })),
+    );
+
+  if (!params.reportArtifact) return skipAll('no test_surface_report artifact for this run');
+  const text = readArtifactText(params.reportArtifact);
+  if (!text) return skipAll('test_surface_report content unreadable');
+  let report: TestSurfaceReport;
+  try {
+    report = JSON.parse(text) as TestSurfaceReport;
+  } catch {
+    return skipAll('test_surface_report is not valid JSON');
+  }
+  if (report.schemaVersion !== TEST_SURFACE_REPORT_SCHEMA_VERSION) {
+    return skipAll(`unsupported test_surface_report schemaVersion: ${String(report.schemaVersion)}`);
+  }
+  if (!report.baselineAvailable) {
+    const why = (report.notes ?? []).slice(0, 2).join('; ') || 'git baseline unavailable';
+    return skipAll(`baseline unavailable (${why})`);
+  }
+
+  const diffArtifact = store.artifacts.byKind(params.workflowRunId, 'diff').at(-1) ?? null;
+  const evidence: EvidenceRef[] = [
+    ...artifactEvidence(params.reportArtifact, 'doer-turn test surface report'),
+    ...artifactEvidence(diffArtifact, 'implementation diff'),
+  ];
+
+  const files = Array.isArray(report.files) ? report.files : [];
+  const deleted = files.filter(
+    (f) =>
+      (f.status === 'deleted' && isJavaTestFile(f.path))
+      || (f.status === 'renamed'
+        && Boolean(f.oldPath && isJavaTestFile(f.oldPath))
+        && !isJavaTestFile(f.path)),
+  );
+  const kept = files.filter(
+    (f) => (f.status === 'modified' || f.status === 'renamed') && isJavaTestFile(f.path),
+  );
+  const comparable = kept.filter(
+    (f): f is TestSurfaceFileEntry & { before: TestSurfaceCounts; after: TestSurfaceCounts } =>
+      Boolean(f.before && f.after),
+  );
+  // A kept entry with no baseline counts is a rename INTO src/test — a new
+  // test surface, never a violation (R5). Only a baseline the collector could
+  // not compare against the working tree degrades the kept-file rules.
+  const unparsable = kept.filter((f) => f.before && !f.after);
+
+  // Violations are definite even when other files could not be counted;
+  // a clean-but-incomplete comparison degrades to `skipped` (fail-open).
+  const keptRule = (
+    ruleId: string,
+    violations: string[],
+    passMessage: string,
+  ): RuleResult => ({
+    ruleId,
+    status:
+      violations.length > 0
+        ? 'fail'
+        : unparsable.length > 0
+          ? 'skipped'
+          : 'pass',
+    message:
+      violations.length > 0
+        ? violations.slice(0, 5).join('; ') + (violations.length > 5 ? '…' : '')
+        : unparsable.length > 0
+          ? `not applicable: before/after counts unavailable for ${unparsable.map((f) => f.path).join(', ')}`
+          : passMessage,
+    evidenceRefs: evidence,
+  });
+
+  const results: RuleResult[] = [
+    {
+      ruleId: 'integrity.test_files_deleted',
+      status: deleted.length === 0 ? 'pass' : 'fail',
+      message:
+        deleted.length === 0
+          ? `no test files deleted (${files.length} test file(s) touched)`
+          : `test file(s) deleted: ${deleted
+              .map((f) => (f.status === 'renamed' ? `${f.oldPath} -> ${f.path}` : f.path))
+              .slice(0, 5)
+              .join(', ')}${deleted.length > 5 ? '…' : ''}`,
+      evidenceRefs: evidence,
+    },
+    keptRule(
+      'integrity.test_cases_removed',
+      comparable
+        .filter((f) => f.after.testCases < f.before.testCases)
+        .map((f) => `${f.path}: @Test ${f.before.testCases} -> ${f.after.testCases}`),
+      `no test cases removed across ${kept.length} kept test file(s)`,
+    ),
+    keptRule(
+      'integrity.assertions_weakened',
+      comparable
+        // files whose testCases already dropped are covered by the previous
+        // rule; do not double-report them here.
+        .filter(
+          (f) => f.after.testCases >= f.before.testCases && f.after.assertions < f.before.assertions,
+        )
+        .map((f) => `${f.path}: assertions ${f.before.assertions} -> ${f.after.assertions}`),
+      `no assertions weakened across ${kept.length} kept test file(s)`,
+    ),
+    keptRule(
+      'integrity.skip_markers_added',
+      comparable
+        .filter(
+          (f) =>
+            f.after.skipMarkers > f.before.skipMarkers
+            || f.after.commentedTests > f.before.commentedTests,
+        )
+        .map(
+          (f) =>
+            `${f.path}: skip markers ${f.before.skipMarkers} -> ${f.after.skipMarkers}, commented @Test ${f.before.commentedTests} -> ${f.after.commentedTests}`,
+        ),
+      `no skip markers added across ${kept.length} kept test file(s)`,
+    ),
+  ];
+
+  const harness = report.harness ?? { changedPaths: [], pomTestConfigChanged: false };
+  const harnessChangedPaths = Array.isArray(harness.changedPaths) ? harness.changedPaths : [];
+  const harnessProblems: string[] = [];
+  if (harness.pomTestConfigChanged) {
+    harnessProblems.push('pom.xml surefire/failsafe/skip config modified');
+  }
+  if (harnessChangedPaths.length > 0) {
+    harnessProblems.push(`harness file(s) changed: ${harnessChangedPaths.slice(0, 5).join(', ')}${harnessChangedPaths.length > 5 ? '…' : ''}`);
+  }
+  results.push({
+    ruleId: 'integrity.harness_config_modified',
+    status: harnessProblems.length === 0 ? 'pass' : 'fail',
+    message:
+      harnessProblems.length === 0
+        ? 'test harness config untouched'
+        : harnessProblems.join('; '),
+    evidenceRefs: evidence,
+  });
+
+  return record(params.workflowRunId, params.stepRunId, 'test_integrity_gate', results);
 }
 
 export function runManualGate(params: {

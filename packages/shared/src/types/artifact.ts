@@ -24,7 +24,7 @@ import {
 // ---------------------------------------------------------------------------
 
 /**
- * V1 per-run artifact kinds (12 entries). Strongly bound to a single
+ * V1 per-run artifact kinds. Strongly bound to a single
  * `workflow_run_id`; one-shot evidence captured during a workflow run.
  */
 export type PerRunArtifactKind =
@@ -37,6 +37,13 @@ export type PerRunArtifactKind =
   | 'command_log'
   | 'surefire_report'
   | 'failsafe_report'
+  /**
+   * Doer-turn test-surface snapshot (worktree HEAD vs working tree) the
+   * runner captures before build_test spawns Maven. Consumed by
+   * `test_integrity_gate` to detect test weakening (deleted tests,
+   * removed assertions, added skip markers, harness config edits).
+   */
+  | 'test_surface_report'
   | 'completion_report'
   | 'knowledge_candidate'
   /**
@@ -87,6 +94,7 @@ const PER_RUN_KIND_SET: ReadonlySet<PerRunArtifactKind> = new Set<PerRunArtifact
   'command_log',
   'surefire_report',
   'failsafe_report',
+  'test_surface_report',
   'completion_report',
   'knowledge_candidate',
   'rejection_feedback',

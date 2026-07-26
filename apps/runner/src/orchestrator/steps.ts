@@ -29,6 +29,7 @@ import {
 import { api } from '../api-client';
 import type { AgentBackend } from '../agents/types';
 import { runWhitelistedCommand } from '../command-runner';
+import { collectTestSurfaceReport } from '../test-surface';
 import { DEFAULT_MAX_LOG_BYTES, DEFAULT_TIMEOUT_MS, WORKTREES_DIR } from '../config';
 import { findSkillForStage } from '../skills';
 import { generateProjectProfile } from '../profile';
@@ -117,6 +118,7 @@ export interface StepDeps {
   ) => Promise<void>;
   runWhitelistedCommand: typeof runWhitelistedCommand;
   collectReports: typeof collectReports;
+  collectTestSurfaceReport: typeof collectTestSurfaceReport;
   persistVerifierMediaArtifacts: (
     c: RunCtx,
     stepRunId: string,
@@ -144,6 +146,7 @@ export const DEFAULT_STEP_DEPS: StepDeps = {
     promoteAcceptedDraftToKnowledge(projectId, draft),
   runWhitelistedCommand,
   collectReports,
+  collectTestSurfaceReport,
   persistVerifierMediaArtifacts,
   generateProjectProfile,
   collectAcceptedKnowledge,
@@ -416,6 +419,47 @@ export async function executeBuildTest(
     name: testCommand,
   });
   const stepId = step.id;
+
+  // Test Integrity Gate (anti-reward-hacking): snapshot the doer-turn test
+  // surface (worktree HEAD vs working tree) BEFORE spawning Maven, so a
+  // weakened test suite never buys a green test_gate. Fail path mirrors
+  // diff_scope_gate; an unavailable baseline fails open on the gate side.
+  const surfaceReport = await deps.collectTestSurfaceReport(c.workspace.path);
+  const surfaceDir = join(c.runArtifactsDir, 'build_test');
+  await mkdir(surfaceDir, { recursive: true });
+  const surfaceBody = `${JSON.stringify(surfaceReport, null, 2)}\n`;
+  const surfacePath = join(surfaceDir, 'test-surface-report.json');
+  await writeFile(surfacePath, surfaceBody, 'utf8');
+  await deps.api.postArtifact({
+    workflowRunId: c.run.id,
+    stepRunId: stepId,
+    kind: 'test_surface_report',
+    uri: pathToFileUri(surfacePath),
+    size: Buffer.byteLength(surfaceBody, 'utf8'),
+    contentType: 'application/json',
+    metadata: {
+      schemaVersion: surfaceReport.schemaVersion,
+      baselineAvailable: surfaceReport.baselineAvailable,
+      output: 'test-surface-report.json',
+    },
+  });
+  const integrityGate = await deps.api.runGate({
+    workflowRunId: c.run.id,
+    stepRunId: stepId,
+    gateId: 'test_integrity_gate',
+  });
+  console.log(`[runner]   test_integrity_gate -> ${integrityGate.gate.status}`);
+  if (integrityGate.gate.status === 'fail') {
+    const firstFail = integrityGate.gate.ruleResults.find((r) => r.status === 'fail');
+    c.ok.value = false;
+    await deps.api.stepFinished({
+      stepRunId: stepId,
+      status: 'failed',
+      failureReason: `test_integrity_gate failed: ${firstFail?.message ?? 'test surface weakened'}`,
+    });
+    throw new Error('test_integrity_gate failed');
+  }
+
   const logDir = join(WORKTREES_DIR, c.project.id, c.run.id, 'logs');
   const compileCr = await runWhitelistedCommandWithToolInvocation(deps, {
     workflowRunId: c.run.id,

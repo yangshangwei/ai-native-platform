@@ -31,6 +31,7 @@ export * from './utils/id';
 export * from './utils/error';
 export * from './utils/whitelist';
 export * from './utils/surefire';
+export * from './utils/test-surface';
 export * from './utils/redaction';
 export * from './utils/agent-backend-cli';
 export * from './utils/agent-backend-preflight';

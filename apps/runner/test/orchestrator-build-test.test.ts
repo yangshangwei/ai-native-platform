@@ -2,10 +2,19 @@ import { describe, expect, test, vi } from 'vitest';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { CommandRun, StepRun } from '@ainp/shared';
+import type { CommandRun, StepRun, TestSurfaceReport } from '@ainp/shared';
 import { executeBuildTest, executeImplementation, type StepDeps } from '../src/orchestrator/steps';
 import type { RunCommandInput } from '../src/command-runner';
 import { projectFixture, runCtxFixture, skillFixture } from './helpers/orchestrator-fixtures';
+
+const EMPTY_SURFACE_REPORT: TestSurfaceReport = {
+  schemaVersion: 'test-surface-report/v1',
+  baseRef: 'a'.repeat(40),
+  files: [],
+  harness: { changedPaths: [], pomTestConfigChanged: false },
+  baselineAvailable: true,
+  notes: [],
+};
 
 // ---------------------------------------------------------------------------
 // T3.2 build-command de-hardcoding: executeBuildTest gets its first direct
@@ -33,6 +42,7 @@ function buildTestDeps() {
           : 'art_debugger_analysis',
       })),
       recordHandoff: vi.fn(async () => ({})),
+      runGate: vi.fn(async () => ({ gate: { status: 'pass', ruleResults: [] } })),
       mavenBuild: vi.fn(async (params: Record<string, unknown>) => {
         mavenBuildCalls.push(params);
         return {
@@ -42,6 +52,7 @@ function buildTestDeps() {
         };
       }),
     },
+    collectTestSurfaceReport: vi.fn(async () => EMPTY_SURFACE_REPORT),
     runWhitelistedCommand: vi.fn(async (input: RunCommandInput) => {
       commandInputs.push(input);
       return {
@@ -85,6 +96,21 @@ describe('executeBuildTest (T3.2 command source)', () => {
       reports: [],
     });
     expect(raw.api.stepFinished).toHaveBeenCalledWith({ stepRunId: 'step_bt', status: 'passed' });
+    // Test Integrity Gate: surface report artifact + gate run before Maven.
+    expect(raw.collectTestSurfaceReport).toHaveBeenCalledWith(c.workspace.path);
+    expect(raw.api.postArtifact).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'test_surface_report',
+      contentType: 'application/json',
+      metadata: expect.objectContaining({
+        schemaVersion: 'test-surface-report/v1',
+        baselineAvailable: true,
+        output: 'test-surface-report.json',
+      }),
+    }));
+    expect(raw.api.runGate).toHaveBeenCalledWith(expect.objectContaining({
+      gateId: 'test_integrity_gate',
+      stepRunId: 'step_bt',
+    }));
     expect(raw.api.toolInvocation).toHaveBeenCalledTimes(2);
     expect(raw.api.toolInvocation).toHaveBeenNthCalledWith(1, expect.objectContaining({
       toolId: 'runner.command',
@@ -202,6 +228,39 @@ describe('executeBuildTest (T3.2 command source)', () => {
       stepRunId: 'step_bt',
       status: 'failed',
       failureReason: 'compile_gate=pass test_gate=fail',
+    });
+  });
+
+  test('test_integrity_gate failure aborts the step before any Maven command spawns', async () => {
+    const { deps, raw, commandInputs } = buildTestDeps();
+    raw.api.runGate.mockResolvedValueOnce({
+      gate: {
+        status: 'fail',
+        ruleResults: [
+          {
+            ruleId: 'integrity.test_files_deleted',
+            status: 'fail',
+            message: 'test file(s) deleted: src/test/java/sample/CalculatorTest.java',
+            evidenceRefs: [],
+          },
+        ],
+      },
+    });
+    const c = runCtxFixture({
+      runArtifactsDir: mkdtempSync(join(tmpdir(), 'ainp-bt-integrity-')),
+    });
+
+    await expect(executeBuildTest(c, deps)).rejects.toThrow('test_integrity_gate failed');
+
+    // AC-008: gate fail happens before compile — no command was spawned.
+    expect(commandInputs).toEqual([]);
+    expect(raw.api.mavenBuild).not.toHaveBeenCalled();
+    expect(c.ok.value).toBe(false);
+    expect(raw.api.stepFinished).toHaveBeenCalledWith({
+      stepRunId: 'step_bt',
+      status: 'failed',
+      failureReason:
+        'test_integrity_gate failed: test file(s) deleted: src/test/java/sample/CalculatorTest.java',
     });
   });
 

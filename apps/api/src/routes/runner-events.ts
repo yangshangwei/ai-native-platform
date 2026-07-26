@@ -62,6 +62,7 @@ import {
 import {
   runDiffScopeGate,
   runSensitiveChangeGate,
+  runTestIntegrityGate,
   runRequirementGate,
   runDesignGate,
   runAcceptanceTraceabilityGate,
@@ -972,6 +973,15 @@ runnerEvents.post('/run-gate', async (c) => {
         stepRunId: body.stepRunId,
         changedFiles: body.params?.changedFiles ?? [],
         diffArtifact: diff,
+      });
+      break;
+    }
+    case 'test_integrity_gate': {
+      const report = store.artifacts.byKind(body.workflowRunId, 'test_surface_report').at(-1) ?? null;
+      gate = runTestIntegrityGate({
+        workflowRunId: body.workflowRunId,
+        stepRunId: body.stepRunId,
+        reportArtifact: report,
       });
       break;
     }

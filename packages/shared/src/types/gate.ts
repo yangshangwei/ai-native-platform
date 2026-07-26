@@ -12,6 +12,7 @@ export type GateId =
   | 'design_gate'
   | 'diff_scope_gate'
   | 'sensitive_change_gate'
+  | 'test_integrity_gate'
   | 'compile_gate'
   | 'test_gate'
   | 'acceptance_gate'

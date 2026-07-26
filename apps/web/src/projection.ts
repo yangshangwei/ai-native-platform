@@ -972,7 +972,7 @@ function artifactForStageProjection(kind: string, stage: Stage): boolean {
     requirement: ['requirement_draft'],
     design: ['design_doc', 'traceability'],
     implementation: ['diff'],
-    build_test: ['surefire_report', 'failsafe_report', 'command_log'],
+    build_test: ['test_surface_report', 'surefire_report', 'failsafe_report', 'command_log'],
     completion: ['completion_report'],
     knowledge: ['knowledge_candidate'],
   };

@@ -86,7 +86,7 @@ bun run typecheck
 | requirement | Claude Code / Codex → `requirement.md` | `requirement_gate` (artifact present) + manual approval |
 | design | Claude Code / Codex → `design.md` | `design_gate` (artifact present) + manual approval |
 | implementation | Claude Code / Codex edits the worktree → diff artifact | `diff_scope_gate` (path prefix) + `sensitive_change_gate` (regex) |
-| build_test | `mvn -B -DskipTests compile` → `mvn -B test` (local whitelisted spawn) | `compile_gate` + `test_gate` (exit + Surefire) |
+| build_test | test-surface snapshot (HEAD vs worktree) → `mvn -B -DskipTests compile` → `mvn -B test` (local whitelisted spawn) | `test_integrity_gate` (no test weakening; blocks before Maven) + `compile_gate` + `test_gate` (exit + Surefire) |
 | review | Claude Code / Codex → `review.md` | `acceptance_gate` (manual) |
 | completion | `POST /workflow-runs/:id/completion-report` | — (assembles markdown report artifact) |
 | knowledge | `POST /workflow-runs/:id/knowledge-candidate` | `knowledge_gate` (manual) |
