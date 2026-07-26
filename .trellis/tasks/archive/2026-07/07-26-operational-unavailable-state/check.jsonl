@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "复核 paused 状态机与错误响应约定一致，业务失败路径零回归"}
+{"file": ".trellis/spec/api/backend/workflow-requests.md", "reason": "复核 request paused 联动与恢复后状态闭环"}
+{"file": ".trellis/spec/runner/backend/agent-backend-runtime.md", "reason": "复核 backend 分类抛错未改变流式解析与退出码语义"}
+{"file": ".trellis/spec/runner/backend/error-handling.md", "reason": "复核 orchestrator finally 重构后 cleanup/exitCode/上报矩阵正确"}

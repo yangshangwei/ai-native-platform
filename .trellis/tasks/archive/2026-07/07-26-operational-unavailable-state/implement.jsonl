@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "API 层错误分类与响应约定——新增 workflow-paused 事件与 paused 状态机需对齐"}
+{"file": ".trellis/spec/runner/backend/error-handling.md", "reason": "Runner 层错误处理约定——OperationalError 抛出点改造需对齐"}
+{"file": ".trellis/spec/api/backend/workflow-requests.md", "reason": "WorkflowRequest 状态机契约——新增 paused 状态与 completeWorkflowRun 联动"}
+{"file": ".trellis/spec/runner/backend/agent-backend-runtime.md", "reason": "backend 超时/协议失败的运行时契约——分类抛错不得改变既有流式/退出语义"}
+{"file": ".trellis/spec/api/backend/database.md", "reason": "SQLite 状态列存储与迁移约定——确认 status 无 CHECK 约束或补迁移"}
