@@ -498,3 +498,37 @@ Implemented and documented the design-md Web workbench UI direction: Linear-styl
 ### Next Steps
 
 - None - task complete
+
+
+## Session 67: Operational pause acceptance and browser recovery verification
+
+**Date**: 2026-07-27
+**Task**: Operational pause acceptance and browser recovery verification
+**Branch**: `feat/design-md-workbench-ui-ralph-finish`
+
+### Summary
+
+Verified operational failures pause runs without cleanup, exercised manual browser resume and re-pause against an isolated missing-CLI fixture, passed final Trellis checks, and archived the task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `35b878a` | (see git log) |
+| `f2926f6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
