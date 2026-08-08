@@ -1,0 +1,8 @@
+{"file": "README.md", "reason": "overview of current AI Native Platform architecture, context injection, workflow engine and gates"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API backend constraints and patterns"}
+{"file": ".trellis/spec/api/frontend/index.md", "reason": "frontend API surface and integration"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "runner backend implementation and worktree handling"}
+{"file": ".trellis/spec/runner/frontend/index.md", "reason": "runner frontend CLI and orchestration"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "shared types and utils across packages"}
+{"file": ".trellis/spec/shared/frontend/index.md", "reason": "shared browser/node helpers"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "web UI architecture and data flow"}
