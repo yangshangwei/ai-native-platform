@@ -157,6 +157,18 @@
 
 ## 已知残留（不在本任务范围）
 
-`/graph-node-started` 不重算聚合态。因此「失败后重跑某节点、但该节点尚未结束」这段窗口内，持久化的 `GraphRun.status` 仍停在 `failed`。
+~~`/graph-node-started` 不重算聚合态~~ —— **此条已作废，见下方更正**。
 
-缓解：Web 投影同时暴露派生 `status` 与 `persistedStatus`，UI 显示前者，用户看到的是真相。彻底闭合需要 `/graph-node-started` 也调用 `deriveGraphRunStatus`，留给 P1-1（该任务本就要动 node 生命周期）。
+### 更正（2026-08-08，提交后回查发现）
+
+上面这条残留在本任务收尾阶段**已经被修掉**了，但主线程没有察觉，导致：
+
+* commit `9406361` 的 message 里写了 "Known gap: `/graph-node-started` does not recompute the aggregate" —— 与它自己包含的代码矛盾；
+* `.trellis/spec/shared/backend/quality-guidelines.md` 的 caller 表格漏了第三个写者，正文还写着 "Both writers"；
+* 主线程向用户报告的测试数是 `1304`，而提交内容实际是 `1305`。
+
+**真实状态**：`/graph-node-started` 在 `runner-events.ts:270` 调用 `deriveGraphRunStatus`，三个 GraphRun 写者已全部统一。该处的单调性由判定优先级保证 —— 阻塞态优先级高于活跃态，所以重开节点只能把 `passed` 拉回 `running`，不可能把失败的图变成健康的。
+
+**根因（流程，不是代码）**：主线程在 22:27:50 跑完验证后，等待用户确认提交计划；这期间后台子代理仍在写文件；主线程 `git add` 前没有重新确认工作树，直接复用了几分钟前的验证结果。
+
+**已改的习惯**：`git add` 之前必须重跑验证，不复用等待用户确认之前的结果。

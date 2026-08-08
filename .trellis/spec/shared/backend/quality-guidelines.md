@@ -151,12 +151,13 @@ Callers today:
 | Caller | Side | Why it must not hard-code |
 |---|---|---|
 | `routes/runner-events.ts` `/graph-node-finished` | write | The original `status === 'failed' ? 'failed' : graphRun.status` never converged a fully-successful graph — it hung on `running` forever. |
+| `routes/runner-events.ts` `/graph-node-started` | write | Starting a node re-opens an aggregate that had already converged. Deriving keeps this monotone: blocking states outrank active ones, so it can only pull `passed` back to `running` — it can never make a failed graph look healthy. |
 | `graph-runtime.ts` `resumeGraphNode()` | write | Used to hard-code `'running'`, which lied when a *different* node was still failed. |
 | `apps/web/src/projection.ts` `buildGraphLiveProjection` | read | Re-derives so runs recorded before convergence landed still display honestly; keeps `persistedStatus` alongside for comparison. |
 
 Two rules that fall out of this:
 
-1. **Order matters at the call site.** Both writers `upsert()` the node run
+1. **Order matters at the call site.** Every writer `upsert()`s the node run
    *before* re-reading the ledger and deriving — otherwise the derivation
    can't see the row that just changed. `store` is synchronous `bun:sqlite`,
    so the write is visible to the very next read on the same connection.
