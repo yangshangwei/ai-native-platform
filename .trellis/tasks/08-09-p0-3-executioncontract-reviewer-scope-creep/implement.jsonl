@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "ExecutionContract 类型落在 shared，需遵守 purity / barrel / type-first 纪律"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "union 成员扩展的 ripple 清单 + 单一判定原则（守卫与 codexStageDir 不得有第二份路径常量）"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "fingerprint 守卫与 skill 声明改动都在 runner"}
+{"file": ".trellis/spec/runner/backend/directory-structure.md", "reason": "runner 的模块边界，决定守卫代码该放哪一层"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "bun runtime 测试约束 + typecheck 不覆盖 test 文件的盲区"}
+{"file": ".trellis/spec/guides/index.md", "reason": "跨模块字段 fixture key 必须从真实写入方抄（git status --porcelain 格式不能凭印象编）"}
+{"file": ".trellis/tasks/archive/2026-08/07-30-umadev/research/comparison.md", "reason": "P0-3 建议原文 + Wave A 第 4 项「先把单写者变成可测试不变量」的排序理由"}
+{"file": ".trellis/tasks/archive/2026-08/07-30-umadev/research/ainp-current-design.md", "reason": "缺口 4「cold 已有但单写者不是硬不变量」的精确定位"}

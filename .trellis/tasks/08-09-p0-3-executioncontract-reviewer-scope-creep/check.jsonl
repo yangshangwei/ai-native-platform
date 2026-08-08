@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "校验 shared 纯函数、barrel 补齐、单一来源（无第二份路径常量）"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "校验 runner 侧守卫实现与 skill 声明"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "校验测试运行方式，并记住 typecheck 不检查 test 文件"}
+{"file": ".trellis/spec/guides/index.md", "reason": "跨层一致性 + fixture 是否照抄真实 git 输出格式"}
