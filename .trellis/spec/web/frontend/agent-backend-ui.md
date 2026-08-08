@@ -372,7 +372,10 @@ try {
 ### 6. Tests Required
 
 - Typecheck `@ainp/web` after changing render helpers.
-- Run `vitest` for `apps/web/test` to protect projection and stream helpers.
+- Run `bun x --bun vitest run apps/web/test` to protect projection and stream
+  helpers. Keep the `--bun` flag: dropping it runs vitest under Node, where
+  `bun:sqlite` fails to resolve (see
+  `.trellis/spec/api/backend/quality-guidelines.md` § Pre-commit gate).
 - Workbench action queue tests should cover both request-backed run actions
   (`#task/<requestId>`) and requestless failed-run evidence actions
   (`#run/<workflowRunId>` plus a visible evidence panel). Also assert that

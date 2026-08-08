@@ -47,6 +47,30 @@ These guides help you **ask the right questions before coding**.
 
 → Read [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md)
 
+### When Reading a Field Another Module Wrote
+
+- [ ] The field lives in an untyped bag (`metadata`, `payload`,
+      `Record<string, unknown>`) — the compiler will NOT catch a wrong key
+- [ ] You're about to write a test fixture for that field
+
+→ **Copy the key from the real writer, never from your own expectation.**
+
+```bash
+# Find who actually writes it, then read that line
+grep -rn "metadata: {" apps/runner/src/orchestrator.ts
+```
+
+A fixture built from the reader's assumption makes the test verify your
+guess instead of the cross-module contract — it goes green while production
+silently returns null forever. This happened in task
+`08-08-p0-1-graph-live-view-graphrun-web`: the reader looked for
+`metadata.failureReason`, the runner writes `metadata.error`, and a fully
+green test suite hid it.
+
+Related: when a field's writer set is small, also check whether it has ANY
+writer. Three of the seven declared `GRAPH_EVENT_TYPES` had zero production
+writers, so a fallback branch reading them was dead on arrival.
+
 ---
 
 ## Pre-Modification Rule (CRITICAL)

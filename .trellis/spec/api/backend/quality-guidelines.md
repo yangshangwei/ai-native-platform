@@ -15,6 +15,24 @@ Must be green before any commit. `bun run typecheck` runs `tsc --noEmit` for
 every workspace. Failing typecheck on api propagates to runner / web because
 they consume `@ainp/shared` types that flow through here.
 
+> **Warning**: tests must run under the **bun runtime**, never Node.
+>
+> `apps/api/src/store/db.ts` imports `bun:sqlite`, which Node cannot resolve.
+> Any test that transitively pulls in the api store dies at collection time
+> with `Failed to load url bun:sqlite`, and — because vitest reports it as a
+> *suite* failure — the individual tests show up as `skipped` rather than
+> failed. It is easy to misread that as "the suite is fine".
+>
+> | Command | Works | Note |
+> |---|:---:|---|
+> | `npm test` (= `bun x --bun vitest run`) | ✅ | The canonical entry point |
+> | `bun test` | ✅ | Bun's own runner; fine for a single file, incl. DOM tests |
+> | `bun x --bun vitest run <file>` | ✅ | Use when scoping vitest to a subset |
+> | `npx vitest` / `bun x vitest` (no `--bun`) | ❌ | Node runtime — `bun:sqlite` fails |
+>
+> The `--bun` flag is what forces `bun x` to execute vitest under bun rather
+> than Node. Dropping it is the actual trap.
+
 The CLAUDE.md hot-path note: `apps/api/src/workflow-engine.ts` shows up 26+
 times in recent task records — changes to its public functions affect both
 the runner via `api-client.ts` and the routes that call it. Test those

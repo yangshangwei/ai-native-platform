@@ -128,6 +128,47 @@ runner pass a custom test env, without shared reading the global itself.
 
 ---
 
+## Derived-status single judgement
+
+When a persisted status is an **aggregate over child rows**, the judgement
+must live in exactly one shared pure function that every writer AND every
+reader calls. Do not let a writer hard-code the aggregate.
+
+Reference implementation — `deriveGraphRunStatus`
+(`packages/shared/src/types/graph-runtime.ts`), established by task
+`08-08-p0-1-graph-live-view-graphrun-web`:
+
+```ts
+export function deriveGraphRunStatus(input: {
+  nodes: readonly Pick<GraphNodeDefinition, 'id'>[];
+  nodeRuns: readonly Pick<GraphNodeRun, 'nodeId' | 'attempt' | 'status'>[];
+  currentStatus: GraphRunStatus;
+}): GraphRunStatus
+```
+
+Callers today:
+
+| Caller | Side | Why it must not hard-code |
+|---|---|---|
+| `routes/runner-events.ts` `/graph-node-finished` | write | The original `status === 'failed' ? 'failed' : graphRun.status` never converged a fully-successful graph — it hung on `running` forever. |
+| `graph-runtime.ts` `resumeGraphNode()` | write | Used to hard-code `'running'`, which lied when a *different* node was still failed. |
+| `apps/web/src/projection.ts` `buildGraphLiveProjection` | read | Re-derives so runs recorded before convergence landed still display honestly; keeps `persistedStatus` alongside for comparison. |
+
+Two rules that fall out of this:
+
+1. **Order matters at the call site.** Both writers `upsert()` the node run
+   *before* re-reading the ledger and deriving — otherwise the derivation
+   can't see the row that just changed. `store` is synchronous `bun:sqlite`,
+   so the write is visible to the very next read on the same connection.
+2. **Degrade, don't guess.** `/graph-node-finished` falls back to the old
+   failure-only behavior when the `GraphDefinition` is missing, because
+   without the node set there is no denominator for the aggregate.
+
+Adding a new GraphRun writer (P1-1 policy enforcement, auto-rework, …) means
+calling this function, not re-deriving the rule.
+
+---
+
 ## Anti-patterns this team has hit
 
 ### 1. Type extension protocol
