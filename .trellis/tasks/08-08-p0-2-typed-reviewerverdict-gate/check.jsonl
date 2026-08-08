@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "校验 shared 纯函数纪律、barrel 补齐、union 成员扩展的 ripple 完整性"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "校验 GateEngine 判定权边界与测试运行方式（必须 bun runtime）"}
+{"file": ".trellis/spec/api/backend/evidence-verifier-protocol.md", "reason": "校验未与既有 evidence / verifier 协议冲突或重复建设"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "校验 Web 类型 / 投影 / 渲染的分层"}
+{"file": ".trellis/spec/guides/index.md", "reason": "跨层一致性检查 + fixture key 是否从真实写入方抄"}

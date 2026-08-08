@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "ReviewerVerdict 类型与纯解析函数落在 shared，需遵守 purity / barrel / type-first 纪律"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "union 成员扩展的 ripple 检查清单（ADR-1 新增 reviewer_unavailable 必读）+ derived-status 单一判定原则"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "GateEngine 与 review artifact 识别改动的落点"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "GateEngine 纯函数边界、trust-boundary 类型守卫、bun runtime 测试约束"}
+{"file": ".trellis/spec/api/backend/evidence-verifier-protocol.md", "reason": "既有 evidence / verifier 协议，verdict 必须复用而不是另起一套"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "skill 声明新增 output 与 backend 侧严格解析"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Gate 决策面渲染 rule.message 与 blocker / remediation"}
+{"file": ".trellis/spec/guides/index.md", "reason": "跨模块字段的 fixture key 必须从真实写入方抄（P0-1 踩过的坑）"}
+{"file": ".trellis/tasks/archive/2026-08/07-30-umadev/research/comparison.md", "reason": "P0-2 建议原文，含「不建议照搬」第 3 条：模型 accepts 不得直接等于 gate pass"}
+{"file": ".trellis/tasks/archive/2026-08/07-30-umadev/research/ainp-current-design.md", "reason": "review verdict 现状与精确行号定位（缺口 3、缺口 5）"}
