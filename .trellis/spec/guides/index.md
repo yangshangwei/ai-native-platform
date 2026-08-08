@@ -98,6 +98,29 @@ just the wrong content. Grep every reader of the kind before adding the
 output, and add a regression test that asserts the *other* artifact is not
 what shows up.
 
+### When Constraining Who May Write to the Worktree
+
+- [ ] Adding a guard, sandbox policy, or diff-scope check over the workspace
+
+→ **Enumerate where the PLATFORM stages files inside the worktree, not just
+where agents write.** Git cannot tell the two apart.
+
+Known platform-owned staging directories live in
+`apps/runner/src/config.ts` as `WORKSPACE_PLATFORM_STAGING_DIRS`:
+
+| Directory | Written by | Why it is in the worktree |
+|---|---|---|
+| `.ainp-artifacts/` | Codex sidecar | Codex's tool router hard-blocks writes outside `--cd` |
+| `.ainp-verifier/` | the review agent | UI evidence drop point that `executeVerifier` copies out |
+
+`08-09-p0-3-executioncontract-reviewer-scope-creep` shipped its first draft
+knowing only about `.ainp-artifacts/`. The miss would have been fatal on
+day one: `.ainp-verifier/` is filled by the *reviewer*, and `skill.review`
+is precisely the skill declaring `workspaceMutationPolicy: 'deny'` — so
+every review carrying UI evidence would have failed its own contract.
+
+Add new staging directories to that array, never to a local literal.
+
 ---
 
 ## Pre-Modification Rule (CRITICAL)
