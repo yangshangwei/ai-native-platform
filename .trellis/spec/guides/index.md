@@ -71,6 +71,33 @@ Related: when a field's writer set is small, also check whether it has ANY
 writer. Three of the seven declared `GRAPH_EVENT_TYPES` had zero production
 writers, so a fallback branch reading them was dead on arrival.
 
+### When a Stage Starts Producing a Second Artifact of the Same Kind
+
+- [ ] A skill gains a new output while an existing one keeps the same
+      `kind` (both `kind: 'other'`, both `'report'`, …)
+- [ ] Any reader of that kind selects with "latest of kind"
+
+→ **Every existing "latest of kind" reader now silently points at the new
+artifact.** Selection must key on something that distinguishes them —
+`metadata.output` or `metadata.schemaVersion`.
+
+```ts
+// Wrong once a second `other` artifact exists: returns whichever was written last
+const reviewText = artifactText(detail, 'other');
+
+// Right: pin the selection to the output you actually mean
+const reviewText = artifactTextBy(detail, 'other', (a) =>
+  a.metadata?.output === REVIEW_MARKDOWN_OUTPUT_NAME);
+```
+
+Task `08-08-p0-2-typed-reviewerverdict-gate` added `review-verdict.json`
+alongside `review.md`. Because `skill.review` declares the markdown first,
+the verdict was always the newer artifact, and 「查看 Review 原文」 started
+rendering raw JSON at users. Nothing failed — the panel still had content,
+just the wrong content. Grep every reader of the kind before adding the
+output, and add a regression test that asserts the *other* artifact is not
+what shows up.
+
 ---
 
 ## Pre-Modification Rule (CRITICAL)

@@ -33,6 +33,23 @@ they consume `@ainp/shared` types that flow through here.
 > The `--bun` flag is what forces `bun x` to execute vitest under bun rather
 > than Node. Dropping it is the actual trap.
 
+> **Warning**: `bun run typecheck` does NOT check test files.
+>
+> Every workspace's `tsconfig.json` sets `include` to `src/**/*` (plus the
+> shared sources, and `serve.ts` for web). Nothing under `test/` is in a
+> compilation unit, so a type error in a test is invisible to the typecheck
+> gate — it only surfaces if the test happens to fail at runtime.
+>
+> Consequence: test fixtures can hold values that violate the very unions
+> they claim to model. `apps/web/test/task-detail-rendering.test.ts` has long
+> carried `WorkflowRequestDto.status = 'awaiting_human'`, which is not a
+> member of that union, and the gate never noticed.
+>
+> So a fixture is NOT type-checked evidence that a contract holds. When a
+> test asserts a cross-module contract, verify the fixture against the real
+> writer by reading its source — see
+> `.trellis/spec/guides/index.md` § When Reading a Field Another Module Wrote.
+
 The CLAUDE.md hot-path note: `apps/api/src/workflow-engine.ts` shows up 26+
 times in recent task records — changes to its public functions affect both
 the runner via `api-client.ts` and the routes that call it. Test those
