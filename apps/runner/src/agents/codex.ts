@@ -42,6 +42,7 @@ import {
   type BuildPromptArgs,
 } from './cli-common';
 import { renderAgentPrompt, renderCombinedAgentPrompt } from '../context/renderer';
+import { WORKSPACE_AGENT_STAGING_DIR } from '../config';
 
 export interface CodexBackendOpts {
   bin?: string;
@@ -345,9 +346,13 @@ async function readOptionalText(path: string): Promise<string | null> {
  * grep/ignore and, for implementation stages, trivially excluded from git
  * diffs (we reset the worktree to HEAD before diffing in practice; for
  * produce-file stages the staging dir is cleaned up after the copy).
+ *
+ * The directory name lives in `../config` because the workspace-mutation
+ * guard has to exclude the same prefix; a second literal here would let the
+ * two drift and make every Codex reviewer look like a contract violation.
  */
 function codexStageDir(workspacePath: string, stage: string): string {
-  return join(workspacePath, '.ainp-artifacts', stage);
+  return join(workspacePath, WORKSPACE_AGENT_STAGING_DIR, stage);
 }
 
 /**

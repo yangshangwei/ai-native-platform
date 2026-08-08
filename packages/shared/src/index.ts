@@ -17,6 +17,7 @@ export * from './types/graph-runtime';
 export * from './types/agent-event';
 export * from './types/context';
 export * from './types/execution-environment';
+export * from './types/execution-contract';
 export * from './types/skill';
 export * from './types/coordinator';
 export * from './types/request-message';

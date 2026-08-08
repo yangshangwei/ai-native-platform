@@ -30,6 +30,10 @@ import {
 } from '../context/request';
 import { inputInjectionAuditForPrompt } from '../context/renderer';
 import {
+  captureExecutionContractBaseline,
+  enforceExecutionContract,
+} from './workspace-guard';
+import {
   sourceChunkIndexConfiguredEmbeddingProvider,
   sourceChunkIndexEmbeddingForText,
   type SourceChunkIndexEmbeddingProvider,
@@ -225,8 +229,23 @@ async function invokeSkillAttempt(
   });
   await recordSelectedKnowledgeUsage(contextPack, task.task.id, deps);
   await recordKnowledgeReviewSignals(contextPack, task.task.id, deps);
+  // 08-09 P0-3: the workspace-mutation guard brackets the agent call. Taken
+  // here rather than per-stage so every skill is measured through one path;
+  // an `allow_any` contract (the default) returns null and costs nothing.
+  const workspaceBaseline = await captureExecutionContractBaseline(skill, skillCtx.workspacePath);
   try {
     const result = await c.backend.run(skill, enrichedCtx);
+    await enforceExecutionContract(
+      skill,
+      {
+        workflowRunId: skillCtx.workflowRunId,
+        stepRunId: skillCtx.stepRunId ?? null,
+        workspacePath: skillCtx.workspacePath,
+        artifactsDir: skillCtx.artifactsDir,
+      },
+      workspaceBaseline,
+      { postArtifact: deps.postArtifact },
+    );
     const contextRequest = await captureContextRequest(c, {
       skill,
       skillCtx,

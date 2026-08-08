@@ -1,10 +1,12 @@
 import { describe, expect, test, vi } from 'vitest';
-import { mkdtemp, readdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Artifact } from '@ainp/shared';
 import type { SourceChunkIndexCatalogEntry } from '../src/api-client';
 import { finishAgentSuccess, invokeSkill, type InvokeSkillDeps } from '../src/orchestrator/invoke-skill';
+import { ExecutionContractViolationError } from '../src/orchestrator/workspace-guard';
+import { sh } from '../src/sh';
 import {
   SOURCE_CHUNK_INDEX_LOCAL_EMBEDDING_MODEL,
   sourceChunkIndexLocalEmbeddingVectorForText,
@@ -1646,5 +1648,109 @@ describe('invokeSkill (de-closured)', () => {
         supplementContextPackArtifactId: null,
       },
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 08-09 P0-3: the workspace-mutation guard is wired into this one invocation
+// point, so every skill is measured through a single path. These tests pin the
+// wiring itself — the guard's own judgement is covered in
+// `workspace-guard.test.ts`. Without them the guard could be entirely correct
+// and simply never called.
+// ---------------------------------------------------------------------------
+
+async function gitWorktreeFixture(): Promise<string> {
+  const repo = await mkdtemp(join(tmpdir(), 'invokeskill-worktree-'));
+  await sh('git', ['init', '-b', 'main'], { cwd: repo });
+  await mkdir(join(repo, 'src'), { recursive: true });
+  await writeFile(join(repo, 'src', 'a.ts'), 'export const a = 1;\n', 'utf8');
+  await sh('git', ['add', '-A'], { cwd: repo });
+  await sh(
+    'git',
+    ['-c', 'user.email=ainp@test', '-c', 'user.name=ainp', 'commit', '-m', 'initial'],
+    { cwd: repo },
+  );
+  return repo;
+}
+
+const DENY_CONTRACT = {
+  workspaceMutationPolicy: 'deny',
+  allowedPaths: [],
+  maxChangedFiles: null,
+  expectedOutputs: [],
+} as const;
+
+describe('invokeSkill workspace-mutation guard wiring', () => {
+  test('a deny-contract skill that writes the workspace fails the invocation', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'invokeskill-guard-'));
+    const workspacePath = await gitWorktreeFixture();
+    const { deps, raw } = depsFixture();
+    // The reviewer edits the code it was supposed to be judging.
+    const c = runCtxFixture({
+      backend: backendFixture(async () => {
+        await writeFile(join(workspacePath, 'src', 'a.ts'), 'export const a = 2;\n', 'utf8');
+        return { outputs: [], lastMessage: 'reviewed' };
+      }),
+    });
+
+    const err = await invokeSkill(c, skillFixture('review', { executionContract: DENY_CONTRACT }), {
+      workflowRunId: c.run.id,
+      stepRunId: 'step_review',
+      workspacePath,
+      branch: c.workspace.branch,
+      title: c.opts.title,
+      artifactsDir: dir,
+      inputs: c.inputs,
+    }, deps).then(() => null).catch((caught: unknown) => caught as ExecutionContractViolationError);
+
+    expect(err).toBeInstanceOf(ExecutionContractViolationError);
+    expect(err?.changedPaths).toEqual(['src/a.ts']);
+
+    // The violation evidence is persisted before the throw.
+    const violationArtifact = raw.postArtifact.mock.calls
+      .map(([params]) => params as unknown as { metadata?: Record<string, unknown> })
+      .find((params) => params.metadata?.output === 'execution-contract-violation.json');
+    expect(violationArtifact?.metadata?.violationKinds).toEqual(['workspace_mutation_denied']);
+
+    // The existing failure bookkeeping still runs — the guard throws from
+    // inside the same try block the backend errors already used.
+    expect(raw.agentTaskFinished).toHaveBeenCalledWith(expect.objectContaining({
+      taskId: 'task_invoke',
+      status: 'failed',
+    }));
+    expect(raw.agentSessionFinished).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'failed',
+    }));
+  });
+
+  test('a skill without a contract may still write the workspace freely', async () => {
+    // Backward-compatibility floor: every pre-contract skill keeps its exact
+    // behavior, and no violation artifact is produced.
+    const dir = await mkdtemp(join(tmpdir(), 'invokeskill-guard-open-'));
+    const workspacePath = await gitWorktreeFixture();
+    const { deps, raw } = depsFixture();
+    const c = runCtxFixture({
+      backend: backendFixture(async () => {
+        await writeFile(join(workspacePath, 'src', 'a.ts'), 'export const a = 3;\n', 'utf8');
+        return { outputs: [], lastMessage: 'done' };
+      }),
+    });
+
+    const agent = await invokeSkill(c, skillFixture('review'), {
+      workflowRunId: c.run.id,
+      stepRunId: 'step_review',
+      workspacePath,
+      branch: c.workspace.branch,
+      title: c.opts.title,
+      artifactsDir: dir,
+      inputs: c.inputs,
+    }, deps);
+
+    expect(agent.taskId).toBe('task_invoke');
+    expect(
+      raw.postArtifact.mock.calls
+        .map(([params]) => params as unknown as { metadata?: Record<string, unknown> })
+        .filter((params) => params.metadata?.output === 'execution-contract-violation.json'),
+    ).toEqual([]);
   });
 });

@@ -282,6 +282,17 @@ The goal is to help later stages know where to look, not decide how to change th
       writableGlobs: ['src/**', 'examples/**'],
       networkAllowed: false,
     },
+    // 08-09 P0-3: implementation is the one stage that may mutate the
+    // worktree, and only inside its declared scope. `allowedPaths` mirrors
+    // `writableGlobs` on purpose — same scope, now measured instead of merely
+    // stated. `maxChangedFiles` stays unbounded: a real fix can legitimately
+    // touch many files, and inventing a cap would fail honest runs.
+    executionContract: {
+      workspaceMutationPolicy: 'allow_declared',
+      allowedPaths: ['src/**', 'examples/**'],
+      maxChangedFiles: null,
+      expectedOutputs: ['diff'],
+    },
     requiredGates: ['diff_scope_gate', 'sensitive_change_gate'],
     compatibleBackends: ALL,
   },
@@ -360,6 +371,15 @@ The goal is to help later stages know where to look, not decide how to change th
       },
     ],
     toolPolicy: { allowedCommands: [], writableGlobs: [], networkAllowed: false },
+    // 08-09 P0-3: the reviewer reads; it does not write. Its outputs land in
+    // `artifactsDir`, which is outside the worktree, so a workspace delta here
+    // means the reviewer edited the code it was supposed to be judging.
+    executionContract: {
+      workspaceMutationPolicy: 'deny',
+      allowedPaths: [],
+      maxChangedFiles: null,
+      expectedOutputs: [REVIEW_MARKDOWN_OUTPUT_NAME, REVIEW_VERDICT_OUTPUT_NAME],
+    },
     requiredGates: ['acceptance_gate'],
     compatibleBackends: ALL,
   },

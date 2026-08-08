@@ -4,6 +4,7 @@ import { existsSync } from 'node:fs';
 import type { Artifact, VerifierMediaRole } from '@ainp/shared';
 import { VERIFIER_MEDIA_SCHEMA_VERSION } from '@ainp/shared';
 import { api } from '../api-client';
+import { WORKSPACE_VERIFIER_MEDIA_DIR } from '../config';
 import type { RunCtx } from './types';
 
 export interface PersistedVerifierMediaArtifact {
@@ -16,7 +17,7 @@ export async function persistVerifierMediaArtifacts(
   stepRunId: string,
   verifierDir: string,
 ): Promise<PersistedVerifierMediaArtifact[]> {
-  const sourceDir = join(c.workspace.path, '.ainp-verifier');
+  const sourceDir = join(c.workspace.path, WORKSPACE_VERIFIER_MEDIA_DIR);
   if (!existsSync(sourceDir)) return [];
 
   const entries = await readdir(sourceDir, { withFileTypes: true });
@@ -52,7 +53,7 @@ export async function persistVerifierMediaArtifacts(
         stage: 'review',
         subStage: 'verifier',
         output: outputName,
-        source: `.ainp-verifier/${entry.name}`,
+        source: `${WORKSPACE_VERIFIER_MEDIA_DIR}/${entry.name}`,
       },
     });
     persisted.push({ artifact, role });

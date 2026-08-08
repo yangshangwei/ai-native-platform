@@ -2,6 +2,7 @@ import type { WorkflowStage } from './workflow';
 import type { GateId } from './gate';
 import type { AgentBackendKind } from './agent';
 import type { SkillInputInjectionPolicy } from './context';
+import type { ExecutionContract } from './execution-contract';
 
 /**
  * Canonical SkillSpec — owned by the platform. Backend-agnostic.
@@ -16,6 +17,14 @@ export interface SkillSpec {
   inputPolicies?: SkillInputInjectionPolicy[];
   outputs: SkillIO[];
   toolPolicy: ToolPolicy;
+  /**
+   * Execution-time promise about workspace mutation and scope. Optional:
+   * omitting it means `DEFAULT_EXECUTION_CONTRACT` (`allow_any`), which is
+   * how every pre-contract skill keeps its original behavior. Unlike
+   * `toolPolicy.writableGlobs` — which is rendered into the prompt as advice —
+   * this one is measured by the runner around the agent invocation.
+   */
+  executionContract?: ExecutionContract;
   requiredGates: GateId[];
   compatibleBackends: AgentBackendKind[];
 }
@@ -30,7 +39,12 @@ export interface SkillIO {
 export interface ToolPolicy {
   /** Commands the agent may suggest; final approval still goes through whitelist. */
   allowedCommands: string[];
-  /** Filesystem globs the agent may write to (relative to workspace). */
+  /**
+   * Filesystem globs the agent may write to (relative to workspace).
+   *
+   * Prompt-level advice only — the single consumer is the context renderer.
+   * The enforceable half is `SkillSpec.executionContract.allowedPaths`.
+   */
   writableGlobs: string[];
   /** Whether the backend may call the network. Reserved. */
   networkAllowed: boolean;
