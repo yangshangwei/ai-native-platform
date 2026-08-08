@@ -4,10 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, expect, test } from 'vitest';
 import {
+  REVIEW_VERDICT_SCHEMA_VERSION,
   VERIFIER_AC_MATRIX_SCHEMA_VERSION,
   VERIFIER_MEDIA_SCHEMA_VERSION,
   type Artifact,
   type Project,
+  type ReviewerVerdict,
   type WorkflowRun,
 } from '@ainp/shared';
 
@@ -38,6 +40,67 @@ function artifact(kind: Artifact['kind'], path: string): Artifact {
 
 function sha256(content: string | Buffer): string {
   return createHash('sha256').update(content).digest('hex');
+}
+
+/**
+ * A pre-verdict (legacy) review artifact. Metadata keys are copied from the
+ * real writer — `metadataForStageOutput` in
+ * `apps/runner/src/orchestrator/steps.ts` writes `{ skill, output, stage }`
+ * for every stage output, and has always done so. Fixtures that left
+ * `metadata` empty were never faithful to production.
+ */
+function legacyReviewArtifact(path: string): Artifact {
+  const base = artifact('other', path);
+  return {
+    ...base,
+    metadata: { skill: 'skill.review', output: 'review.md', stage: 'review' },
+  };
+}
+
+/**
+ * A post-P0-2 reviewer verdict artifact. Metadata keys again come from the
+ * real writer: `metadataForStageOutput` copies `schemaVersion` out of the JSON
+ * body for `.json` outputs and always records `output`.
+ */
+function reviewVerdictArtifact(
+  dir: string,
+  overrides: Partial<ReviewerVerdict> = {},
+): { artifact: Artifact; verdict: ReviewerVerdict } {
+  const verdict: ReviewerVerdict = {
+    schemaVersion: REVIEW_VERDICT_SCHEMA_VERSION,
+    role: 'reviewer',
+    status: 'pass',
+    summary: 'Change is scoped and covered by tests.',
+    blocking: [],
+    remediation: [],
+    advisory: [],
+    evidenceRefs: [],
+    provenance: {
+      agentSessionId: null,
+      backend: 'claude_code',
+      skillId: 'skill.review',
+      producedAt: new Date().toISOString(),
+    },
+    unavailableReason: null,
+    ...overrides,
+  };
+  const path = join(dir, 'review-verdict.json');
+  writeFileSync(path, `${JSON.stringify(verdict, null, 2)}\n`);
+  const base = artifact('other', path);
+  return {
+    verdict,
+    artifact: {
+      ...base,
+      contentType: 'application/json',
+      metadata: {
+        skill: 'skill.review',
+        output: 'review-verdict.json',
+        stage: 'review',
+        structured: true,
+        schemaVersion: REVIEW_VERDICT_SCHEMA_VERSION,
+      },
+    },
+  };
 }
 
 test('requirement gate fails when the draft lacks IDs, acceptance criteria, and context evidence', () => {
@@ -317,7 +380,7 @@ test('acceptance traceability gate requires requirement, design, diff, review, a
     { ...artifact('requirement_draft', reqPath), workflowRunId, stepRunId },
     { ...artifact('design_doc', designPath), workflowRunId, stepRunId },
     { ...artifact('diff', diffPath), workflowRunId, stepRunId },
-    { ...artifact('other', reviewPath), workflowRunId, stepRunId },
+    { ...legacyReviewArtifact(reviewPath), workflowRunId, stepRunId },
   ]) {
     storeMod.store.artifacts.insert(a);
   }
@@ -461,6 +524,7 @@ test('acceptance traceability gate requires requirement, design, diff, review, a
     'acceptance.design_present',
     'acceptance.diff_present',
     'acceptance.review_present',
+    'acceptance.review_verdict_actionable',
     'acceptance.test_gate_passed',
     'acceptance.business_matrix_present',
     'acceptance.business_matrix_criteria_reconciled',
@@ -486,7 +550,7 @@ test('acceptance traceability gate rejects feature ACs when only test_gate passe
     { ...artifact('requirement_draft', reqPath), workflowRunId, stepRunId },
     { ...artifact('design_doc', designPath), workflowRunId, stepRunId },
     { ...artifact('diff', diffPath), workflowRunId, stepRunId },
-    { ...artifact('other', reviewPath), workflowRunId, stepRunId },
+    { ...legacyReviewArtifact(reviewPath), workflowRunId, stepRunId },
   ]) {
     storeMod.store.artifacts.insert(a);
   }
@@ -546,7 +610,7 @@ test('acceptance traceability gate rejects business matrix without core boundary
     { ...artifact('requirement_draft', reqPath), workflowRunId, stepRunId },
     { ...artifact('design_doc', designPath), workflowRunId, stepRunId },
     { ...artifact('diff', diffPath), workflowRunId, stepRunId },
-    { ...artifact('other', reviewPath), workflowRunId, stepRunId },
+    { ...legacyReviewArtifact(reviewPath), workflowRunId, stepRunId },
   ]) {
     storeMod.store.artifacts.insert(a);
   }
@@ -756,7 +820,7 @@ function runBusinessMatrixFixture(input: {
   for (const candidate of [
     requirementArtifact,
     { ...artifact('diff', diffPath), workflowRunId, stepRunId },
-    { ...artifact('other', reviewPath), workflowRunId, stepRunId },
+    { ...legacyReviewArtifact(reviewPath), workflowRunId, stepRunId },
   ]) {
     storeMod.store.artifacts.insert(candidate);
   }
@@ -924,7 +988,7 @@ test('AC-14: feature.standard regression — requirement step scheduled but arti
   for (const a of [
     { ...artifact('design_doc', designPath), workflowRunId, stepRunId },
     { ...artifact('diff', diffPath), workflowRunId, stepRunId },
-    { ...artifact('other', reviewPath), workflowRunId, stepRunId },
+    { ...legacyReviewArtifact(reviewPath), workflowRunId, stepRunId },
   ]) {
     storeMod.store.artifacts.insert(a);
   }
@@ -1011,7 +1075,7 @@ test('AC-15: issue.standard shape — no requirement/design step scheduled → p
     { ...artifact('other', reportPath), workflowRunId, stepRunId },
     { ...artifact('other', analysisPath), workflowRunId, stepRunId },
     { ...artifact('diff', diffPath), workflowRunId, stepRunId },
-    { ...artifact('other', reviewPath), workflowRunId, stepRunId },
+    { ...legacyReviewArtifact(reviewPath), workflowRunId, stepRunId },
   ]) {
     storeMod.store.artifacts.insert(a);
   }
@@ -1060,7 +1124,7 @@ test('AC-15 / W2-2b AC-15: refactor.standard shape — no requirement/design ste
     { ...artifact('other', scanPath), workflowRunId, stepRunId },
     { ...artifact('other', planPath), workflowRunId, stepRunId },
     { ...artifact('diff', diffPath), workflowRunId, stepRunId },
-    { ...artifact('other', reviewPath), workflowRunId, stepRunId },
+    { ...legacyReviewArtifact(reviewPath), workflowRunId, stepRunId },
   ]) {
     storeMod.store.artifacts.insert(a);
   }
@@ -1100,7 +1164,7 @@ test('AC-16: feature.fastforward shape — no requirement/design step → pass (
 
   for (const a of [
     { ...artifact('diff', diffPath), workflowRunId, stepRunId },
-    { ...artifact('other', reviewPath), workflowRunId, stepRunId },
+    { ...legacyReviewArtifact(reviewPath), workflowRunId, stepRunId },
   ]) {
     storeMod.store.artifacts.insert(a);
   }
@@ -1212,7 +1276,7 @@ test('evidence gate passes complete digest-backed compile/test/acceptance eviden
 
   for (const a of [
     { ...artifact('diff', diffPath), workflowRunId, stepRunId },
-    { ...artifact('other', reviewPath), workflowRunId, stepRunId },
+    { ...legacyReviewArtifact(reviewPath), workflowRunId, stepRunId },
     { ...artifact('surefire_report', surefirePath), workflowRunId, stepRunId, contentType: 'application/xml' },
   ]) {
     storeMod.store.artifacts.insert(a);

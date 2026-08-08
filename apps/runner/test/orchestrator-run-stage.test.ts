@@ -3,9 +3,14 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  isOperationalError,
   REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT,
+  REVIEW_VERDICT_OUTPUT_NAME,
+  REVIEW_VERDICT_SCHEMA_VERSION,
   STAGE_HANDOFF_SCHEMA_VERSION,
   type Artifact,
+  type OperationalError,
+  type ReviewerVerdict,
   type StepRun,
 } from '@ainp/shared';
 import {
@@ -33,6 +38,29 @@ function agentFixture(outputs: InvokedAgent['outputs'] = []): InvokedAgent {
     contextPack: { id: 'cp_stage' } as InvokedAgent['contextPack'],
     contextRequest: null,
   };
+}
+
+/** A legal `ainp.review_verdict.v1` body; overrides drive the rejection cases. */
+function reviewVerdictJson(overrides: Partial<ReviewerVerdict> = {}): string {
+  const verdict: ReviewerVerdict = {
+    schemaVersion: REVIEW_VERDICT_SCHEMA_VERSION,
+    role: 'reviewer',
+    status: 'pass',
+    summary: 'Change is scoped and covered.',
+    blocking: [],
+    remediation: [],
+    advisory: [],
+    evidenceRefs: [],
+    provenance: {
+      agentSessionId: 'ags_stage',
+      backend: 'native',
+      skillId: 'skill.review',
+      producedAt: '2026-08-08T00:00:00.000Z',
+    },
+    unavailableReason: null,
+    ...overrides,
+  };
+  return `${JSON.stringify(verdict, null, 2)}\n`;
 }
 
 function baseDeps(overrides: {
@@ -292,8 +320,17 @@ describe('runStage (de-closured)', () => {
     const dir = await mkdtemp(join(tmpdir(), 'runstage-review-handoff-'));
     const reviewPath = join(dir, 'review.md');
     await writeFile(reviewPath, '# Review\n\nNeeds follow-up.\n', 'utf8');
+    const verdictPath = join(dir, REVIEW_VERDICT_OUTPUT_NAME);
+    const verdictBody = reviewVerdictJson();
+    await writeFile(verdictPath, verdictBody, 'utf8');
     const agent = agentFixture([
       { name: 'review.md', path: reviewPath, contentType: 'text/markdown', size: 26 },
+      {
+        name: REVIEW_VERDICT_OUTPUT_NAME,
+        path: verdictPath,
+        contentType: 'application/json',
+        size: Buffer.byteLength(verdictBody, 'utf8'),
+      },
     ]);
     const { deps, raw } = baseDeps({ agent });
     const c = runCtxFixture({
@@ -320,7 +357,114 @@ describe('runStage (de-closured)', () => {
       status: 'completed',
       adoptionDecision: 'needs_review',
       inputArtifactIds: ['art_diff'],
-      outputArtifactIds: ['art_other'],
+      // Both review outputs land as kind='other', so `postArtifact` returns the
+      // same stubbed id twice; the handoff records the deduped set.
+      outputArtifactIds: ['art_other', 'art_other'],
     }));
+  });
+
+  // ---- 08-08 P0-2 R2/R3: reviewer verdict enforcement --------------------
+
+  test('review stage without the verdict output pauses as backend_protocol', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'runstage-review-no-verdict-'));
+    const reviewPath = join(dir, 'review.md');
+    await writeFile(reviewPath, '# Review\n\nLGTM.\n', 'utf8');
+    const agent = agentFixture([
+      { name: 'review.md', path: reviewPath, contentType: 'text/markdown', size: 16 },
+    ]);
+    const { deps } = baseDeps({ agent });
+    const c = runCtxFixture();
+
+    const caught = await runStage(c, 'review', 'other', null, deps).catch((err: unknown) => err);
+
+    expect(isOperationalError(caught)).toBe(true);
+    expect((caught as OperationalError).reason).toBe('backend_protocol');
+    expect((caught as OperationalError).message).toContain(REVIEW_VERDICT_OUTPUT_NAME);
+  });
+
+  test('review stage with a self-contradictory verdict pauses as backend_protocol', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'runstage-review-bad-verdict-'));
+    const reviewPath = join(dir, 'review.md');
+    await writeFile(reviewPath, '# Review\n\nBroken.\n', 'utf8');
+    const verdictPath = join(dir, REVIEW_VERDICT_OUTPUT_NAME);
+    // status 'fail' with an empty blocking list — R2 rejects this.
+    const verdictBody = reviewVerdictJson({ status: 'fail', blocking: [], remediation: [] });
+    await writeFile(verdictPath, verdictBody, 'utf8');
+    const agent = agentFixture([
+      { name: 'review.md', path: reviewPath, contentType: 'text/markdown', size: 18 },
+      {
+        name: REVIEW_VERDICT_OUTPUT_NAME,
+        path: verdictPath,
+        contentType: 'application/json',
+        size: Buffer.byteLength(verdictBody, 'utf8'),
+      },
+    ]);
+    const { deps } = baseDeps({ agent });
+    const c = runCtxFixture();
+
+    const caught = await runStage(c, 'review', 'other', null, deps).catch((err: unknown) => err);
+
+    expect(isOperationalError(caught)).toBe(true);
+    expect((caught as OperationalError).reason).toBe('backend_protocol');
+  });
+
+  test("review stage with status 'unavailable' pauses as reviewer_unavailable, not a gate fail", async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'runstage-review-unavailable-'));
+    const reviewPath = join(dir, 'review.md');
+    await writeFile(reviewPath, '# Review\n\nCannot judge.\n', 'utf8');
+    const verdictPath = join(dir, REVIEW_VERDICT_OUTPUT_NAME);
+    const verdictBody = reviewVerdictJson({
+      status: 'unavailable',
+      unavailableReason: 'diff artifact was unreadable',
+    });
+    await writeFile(verdictPath, verdictBody, 'utf8');
+    const agent = agentFixture([
+      { name: 'review.md', path: reviewPath, contentType: 'text/markdown', size: 24 },
+      {
+        name: REVIEW_VERDICT_OUTPUT_NAME,
+        path: verdictPath,
+        contentType: 'application/json',
+        size: Buffer.byteLength(verdictBody, 'utf8'),
+      },
+    ]);
+    const { deps, raw } = baseDeps({ agent });
+    const c = runCtxFixture();
+
+    const caught = await runStage(c, 'review', 'other', null, deps).catch((err: unknown) => err);
+
+    expect(isOperationalError(caught)).toBe(true);
+    expect((caught as OperationalError).reason).toBe('reviewer_unavailable');
+    expect((caught as OperationalError).message).toContain('diff artifact was unreadable');
+    // Never a gate decision: no gate ran, no approval was requested.
+    expect(raw.api.runGate).not.toHaveBeenCalled();
+    expect(raw.awaitApproval).not.toHaveBeenCalled();
+  });
+
+  test('review stage verdict citing an unknown artifactId pauses as backend_protocol', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'runstage-review-unknown-evidence-'));
+    const reviewPath = join(dir, 'review.md');
+    await writeFile(reviewPath, '# Review\n\nLGTM.\n', 'utf8');
+    const verdictPath = join(dir, REVIEW_VERDICT_OUTPUT_NAME);
+    const verdictBody = reviewVerdictJson({
+      evidenceRefs: [{ artifactId: 'art_never_written', claim: 'imagined evidence' }],
+    });
+    await writeFile(verdictPath, verdictBody, 'utf8');
+    const agent = agentFixture([
+      { name: 'review.md', path: reviewPath, contentType: 'text/markdown', size: 16 },
+      {
+        name: REVIEW_VERDICT_OUTPUT_NAME,
+        path: verdictPath,
+        contentType: 'application/json',
+        size: Buffer.byteLength(verdictBody, 'utf8'),
+      },
+    ]);
+    const { deps } = baseDeps({ agent });
+    const c = runCtxFixture();
+
+    const caught = await runStage(c, 'review', 'other', null, deps).catch((err: unknown) => err);
+
+    expect(isOperationalError(caught)).toBe(true);
+    expect((caught as OperationalError).reason).toBe('backend_protocol');
+    expect((caught as OperationalError).message).toContain('art_never_written');
   });
 });

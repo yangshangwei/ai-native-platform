@@ -4,6 +4,7 @@ import { buildRunProjection, type RunDetail } from '../src/projection';
 import { renderEvidencePanel, renderStageTimeline, renderTaskDetailPage } from '../src/page-task-detail';
 import { artifactContent, contextGovernanceByRun, data, ui } from '../src/state';
 import type { WorkflowRequestDto } from '../src/types';
+import type { ReviewerVerdict } from '@ainp/shared/browser';
 
 const testWindow = new Window();
 globalThis.window = testWindow as unknown as Window & typeof globalThis;
@@ -170,6 +171,148 @@ function installPausedTaskDetail(): { detail: RunDetail; request: WorkflowReques
   ui.activeTaskRequestId = request.id;
   ui.activeRunId = detail.run.id;
   return { detail, request };
+}
+
+/**
+ * Puts a detail on the wire the way `renderTaskDetailPage` expects to find it:
+ * an active request pointing at the run, plus the ui selection. Request status
+ * is derived from the run so the hero and the side panel agree.
+ */
+function installTaskDetail(detail: RunDetail): WorkflowRequestDto {
+  const request: WorkflowRequestDto = {
+    id: `wreq_${detail.run.id}`,
+    projectId: detail.run.projectId,
+    type: 'feature',
+    title: detail.run.title,
+    branch: detail.run.sourceBranch,
+    status: detail.run.status === 'failed' ? 'failed' : 'claimed',
+    claimedBy: 'runner@test',
+    workflowRunId: detail.run.id,
+    error: null,
+    agentBackend: null,
+    flowId: detail.run.flowId,
+    startStage: null,
+    kind: null,
+    createdAt: detail.run.createdAt,
+    updatedAt: detail.run.createdAt,
+  };
+  data.requests = [request];
+  data.runs = [detail.run];
+  data.activeDetail = detail;
+  ui.activeTaskRequestId = request.id;
+  ui.activeRunId = detail.run.id;
+  return request;
+}
+
+/**
+ * A `skill.review` output pair, shaped the way the runner really posts it.
+ *
+ * Metadata keys are copied from the writer, not from the reader's wish list:
+ * `metadataForStageOutput` (apps/runner/src/orchestrator/steps.ts:1736) always
+ * writes `{ skill, output, stage }`, and for a `.json` output additionally
+ * `structured: true` plus `schemaVersion` read out of the file body itself.
+ * `skill.review` declares `review.md` before `review-verdict.json`
+ * (apps/runner/src/skills/index.ts), so the verdict is the newer artifact.
+ */
+function reviewOutputs(verdict: ReviewerVerdict): {
+  markdown: RunDetail['artifacts'][number];
+  verdictArtifact: RunDetail['artifacts'][number];
+  verdictText: string;
+} {
+  return {
+    markdown: {
+      id: 'art_review_md',
+      kind: 'other',
+      stepRunId: 'step_review',
+      uri: 'file:///tmp/review.md',
+      createdAt: '2026-06-29T00:00:03.000Z',
+      contentType: 'text/markdown',
+      sha256: 'review-md-sha',
+      metadata: { skill: 'skill.review', output: 'review.md', stage: 'review' },
+    },
+    verdictArtifact: {
+      id: 'art_review_verdict',
+      kind: 'other',
+      stepRunId: 'step_review',
+      uri: 'file:///tmp/review-verdict.json',
+      createdAt: '2026-06-29T00:00:04.000Z',
+      contentType: 'application/json',
+      sha256: 'review-verdict-sha',
+      metadata: {
+        skill: 'skill.review',
+        output: 'review-verdict.json',
+        stage: 'review',
+        structured: true,
+        schemaVersion: 'ainp.review_verdict.v1',
+      },
+    },
+    verdictText: JSON.stringify(verdict, null, 2),
+  };
+}
+
+/** Loads an artifact body into the SPA cache the way `loadArtifact` would. */
+function cacheArtifactText(artifact: RunDetail['artifacts'][number], text: string): void {
+  artifactContent.set(artifact.id, {
+    artifact,
+    text,
+    contentType: artifact.contentType ?? 'application/json',
+    filename: String(artifact.metadata?.output ?? 'artifact'),
+    digest: {
+      algorithm: 'sha256',
+      expected: artifact.sha256,
+      actual: artifact.sha256,
+      verified: true,
+    },
+  });
+}
+
+/** A `status: 'fail'` verdict that the strict shared parser accepts. */
+function failingVerdict(): ReviewerVerdict {
+  return {
+    schemaVersion: 'ainp.review_verdict.v1',
+    role: 'reviewer',
+    status: 'fail',
+    summary: 'Gate wiring lands, but the new rule can be bypassed.',
+    blocking: [
+      {
+        id: 'B2',
+        severity: 'major',
+        summary: 'Legacy review path is not flagged as degraded.',
+        location: null,
+        evidenceRefs: [],
+      },
+      {
+        id: 'B1',
+        severity: 'blocker',
+        summary: 'Agent verdict status can still short-circuit the gate.',
+        location: 'apps/api/src/gate-engine.ts:780',
+        evidenceRefs: [{ artifactId: 'art_design', claim: 'gate rule table' }],
+      },
+    ],
+    remediation: [
+      {
+        blockerId: 'B1',
+        action: 'Derive the rule status from evidence instead of verdict.status.',
+        rationale: 'ADR-2 keeps the Gate Engine the only state judge.',
+      },
+    ],
+    advisory: ['Consider naming the legacy branch in the rule message.', 'Add a fixture for role=verifier.'],
+    evidenceRefs: [{ artifactId: 'art_design', claim: 'reviewed design doc' }],
+    provenance: {
+      agentSessionId: null,
+      backend: 'claude_code',
+      skillId: 'skill.review',
+      producedAt: '2026-06-29T00:00:04.000Z',
+    },
+    unavailableReason: null,
+  };
+}
+
+/** Moves a detail into the review stage and attaches the review step. */
+function atReviewStage(detail: RunDetail, status: RunDetail['run']['status']): RunDetail {
+  detail.run = { ...detail.run, currentStage: 'review', status };
+  detail.steps.push({ id: 'step_review', stage: 'review', name: 'review', status: 'passed' });
+  return detail;
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -496,5 +639,193 @@ describe('task-detail reviewer rendering', () => {
     expect(panel?.querySelector('details[data-details-key="graph-events:run_review"]')).not.toBeNull();
     // Read-only: the live view must not add a graph mutation control.
     expect(panel?.querySelector('button')).toBeNull();
+  });
+
+  it('shows the gate rule message next to each rule, and nothing when there is none', () => {
+    const detail = reviewerDetail();
+    detail.run = { ...detail.run, status: 'running' };
+    const designGate = detail.gates.find((gate) => gate.gateId === 'design_gate')!;
+    designGate.status = 'fail';
+    designGate.ruleResults = [
+      { ruleId: 'design.test_strategy_present', status: 'warn', message: 'Needs sharper test plan' },
+      { ruleId: 'design.risks_present', status: 'fail', message: 'Risks section lists no mitigation' },
+      // A rule that decided nothing worth saying: no message element at all,
+      // rather than an empty one taking up a row.
+      { ruleId: 'design.doc_present', status: 'pass', message: '' },
+    ];
+    installTaskDetail(detail);
+
+    const rows = [...renderTaskDetailPage().querySelectorAll<HTMLElement>('.current-stage-panel .rule-row')];
+    expect(rows.length).toBe(3);
+
+    const [warned, failed, silent] = rows;
+    // Label + status pill are unchanged; the message is the new third slot.
+    expect(warned?.querySelector('span')?.textContent).toBe('测试策略 (design.test_strategy_present)');
+    expect(warned?.querySelector('.pill')?.textContent).toBe('warn');
+    expect(warned?.querySelector('small')?.textContent).toBe('Needs sharper test plan');
+    expect(warned?.querySelector('small')?.classList.contains('warn')).toBe(false);
+
+    expect(failed?.querySelector('small')?.textContent).toBe('Risks section lists no mitigation');
+    // Only a failing rule paints its message as a warning.
+    expect(failed?.querySelector('small')?.classList.contains('warn')).toBe(true);
+
+    expect(silent?.querySelector('small')).toBeNull();
+    expect(silent?.textContent).toBe('设计文档存在 (design.doc_present)pass');
+  });
+
+  it('renders the reviewer verdict and hides it for runs without one', () => {
+    const detail = atReviewStage(reviewerDetail(), 'awaiting_human');
+    installTaskDetail(detail);
+
+    // Pre-verdict run: no empty shell, no placeholder.
+    expect(renderTaskDetailPage().querySelector('.review-verdict')).toBeNull();
+
+    const verdict = failingVerdict();
+    const outputs = reviewOutputs(verdict);
+    detail.artifacts.push(outputs.markdown, outputs.verdictArtifact);
+    cacheArtifactText(outputs.verdictArtifact, outputs.verdictText);
+
+    const block = renderTaskDetailPage().querySelector<HTMLElement>('.review-verdict');
+    expect(block).not.toBeNull();
+    expect(block?.textContent).toContain('评审裁决');
+    expect(block?.querySelector('.pill.bad')?.textContent).toBe('不通过');
+    // The verdict is opinion, not gate state — the UI has to say so.
+    expect(block?.textContent).toContain('仅为评审意见，门禁状态由 Gate Engine 判定');
+    expect(block?.textContent).toContain('Gate wiring lands, but the new rule can be bypassed.');
+
+    const cards = [...block!.querySelectorAll<HTMLElement>('.acceptance-card')];
+    expect(cards.length).toBe(2);
+    // Severity drives the card treatment: blocker reads as failed, major as at-risk.
+    expect(cards[0]?.classList.contains('at_risk')).toBe(true);
+    expect(cards[1]?.classList.contains('failed')).toBe(true);
+
+    const [major, blocker] = cards;
+    expect(blocker?.textContent).toContain('B1');
+    expect(blocker?.textContent).toContain('blocker');
+    expect(blocker?.textContent).toContain('Agent verdict status can still short-circuit the gate.');
+    expect(blocker?.textContent).toContain('位置: apps/api/src/gate-engine.ts:780');
+    expect(blocker?.textContent).toContain('修复建议: Derive the rule status from evidence instead of verdict.status.');
+    expect(blocker?.textContent).toContain('理由: ADR-2 keeps the Gate Engine the only state judge.');
+    expect(blocker?.textContent).toContain('证据: gate rule table (art_design)');
+
+    // A blocker with neither remediation nor evidence says so out loud instead
+    // of rendering a blank line.
+    expect(major?.textContent).toContain('位置: 未标注');
+    expect(major?.textContent).toContain('修复建议: 缺失');
+    expect(major?.textContent).toContain('证据: 缺失');
+
+    const advisory = block?.querySelector<HTMLDetailsElement>('details.evidence-group');
+    // `renderDetails` counts the elements it was handed, and it is handed one
+    // <ul> — so the header reads (1) for two advisories. Pinned as-is; see the
+    // task report for the follow-up.
+    expect(advisory?.querySelector('summary')?.textContent).toBe('建议（非阻塞） (1)');
+    expect(advisory?.querySelectorAll('li').length).toBe(2);
+    expect(advisory?.textContent).toContain('Consider naming the legacy branch in the rule message.');
+    expect(advisory?.textContent).toContain('Add a fixture for role=verifier.');
+
+    expect(block?.textContent).toContain('整体证据：reviewed design doc (art_design)');
+  });
+
+  it('keeps the verdict block hidden while the body is unloaded or unparseable', () => {
+    const detail = atReviewStage(reviewerDetail(), 'awaiting_human');
+    const outputs = reviewOutputs(failingVerdict());
+    detail.artifacts.push(outputs.markdown, outputs.verdictArtifact);
+    installTaskDetail(detail);
+
+    // Artifact is on the wire but its body has not been fetched yet.
+    expect(renderTaskDetailPage().querySelector('.review-verdict')).toBeNull();
+
+    // Body arrives but does not satisfy the schema: the strict shared parser
+    // rejects it, so the SPA shows nothing rather than a half-read verdict.
+    cacheArtifactText(outputs.verdictArtifact, JSON.stringify({
+      ...failingVerdict(),
+      schemaVersion: 'ainp.review_verdict.v0',
+    }));
+    expect(renderTaskDetailPage().querySelector('.review-verdict')).toBeNull();
+
+    cacheArtifactText(outputs.verdictArtifact, outputs.verdictText);
+    expect(renderTaskDetailPage().querySelector('.review-verdict')).not.toBeNull();
+  });
+
+  it('names the failing rule and the top blocker in the failed-stage side panel', () => {
+    const detail = atReviewStage(reviewerDetail(), 'failed');
+    detail.gates.push({
+      id: 'gate_acceptance',
+      gateId: 'acceptance_gate',
+      stepRunId: 'step_review',
+      status: 'fail',
+      decidedAt: '2026-06-29T00:00:05.000Z',
+      ruleResults: [
+        { ruleId: 'acceptance.review_present', status: 'pass', message: 'review verdict present (art_review_verdict)' },
+        {
+          ruleId: 'acceptance.review_verdict_actionable',
+          status: 'fail',
+          message: 'reviewer blocker(s) without remediation: B2',
+        },
+        { ruleId: 'acceptance.test_gate_passed', status: 'fail', message: '' },
+      ],
+    });
+    const outputs = reviewOutputs(failingVerdict());
+    detail.artifacts.push(outputs.markdown, outputs.verdictArtifact);
+    cacheArtifactText(outputs.verdictArtifact, outputs.verdictText);
+    installTaskDetail(detail);
+
+    const panel = renderTaskDetailPage().querySelector<HTMLElement>('.desktop-next-action');
+    const reasons = [...panel!.querySelectorAll<HTMLElement>('li')].map((item) => item.textContent);
+
+    // One line per failing rule, each carrying the Gate Engine's own message.
+    expect(reasons).toContain('质量门禁失败：评审裁决可执行 (acceptance.review_verdict_actionable) — reviewer blocker(s) without remediation: B2');
+    // A failing rule with no message degrades to the bare label, not a dangling dash.
+    expect(reasons).toContain('质量门禁失败：acceptance.test_gate_passed');
+    // Passing rules stay out of the failure list.
+    expect(reasons.some((line) => line?.includes('acceptance.review_present'))).toBe(false);
+    // Pre-existing non-gate reasons still render alongside.
+    expect(reasons).toContain('命令执行失败 (exit 1)：bun test apps/web/test');
+
+    expect(panel?.textContent).toContain('首要阻塞项');
+    // B2 comes first in the array, but severity wins: the blocker is promoted.
+    expect(panel?.querySelector('.pill.bad')?.textContent).toBe('B1');
+    expect(panel?.textContent).toContain('Agent verdict status can still short-circuit the gate.');
+    expect(panel?.textContent).toContain('位置: apps/api/src/gate-engine.ts:780');
+    expect(panel?.textContent).toContain('修复建议: Derive the rule status from evidence instead of verdict.status.');
+    expect(panel?.textContent).toContain('证据: gate rule table (art_design)');
+    expect(panel?.textContent).not.toContain('Legacy review path is not flagged as degraded.');
+  });
+
+  it('labels a reviewer_unavailable pause as a non-quality operational stop', () => {
+    const { detail } = installPausedTaskDetail();
+    detail.audit = [{
+      id: 'audit_pause',
+      workflowRunId: detail.run.id,
+      kind: 'workflow_run.paused',
+      payload: { reason: 'reviewer_unavailable', detail: 'diff artifact was unreadable' },
+      at: '2026-07-26T00:00:00.000Z',
+    }];
+
+    const evidence = [...renderTaskDetailPage().querySelectorAll<HTMLElement>('.checkpoint li')]
+      .map((item) => item.textContent);
+
+    expect(evidence).toContain('暂停原因：评审无法给出裁决（不是质量问题）');
+    expect(evidence).toContain('详情：diff artifact was unreadable');
+  });
+
+  it('shows the review markdown under 查看 Review 原文, never the verdict JSON', () => {
+    const detail = atReviewStage(reviewerDetail(), 'awaiting_human');
+    const outputs = reviewOutputs(failingVerdict());
+    // Both are kind='other' and the verdict is the NEWER one (skill.review
+    // declares review.md first), so selecting "latest of kind" would surface
+    // the JSON here. Selection must key on metadata.output instead.
+    detail.artifacts.push(outputs.markdown, outputs.verdictArtifact);
+    cacheArtifactText(outputs.markdown, '# Review\n\n未通过：缺少超时重试的边界用例。');
+    cacheArtifactText(outputs.verdictArtifact, outputs.verdictText);
+    installTaskDetail(detail);
+
+    const raw = [...renderTaskDetailPage().querySelectorAll<HTMLElement>('.raw-details')]
+      .find((node) => node.querySelector('summary')?.textContent === '查看 Review 原文');
+    const body = raw?.querySelector('pre')?.textContent ?? '';
+
+    expect(body).toContain('未通过：缺少超时重试的边界用例。');
+    expect(body).not.toContain('schemaVersion');
+    expect(body).not.toContain('ainp.review_verdict.v1');
   });
 });

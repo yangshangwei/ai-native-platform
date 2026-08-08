@@ -31,6 +31,8 @@ export interface BuildPromptArgs {
   mode: 'produce_file' | 'implementation';
   targetPath?: string;
   outputName?: string;
+  /** Extra required files beyond the primary one (08-08 P0-2 review verdict). */
+  additionalTargets?: ReadonlyArray<{ name: string; path: string }>;
 }
 
 /** A stream event already parsed from a CLI output line. */
@@ -98,7 +100,26 @@ export async function cliAvailable(backend: CliBackendKind, bin?: string): Promi
 export function pickFileOutput(skill: SkillSpec): { name: string; contentType: string } {
   const out = skill.outputs[0];
   if (!out) throw new Error(`skill ${skill.id} has no outputs`);
-  return { name: out.name, contentType: 'text/markdown' };
+  return { name: out.name, contentType: contentTypeForOutputName(out.name) };
+}
+
+/**
+ * Required produce-file outputs after the primary one. `skill.review` declares
+ * `review.md` plus the machine-readable `review-verdict.json` (08-08 P0-2 R2);
+ * every other produce-file skill still has exactly one required output, so this
+ * is empty for them.
+ */
+export function pickAdditionalFileOutputs(
+  skill: SkillSpec,
+): Array<{ name: string; contentType: string }> {
+  return skill.outputs
+    .slice(1)
+    .filter((out) => out.required === true)
+    .map((out) => ({ name: out.name, contentType: contentTypeForOutputName(out.name) }));
+}
+
+function contentTypeForOutputName(name: string): string {
+  return name.endsWith('.json') ? 'application/json' : 'text/markdown';
 }
 
 /**

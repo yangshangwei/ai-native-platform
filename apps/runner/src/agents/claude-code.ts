@@ -27,13 +27,14 @@ import {
   type AgentBackendKind,
 } from '@ainp/shared';
 import { parseStreamLine } from './claude-code-parser';
-import type { AgentBackend, AgentRunResult, AgentTaskContext } from './types';
+import type { AgentArtifactOutput, AgentBackend, AgentRunResult, AgentTaskContext } from './types';
 import {
   captureWorktreeDiffOutputs,
   cliAvailable,
   consumeLines,
   createAgentEventEmitter,
   isStructuredContextRequest,
+  pickAdditionalFileOutputs,
   pickFileOutput,
   type BuildPromptArgs,
 } from './cli-common';
@@ -95,11 +96,16 @@ export class ClaudeCodeBackend implements AgentBackend {
   ): Promise<AgentRunResult> {
     const expected = pickFileOutput(skill);
     const targetPath = join(ctx.artifactsDir, expected.name);
+    const additional = pickAdditionalFileOutputs(skill).map((out) => ({
+      ...out,
+      path: join(ctx.artifactsDir, out.name),
+    }));
 
     const { systemPrompt, userPrompt } = buildPrompts(skill, ctx, {
       mode: 'produce_file',
       targetPath,
       outputName: expected.name,
+      additionalTargets: additional,
     });
 
     const { exitCode, lastMessage, timedOut } = await this.invokeCli(systemPrompt, userPrompt, ctx, skill);
@@ -122,17 +128,33 @@ export class ClaudeCodeBackend implements AgentBackend {
       if (isStructuredContextRequest(lastMessage, ctx, skill)) return { outputs: [], lastMessage };
       throw new OperationalError('backend_protocol', `claude produced empty artifact at ${targetPath}`);
     }
-    return {
-      outputs: [
-        {
-          name: expected.name,
-          path: targetPath,
-          contentType: expected.contentType,
-          size: buf.byteLength,
-        },
-      ],
-      lastMessage,
-    };
+    const outputs: AgentArtifactOutput[] = [
+      {
+        name: expected.name,
+        path: targetPath,
+        contentType: expected.contentType,
+        size: buf.byteLength,
+      },
+    ];
+    // Additional required outputs are only checked once the primary file
+    // exists: a missing primary already means "context request or protocol
+    // fault", and reporting the secondary first would hide that.
+    for (const out of additional) {
+      if (!existsSync(out.path)) {
+        throw new OperationalError('backend_protocol', `claude did not write required artifact at ${out.path}`);
+      }
+      const extraBuf = await readFile(out.path);
+      if (extraBuf.byteLength === 0) {
+        throw new OperationalError('backend_protocol', `claude produced empty artifact at ${out.path}`);
+      }
+      outputs.push({
+        name: out.name,
+        path: out.path,
+        contentType: out.contentType,
+        size: extraBuf.byteLength,
+      });
+    }
+    return { outputs, lastMessage };
   }
 
   private async runImplementation(
@@ -411,6 +433,7 @@ function buildPrompts(
     mode: args.mode,
     targetPath: args.targetPath,
     outputName: args.outputName,
+    additionalTargets: args.additionalTargets,
     contextPack: ctx.contextPack,
     sensitivePathPatterns: ctx.sensitivePathPatterns,
   });

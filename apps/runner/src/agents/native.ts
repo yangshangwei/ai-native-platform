@@ -2,7 +2,13 @@ import { mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import type { SkillSpec } from '@ainp/shared';
-import { nowIso } from '@ainp/shared';
+import {
+  nowIso,
+  REVIEW_MARKDOWN_OUTPUT_NAME,
+  REVIEW_VERDICT_OUTPUT_NAME,
+  REVIEW_VERDICT_SCHEMA_VERSION,
+  type ReviewerVerdict,
+} from '@ainp/shared';
 import { captureWorktreeDiffOutputs } from './cli-common';
 import type { AgentArtifactOutput, AgentBackend, AgentRunResult, AgentTaskContext } from './types';
 
@@ -40,7 +46,10 @@ export class NativeBackend implements AgentBackend {
       case 'implementation':
         return await this.runImplementation(ctx);
       case 'review':
-        return single(await this.writeMarkdown(ctx, 'review.md', renderReview(ctx)));
+        return multiple([
+          await this.writeMarkdown(ctx, REVIEW_MARKDOWN_OUTPUT_NAME, renderReview(ctx)),
+          await this.writeJson(ctx, REVIEW_VERDICT_OUTPUT_NAME, buildReviewVerdict(ctx)),
+        ]);
       default:
         throw new Error(`NativeBackend has no recipe for stage ${skill.stage}`);
     }
@@ -316,6 +325,26 @@ ${diff.split('\n').slice(0, 40).join('\n')}
 \`\`\`
 
 ${contextPackExcerpt(ctx)}`;
+}
+
+function buildReviewVerdict(ctx: AgentTaskContext): ReviewerVerdict {
+  return {
+    schemaVersion: REVIEW_VERDICT_SCHEMA_VERSION,
+    role: 'reviewer',
+    status: 'pass',
+    summary: 'NativeBackend fixture: comment-only change, tests pass.',
+    blocking: [],
+    remediation: [],
+    advisory: ['Replace NativeBackend with a real LLM-driven Implementation Agent.'],
+    evidenceRefs: [],
+    provenance: {
+      agentSessionId: null,
+      backend: 'native',
+      skillId: 'skill.review',
+      producedAt: nowIso(),
+    },
+    unavailableReason: null,
+  };
 }
 
 // ---- Context Pack ---------------------------------------------------------

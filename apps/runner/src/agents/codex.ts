@@ -29,7 +29,7 @@ import {
   maskSecrets,
   type SkillSpec,
 } from '@ainp/shared';
-import type { AgentBackend, AgentRunResult, AgentTaskContext } from './types';
+import type { AgentArtifactOutput, AgentBackend, AgentRunResult, AgentTaskContext } from './types';
 import { parseCodexJsonLine } from './codex-parser';
 import {
   captureWorktreeDiffOutputs,
@@ -37,6 +37,7 @@ import {
   consumeLines,
   createAgentEventEmitter,
   isStructuredContextRequest,
+  pickAdditionalFileOutputs,
   pickFileOutput,
   type BuildPromptArgs,
 } from './cli-common';
@@ -77,11 +78,20 @@ export class CodexBackend implements AgentBackend {
     const stagedPath = join(stagedDir, expected.name);
     await mkdir(stagedDir, { recursive: true });
     await writeFile(stagedPath, '', 'utf8');
+    const additional = pickAdditionalFileOutputs(skill).map((out) => ({
+      ...out,
+      stagedPath: join(stagedDir, out.name),
+      finalPath: join(ctx.artifactsDir, out.name),
+    }));
+    for (const out of additional) {
+      await writeFile(out.stagedPath, '', 'utf8');
+    }
 
     const prompt = buildPrompt(skill, ctx, {
       mode: 'produce_file',
       targetPath: stagedPath,
       outputName: expected.name,
+      additionalTargets: additional.map((out) => ({ name: out.name, path: out.stagedPath })),
     });
     const { exitCode, lastMessage, timedOut } = await this.invokeCli(prompt, ctx, skill);
     if (exitCode !== 0) {
@@ -103,17 +113,33 @@ export class CodexBackend implements AgentBackend {
       if (isStructuredContextRequest(lastMessage, ctx, skill)) return { outputs: [], lastMessage };
       throw new OperationalError('backend_protocol', `codex produced empty artifact at ${stagedPath}`);
     }
-    return {
-      outputs: [
-        {
-          name: expected.name,
-          path: finalPath,
-          contentType: expected.contentType,
-          size: produced.size,
-        },
-      ],
-      lastMessage,
-    };
+    const outputs: AgentArtifactOutput[] = [
+      {
+        name: expected.name,
+        path: finalPath,
+        contentType: expected.contentType,
+        size: produced.size,
+      },
+    ];
+    // Additional required outputs are only checked once the primary file
+    // exists: a missing primary already means "context request or protocol
+    // fault", and reporting the secondary first would hide that.
+    for (const out of additional) {
+      const extra = await adoptStagedArtifact(out.stagedPath, out.finalPath);
+      if (!extra) {
+        throw new OperationalError('backend_protocol', `codex did not write required artifact at ${out.stagedPath}`);
+      }
+      if (extra.size === 0) {
+        throw new OperationalError('backend_protocol', `codex produced empty artifact at ${out.stagedPath}`);
+      }
+      outputs.push({
+        name: out.name,
+        path: out.finalPath,
+        contentType: out.contentType,
+        size: extra.size,
+      });
+    }
+    return { outputs, lastMessage };
   }
 
   private async runImplementation(
@@ -285,6 +311,7 @@ function buildPrompt(skill: SkillSpec, ctx: AgentTaskContext, args: BuildPromptA
     mode: args.mode,
     targetPath: args.targetPath,
     outputName: args.outputName,
+    additionalTargets: args.additionalTargets,
     contextPack: ctx.contextPack,
     sensitivePathPatterns: ctx.sensitivePathPatterns,
   }));

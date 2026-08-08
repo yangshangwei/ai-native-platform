@@ -17,6 +17,11 @@ import {
   type TestSurfaceFileEntry,
   type TestSurfaceReport,
   isJavaTestFile,
+  parseReviewerVerdict,
+  REVIEW_MARKDOWN_OUTPUT_NAME,
+  REVIEW_VERDICT_OUTPUT_NAME,
+  REVIEW_VERDICT_SCHEMA_VERSION,
+  type ReviewerVerdict,
   VERIFIER_AC_MATRIX_SCHEMA_VERSION,
   VERIFIER_MEDIA_SCHEMA_VERSION,
   type AcceptanceBusinessStatus,
@@ -237,6 +242,28 @@ function readArtifactText(a: Artifact | null): string {
 
 function artifactEvidence(a: Artifact | null, claim: string): EvidenceRef[] {
   return a ? [{ artifactId: a.id, claim }] : [];
+}
+
+/**
+ * Blocking findings the reviewer left without a matching remediation. The
+ * shared parser already guarantees the reverse direction (no orphan
+ * remediation), so this is the one gap the platform still has to check.
+ */
+function reviewBlockersMissingRemediation(verdict: ReviewerVerdict): string[] {
+  const remediated = new Set(verdict.remediation.map((item) => item.blockerId));
+  return verdict.blocking
+    .filter((item) => item.severity === 'blocker' && !remediated.has(item.id))
+    .map((item) => item.id);
+}
+
+function reviewVerdictSummaryMessage(verdict: ReviewerVerdict): string {
+  const parts = [
+    `reviewer reported status=${verdict.status} (advisory only)`,
+    `${verdict.blocking.length} blocking`,
+    `${verdict.remediation.length} remediation`,
+    `${verdict.advisory.length} advisory`,
+  ];
+  return parts.join(', ');
 }
 
 function textRule(params: {
@@ -651,10 +678,7 @@ export function runAcceptanceTraceabilityGate(params: {
   const requirement = store.artifacts.byKind(params.workflowRunId, 'requirement_draft').at(-1) ?? null;
   const design = store.artifacts.byKind(params.workflowRunId, 'design_doc').at(-1) ?? null;
   const diff = store.artifacts.byKind(params.workflowRunId, 'diff').at(-1) ?? null;
-  const review = store.artifacts
-    .byKind(params.workflowRunId, 'other')
-    .filter(isAcceptanceReviewArtifact)
-    .at(-1) ?? null;
+  const review = resolveAcceptanceReview(params.workflowRunId);
   const testGate = store.gateRuns.latestForGate(params.workflowRunId, 'test_gate');
 
   // V2 W2-2a (PRD ADR Q3): stage-history-aware traceability rules. If the
@@ -734,13 +758,50 @@ export function runAcceptanceTraceabilityGate(params: {
       fail: 'missing implementation diff',
       evidenceRefs: artifactEvidence(diff, 'implementation diff'),
     }),
-    textRule({
+    // 08-08 P0-2 R4: presence, with the legacy free-text path called out
+    // explicitly so a pre-verdict run never reads as verdict-backed.
+    {
       ruleId: 'acceptance.review_present',
-      ok: Boolean(review),
-      pass: 'review evidence present',
-      fail: 'missing review artifact',
-      evidenceRefs: artifactEvidence(review, 'review artifact'),
-    }),
+      status: review.verdictArtifact || review.markdownArtifact ? 'pass' : 'fail',
+      message: review.verdictArtifact
+        ? `review verdict present (${review.verdictArtifact.id})`
+        : review.markdownArtifact
+          ? `legacy free-text review — no ${REVIEW_VERDICT_SCHEMA_VERSION} verdict (${review.markdownArtifact.id})`
+          : 'missing review artifact',
+      evidenceRefs: [
+        ...artifactEvidence(review.verdictArtifact, 'reviewer verdict'),
+        ...artifactEvidence(review.markdownArtifact, 'review artifact'),
+      ],
+    },
+    // ADR-2: the reviewer's own `status` is an input signal, never the gate's
+    // status. This rule asserts what the PLATFORM can verify — that the
+    // verdict parses and that a blocking finding is not left unaddressed.
+    {
+      ruleId: 'acceptance.review_verdict_actionable',
+      // No verdict is `skipped`, not `pass`: runs recorded before the verdict
+      // contract keep their historical gate status (skipped is neither fail nor
+      // warn in `worst()`) while still being visibly distinct from a run the
+      // platform actually verified. A `pass` here would both overstate the
+      // evidence and trip evidence_gate's "pass rule with no evidenceRefs" rule.
+      status: !review.verdictArtifact
+        ? 'skipped'
+        : !review.verdict
+          ? 'fail'
+          : reviewBlockersMissingRemediation(review.verdict).length > 0
+            ? 'fail'
+            : 'pass',
+      message: !review.verdictArtifact
+        ? `no ${REVIEW_VERDICT_SCHEMA_VERSION} verdict on this run; acceptance rests on free-text review only`
+        : !review.verdict
+          ? `reviewer verdict does not satisfy ${REVIEW_VERDICT_SCHEMA_VERSION}: ${review.verdictError ?? 'unparseable'}`
+          : reviewBlockersMissingRemediation(review.verdict).length > 0
+            ? `reviewer blocker(s) without remediation: ${reviewBlockersMissingRemediation(review.verdict).slice(0, 6).join(', ')}`
+            : reviewVerdictSummaryMessage(review.verdict),
+      evidenceRefs: [
+        ...artifactEvidence(review.verdictArtifact, 'reviewer verdict'),
+        ...(review.verdict?.evidenceRefs ?? []),
+      ],
+    },
     {
       ruleId: 'acceptance.test_gate_passed',
       status: testGate?.status === 'pass' ? 'pass' : 'fail',
@@ -1279,10 +1340,76 @@ function uniqueById<T extends { id: string }>(items: T[]): T[] {
   return unique;
 }
 
-function isAcceptanceReviewArtifact(artifact: Artifact): boolean {
+/**
+ * 08-08 P0-2 R4: positive identification of a reviewer verdict artifact.
+ *
+ * Metadata keys are copied from the real writer — `metadataForStageOutput`
+ * in `apps/runner/src/orchestrator/steps.ts` sets `output` (the skill output
+ * name) and, for JSON outputs, `schemaVersion` read out of the file itself.
+ */
+export function isReviewVerdictArtifact(artifact: Artifact): boolean {
+  return artifact.metadata.schemaVersion === REVIEW_VERDICT_SCHEMA_VERSION
+    || artifact.metadata.output === REVIEW_VERDICT_OUTPUT_NAME;
+}
+
+/**
+ * 08-08 P0-2 R4: legacy review recognition. Before the verdict contract the
+ * only marker was "an `other` artifact that isn't verifier evidence", which
+ * also swallowed `report.md` / `analyze` / handoff artifacts. Kept ONLY so
+ * runs recorded before the verdict landed still resolve a review, and always
+ * reported as a degraded path in the rule message — never silently equated
+ * with a real verdict.
+ */
+export function isLegacyAcceptanceReviewArtifact(artifact: Artifact): boolean {
   return artifact.metadata.subStage !== 'verifier'
+    && artifact.metadata.output === REVIEW_MARKDOWN_OUTPUT_NAME
     && !isVerifierAcMatrixArtifact(artifact)
     && !isVerifierMediaArtifact(artifact);
+}
+
+interface AcceptanceReviewResolution {
+  /** The verdict artifact, when the reviewer produced one. */
+  verdictArtifact: Artifact | null;
+  /** Parsed verdict; null when absent or rejected by the shared parser. */
+  verdict: ReviewerVerdict | null;
+  /** Why the verdict was rejected, when it was present but invalid. */
+  verdictError: string | null;
+  /** Human-readable review markdown backing the verdict (or the legacy one). */
+  markdownArtifact: Artifact | null;
+  /** True when only a pre-verdict free-text review was found. */
+  legacy: boolean;
+}
+
+/**
+ * Resolve the review evidence for a run. The verdict is read as EVIDENCE:
+ * `verdict.status` never becomes a gate status here (ADR-2) — the caller
+ * builds its own `RuleResult`s from what this returns.
+ */
+function resolveAcceptanceReview(workflowRunId: WorkflowRunId): AcceptanceReviewResolution {
+  const others = store.artifacts.byKind(workflowRunId, 'other');
+  const verdictArtifact = others.filter(isReviewVerdictArtifact).at(-1) ?? null;
+  const markdownArtifact = others.filter(isLegacyAcceptanceReviewArtifact).at(-1) ?? null;
+  if (!verdictArtifact) {
+    return {
+      verdictArtifact: null,
+      verdict: null,
+      verdictError: null,
+      markdownArtifact,
+      legacy: Boolean(markdownArtifact),
+    };
+  }
+  // Same shared parser the runner used to accept the artifact in the first
+  // place; `knownArtifactIds` is the run's own artifact set.
+  const parsed = parseReviewerVerdict(readArtifactText(verdictArtifact), {
+    knownArtifactIds: store.artifacts.byWorkflow(workflowRunId).map((artifact) => artifact.id),
+  });
+  return {
+    verdictArtifact,
+    verdict: parsed.ok ? parsed.verdict : null,
+    verdictError: parsed.ok ? null : parsed.error,
+    markdownArtifact,
+    legacy: false,
+  };
 }
 
 interface ParsedVerifierCriterion {

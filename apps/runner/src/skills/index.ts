@@ -1,4 +1,12 @@
-import { REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT } from '@ainp/shared';
+import {
+  REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT,
+  REVIEW_BLOCKER_SEVERITIES,
+  REVIEW_MARKDOWN_OUTPUT_NAME,
+  REVIEW_VERDICT_OUTPUT_NAME,
+  REVIEW_VERDICT_ROLES,
+  REVIEW_VERDICT_SCHEMA_VERSION,
+  REVIEW_VERDICT_STATUSES,
+} from '@ainp/shared';
 import type { SkillSpec, ProjectAgentBackendKind, ConfigKey } from '@ainp/shared';
 import { getConfig } from '../config-client';
 import {
@@ -279,15 +287,77 @@ The goal is to help later stages know where to look, not decide how to change th
   },
   {
     id: 'skill.review',
-    version: '0.1.0',
+    version: '0.2.0',
     stage: 'review',
-    instructions:
-      'Read the diff and the test report and write a short review (verdict, risks, follow-ups).',
+    instructions: [
+      'Read the diff and the test report, then produce BOTH review outputs.',
+      '',
+      `1. ${REVIEW_MARKDOWN_OUTPUT_NAME} — a short human-readable review (verdict, risks, follow-ups).`,
+      `2. ${REVIEW_VERDICT_OUTPUT_NAME} — the same judgement as machine-readable JSON.`,
+      '',
+      `The JSON must match schemaVersion "${REVIEW_VERDICT_SCHEMA_VERSION}" exactly:`,
+      '',
+      '```json',
+      JSON.stringify(
+        {
+          schemaVersion: REVIEW_VERDICT_SCHEMA_VERSION,
+          role: 'reviewer',
+          status: 'fail',
+          summary: 'one sentence overall judgement',
+          blocking: [
+            {
+              id: 'B1',
+              severity: 'blocker',
+              summary: 'what is wrong',
+              location: 'src/foo.ts:42',
+              evidenceRefs: [{ artifactId: 'art_...', claim: 'what this artifact proves' }],
+            },
+          ],
+          remediation: [
+            { blockerId: 'B1', action: 'concretely how to fix it', rationale: 'why this fix' },
+          ],
+          advisory: ['non-blocking suggestion'],
+          evidenceRefs: [{ artifactId: 'art_...', claim: 'evidence behind the verdict overall' }],
+          provenance: {
+            agentSessionId: null,
+            backend: null,
+            skillId: 'skill.review',
+            producedAt: '2026-01-01T00:00:00.000Z',
+          },
+          unavailableReason: null,
+        },
+        null,
+        2,
+      ),
+      '```',
+      '',
+      'HARD RULES (the runner rejects the verdict and fails the step otherwise):',
+      `  - role is one of ${REVIEW_VERDICT_ROLES.join(' | ')}; severity is one of ${REVIEW_BLOCKER_SEVERITIES.join(' | ')}.`,
+      `  - status is one of ${REVIEW_VERDICT_STATUSES.join(' | ')} and must agree with the body:`,
+      '    status "fail" requires at least one blocking entry;',
+      '    status "pass" must not carry any severity "blocker" entry;',
+      '    status "unavailable" requires a non-empty unavailableReason.',
+      '  - Every remediation.blockerId must match some blocking[].id.',
+      '  - Every evidenceRefs[].artifactId must be an artifact id the platform already knows.',
+      '    Cite only ids shown in the INPUT INJECTION AUDIT block; use [] when you have none.',
+      '  - blocking / remediation / advisory / evidenceRefs are always arrays (use [] when empty).',
+      '  - Use status "unavailable" ONLY when you genuinely cannot judge (missing inputs, unreadable',
+      '    diff). It pauses the run for an operator; it is not a way to express "the change is bad".',
+      '',
+      'Your verdict is evidence and opinion. The platform Gate Engine decides gate status; do not',
+      'claim a gate outcome.',
+    ].join('\n'),
     inputs: [
       { name: 'diff', kind: 'artifact', required: true, description: 'implementation diff' },
     ],
     outputs: [
-      { name: 'review.md', kind: 'artifact', required: true, description: 'review markdown' },
+      { name: REVIEW_MARKDOWN_OUTPUT_NAME, kind: 'artifact', required: true, description: 'review markdown' },
+      {
+        name: REVIEW_VERDICT_OUTPUT_NAME,
+        kind: 'artifact',
+        required: true,
+        description: `structured ${REVIEW_VERDICT_SCHEMA_VERSION} reviewer verdict`,
+      },
     ],
     toolPolicy: { allowedCommands: [], writableGlobs: [], networkAllowed: false },
     requiredGates: ['acceptance_gate'],

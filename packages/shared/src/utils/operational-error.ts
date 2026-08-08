@@ -20,6 +20,17 @@ export const OPERATIONAL_ERROR_REASONS = [
   'backend_timeout',
   /** Spawn failure, non-zero CLI exit, or required outputs missing/unparseable. */
   'backend_protocol',
+  /**
+   * The reviewer ran and produced a well-formed `ReviewerVerdict` declaring
+   * `status: 'unavailable'` — it could not reach a judgement (task 08-08
+   * p0-2-typed-reviewerverdict-gate, ADR-1).
+   *
+   * Distinct from `backend_protocol`: the CLI worked fine, so reporting a
+   * protocol fault would send operators looking at the wrong thing. Still
+   * operational rather than business, because no verdict was produced at all —
+   * this is not a gate failure and must not count as product rework.
+   */
+  'reviewer_unavailable',
 ] as const;
 
 export type OperationalErrorReason = (typeof OPERATIONAL_ERROR_REASONS)[number];

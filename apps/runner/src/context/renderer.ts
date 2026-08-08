@@ -23,6 +23,12 @@ export interface RenderAgentPromptInput {
   mode: 'produce_file' | 'implementation';
   targetPath?: string;
   outputName?: string;
+  /**
+   * Required produce-file outputs beyond the primary one. Empty for every
+   * single-output stage; `review` uses it for `review-verdict.json` (08-08
+   * P0-2 R2) and `profile` for `project-profile.json`.
+   */
+  additionalTargets?: ReadonlyArray<{ name: string; path: string }>;
   contextPack?: ContextPack;
   sensitivePathPatterns?: readonly string[];
 }
@@ -88,11 +94,23 @@ export function renderAgentPrompt(input: RenderAgentPromptInput): RenderedAgentP
   }
 
   if (input.mode === 'produce_file' && input.targetPath && input.outputName) {
+    const extraTargets = input.additionalTargets ?? [];
     systemLines.push(
       'OUTPUT REQUIREMENT:',
       `You MUST write the final ${input.outputName} as Markdown to this absolute path:`,
       `  ${input.targetPath}`,
-      'Use the Write tool to create or overwrite that file. Do not write any other files.',
+    );
+    if (extraTargets.length > 0) {
+      systemLines.push(
+        `You MUST ALSO write ${extraTargets.length === 1 ? 'this file' : 'these files'}:`,
+        ...extraTargets.map((target) => `  ${target.path}   (${target.name})`),
+        'Every listed file is required. Omitting one fails the step.',
+        'Write no files other than the ones listed above.',
+      );
+    } else {
+      systemLines.push('Use the Write tool to create or overwrite that file. Do not write any other files.');
+    }
+    systemLines.push(
       'After writing, reply with one short confirmation line and stop.',
       '',
     );
@@ -119,11 +137,15 @@ export function renderAgentPrompt(input: RenderAgentPromptInput): RenderedAgentP
 
   const userLines: string[] = [];
   if (input.mode === 'produce_file' && input.targetPath && input.outputName) {
+    const extraTargets = input.additionalTargets ?? [];
+    const allowedPaths = [input.targetPath, ...extraTargets.map((target) => target.path)];
     userLines.push(
       `STAGE ROLE: ${input.skill.stage} (DOCUMENT-ONLY)`,
       `Your job in this stage is to PRODUCE A MARKDOWN DOCUMENT at ${input.targetPath}.`,
       'You are NOT implementing the request. You are NOT writing code. You are NOT modifying any existing source file.',
-      `The ONLY file you may write is ${input.targetPath}. Do not create or modify any other file.`,
+      allowedPaths.length === 1
+        ? `The ONLY file you may write is ${input.targetPath}. Do not create or modify any other file.`
+        : `The ONLY files you may write are ${allowedPaths.join(' and ')}. Do not create or modify any other file.`,
       'The user intent below describes what the FINISHED system should do — your task is to capture it as a requirement, not to build it.',
       '',
       'USER INTENT:',

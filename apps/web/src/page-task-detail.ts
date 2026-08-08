@@ -51,7 +51,16 @@ import {
   type RunDetail,
   type Stage,
 } from './projection';
-import { VERIFIER_AC_MATRIX_SCHEMA_VERSION, errorMessage, type GraphNodeStatus } from '@ainp/shared/browser';
+import {
+  REVIEW_MARKDOWN_OUTPUT_NAME,
+  REVIEW_VERDICT_OUTPUT_NAME,
+  REVIEW_VERDICT_SCHEMA_VERSION,
+  VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+  errorMessage,
+  parseReviewerVerdict,
+  type GraphNodeStatus,
+  type ReviewerVerdict,
+} from '@ainp/shared/browser';
 import type {
   AgentBackendKind,
   ContextGovernanceDto,
@@ -79,7 +88,7 @@ import {
   agentBackendDisplayName,
   approvalInFlight,
   artifactContent,
-  artifactText,
+  artifactTextBy,
   commandLogs,
   contextGovernanceByRun,
   data,
@@ -1802,11 +1811,17 @@ function renderRuleList(title: string, gate: GateRunDto): HTMLElement {
         ? el('div', {
             class: 'stack',
             children: gate.ruleResults.map((rule) =>
+              // 08-08 P0-2 R5: `rule.message` carries the Gate Engine's actual
+              // finding and used to be dropped on the floor here — the user saw
+              // a red pill with no reason.
               el('div', {
-                class: 'mini-row',
+                class: 'mini-row rule-row',
                 children: [
                   el('span', { text: `${ruleLabel(rule.ruleId)}`, attrs: { title: rule.ruleId } }),
                   pill(rule.status),
+                  rule.message
+                    ? el('small', { class: rule.status === 'fail' ? 'warn' : undefined, text: rule.message })
+                    : null,
                 ],
               }),
             ),
@@ -1832,6 +1847,8 @@ const RULE_LABELS: Record<string, string> = {
   'requirement.four_sections_present': '四段式结构',
   'requirement.user_stories_min_2': '用户故事 ≥2',
   'requirement.boundary_present': '边界说明',
+  'acceptance.review_present': '评审证据存在',
+  'acceptance.review_verdict_actionable': '评审裁决可执行',
 };
 
 function ruleLabel(ruleId: string): string {
@@ -2040,7 +2057,16 @@ function renderAcceptancePanel(detail: RunDetail): HTMLElement {
   const req = parsedRequirement(detail);
   const design = parsedDesign(detail);
   const checklist = acceptanceMatrixChecklist(detail) ?? buildAcceptanceChecklist(req, design, detail);
-  const reviewText = artifactText(detail, 'other');
+  // `skill.review` declares review.md BEFORE review-verdict.json, so the
+  // verdict is always the newer `kind='other'` artifact. A plain
+  // `artifactText(detail, 'other')` would therefore render the verdict JSON
+  // under 「查看 Review 原文」 — select the markdown by its output name.
+  const reviewText = artifactTextBy(
+    detail,
+    'other',
+    (artifact) => artifact.metadata?.output === REVIEW_MARKDOWN_OUTPUT_NAME,
+  );
+  const verdict = latestReviewVerdict(detail);
   return el('article', {
     class: 'panel doc-panel structured-panel',
     children: [
@@ -2048,9 +2074,119 @@ function renderAcceptancePanel(detail: RunDetail): HTMLElement {
       checklist.length
         ? renderAcceptanceChecklist(checklist)
         : el('p', { class: 'muted', text: '暂无 AC checklist。' }),
+      // 08-08 P0-2 R5: only rendered when a verdict actually exists — no empty
+      // shell for runs that predate the contract.
+      verdict ? renderReviewVerdict(verdict) : null,
       reviewText ? el('details', { class: 'raw-details', children: [el('summary', { text: '查看 Review 原文' }), el('pre', { class: 'doc-preview', text: previewText(reviewText) })] }) : null,
     ],
   });
+}
+
+/**
+ * Latest `ainp.review_verdict.v1` artifact on the run, parsed with the shared
+ * strict parser. `metadata.schemaVersion` / `metadata.output` are the keys the
+ * runner's `metadataForStageOutput` actually writes.
+ *
+ * `knownArtifactIds` is deliberately omitted: the SPA holds a projection, not
+ * the store, so it must not turn a display gap into a validation verdict. The
+ * Gate Engine already checked evidence existence server-side.
+ */
+function latestReviewVerdict(detail: RunDetail): ReviewerVerdict | null {
+  const artifact = detail.artifacts
+    .filter((candidate) =>
+      candidate.metadata?.schemaVersion === REVIEW_VERDICT_SCHEMA_VERSION ||
+      candidate.metadata?.output === REVIEW_VERDICT_OUTPUT_NAME,
+    )
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .at(-1);
+  if (!artifact) return null;
+  const text = artifactContent.get(artifact.id)?.text;
+  if (!text) return null;
+  const parsed = parseReviewerVerdict(text);
+  return parsed.ok ? parsed.verdict : null;
+}
+
+function reviewVerdictStatusDisplay(status: ReviewerVerdict['status']): {
+  label: string;
+  kind: StatusKind;
+} {
+  if (status === 'pass') return { label: '通过', kind: 'good' };
+  if (status === 'fail') return { label: '不通过', kind: 'bad' };
+  return { label: '无法裁决', kind: 'warn' };
+}
+
+function renderReviewVerdict(verdict: ReviewerVerdict): HTMLElement {
+  const status = reviewVerdictStatusDisplay(verdict.status);
+  const remediationByBlocker = new Map(verdict.remediation.map((item) => [item.blockerId, item]));
+  return el('section', {
+    class: 'review-verdict',
+    children: [
+      el('div', {
+        class: 'mini-row',
+        children: [
+          el('strong', { text: '评审裁决' }),
+          pill(status.label, status.kind),
+          // The reviewer's opinion is not the gate's decision — say so here so
+          // nobody reads a green pill as "acceptance passed".
+          el('small', { class: 'muted', text: '仅为评审意见，门禁状态由 Gate Engine 判定' }),
+        ],
+      }),
+      el('p', { class: 'compact', text: verdict.summary }),
+      verdict.unavailableReason
+        ? el('small', { class: 'warn', text: `无法裁决原因：${verdict.unavailableReason}` })
+        : null,
+      verdict.blocking.length
+        ? el('div', {
+            class: 'stack',
+            children: verdict.blocking.map((blocker) =>
+              renderReviewBlocker(blocker, remediationByBlocker.get(blocker.id) ?? null),
+            ),
+          })
+        : el('small', { class: 'muted', text: '无阻塞项。' }),
+      verdict.advisory.length
+        ? renderDetails('建议（非阻塞）', [el('ul', {
+            class: 'clean-list',
+            children: verdict.advisory.map((item) => el('li', { text: item })),
+          })])
+        : null,
+      verdict.evidenceRefs.length
+        ? el('small', {
+            class: 'muted',
+            text: `整体证据：${verdict.evidenceRefs.map(evidenceRefLabel).join(' · ')}`,
+          })
+        : null,
+    ],
+  });
+}
+
+function renderReviewBlocker(
+  blocker: ReviewerVerdict['blocking'][number],
+  remediation: ReviewerVerdict['remediation'][number] | null,
+): HTMLElement {
+  return el('div', {
+    class: `acceptance-card ${blocker.severity === 'blocker' ? 'failed' : 'at_risk'}`,
+    children: [
+      el('div', {
+        children: [
+          pill(blocker.id, blocker.severity === 'blocker' ? 'bad' : 'warn'),
+          pill(blocker.severity, blocker.severity === 'blocker' ? 'bad' : 'warn'),
+          el('strong', { text: blocker.summary }),
+        ],
+      }),
+      el('small', { text: `位置: ${blocker.location ?? '未标注'}` }),
+      remediation
+        ? el('small', { text: `修复建议: ${remediation.action}` })
+        : el('small', { class: 'warn', text: '修复建议: 缺失' }),
+      remediation?.rationale ? el('small', { class: 'muted', text: `理由: ${remediation.rationale}` }) : null,
+      blocker.evidenceRefs.length
+        ? el('small', { text: `证据: ${blocker.evidenceRefs.map(evidenceRefLabel).join(' · ')}` })
+        : el('small', { class: 'warn', text: '证据: 缺失' }),
+    ],
+  });
+}
+
+function evidenceRefLabel(ref: { artifactId: string; claim: string }): string {
+  return `${ref.claim} (${ref.artifactId})`;
 }
 
 function acceptanceMatrixChecklist(detail: RunDetail): ReturnType<typeof buildAcceptanceChecklist> | null {
@@ -2949,6 +3085,8 @@ function pauseReasonLabel(reason: string | null): string {
   if (reason === 'backend_unavailable') return 'Agent 后端不可用（CLI 缺失或未登录）';
   if (reason === 'backend_timeout') return 'Agent 后端执行超时';
   if (reason === 'backend_protocol') return 'Agent 后端协议异常（无有效输出）';
+  // 08-08 P0-2 R3: the reviewer ran fine but declared it could not judge.
+  if (reason === 'reviewer_unavailable') return '评审无法给出裁决（不是质量问题）';
   return '运维故障';
 }
 
@@ -3017,7 +3155,15 @@ function renderFailedStageActionPanel(
   const failureReasons: string[] = [];
   if (failedGate) {
     const failedRules = failedGate.ruleResults.filter((r) => r.status === 'fail');
-    failureReasons.push(`质量门禁失败：${failedRules.map((r) => ruleLabel(r.ruleId)).join('、')}`);
+    // 08-08 P0-2 R5: the rule name alone said "something is red"; the message
+    // says what.
+    failureReasons.push(
+      ...failedRules.map((rule) =>
+        rule.message
+          ? `质量门禁失败：${ruleLabel(rule.ruleId)} — ${rule.message}`
+          : `质量门禁失败：${ruleLabel(rule.ruleId)}`,
+      ),
+    );
   }
   if (failedBuild) {
     failureReasons.push(`构建失败：${failedBuild.mavenCommand}`);
@@ -3025,6 +3171,15 @@ function renderFailedStageActionPanel(
   if (failedCommand) {
     failureReasons.push(`命令执行失败 (exit ${failedCommand.exitCode})：${failedCommand.command}`);
   }
+
+  // Top blocker from the reviewer verdict, with its remediation and evidence.
+  const verdict = latestReviewVerdict(detail);
+  const topBlocker = verdict?.blocking.find((item) => item.severity === 'blocker')
+    ?? verdict?.blocking[0]
+    ?? null;
+  const topRemediation = topBlocker
+    ? verdict?.remediation.find((item) => item.blockerId === topBlocker.id) ?? null
+    : null;
 
   const scrollToStage = button('查看失败详情', 'button secondary');
   scrollToStage.onclick = () => {
@@ -3069,6 +3224,25 @@ function renderFailedStageActionPanel(
             children: failureReasons.map((reason) => el('li', { text: reason })),
           })
         : el('p', { class: 'muted compact', text: '正在分析失败原因...' }),
+      topBlocker
+        ? el('div', {
+            class: 'stack',
+            children: [
+              el('div', {
+                class: 'mini-row',
+                children: [el('strong', { text: '首要阻塞项' }), pill(topBlocker.id, 'bad')],
+              }),
+              el('p', { class: 'compact', text: topBlocker.summary }),
+              el('small', { text: `位置: ${topBlocker.location ?? '未标注'}` }),
+              topRemediation
+                ? el('small', { text: `修复建议: ${topRemediation.action}` })
+                : el('small', { class: 'warn', text: '修复建议: 缺失' }),
+              topBlocker.evidenceRefs.length
+                ? el('small', { text: `证据: ${topBlocker.evidenceRefs.map(evidenceRefLabel).join(' · ')}` })
+                : el('small', { class: 'warn', text: '证据: 缺失' }),
+            ],
+          })
+        : null,
       el('div', { class: 'button-row', children: [scrollToStage, retryBtn] }),
     ],
   });

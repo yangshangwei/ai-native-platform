@@ -18,6 +18,7 @@ import type {
 import {
   OperationalError,
   REQUIREMENT_DESIGN_STAGE_HANDOFF_INPUT,
+  REVIEW_VERDICT_OUTPUT_NAME,
   RUNNER_TOOL_SPECS,
   STAGE_HANDOFF_SCHEMA_VERSION,
   VERIFIER_AC_MATRIX_SCHEMA_VERSION,
@@ -25,6 +26,7 @@ import {
   isWorkflowStage,
   newId,
   nowIso,
+  parseReviewerVerdict,
   pathToFileUri,
 } from '@ainp/shared';
 import { api } from '../api-client';
@@ -1402,6 +1404,9 @@ export async function runStage(
     producedArtifactIds[out.name] = a.id;
     console.log(`[runner] ${stage} artifact ${a.kind} -> ${a.uri}`);
   }
+  if (stage === 'review' && agent.outputs.length > 0) {
+    enforceReviewerVerdict(c, producedArtifactIds);
+  }
   await deps.finishAgentSuccess(
     agent,
     artifactIds,
@@ -1462,6 +1467,53 @@ export async function runStage(
       throw new Error(`${approverGateId} rejected`);
     }
   }
+}
+
+/**
+ * 08-08 P0-2 R2/R3: the reviewer's machine-readable verdict is a required
+ * output. Parsing is the shared pure `parseReviewerVerdict` so the runner
+ * (write side) and the api Gate Engine (verify side) never disagree about
+ * what a legal verdict is.
+ *
+ * - Missing / unparseable / self-contradictory  -> `backend_protocol`
+ *   ("required outputs missing/unparseable" is exactly that reason's job).
+ * - Legal verdict declaring `status: 'unavailable'` -> `reviewer_unavailable`
+ *   (ADR-1). Both route to the existing operational pause; neither is a gate
+ *   failure and neither counts as product rework.
+ *
+ * The verdict's `status` is NOT consulted for anything else here — the Gate
+ * Engine owns judgement (ADR-2).
+ */
+function enforceReviewerVerdict(c: RunCtx, producedArtifactIds: Record<string, string>): void {
+  const verdictText = c.inputs[REVIEW_VERDICT_OUTPUT_NAME];
+  if (verdictText === undefined) {
+    throw new OperationalError(
+      'backend_protocol',
+      `review: missing required ${REVIEW_VERDICT_OUTPUT_NAME} output`,
+    );
+  }
+  // Known-artifact universe: everything this run has posted, including the
+  // review outputs written moments ago.
+  const knownArtifactIds = [
+    ...Object.values(c.inputArtifactIds),
+    ...Object.values(producedArtifactIds),
+  ];
+  const parsed = parseReviewerVerdict(verdictText, { knownArtifactIds });
+  if (!parsed.ok) {
+    throw new OperationalError(
+      'backend_protocol',
+      `review: ${REVIEW_VERDICT_OUTPUT_NAME} is invalid — ${parsed.error}`,
+    );
+  }
+  if (parsed.verdict.status === 'unavailable') {
+    throw new OperationalError(
+      'reviewer_unavailable',
+      `reviewer could not reach a verdict: ${parsed.verdict.unavailableReason ?? 'no reason given'}`,
+    );
+  }
+  console.log(
+    `[runner] review verdict status=${parsed.verdict.status} blocking=${parsed.verdict.blocking.length} remediation=${parsed.verdict.remediation.length}`,
+  );
 }
 
 async function recordRequirementToDesignStageHandoff(
