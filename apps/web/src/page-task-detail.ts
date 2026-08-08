@@ -29,6 +29,7 @@ import {
   artifactViewerScrollKey,
   buildAcceptanceChecklist,
   buildContextFlowProjection,
+  buildGraphLiveProjection,
   buildRunProjection,
   changedFilesFromDiff,
   isReadableFileArtifact,
@@ -43,12 +44,14 @@ import {
   type ContextFlowStage,
   type DesignDoc,
   type GateRunDto,
+  type GraphLiveProjection,
+  type GraphNodeView,
   type ReportableStatus,
   type RequirementDoc,
   type RunDetail,
   type Stage,
 } from './projection';
-import { VERIFIER_AC_MATRIX_SCHEMA_VERSION, errorMessage } from '@ainp/shared/browser';
+import { VERIFIER_AC_MATRIX_SCHEMA_VERSION, errorMessage, type GraphNodeStatus } from '@ainp/shared/browser';
 import type {
   AgentBackendKind,
   ContextGovernanceDto,
@@ -369,6 +372,7 @@ export function renderTaskDetailPage(): HTMLElement {
           askRouted
             ? renderAskActivityIndicator(request)
             : detail ? renderStageTimeline(detail, projection!) : renderQueuedLifecycle(request),
+          askRouted ? null : detail ? renderGraphLivePanel(detail) : null,
           askRouted ? null : detail ? renderEvidencePanel(detail) : null,
           askRouted ? null : detail ? renderContextGovernancePanel(detail) : null,
           askRouted ? null : detail ? renderContextFlowPanel(detail) : null,
@@ -440,6 +444,7 @@ function renderTaskHero(
               : `${focus.hint}。当前阶段是 ${current}。`,
           }),
           renderTaskTechnicalSummary(request, detail, status),
+          askRouted || !detail ? null : renderGraphLiveSummary(detail),
         ],
       }),
       el('div', {
@@ -1452,6 +1457,180 @@ export function renderStageTimeline(detail: RunDetail, projection: ReturnType<ty
           return card;
         }),
       }),
+    ],
+  });
+}
+
+// ---- Graph live view (P0-1) ------------------------------------------------
+//
+// Read-only rendering over `buildGraphLiveProjection`. No derivation happens
+// here, and there is no graph write action: resume/retry stay on the existing
+// stage-level entry points. Both renderers return null when the run never
+// planned a graph, so the block disappears rather than showing an empty shell.
+
+const GRAPH_RUN_STATUS_LABELS: Record<GraphLiveProjection['status'], string> = {
+  pending: '未开始',
+  running: '执行中',
+  blocked: '已阻塞',
+  passed: '已完成',
+  failed: '已失败',
+  cancelled: '已取消',
+};
+
+function graphRunStatusKind(status: GraphLiveProjection['status']): StatusKind {
+  if (status === 'passed') return 'good';
+  if (status === 'failed' || status === 'cancelled') return 'bad';
+  if (status === 'blocked') return 'warn';
+  if (status === 'running') return 'info';
+  return 'muted';
+}
+
+// Node statuses need their own label + kind map: the shared `statusKind()`
+// does not know `blocked` / `skipped` / `ready`, so they would all render as
+// neutral grey — a blocked node must not look the same as a skipped one.
+const GRAPH_NODE_STATUS_LABELS: Record<GraphNodeStatus, string> = {
+  pending: '未开始',
+  ready: '待执行',
+  running: '执行中',
+  passed: '已完成',
+  failed: '已失败',
+  blocked: '已阻塞',
+  skipped: '已跳过',
+  cancelled: '已取消',
+};
+
+function graphNodeStatusKind(status: GraphNodeStatus): StatusKind {
+  if (status === 'passed') return 'good';
+  if (status === 'failed' || status === 'cancelled') return 'bad';
+  if (status === 'blocked') return 'warn';
+  if (status === 'running' || status === 'ready') return 'info';
+  return 'muted';
+}
+
+/** Hero strip: active node, done/total, attempt, first blocker, resume state. */
+function renderGraphLiveSummary(detail: RunDetail): HTMLElement | null {
+  const graph = buildGraphLiveProjection(detail);
+  if (!graph) return null;
+  const active = graph.activeNodes[0] ?? null;
+  const activeText = active
+    ? `进行中：${active.label}${active.attempt > 1 ? ` · 第 ${active.attempt} 次尝试` : ''}`
+    : graph.status === 'passed'
+      ? '所有节点已完成'
+      : '暂无执行中的节点';
+  return el('div', {
+    class: 'run-meta-line graph-live-summary',
+    children: [
+      pill(`执行图 ${GRAPH_RUN_STATUS_LABELS[graph.status]}`, graphRunStatusKind(graph.status)),
+      el('span', { text: `节点 ${graph.doneCount}/${graph.totalCount}` }),
+      el('span', { text: activeText }),
+      graph.primaryBlocker
+        ? el('span', {
+            text: `首要阻塞：${graph.primaryBlocker.label}${graph.primaryBlocker.reason ? ` — ${graph.primaryBlocker.reason}` : ''}`,
+          })
+        : null,
+      graph.resumable ? el('span', { text: `可从 ${graph.resumable.label} 恢复` }) : null,
+    ],
+  });
+}
+
+/** Detail region: node dependencies, checkpoint/evidence links, event timeline. */
+function renderGraphLivePanel(detail: RunDetail): HTMLElement | null {
+  const graph = buildGraphLiveProjection(detail);
+  if (!graph) return null;
+  return el('section', {
+    class: 'panel graph-live-panel',
+    children: [
+      panelHeader(
+        '执行图',
+        `${GRAPH_RUN_STATUS_LABELS[graph.status]} · ${graph.doneCount}/${graph.totalCount} 节点完成 · 版本 ${graph.graphVersion}`,
+      ),
+      graph.primaryBlocker
+        ? el('p', {
+            class: 'muted compact',
+            text: `首要阻塞：${graph.primaryBlocker.label}（${GRAPH_NODE_STATUS_LABELS[graph.primaryBlocker.status]}，第 ${graph.primaryBlocker.attempt} 次尝试）${graph.primaryBlocker.reason ? ` — ${graph.primaryBlocker.reason}` : ''}`,
+          })
+        : null,
+      graph.resumable
+        ? el('p', {
+            class: 'muted compact',
+            text: `节点 ${graph.resumable.label} 带有检查点 ${shortId(graph.resumable.stepCheckpointId)}，可从${graph.resumable.resumeCursor ? ` ${graph.resumable.resumeCursor}` : '该检查点'}恢复。`,
+          })
+        : null,
+      el('div', { class: 'stack', children: graph.nodes.map((node) => renderGraphNodeRow(node, graph)) }),
+      renderDetails(
+        'Graph Events',
+        graph.events.map(renderGraphEventRow),
+        `graph-events:${detail.run.id}`,
+      ),
+    ],
+  });
+}
+
+function renderGraphNodeRow(node: GraphNodeView, graph: GraphLiveProjection): HTMLElement {
+  const upstreamLabels = node.upstreamNodeIds
+    .map((id) => graph.nodes.find((candidate) => candidate.nodeId === id)?.label ?? id);
+  const downstreamLabels = node.downstreamNodeIds
+    .map((id) => graph.nodes.find((candidate) => candidate.nodeId === id)?.label ?? id);
+  return el('div', {
+    class: 'evidence-row graph-node-row',
+    children: [
+      el('span', {
+        children: [
+          node.status
+            ? pill(GRAPH_NODE_STATUS_LABELS[node.status], graphNodeStatusKind(node.status))
+            : pill(GRAPH_NODE_STATUS_LABELS.pending, 'muted'),
+          document.createTextNode(` ${node.label}`),
+        ],
+      }),
+      el('small', { text: `stage ${node.stage} · attempt ${node.attempt || '—'}` }),
+      upstreamLabels.length
+        ? el('small', { text: `依赖 ${upstreamLabels.join(' · ')}` })
+        : el('small', { text: '入口节点' }),
+      downstreamLabels.length ? el('small', { text: `下游 ${downstreamLabels.join(' · ')}` }) : null,
+      node.stepRunId ? el('small', { text: `step ${shortId(node.stepRunId)}` }) : null,
+      node.stepCheckpointId ? el('small', { text: `checkpoint ${shortId(node.stepCheckpointId)}` }) : null,
+      node.failureReason ? el('small', { text: node.failureReason }) : null,
+    ],
+  });
+}
+
+// Graph event payloads are written by four API-side call sites and carry only
+// ids, statuses and the resume actor. Rather than dumping the bag verbatim
+// (which would silently surface whatever a future writer adds), render an
+// explicit field whitelist and count the rest.
+const GRAPH_EVENT_PAYLOAD_FIELDS = [
+  'nodeRunId',
+  'previousNodeRunId',
+  'attempt',
+  'status',
+  'graphRunStatus',
+  'graphRunStatusFrom',
+  'stepRunId',
+  'stepCheckpointId',
+  'sourceCheckpointId',
+  'graphVersion',
+  'actor',
+] as const;
+
+function graphEventPayloadText(payload: Record<string, unknown>): string {
+  const shown = GRAPH_EVENT_PAYLOAD_FIELDS
+    .filter((key) => payload[key] !== undefined && payload[key] !== null)
+    .map((key) => `${key}=${String(payload[key])}`);
+  const hidden = Object.keys(payload).filter(
+    (key) => !(GRAPH_EVENT_PAYLOAD_FIELDS as readonly string[]).includes(key),
+  ).length;
+  if (hidden > 0) shown.push(`+${hidden} 个未展示字段`);
+  return shown.join(' · ');
+}
+
+function renderGraphEventRow(event: GraphLiveProjection['events'][number]): HTMLElement {
+  const payloadText = graphEventPayloadText(event.payload);
+  return el('div', {
+    class: 'evidence-row graph-event-row',
+    children: [
+      el('span', { children: [pill(event.type, 'muted'), document.createTextNode(` ${fmtTime(event.createdAt)}`)] }),
+      event.nodeId ? el('small', { text: event.nodeId }) : null,
+      payloadText ? el('small', { text: payloadText }) : null,
     ],
   });
 }

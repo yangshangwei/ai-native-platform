@@ -29,6 +29,39 @@ export const GRAPH_NODE_STATUSES = [
 
 export type GraphNodeStatus = (typeof GRAPH_NODE_STATUSES)[number];
 
+/**
+ * Node lifecycle partition shared by the runner scheduler
+ * (`computeRunnableGraphNodes`) and the aggregate status derivation
+ * ({@link deriveGraphRunStatus}). Kept here so scheduling and read-model
+ * semantics cannot drift apart.
+ */
+export const GRAPH_NODE_TERMINAL_SUCCESS_STATUSES = [
+  'passed',
+] as const satisfies readonly GraphNodeStatus[];
+
+export const GRAPH_NODE_TERMINAL_BLOCKING_STATUSES = [
+  'failed',
+  'blocked',
+  'skipped',
+  'cancelled',
+] as const satisfies readonly GraphNodeStatus[];
+
+export const GRAPH_NODE_ACTIVE_STATUSES = [
+  'pending',
+  'ready',
+  'running',
+] as const satisfies readonly GraphNodeStatus[];
+
+/**
+ * Node statuses `resumeGraphNode()` accepts. A `passed` node needs explicit
+ * evidence reuse, and an active node has nothing to resume from.
+ */
+export const GRAPH_NODE_RESUMABLE_STATUSES = [
+  'failed',
+  'blocked',
+  'cancelled',
+] as const satisfies readonly GraphNodeStatus[];
+
 export const GRAPH_RUN_STATUSES = [
   'pending',
   'running',
@@ -210,6 +243,82 @@ export function isGraphRuntimeSchemaVersion(
   value: unknown,
 ): value is typeof GRAPH_RUNTIME_SCHEMA_VERSION {
   return value === GRAPH_RUNTIME_SCHEMA_VERSION;
+}
+
+/**
+ * Reduce node runs to the latest attempt per node — the single "which attempt
+ * counts" rule behind {@link deriveGraphRunStatus}, the runner's
+ * `computeRunnableGraphNodes` and the web graph projection. Generic over the
+ * run shape so callers can pass a full `GraphNodeRun` or a narrow projection
+ * of one.
+ */
+export function latestGraphNodeRunsByNode<T extends Pick<GraphNodeRun, 'nodeId' | 'attempt'>>(
+  nodeRuns: readonly T[],
+): Map<string, T> {
+  const latest = new Map<string, T>();
+  for (const run of nodeRuns) {
+    const existing = latest.get(run.nodeId);
+    if (!existing || run.attempt > existing.attempt) latest.set(run.nodeId, run);
+  }
+  return latest;
+}
+
+export interface DeriveGraphRunStatusInput {
+  /** The graph definition's node set — the denominator of the aggregate. */
+  nodes: readonly Pick<GraphNodeDefinition, 'id'>[];
+  /** Every node run of the graph run; only the latest attempt per node counts. */
+  nodeRuns: readonly Pick<GraphNodeRun, 'nodeId' | 'attempt' | 'status'>[];
+  /** The persisted aggregate status, returned verbatim when nothing has run yet. */
+  currentStatus: GraphRunStatus;
+}
+
+/**
+ * Aggregate a GraphRun's status from its node runs. The single judgement used
+ * by both the write side (`/runner/events/graph-node-finished`) and any read
+ * model, so `GraphRun.status` never disagrees with the node ledger.
+ *
+ * Priority, evaluated over the latest attempt of every defined node:
+ *   1. any `cancelled` -> `cancelled`
+ *   2. any `failed`    -> `failed`
+ *   3. any `blocked`   -> `blocked`
+ *   4. any node still active (`pending`/`ready`/`running`) or never run
+ *      -> `running` (this is what returns a resumed graph to `running`)
+ *   5. every node terminal and non-blocking (`passed`/`skipped`) -> `passed`
+ *   6. no node run at all -> keep the current status (a planned-but-unstarted
+ *      graph stays `pending`)
+ *
+ * `skipped` is the normal product of `skip_dependents`, so it is terminal but
+ * does not block convergence to `passed`.
+ *
+ * Node runs whose node is absent from `nodes` do not count: the definition is
+ * the denominator. An empty `nodes` therefore has nothing to converge and
+ * keeps the current status rather than reporting a vacuous `passed`.
+ */
+export function deriveGraphRunStatus(input: DeriveGraphRunStatusInput): GraphRunStatus {
+  if (input.nodeRuns.length === 0 || input.nodes.length === 0) return input.currentStatus;
+
+  const latest = latestGraphNodeRunsByNode(input.nodeRuns);
+  const statuses = input.nodes.map((node) => latest.get(node.id)?.status);
+  if (statuses.includes('cancelled')) return 'cancelled';
+  if (statuses.includes('failed')) return 'failed';
+  if (statuses.includes('blocked')) return 'blocked';
+  if (statuses.some((status) => status === undefined || isActiveGraphNodeStatus(status))) {
+    return 'running';
+  }
+  return 'passed';
+}
+
+export function isActiveGraphNodeStatus(value: GraphNodeStatus): boolean {
+  return includesString(GRAPH_NODE_ACTIVE_STATUSES, value);
+}
+
+export function isTerminalGraphNodeStatus(value: GraphNodeStatus): boolean {
+  return includesString(GRAPH_NODE_TERMINAL_SUCCESS_STATUSES, value)
+    || includesString(GRAPH_NODE_TERMINAL_BLOCKING_STATUSES, value);
+}
+
+export function isResumableGraphNodeStatus(value: GraphNodeStatus): boolean {
+  return includesString(GRAPH_NODE_RESUMABLE_STATUSES, value);
 }
 
 function includesString(values: readonly string[], value: unknown): boolean {

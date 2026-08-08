@@ -104,6 +104,101 @@ function graphDefinitionForResume(): GraphDefinition {
   };
 }
 
+function twoNodeGraphDefinition(id: string): GraphDefinition {
+  const nodes = ['implementation', 'build_test'].map((stage, index) => ({
+    id: `node:feature.fastforward:${index}:${stage}`,
+    stage: stage as GraphDefinition['nodes'][number]['stage'],
+    kind: 'agent' as const,
+    skillId: null,
+    label: stage,
+    inputSelectors: [],
+    outputNames: [],
+    retryPolicy: { maxAttempts: 1, backoff: 'none' as const },
+    resumePolicy: 'new_attempt' as const,
+    failurePolicy: 'fail_fast' as const,
+    joinPolicy: 'none' as const,
+    metadata: {},
+  }));
+  return {
+    id,
+    schemaVersion: GRAPH_RUNTIME_SCHEMA_VERSION,
+    version: '1',
+    sourceFlowId: 'feature.fastforward',
+    description: 'Two-node aggregate graph',
+    nodes,
+    edges: [{
+      id: `edge:${id}:0`,
+      fromNodeId: nodes[0]!.id,
+      toNodeId: nodes[1]!.id,
+      mode: 'all_success',
+      condition: null,
+      metadata: {},
+    }],
+    entryNodeIds: [nodes[0]!.id],
+    createdAt: nowIso(),
+    metadata: { generatedFrom: 'test' },
+  };
+}
+
+async function startGraphRun(run: WorkflowRun, graphDefinition: GraphDefinition): Promise<GraphRun> {
+  const res = await app.request('/runner/events/graph-run-started', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ workflowRunId: run.id, graphDefinition }),
+  });
+  expect(res.status).toBe(201);
+  return ((await res.json()) as { graphRun: GraphRun }).graphRun;
+}
+
+/** Start one node, returning the resulting aggregate GraphRun status. */
+async function startNode(
+  run: WorkflowRun,
+  graphRun: GraphRun,
+  graphDefinition: GraphDefinition,
+  nodeIndex: number,
+  attempt = 1,
+): Promise<{ nodeRun: GraphNodeRun; graphRunStatus: GraphRun['status'] }> {
+  const nodeId = graphDefinition.nodes[nodeIndex]!.id;
+  const startRes = await app.request('/runner/events/graph-node-started', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      workflowRunId: run.id,
+      graphRunId: graphRun.id,
+      nodeId,
+      dependencyState: { upstreamNodeIds: [], satisfiedNodeIds: [], blockedNodeIds: [] },
+      idempotencyKey: `${graphRun.id}:${nodeId}:${attempt}`,
+    }),
+  });
+  expect(startRes.status).toBe(201);
+  const nodeRun = ((await startRes.json()) as { nodeRun: GraphNodeRun }).nodeRun;
+  const graphRes = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/graph`);
+  const graphBody = (await graphRes.json()) as { graphRun: GraphRun | null };
+  return { nodeRun, graphRunStatus: graphBody.graphRun!.status };
+}
+
+/** Start + finish one node, returning the resulting aggregate GraphRun status. */
+async function finishNode(
+  run: WorkflowRun,
+  graphRun: GraphRun,
+  graphDefinition: GraphDefinition,
+  nodeIndex: number,
+  status: GraphNodeRun['status'],
+): Promise<GraphRun['status']> {
+  const { nodeRun } = await startNode(run, graphRun, graphDefinition, nodeIndex);
+
+  const finishRes = await app.request('/runner/events/graph-node-finished', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ nodeRunId: nodeRun.id, status }),
+  });
+  expect(finishRes.status).toBe(200);
+
+  const graphRes = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/graph`);
+  const graphBody = (await graphRes.json()) as { graphRun: GraphRun | null };
+  return graphBody.graphRun!.status;
+}
+
 async function postArtifact(run: WorkflowRun, suffix: string): Promise<Artifact> {
   const res = await app.request('/runner/events/artifact', {
     method: 'POST',
@@ -465,7 +560,9 @@ test('runner graph events persist graph and node state into the read model', asy
     nodeRuns: GraphNodeRun[];
     events: GraphEvent[];
   };
-  expect(graphBody.graphRun).toMatchObject({ id: graphRun.id, status: 'running' });
+  // The graph's only node passed, so the aggregate converges instead of
+  // hanging on `running` (P0-1 R1).
+  expect(graphBody.graphRun).toMatchObject({ id: graphRun.id, status: 'passed' });
   expect(graphBody.nodeRuns).toMatchObject([{
     id: nodeRun.id,
     status: 'passed',
@@ -477,6 +574,54 @@ test('runner graph events persist graph and node state into the read model', asy
     'node_started',
     'node_finished',
   ]);
+  // ADR-2: the aggregate transition rides in the existing event's payload.
+  expect(graphBody.events.at(-1)?.payload).toMatchObject({
+    graphRunStatus: 'passed',
+    graphRunStatusFrom: 'running',
+  });
+});
+
+// P0-1 R5: aggregate convergence over a multi-node graph. `passed` may only
+// appear once every node is terminal; a mid-graph failure converges to
+// `failed` without waiting for the remaining nodes.
+test('graph run status converges only after every node finishes', async () => {
+  const run = await createRun('graph-aggregate-passed', 'converge graph run to passed');
+  const graphDefinition = twoNodeGraphDefinition('gdef_aggregate_passed_v1');
+  const graphRun = await startGraphRun(run, graphDefinition);
+
+  const first = await finishNode(run, graphRun, graphDefinition, 0, 'passed');
+  expect(first).toBe('running');
+  const second = await finishNode(run, graphRun, graphDefinition, 1, 'passed');
+  expect(second).toBe('passed');
+});
+
+test('graph run status converges to failed on a mid-graph node failure', async () => {
+  const run = await createRun('graph-aggregate-failed', 'converge graph run to failed');
+  const graphDefinition = twoNodeGraphDefinition('gdef_aggregate_failed_v1');
+  const graphRun = await startGraphRun(run, graphDefinition);
+
+  expect(await finishNode(run, graphRun, graphDefinition, 0, 'failed')).toBe('failed');
+  // The second node never runs, so the aggregate stays failed.
+  const graphRes = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/graph`);
+  const graphBody = (await graphRes.json()) as { graphRun: GraphRun | null };
+  expect(graphBody.graphRun?.status).toBe('failed');
+});
+
+// ADR-1: `/graph-node-started` is the third GraphRun writer and uses the same
+// judgement, so a converged aggregate re-opens instead of staying stale while
+// a node is running again.
+test('starting a node re-opens a converged graph run', async () => {
+  const run = await createRun('graph-aggregate-reopen', 'reopen a converged graph run');
+  const graphDefinition = twoNodeGraphDefinition('gdef_aggregate_reopen_v1');
+  const graphRun = await startGraphRun(run, graphDefinition);
+
+  expect(await finishNode(run, graphRun, graphDefinition, 0, 'passed')).toBe('running');
+  expect(await finishNode(run, graphRun, graphDefinition, 1, 'passed')).toBe('passed');
+
+  // A second attempt on node 0 makes it the latest attempt and active again.
+  const restarted = await startNode(run, graphRun, graphDefinition, 0, 2);
+  expect(restarted.graphRunStatus).toBe('running');
+  expect(restarted.nodeRun.attempt).toBe(2);
 });
 
 test('graph node run rejects a step run from another workflow', async () => {
@@ -645,8 +790,10 @@ test('graph resume creates a ready node attempt from a failed checkpointed node'
   });
 
   const graphRes = await app.request(`/workflow-runs/${encodeURIComponent(run.id)}/graph`);
-  const graphBody = (await graphRes.json()) as { events: GraphEvent[] };
+  const graphBody = (await graphRes.json()) as { graphRun: GraphRun | null; events: GraphEvent[] };
   expect(graphBody.events.map((event) => event.type)).toContain('resume_requested');
+  // The re-opened node is the latest attempt, so the aggregate leaves `failed`.
+  expect(graphBody.graphRun?.status).toBe('running');
 });
 
 test('graph resume rejects completed nodes and invalid resume cursors', async () => {

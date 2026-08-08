@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
+  GRAPH_RUNTIME_SCHEMA_VERSION,
+  type GraphDefinition,
+  type GraphNodeDefinition,
+  type GraphNodeRun,
+} from '@ainp/shared/browser';
+import {
   USER_VISIBLE_STAGES,
   artifactViewerScrollKey,
   buildContextFlowProjection,
+  buildGraphLiveProjection,
   buildRunProjection,
   isReadableFileArtifact,
   latestArtifactOfKind,
@@ -11,6 +18,7 @@ import {
   reportStatusLabel,
   stagesForRun,
   visibleStagesForRun,
+  type RunDetail,
   type WorkflowRunDto,
 } from '../src/projection';
 
@@ -666,5 +674,272 @@ describe('buildRunProjection for non-feature flows', () => {
     expect(projection.pendingGate).toBe('acceptance_gate');
     expect(projection.stages.find((s) => s.id === 'report')?.state).toBe('done');
     expect(projection.stages.find((s) => s.id === 'review')?.state).toBe('blocked');
+  });
+});
+
+describe('graph live projection', () => {
+  const NODE_IDS = ['node:0:implementation', 'node:1:build_test'] as const;
+
+  function graphDefinition(): GraphDefinition {
+    const nodes = ['implementation', 'build_test'].map((stage, index) => ({
+      id: NODE_IDS[index]!,
+      stage: stage as GraphNodeDefinition['stage'],
+      kind: 'agent' as const,
+      skillId: null,
+      label: stage,
+      inputSelectors: [],
+      outputNames: [],
+      retryPolicy: { maxAttempts: 1, backoff: 'none' as const },
+      resumePolicy: 'new_attempt' as const,
+      failurePolicy: 'fail_fast' as const,
+      joinPolicy: 'none' as const,
+      metadata: {},
+    }));
+    return {
+      id: 'gdef_web_v1',
+      schemaVersion: GRAPH_RUNTIME_SCHEMA_VERSION,
+      version: '1',
+      sourceFlowId: 'feature.fastforward',
+      description: 'Two-node graph',
+      nodes,
+      edges: [{
+        id: 'edge_0',
+        fromNodeId: NODE_IDS[0],
+        toNodeId: NODE_IDS[1],
+        mode: 'all_success',
+        condition: null,
+        metadata: {},
+      }],
+      entryNodeIds: [NODE_IDS[0]],
+      createdAt: '2026-05-01T00:00:00.000Z',
+      metadata: {},
+    };
+  }
+
+  function nodeRun(overrides: Partial<GraphNodeRun> & Pick<GraphNodeRun, 'nodeId' | 'status'>): GraphNodeRun {
+    return {
+      id: `gnr_${overrides.nodeId}_${overrides.attempt ?? 1}`,
+      graphRunId: 'grun_web',
+      workflowRunId: 'run_graph',
+      attempt: 1,
+      stepRunId: null,
+      stepCheckpointId: null,
+      resumeCursor: null,
+      idempotencyKey: `grun_web:${overrides.nodeId}:1`,
+      dependencyState: { upstreamNodeIds: [], satisfiedNodeIds: [], blockedNodeIds: [] },
+      startedAt: '2026-05-01T00:00:00.000Z',
+      completedAt: null,
+      metadata: {},
+      ...overrides,
+    };
+  }
+
+  function detailWithGraph(graph: RunDetail['graph']): RunDetail {
+    return {
+      run: {
+        id: 'run_graph',
+        title: 'Graph run',
+        type: 'feature',
+        status: 'running',
+        currentStage: 'implementation',
+        flowId: 'feature.fastforward',
+        startStage: null,
+        sourceBranch: 'main',
+        branch: 'ai/run_graph',
+        workspacePath: '/tmp/worktree',
+        projectId: 'proj_1',
+        createdAt: '2026-05-01T00:00:00.000Z',
+      },
+      steps: [],
+      commands: [],
+      toolInvocations: [],
+      gates: [],
+      artifacts: [],
+      builds: [],
+      tests: [],
+      approvals: [],
+      actions: [],
+      agentTasks: [],
+      agentResults: [],
+      handoffs: [],
+      stepCheckpoints: [],
+      audit: [],
+      graph,
+    };
+  }
+
+  it('returns null when the run never planned a graph', () => {
+    expect(buildGraphLiveProjection(detailWithGraph(undefined))).toBeNull();
+    expect(buildGraphLiveProjection(detailWithGraph({
+      graphDefinition: null,
+      graphRun: null,
+      nodeRuns: [],
+      events: [],
+    }))).toBeNull();
+  });
+
+  it('derives active nodes, done/total and dependencies from the node ledger', () => {
+    const definition = graphDefinition();
+    const projection = buildGraphLiveProjection(detailWithGraph({
+      graphDefinition: definition,
+      graphRun: {
+        id: 'grun_web',
+        workflowRunId: 'run_graph',
+        graphDefinitionId: definition.id,
+        graphVersion: definition.version,
+        status: 'running',
+        activeNodeIds: [NODE_IDS[1]],
+        interruptedReason: null,
+        createdAt: '2026-05-01T00:00:00.000Z',
+        updatedAt: '2026-05-01T00:00:02.000Z',
+        metadata: {},
+      },
+      nodeRuns: [
+        nodeRun({ nodeId: NODE_IDS[0], status: 'passed', stepRunId: 'step_impl' }),
+        nodeRun({ nodeId: NODE_IDS[1], status: 'running', attempt: 2 }),
+      ],
+      events: [],
+    }))!;
+
+    expect(projection.status).toBe('running');
+    expect(projection.doneCount).toBe(1);
+    expect(projection.totalCount).toBe(2);
+    expect(projection.activeNodes.map((node) => node.nodeId)).toEqual([NODE_IDS[1]]);
+    expect(projection.activeNodes[0]?.attempt).toBe(2);
+    expect(projection.primaryBlocker).toBeNull();
+    expect(projection.resumable).toBeNull();
+    expect(projection.nodes[1]?.upstreamNodeIds).toEqual([NODE_IDS[0]]);
+    expect(projection.nodes[0]?.downstreamNodeIds).toEqual([NODE_IDS[1]]);
+    expect(projection.nodes[0]?.stepRunId).toBe('step_impl');
+  });
+
+  it('surfaces the first blocker with its reason and the resumable checkpoint', () => {
+    const definition = graphDefinition();
+    const projection = buildGraphLiveProjection(detailWithGraph({
+      graphDefinition: definition,
+      graphRun: {
+        id: 'grun_web',
+        workflowRunId: 'run_graph',
+        graphDefinitionId: definition.id,
+        graphVersion: definition.version,
+        // Persisted before aggregate convergence landed; the projection still
+        // reports the truth derived from the node ledger.
+        status: 'running',
+        activeNodeIds: [],
+        interruptedReason: null,
+        createdAt: '2026-05-01T00:00:00.000Z',
+        updatedAt: '2026-05-01T00:00:02.000Z',
+        metadata: {},
+      },
+      nodeRuns: [
+        nodeRun({ nodeId: NODE_IDS[0], status: 'passed' }),
+        nodeRun({
+          nodeId: NODE_IDS[1],
+          status: 'failed',
+          stepCheckpointId: 'scp_build',
+          resumeCursor: 'graph://resume/build_test',
+          metadata: { failureReason: 'mvn test failed' },
+        }),
+      ],
+      events: [],
+    }))!;
+
+    expect(projection.status).toBe('failed');
+    expect(projection.persistedStatus).toBe('running');
+    expect(projection.primaryBlocker).toMatchObject({
+      nodeId: NODE_IDS[1],
+      status: 'failed',
+      reason: 'mvn test failed',
+    });
+    expect(projection.resumable).toMatchObject({
+      nodeId: NODE_IDS[1],
+      stepCheckpointId: 'scp_build',
+      resumeCursor: 'graph://resume/build_test',
+    });
+  });
+
+  it('reads the blocker reason from the runner-written metadata.error', () => {
+    const definition = graphDefinition();
+    const projection = buildGraphLiveProjection(detailWithGraph({
+      graphDefinition: definition,
+      graphRun: {
+        id: 'grun_web',
+        workflowRunId: 'run_graph',
+        graphDefinitionId: definition.id,
+        graphVersion: definition.version,
+        status: 'blocked',
+        activeNodeIds: [],
+        interruptedReason: null,
+        createdAt: '2026-05-01T00:00:00.000Z',
+        updatedAt: '2026-05-01T00:00:02.000Z',
+        metadata: {},
+      },
+      nodeRuns: [
+        nodeRun({ nodeId: NODE_IDS[0], status: 'passed' }),
+        // `error` is the key the runner actually writes
+        // (orchestrator.ts recordGraphNodeFailure).
+        nodeRun({ nodeId: NODE_IDS[1], status: 'blocked', metadata: { error: 'awaiting human approval' } }),
+      ],
+      events: [],
+    }))!;
+
+    expect(projection.status).toBe('blocked');
+    expect(projection.primaryBlocker?.reason).toBe('awaiting human approval');
+    // A blocked node without a checkpoint is not resumable.
+    expect(projection.resumable).toBeNull();
+  });
+
+  it('leaves the blocker reason null when no writer recorded one', () => {
+    const definition = graphDefinition();
+    const projection = buildGraphLiveProjection(detailWithGraph({
+      graphDefinition: definition,
+      graphRun: {
+        id: 'grun_web',
+        workflowRunId: 'run_graph',
+        graphDefinitionId: definition.id,
+        graphVersion: definition.version,
+        status: 'blocked',
+        activeNodeIds: [],
+        interruptedReason: null,
+        createdAt: '2026-05-01T00:00:00.000Z',
+        updatedAt: '2026-05-01T00:00:02.000Z',
+        metadata: {},
+      },
+      nodeRuns: [
+        nodeRun({ nodeId: NODE_IDS[0], status: 'passed' }),
+        nodeRun({ nodeId: NODE_IDS[1], status: 'blocked' }),
+      ],
+      events: [],
+    }))!;
+
+    expect(projection.primaryBlocker).toMatchObject({ nodeId: NODE_IDS[1], reason: null });
+  });
+
+  it('reports passed once every node reaches a non-blocking terminal state', () => {
+    const definition = graphDefinition();
+    const projection = buildGraphLiveProjection(detailWithGraph({
+      graphDefinition: definition,
+      graphRun: {
+        id: 'grun_web',
+        workflowRunId: 'run_graph',
+        graphDefinitionId: definition.id,
+        graphVersion: definition.version,
+        status: 'passed',
+        activeNodeIds: [],
+        interruptedReason: null,
+        createdAt: '2026-05-01T00:00:00.000Z',
+        updatedAt: '2026-05-01T00:00:02.000Z',
+        metadata: {},
+      },
+      nodeRuns: [
+        nodeRun({ nodeId: NODE_IDS[0], status: 'passed' }),
+        nodeRun({ nodeId: NODE_IDS[1], status: 'skipped' }),
+      ],
+      events: [],
+    }))!;
+
+    expect(projection.status).toBe('passed');
+    expect(projection.doneCount).toBe(2);
+    expect(projection.activeNodes).toEqual([]);
   });
 });

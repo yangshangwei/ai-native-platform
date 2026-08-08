@@ -1,20 +1,19 @@
-import type {
-  GraphDefinition,
-  GraphEdgeDefinition,
-  GraphEvent,
-  GraphNodeDefinition,
-  GraphNodeRun,
-  GraphRun,
+import {
+  GRAPH_NODE_ACTIVE_STATUSES,
+  GRAPH_NODE_TERMINAL_BLOCKING_STATUSES,
+  GRAPH_NODE_TERMINAL_SUCCESS_STATUSES,
+  latestGraphNodeRunsByNode,
+  type GraphDefinition,
+  type GraphEdgeDefinition,
+  type GraphEvent,
+  type GraphNodeDefinition,
+  type GraphNodeRun,
+  type GraphRun,
 } from '@ainp/shared';
 
-const TERMINAL_SUCCESS = new Set<GraphNodeRun['status']>(['passed']);
-const TERMINAL_BLOCKING = new Set<GraphNodeRun['status']>([
-  'failed',
-  'blocked',
-  'skipped',
-  'cancelled',
-]);
-const ACTIVE = new Set<GraphNodeRun['status']>(['pending', 'ready', 'running']);
+const TERMINAL_SUCCESS = new Set<GraphNodeRun['status']>(GRAPH_NODE_TERMINAL_SUCCESS_STATUSES);
+const TERMINAL_BLOCKING = new Set<GraphNodeRun['status']>(GRAPH_NODE_TERMINAL_BLOCKING_STATUSES);
+const ACTIVE = new Set<GraphNodeRun['status']>(GRAPH_NODE_ACTIVE_STATUSES);
 
 export interface ComputeRunnableGraphNodesInput {
   graph: GraphDefinition;
@@ -80,15 +79,11 @@ export function assertGraphRunMatchesDefinition(graph: GraphDefinition, graphRun
   }
 }
 
+/** Re-exported under the runner's historical name; the rule lives in shared. */
 export function latestNodeRunsByNode(
   nodeRuns: readonly GraphNodeRun[],
 ): Map<string, GraphNodeRun> {
-  const latest = new Map<string, GraphNodeRun>();
-  for (const run of nodeRuns) {
-    const existing = latest.get(run.nodeId);
-    if (!existing || run.attempt > existing.attempt) latest.set(run.nodeId, run);
-  }
-  return latest;
+  return latestGraphNodeRunsByNode(nodeRuns);
 }
 
 function incomingDependencies(

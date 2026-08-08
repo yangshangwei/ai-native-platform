@@ -3,6 +3,7 @@ import {
   GRAPH_RUNTIME_SCHEMA_VERSION,
   GRAPH_JOIN_POLICIES,
   GRAPH_NODE_STATUSES,
+  deriveGraphRunStatus,
   isGraphFailurePolicy,
   isGraphJoinPolicy,
   isGraphNodeStatus,
@@ -10,6 +11,7 @@ import {
   isGraphRuntimeSchemaVersion,
   type GraphDefinition,
   type GraphNodeRun,
+  type GraphNodeStatus,
 } from '../src';
 
 test('Graph Runtime shared contract enumerates node state and policies', () => {
@@ -85,4 +87,112 @@ test('GraphNodeRun links node attempts to StepCheckpoint evidence', () => {
   expect(nodeRun.attempt).toBe(2);
   expect(nodeRun.stepCheckpointId).toBe('scp_1');
   expect(nodeRun.idempotencyKey).toContain('attempt:2');
+});
+
+// ---- deriveGraphRunStatus (P0-1 R1) ---------------------------------------
+
+const AGGREGATE_NODES = [{ id: 'n1' }, { id: 'n2' }, { id: 'n3' }];
+
+function run(
+  nodeId: string,
+  status: GraphNodeStatus,
+  attempt = 1,
+): Pick<GraphNodeRun, 'nodeId' | 'attempt' | 'status'> {
+  return { nodeId, attempt, status };
+}
+
+test('deriveGraphRunStatus prefers cancelled over every other node state', () => {
+  expect(deriveGraphRunStatus({
+    nodes: AGGREGATE_NODES,
+    nodeRuns: [run('n1', 'passed'), run('n2', 'failed'), run('n3', 'cancelled')],
+    currentStatus: 'running',
+  })).toBe('cancelled');
+});
+
+test('deriveGraphRunStatus reports failed before blocked and active nodes', () => {
+  expect(deriveGraphRunStatus({
+    nodes: AGGREGATE_NODES,
+    nodeRuns: [run('n1', 'passed'), run('n2', 'failed'), run('n3', 'running')],
+    currentStatus: 'running',
+  })).toBe('failed');
+});
+
+test('deriveGraphRunStatus reports blocked before active nodes', () => {
+  expect(deriveGraphRunStatus({
+    nodes: AGGREGATE_NODES,
+    nodeRuns: [run('n1', 'passed'), run('n2', 'blocked'), run('n3', 'pending')],
+    currentStatus: 'running',
+  })).toBe('blocked');
+});
+
+test('deriveGraphRunStatus stays running while any node is active or unstarted', () => {
+  expect(deriveGraphRunStatus({
+    nodes: AGGREGATE_NODES,
+    nodeRuns: [run('n1', 'passed'), run('n2', 'running')],
+    currentStatus: 'running',
+  })).toBe('running');
+  // n3 has no node run at all: the graph is not finished.
+  expect(deriveGraphRunStatus({
+    nodes: AGGREGATE_NODES,
+    nodeRuns: [run('n1', 'passed'), run('n2', 'passed')],
+    currentStatus: 'running',
+  })).toBe('running');
+});
+
+test('deriveGraphRunStatus converges to passed when every node is passed or skipped', () => {
+  expect(deriveGraphRunStatus({
+    nodes: AGGREGATE_NODES,
+    nodeRuns: [run('n1', 'passed'), run('n2', 'skipped'), run('n3', 'passed')],
+    currentStatus: 'running',
+  })).toBe('passed');
+});
+
+test('deriveGraphRunStatus keeps the current status when nothing has run yet', () => {
+  expect(deriveGraphRunStatus({
+    nodes: AGGREGATE_NODES,
+    nodeRuns: [],
+    currentStatus: 'pending',
+  })).toBe('pending');
+});
+
+test('deriveGraphRunStatus does not report a vacuous passed for an empty node set', () => {
+  // A node run whose node is absent from the definition cannot be judged: the
+  // definition is the denominator, so an empty one has nothing to converge.
+  expect(deriveGraphRunStatus({
+    nodes: [],
+    nodeRuns: [run('n1', 'passed')],
+    currentStatus: 'running',
+  })).toBe('running');
+  // Same guard with a node run that would otherwise have forced `failed`.
+  expect(deriveGraphRunStatus({
+    nodes: [],
+    nodeRuns: [run('n1', 'failed')],
+    currentStatus: 'running',
+  })).toBe('running');
+});
+
+test('deriveGraphRunStatus ignores node runs outside the definition', () => {
+  // n4 is not in the definition, so its failure does not enter the aggregate;
+  // every defined node passed.
+  expect(deriveGraphRunStatus({
+    nodes: AGGREGATE_NODES,
+    nodeRuns: [run('n1', 'passed'), run('n2', 'passed'), run('n3', 'passed'), run('n4', 'failed')],
+    currentStatus: 'running',
+  })).toBe('passed');
+});
+
+test('deriveGraphRunStatus judges only the latest attempt, so a resume returns to running', () => {
+  const nodeRuns = [
+    run('n1', 'passed'),
+    run('n2', 'failed'),
+    run('n3', 'skipped'),
+  ];
+  expect(deriveGraphRunStatus({ nodes: AGGREGATE_NODES, nodeRuns, currentStatus: 'running' }))
+    .toBe('failed');
+  // resumeGraphNode() re-opens n2 as a new `ready` attempt.
+  expect(deriveGraphRunStatus({
+    nodes: AGGREGATE_NODES,
+    nodeRuns: [...nodeRuns, run('n2', 'ready', 2)],
+    currentStatus: 'failed',
+  })).toBe('running');
 });

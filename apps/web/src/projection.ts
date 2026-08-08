@@ -1,12 +1,25 @@
 import {
   FLOW_REGISTRY,
+  deriveGraphRunStatus,
+  isActiveGraphNodeStatus,
+  isResumableGraphNodeStatus,
+  isTerminalGraphNodeStatus,
+  latestGraphNodeRunsByNode,
   type AgentResult,
+  type AgentSession,
   type AgentTask,
   type Artifact,
   type BuildRun,
   type CommandRun,
   type FlowId,
   type GateRun,
+  type GraphDefinition,
+  type GraphEvent,
+  type GraphNodeDefinition,
+  type GraphNodeRun,
+  type GraphNodeStatus,
+  type GraphRun,
+  type GraphRunStatus,
   type HandoffRecord,
   type RuleResult,
   stageHandoffFromMetadata,
@@ -389,6 +402,22 @@ export interface AuditEntryDto {
   at: string;
 }
 
+/** Derived from the shared {@link AgentSession}; the API returns the full entity. */
+export type AgentSessionDto = AgentSession;
+
+/**
+ * The graph runtime quadruple as returned by `GET /workflow-runs/:id`
+ * (`store.graphRuntime.byWorkflow`). Pure data, so the shared types are
+ * reused verbatim (same rationale as {@link StepCheckpointDto}).
+ * `graphDefinition` / `graphRun` are null for runs that never planned a graph.
+ */
+export interface RunGraphDto {
+  graphDefinition: GraphDefinition | null;
+  graphRun: GraphRun | null;
+  nodeRuns: GraphNodeRun[];
+  events: GraphEvent[];
+}
+
 export interface RunDetail {
   run: WorkflowRunDto;
   steps: StepRunDto[];
@@ -405,6 +434,13 @@ export interface RunDetail {
   handoffs: HandoffRecordDto[];
   stepCheckpoints: StepCheckpointDto[];
   audit: AuditEntryDto[];
+  /**
+   * Both are declared optional rather than required: the wire always carries
+   * them, but every legacy web fixture predates them and the renderers read
+   * them defensively (`detail.graph?.graphRun`).
+   */
+  agentSessions?: AgentSessionDto[];
+  graph?: RunGraphDto;
 }
 
 export interface StageProjection {
@@ -737,6 +773,175 @@ export function buildRunProjection(detail: RunDetail): RunProjection {
       buildStatus: detail.builds.at(-1)?.status ?? 'not_started',
     },
   };
+}
+
+// ---- Graph live view (P0-1) ------------------------------------------------
+//
+// Read-only projection over the graph ledger the API already returns. Every
+// derivation lives here (never inline in a renderer), and the aggregate status
+// comes from the same shared `deriveGraphRunStatus` the writers use, so a run
+// recorded before aggregate convergence landed still displays honestly.
+
+type BlockingNodeView = GraphNodeView & { status: 'failed' | 'blocked' };
+type ResumableNodeView = GraphNodeView & { nodeRunId: string; stepCheckpointId: string };
+
+function isBlockingNodeView(node: GraphNodeView): node is BlockingNodeView {
+  return node.status === 'failed' || node.status === 'blocked';
+}
+
+// Mirrors the API's resume precondition: a resumable status plus a checkpoint
+// to resume from (`resumeGraphNode` rejects anything else).
+function isResumableNodeView(node: GraphNodeView): node is ResumableNodeView {
+  return node.nodeRunId !== null
+    && node.stepCheckpointId !== null
+    && node.status !== null
+    && isResumableGraphNodeStatus(node.status);
+}
+
+export interface GraphNodeView {
+  nodeId: string;
+  label: string;
+  stage: Stage;
+  /** Latest attempt's status; null when the node has never run. */
+  status: GraphNodeStatus | null;
+  /** Latest attempt number; 0 when the node has never run. */
+  attempt: number;
+  nodeRunId: string | null;
+  stepRunId: string | null;
+  stepCheckpointId: string | null;
+  resumeCursor: string | null;
+  upstreamNodeIds: string[];
+  downstreamNodeIds: string[];
+  /** Reason recorded by the node run's writer; null when none was recorded. */
+  failureReason: string | null;
+  terminal: boolean;
+  active: boolean;
+}
+
+export interface GraphBlockerView {
+  nodeId: string;
+  label: string;
+  stage: Stage;
+  status: Extract<GraphNodeStatus, 'failed' | 'blocked'>;
+  attempt: number;
+  reason: string | null;
+}
+
+export interface GraphResumeView {
+  nodeId: string;
+  label: string;
+  nodeRunId: string;
+  stepCheckpointId: string;
+  resumeCursor: string | null;
+}
+
+export interface GraphLiveProjection {
+  graphRunId: string;
+  graphVersion: string;
+  /** Derived from the node ledger via the shared judgement. */
+  status: GraphRunStatus;
+  /** What the API has persisted; differs only for pre-convergence runs. */
+  persistedStatus: GraphRunStatus;
+  doneCount: number;
+  totalCount: number;
+  activeNodes: GraphNodeView[];
+  primaryBlocker: GraphBlockerView | null;
+  resumable: GraphResumeView | null;
+  nodes: GraphNodeView[];
+  events: GraphEvent[];
+}
+
+/**
+ * Build the live graph view for a run, or null when the run never planned a
+ * graph (legacy runs, `ask` requests) — callers hide the whole block instead
+ * of rendering an empty shell.
+ */
+export function buildGraphLiveProjection(detail: RunDetail): GraphLiveProjection | null {
+  const graph = detail.graph;
+  if (!graph?.graphDefinition || !graph.graphRun) return null;
+  const definition = graph.graphDefinition;
+  const nodeRuns = graph.nodeRuns ?? [];
+  const events = [...(graph.events ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  const latestRuns = latestGraphNodeRunsByNode(nodeRuns);
+  const nodes = definition.nodes.map((node) =>
+    graphNodeView(node, latestRuns.get(node.id) ?? null, definition),
+  );
+  const blocker = nodes.find(isBlockingNodeView) ?? null;
+  const resumableNode = nodes.find(isResumableNodeView) ?? null;
+
+  return {
+    graphRunId: graph.graphRun.id,
+    graphVersion: graph.graphRun.graphVersion,
+    status: deriveGraphRunStatus({
+      nodes: definition.nodes,
+      nodeRuns,
+      currentStatus: graph.graphRun.status,
+    }),
+    persistedStatus: graph.graphRun.status,
+    doneCount: nodes.filter((node) => node.terminal).length,
+    totalCount: nodes.length,
+    activeNodes: nodes.filter((node) => node.active),
+    primaryBlocker: blocker
+      ? {
+          nodeId: blocker.nodeId,
+          label: blocker.label,
+          stage: blocker.stage,
+          status: blocker.status,
+          attempt: blocker.attempt,
+          reason: blocker.failureReason,
+        }
+      : null,
+    resumable: resumableNode
+      ? {
+          nodeId: resumableNode.nodeId,
+          label: resumableNode.label,
+          nodeRunId: resumableNode.nodeRunId,
+          stepCheckpointId: resumableNode.stepCheckpointId,
+          resumeCursor: resumableNode.resumeCursor,
+        }
+      : null,
+    nodes,
+    events,
+  };
+}
+
+function graphNodeView(
+  node: GraphNodeDefinition,
+  latest: GraphNodeRun | null,
+  definition: GraphDefinition,
+): GraphNodeView {
+  const status = latest?.status ?? null;
+  return {
+    nodeId: node.id,
+    label: node.label || STAGE_LABELS[node.stage] || node.stage,
+    stage: node.stage,
+    status,
+    attempt: latest?.attempt ?? 0,
+    nodeRunId: latest?.id ?? null,
+    stepRunId: latest?.stepRunId ?? null,
+    stepCheckpointId: latest?.stepCheckpointId ?? null,
+    resumeCursor: latest?.resumeCursor ?? null,
+    upstreamNodeIds: definition.edges
+      .filter((edge) => edge.toNodeId === node.id)
+      .map((edge) => edge.fromNodeId),
+    downstreamNodeIds: definition.edges
+      .filter((edge) => edge.fromNodeId === node.id)
+      .map((edge) => edge.toNodeId),
+    failureReason: graphNodeFailureReason(latest),
+    terminal: status !== null && isTerminalGraphNodeStatus(status),
+    active: status !== null && isActiveGraphNodeStatus(status),
+  };
+}
+
+// The runner records node failures as `metadata.error` (orchestrator.ts
+// `recordGraphNodeFailure`). `failureReason` / `reason` are also read because
+// the node metadata bag is untyped and other writers use those spellings.
+function graphNodeFailureReason(latest: GraphNodeRun | null): string | null {
+  if (!latest) return null;
+  return stringField(latest.metadata, 'error')
+    ?? stringField(latest.metadata, 'failureReason')
+    ?? stringField(latest.metadata, 'reason');
 }
 
 function appendUniqueArtifact(target: ContextFlowArtifactRef[], artifact: ContextFlowArtifactRef): void {

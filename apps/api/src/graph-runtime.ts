@@ -5,15 +5,11 @@ import type {
   WorkflowRunId,
   WorkflowStage,
 } from '@ainp/shared';
-import { newId, nowIso } from '@ainp/shared';
+import { GRAPH_NODE_RESUMABLE_STATUSES, deriveGraphRunStatus, newId, nowIso } from '@ainp/shared';
 import { audit } from './audit';
 import { store } from './store/store';
 
-const RESUMABLE_NODE_STATUSES = new Set<GraphNodeRun['status']>([
-  'failed',
-  'cancelled',
-  'blocked',
-]);
+const RESUMABLE_NODE_STATUSES = new Set<GraphNodeRun['status']>(GRAPH_NODE_RESUMABLE_STATUSES);
 
 export interface ResumeGraphNodeParams {
   workflowRunId: WorkflowRunId;
@@ -97,13 +93,20 @@ export function resumeGraphNode(params: ResumeGraphNodeParams): ResumeGraphNodeR
       actor: params.actor,
     },
   };
+  store.graphNodeRuns.upsert(nodeRun);
+  // The re-opened node is `ready`, so the shared judgement pulls the aggregate
+  // back out of its terminal state. Derived rather than hard-coded so this
+  // writer cannot disagree with `/runner/events/graph-node-finished`.
   const updatedGraphRun: GraphRun = {
     ...graphRun,
-    status: 'running',
+    status: deriveGraphRunStatus({
+      nodes: graphDefinition.nodes,
+      nodeRuns: store.graphNodeRuns.byGraphRun(graphRun.id),
+      currentStatus: graphRun.status,
+    }),
     activeNodeIds: [...new Set([...graphRun.activeNodeIds, previousNodeRun.nodeId])],
     updatedAt: ts,
   };
-  store.graphNodeRuns.upsert(nodeRun);
   store.graphRuns.upsert(updatedGraphRun);
   store.graphEvents.insert({
     id: newId('gevt'),

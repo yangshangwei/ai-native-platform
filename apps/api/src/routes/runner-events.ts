@@ -18,6 +18,7 @@ import type {
   GraphNodeDependencyState,
 } from '@ainp/shared';
 import {
+  deriveGraphRunStatus,
   errorMessage,
   isGraphNodeStatus,
   isGraphRuntimeSchemaVersion,
@@ -259,9 +260,18 @@ runnerEvents.post('/graph-node-started', async (c) => {
   };
   try {
     store.graphNodeRuns.upsert(nodeRun);
+    // Third GraphRun writer, same judgement as the other two (ADR-1): starting
+    // a node re-opens an aggregate that had already converged. Blocking states
+    // outrank active ones, so this can only move `passed` back to `running` —
+    // it can never convert a failed graph into a healthy-looking one.
     store.graphRuns.upsert({
       ...graphRun,
       activeNodeIds: [...new Set([...graphRun.activeNodeIds, body.nodeId])],
+      status: deriveGraphRunStatus({
+        nodes: graphDefinition.nodes,
+        nodeRuns: store.graphNodeRuns.byGraphRun(graphRun.id),
+        currentStatus: graphRun.status,
+      }),
       updatedAt: ts,
     });
     store.graphEvents.insert({
@@ -319,10 +329,23 @@ runnerEvents.post('/graph-node-finished', async (c) => {
   };
   try {
     store.graphNodeRuns.upsert(nodeRun);
+    // Aggregate convergence: re-read the node ledger (the upsert above is
+    // already visible) and let the shared judgement decide the GraphRun
+    // status, so a fully successful graph settles on `passed` instead of
+    // hanging on `running`. Without a definition we cannot know the node set,
+    // so keep the historical failure-only behavior.
+    const graphDefinition = store.graphDefinitions.get(graphRun.graphDefinitionId);
+    const graphRunStatus = graphDefinition
+      ? deriveGraphRunStatus({
+          nodes: graphDefinition.nodes,
+          nodeRuns: store.graphNodeRuns.byGraphRun(graphRun.id),
+          currentStatus: graphRun.status,
+        })
+      : body.status === 'failed' ? 'failed' : graphRun.status;
     store.graphRuns.upsert({
       ...graphRun,
       activeNodeIds: graphRun.activeNodeIds.filter((id) => id !== existing.nodeId),
-      status: body.status === 'failed' ? 'failed' : graphRun.status,
+      status: graphRunStatus,
       updatedAt: ts,
     });
     store.graphEvents.insert({
@@ -337,6 +360,10 @@ runnerEvents.post('/graph-node-finished', async (c) => {
         status: body.status,
         stepRunId: nodeRun.stepRunId,
         stepCheckpointId: nodeRun.stepCheckpointId,
+        // Aggregate transition rides in this payload rather than a new event
+        // type (ADR-2); `graphRunStatusFrom` is only set when it moved.
+        graphRunStatus,
+        ...(graphRunStatus === graphRun.status ? {} : { graphRunStatusFrom: graphRun.status }),
       },
     });
     return c.json({ ok: true, nodeRun }, 200);

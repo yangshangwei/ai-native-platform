@@ -372,4 +372,129 @@ describe('task-detail reviewer rendering', () => {
       expect(row?.textContent).toContain('风险: Safe fallback was not observed.');
     }
   });
+
+  it('renders the graph live view and hides it for runs without a graph', () => {
+    const { detail } = installPausedTaskDetail();
+
+    // No graph on the wire (legacy run): the whole block stays hidden.
+    expect(renderTaskDetailPage().querySelector('.graph-live-panel')).toBeNull();
+    expect(renderTaskDetailPage().querySelector('.graph-live-summary')).toBeNull();
+
+    const nodeIds = ['node:0:implementation', 'node:1:build_test'];
+    detail.graph = {
+      graphDefinition: {
+        id: 'gdef_render_v1',
+        schemaVersion: 'ainp.graph_runtime.v1',
+        version: '1',
+        sourceFlowId: 'feature.fastforward',
+        description: 'Two-node graph',
+        nodes: nodeIds.map((id, index) => ({
+          id,
+          stage: index === 0 ? 'implementation' : 'build_test',
+          kind: 'agent',
+          skillId: null,
+          label: index === 0 ? '代码实现' : '构建测试',
+          inputSelectors: [],
+          outputNames: [],
+          retryPolicy: { maxAttempts: 2, backoff: 'none' },
+          resumePolicy: 'new_attempt',
+          failurePolicy: 'fail_fast',
+          joinPolicy: 'none',
+          metadata: {},
+        })),
+        edges: [{
+          id: 'edge_0',
+          fromNodeId: nodeIds[0]!,
+          toNodeId: nodeIds[1]!,
+          mode: 'all_success',
+          condition: null,
+          metadata: {},
+        }],
+        entryNodeIds: [nodeIds[0]!],
+        createdAt: '2026-07-26T00:00:00.000Z',
+        metadata: {},
+      },
+      graphRun: {
+        id: 'grun_render',
+        workflowRunId: detail.run.id,
+        graphDefinitionId: 'gdef_render_v1',
+        graphVersion: '1',
+        status: 'running',
+        activeNodeIds: [nodeIds[1]!],
+        interruptedReason: null,
+        createdAt: '2026-07-26T00:00:00.000Z',
+        updatedAt: '2026-07-26T00:00:02.000Z',
+        metadata: {},
+      },
+      nodeRuns: [
+        {
+          id: 'gnr_impl_1',
+          graphRunId: 'grun_render',
+          workflowRunId: detail.run.id,
+          nodeId: nodeIds[0]!,
+          attempt: 2,
+          status: 'failed',
+          stepRunId: 'step_design',
+          stepCheckpointId: 'checkpoint_design',
+          resumeCursor: 'graph://resume/implementation',
+          idempotencyKey: 'grun_render:impl:2',
+          dependencyState: { upstreamNodeIds: [], satisfiedNodeIds: [], blockedNodeIds: [] },
+          startedAt: '2026-07-26T00:00:00.500Z',
+          completedAt: '2026-07-26T00:00:01.000Z',
+          metadata: { error: 'diff_scope_gate failed' },
+        },
+        {
+          id: 'gnr_build_1',
+          graphRunId: 'grun_render',
+          workflowRunId: detail.run.id,
+          nodeId: nodeIds[1]!,
+          attempt: 1,
+          status: 'running',
+          stepRunId: null,
+          stepCheckpointId: null,
+          resumeCursor: null,
+          idempotencyKey: 'grun_render:build:1',
+          dependencyState: {
+            upstreamNodeIds: [nodeIds[0]!],
+            satisfiedNodeIds: [],
+            blockedNodeIds: [],
+          },
+          startedAt: '2026-07-26T00:00:01.500Z',
+          completedAt: null,
+          metadata: {},
+        },
+      ],
+      events: [{
+        id: 'gevt_1',
+        graphRunId: 'grun_render',
+        workflowRunId: detail.run.id,
+        nodeId: nodeIds[0]!,
+        type: 'node_finished',
+        createdAt: '2026-07-26T00:00:01.000Z',
+        payload: { status: 'failed', graphRunStatus: 'failed' },
+      }],
+    };
+
+    const page = renderTaskDetailPage();
+    const summary = page.querySelector<HTMLElement>('.graph-live-summary');
+    const panel = page.querySelector<HTMLElement>('.graph-live-panel');
+
+    expect(summary?.textContent).toContain('节点 1/2');
+    expect(summary?.textContent).toContain('进行中：构建测试');
+    expect(summary?.textContent).toContain('首要阻塞：代码实现 — diff_scope_gate failed');
+    expect(summary?.textContent).toContain('可从 代码实现 恢复');
+    expect(panel?.textContent).toContain('执行图');
+    expect(panel?.querySelectorAll('.graph-node-row').length).toBe(2);
+    expect(panel?.textContent).toContain('attempt 2');
+    expect(panel?.textContent).toContain('依赖 代码实现');
+    // Node statuses use the same Chinese labels as the panel header.
+    expect(panel?.textContent).toContain('已失败');
+    expect(panel?.textContent).toContain('执行中');
+    expect(panel?.textContent).not.toContain('"graphRunStatus"');
+    // Event payloads render as a whitelisted field list, not a raw JSON dump.
+    expect(panel?.textContent).toContain('status=failed');
+    expect(panel?.querySelector('details[data-details-key="graph-events:run_review"]')).not.toBeNull();
+    // Read-only: the live view must not add a graph mutation control.
+    expect(panel?.querySelector('button')).toBeNull();
+  });
 });
