@@ -1,0 +1,7 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "deriveGraphRunStatus 纯函数落在 packages/shared，需遵守 shared 层类型与导出约定"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "修改 /graph-node-finished 路由的聚合状态写入"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "RunDetail 类型补 graph 字段、新增投影函数与详情页渲染"}
+{"file": ".trellis/spec/guides/index.md", "reason": "跨包改动的通用思考准则"}
+{"file": ".trellis/tasks/archive/2026-08/07-30-umadev/research/comparison.md", "reason": "P0-1 建议原文，含禁忌项（不得新建 execution_plan 第二真相）"}
+{"file": ".trellis/tasks/archive/2026-08/07-30-umadev/research/ainp-current-design.md", "reason": "本项目 Graph Runtime 现状与精确行号定位"}
