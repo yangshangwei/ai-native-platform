@@ -47,6 +47,29 @@ These guides help you **ask the right questions before coding**.
 
 → Read [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md)
 
+### When You Wire A New Input Through Several Layers
+
+- [ ] A value now travels extractor → caller → builder → output
+- [ ] You have unit tests on the extractor and the suite is green
+
+→ **Green extractor tests do not prove the wire is connected.** Assert the
+value in the FINAL output, and prove that assertion bites by breaking the
+middle link on purpose.
+
+`08-09-p1-2` wired prior-attempt feedback into the context pack and shipped
+tests for the extraction functions. Replacing the builder's
+`input.priorFeedback` with a hard-coded `[]` — severing the wire entirely —
+left all 649 runner tests passing. The extractor was tested; the *hop* was
+not. Three assertions on the built pack later, the same mutation failed
+exactly 2 tests and left the other 91 alone.
+
+The cheap check, for any multi-layer change:
+
+```bash
+# break the middle link, run the suite, expect red
+# if it stays green, the layer you actually changed has no coverage
+```
+
 ### When Reading a Field Another Module Wrote
 
 - [ ] The field lives in an untyped bag (`metadata`, `payload`,
