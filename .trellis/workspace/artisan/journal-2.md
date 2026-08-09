@@ -566,3 +566,79 @@ Fixed pending-task context leakage and responsive overflow, hardened per-AC acce
 ### Next Steps
 
 - None - task complete
+
+
+## Session 69: UMADEV 对比路线图 P0–P2 全部收口
+
+**Date**: 2026-08-09
+**Task**: 把 `07-30-umadev` 研究的 8 项建议逐条落地或给出不做的理由
+**Branch**: `feat/design-md-workbench-ui-ralph-finish`
+
+### Summary
+
+P0 三项、P1 三项 + 拆出的 P1-2b 全部交付；P2 三项经核查判定前置条件不成立，不做（有完整证据链）。测试 1305 → 1492（+187），128 文件全绿，typecheck 四包 exit 0。
+
+贯穿本轮的发现：这个项目反复出现「能力已建好并在生产路径上跑，但输出信号没有任何执行方」。六个任务的真实工作都是**接执行方**而非造机制 —— graph ledger 已持久化但聚合态只在失败时收敛、`RuleResult.message` 一直有值但从未上屏、`writableGlobs` 声明齐全但无执行期强制、每次读 artifact 都重算 sha256 但 `verified===false` 只到一个 UI pill、人工打回的 comment 强制非空但重试时丢弃、`maskSecrets` 完备但只有 agent stream 调它。
+
+### Main Changes
+
+| 项 | 结论 | 关键提交 |
+|---|---|---|
+| P0-1 Graph Live View | 交付 + UI 实机验证 | `9406361` |
+| P0-2 Typed ReviewerVerdict | 交付（verdict 是证据不是状态） | `5cdf3b1` |
+| P0-3 ExecutionContract | 交付（workspace 写入变可测量可举证） | `ffd8659` |
+| P1-1 EvidenceContract | R1/R2 交付，R3/R4 因新事实拆出 | `34479fd` |
+| P1-2 remediation 消费 | 交付 | `9c2834b` |
+| P1-2b 有界自动返工 | 交付（7 条拒绝条件 + 18 次变异验证） | `0f81993` |
+| P1-3 统一持久化边界 | 交付（脱敏覆盖所有落盘路径） | `e261a01` |
+| P2-1/2-2/2-3 | **不做**，前置不成立 | `41003fc` |
+
+### 沉淀到 spec 的 7 条规则（都来自实际踩坑）
+
+1. 测试必须在 bun runtime 下跑 —— `npx vitest` 因 `bun:sqlite` 把 suite 报成 **skipped**（不是 failed），极易误读为绿
+2. `bun run typecheck` **不检查 test 文件**（tsconfig include 只有 `src/**/*`）—— fixture 不构成类型级证据
+3. 跨模块字段的 fixture key 必须从真实写入方抄（P0-1 读 `metadata.failureReason` 而写入方是 `metadata.error`，测试全绿但生产恒 null）
+4. 一个 stage 新增同 kind 的第二个 artifact 时，所有「取最新同类」的读者会静默重指向（P0-2 让「查看 Review 原文」开始渲染 JSON）
+5. 约束「谁能写 worktree」前要穷举**平台自己**的暂存位置（P0-3 差点漏掉 `.ainp-verifier/`，那会让每个带 UI 证据的 review 误判违约）
+6. 绿色的提取函数测试**不证明线是通的** —— P1-2 剪断 builder 那一跳后 649 个测试全过
+7. 自动化既有动作前，查清人工调用者之后做了什么（P1-2b：`retryStage` 后 runner 会 `git branch -D`）
+
+另有两条判据：删除「死」union 成员前要同时 grep **值和类型**（内联字面量 union 不出现在类型名搜索里）；新增 capability 字段前要找到**今天就会 branch 它**的调用方。
+
+### Git Commits
+
+34 次提交，`21b8539..bb0820c`。详见 `git log`。
+
+### Testing
+
+- [OK] `npm run typecheck` exit 0（四个 workspace）
+- [OK] `npm test` 128 files / 1492 tests 全过
+- [OK] P0-1 在 5173 UI 实机验证（聚合态收敛、payload 白名单、中文状态标签）
+- [OK] 关键改动做了变异验证：P1-1 两次、P1-2 一次（抓到假绿）、P1-3 两次、P1-2b 18 次
+
+### Status
+
+[OK] **Completed** —— 原 goal 覆盖的 8 项全部有结论
+
+### Next Steps
+
+以下均为本轮**拆出的新任务**，彼此独立，不在原 goal 范围内。优先级由高到低：
+
+1. **统一 AC 状态判定并上收到 gate**（原 #9，来自 P1-1）
+   同一概念现有三套判定：runner `businessAcceptanceStatus`（纯文本，只出 `passed`/`missing`）、web `buildAcceptanceChecklist`（`projection.ts:1495-1499`，从 gate 状态派生，会出 `at_risk` 且更严格）、shared `AcceptanceBusinessStatus`（`at_risk` 无产出方）。
+   落点：`at_risk` 上收到 api gate（它才有执行证据，`RunCtx` 里没有）；web 改为消费 gate 结果不再本地重算；`AcceptanceChecklistItem['status']` 内联字面量与 shared 类型合并；顺带清理 `ExecutionContract.expectedOutputs`（P0-3 遗留，无消费方）。
+   四项是同一件事的四个面，须一起做。含 P1-1 ADR-2 的执行级/文档级分级与覆盖率统计。
+
+2. **eval harness 补检索质量指标与标注集**（原 #11，来自 P2-3）
+   `eval/` 与 `scripts/eval-harness.ts` 存在，但 grep `recall|precision|ndcg` 零命中。研究文档要求 P2-3「先用离线评测证明收益」，而证明手段不存在。这是 P2-3 的真实第一步，价值独立于是否换检索实现。
+
+3. **`maskSecrets` 模式扩充**（来自 P1-3）
+   实测钉准的泄漏边界（见 `packages/shared/test/redacted-write.test.ts` 的 KNOWN GAP 测试）：
+   - 泄漏：`-Dapi_key=x`、`-Dtoken=x`（字母紧邻前缀吃掉 `\b`）、`-token x`（赋值模式只认 `:` 和 `=`）
+   - 已拦：`--token=x`、`--api-key=x`、`-D api_key=x`、`api_key=x`、`TOKEN=x`
+   两个独立成因需要不同修法。扩充后应让 KNOWN GAP 测试全绿并删除它。
+
+4. **graph version bump 语义**（来自 P2-2 / P0-1 遗留）
+   `GraphRun.graphVersion` 字段在，但 `flowToGraphDefinition` 恒定输出 `'1'`，没有任何写入方产生第二个版本。P2-2「运行中输入分流」的 `steer` 要求「只在安全边界进入新 graph version」，该语义未定义前不宜动 P2-2。
+
+**新会话起步建议**：直接 `task.py create` 上述任一项。相关背景全在 `.trellis/tasks/archive/2026-08/` 下八个已归档任务的 prd.md 里，每份都记了实施中发现的问题与移交清单。研究原文在 `.trellis/tasks/archive/2026-08/07-30-umadev/research/comparison.md`。
