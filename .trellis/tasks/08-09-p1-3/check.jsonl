@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "校验脱敏只有一个实现入口，无第二份拷贝"}
+{"file": ".trellis/spec/shared/backend/evidence-verifier-protocol.md", "reason": "校验脱敏与 digest 计算的先后顺序未破坏 P1-1 的 mismatch 规则"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "校验测试运行方式（bun runtime）与 typecheck 覆盖盲区"}
+{"file": ".trellis/spec/runner/backend/logging-guidelines.md", "reason": "校验与既有日志约定一致"}
+{"file": ".trellis/spec/guides/index.md", "reason": "跨层一致性 + 是否做了剪断中间跳的变异验证"}

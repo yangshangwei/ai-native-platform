@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "脱敏写盘入口落在 shared，需遵守 purity / barrel / type-first 纪律"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "单一判定原则（本任务是第 5 次应用：不得在每个 writeFile 前手写脱敏）"}
+{"file": ".trellis/spec/shared/backend/evidence-verifier-protocol.md", "reason": "P1-1 的 digest 校验协议——脱敏必须在算 digest 前，否则含密输出会被误判成篡改"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "command-runner 与 cli-common 的落盘改动都在 runner"}
+{"file": ".trellis/spec/runner/backend/logging-guidelines.md", "reason": "日志与命令输出的既有约定，脱敏必须与之一致"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "bun runtime 测试约束 + typecheck 不覆盖 test 文件的盲区"}
+{"file": ".trellis/spec/guides/index.md", "reason": "多层接线的变异验证要求（剪断中间那一跳看测试会不会红）"}
+{"file": ".trellis/tasks/archive/2026-08/07-30-umadev/research/comparison.md", "reason": "P1-3 建议原文与「不可逆安全项必须 fail-safe」的判断标准"}
