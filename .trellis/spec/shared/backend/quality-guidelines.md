@@ -232,6 +232,45 @@ digest.
 
 ---
 
+## A capability field needs a caller that branches on it
+
+Before adding a type that describes what something *can* do — backend
+capabilities, feature flags, support matrices — find the code that would
+branch on it today. Not code that could, code that does.
+
+`08-09-p2-backend-capability-contract` was written, scoped, and then dropped
+for exactly this reason. `AgentBackend` exposes only `kind` and `run()`, and
+adding `readOnlyExecution` / `artifactChannel` looked obviously useful. Every
+candidate consumer turned out to be asking a different question:
+
+| Call site branching on backend | Actually asking |
+|---|---|
+| `backend-selection.ts` | which class to construct |
+| `cmd/watch.ts` | is this config value valid |
+| `coordinator/decision.ts` | stream-json or plain text to parse |
+| `coordinator/llm-fallback.ts` | is the CLI installed, what is the fallback order |
+
+Construction, validation, parsing, probing. A capability snapshot answers none
+of them. The P0-3 workspace guard — the most plausible consumer — does not
+look at backends at all: it excludes platform staging by *path*, which is more
+precise than "this backend cannot run read-only" and would have had to stay in
+sync with a second source of truth.
+
+This repo has repeatedly shipped declarations with no executor: three
+`GRAPH_EVENT_TYPES` members with zero writers, `AcceptanceBusinessStatus.at_risk`,
+`ExecutionContract.expectedOutputs`, `getLatestArtifactContent`. Adding one
+more and calling it forward-looking design is the same mistake with better
+framing.
+
+Related trap: a prior task's ADR pointed at this one, saying read-only
+execution "depends on the capability contract". It does not. It depends on
+Codex offering an output channel outside the worktree — an upstream
+capability, not a local type. **A field that says a thing is unsupported does
+not make it supported.** When an ADR defers work to a future contract, check
+that the contract is actually the blocker.
+
+---
+
 ## Anti-patterns this team has hit
 
 ### 1. Type extension protocol
