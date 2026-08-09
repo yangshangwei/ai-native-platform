@@ -642,3 +642,37 @@ P0 三项、P1 三项 + 拆出的 P1-2b 全部交付；P2 三项经核查判定�
    `GraphRun.graphVersion` 字段在，但 `flowToGraphDefinition` 恒定输出 `'1'`，没有任何写入方产生第二个版本。P2-2「运行中输入分流」的 `steer` 要求「只在安全边界进入新 graph version」，该语义未定义前不宜动 P2-2。
 
 **新会话起步建议**：直接 `task.py create` 上述任一项。相关背景全在 `.trellis/tasks/archive/2026-08/` 下八个已归档任务的 prd.md 里，每份都记了实施中发现的问题与移交清单。研究原文在 `.trellis/tasks/archive/2026-08/07-30-umadev/research/comparison.md`。
+
+
+## Session 69: AC gate unified status determination
+
+**Date**: 2026-08-09
+**Task**: AC gate unified status determination
+**Branch**: `feat/design-md-workbench-ui-ralph-finish`
+
+### Summary
+
+Unified AC status determination in gate engine with two-tier evidence (document + execution). Implemented at_risk status for incomplete execution proof. Fixed test fixtures with three-evidence pattern. Created gate-engine.md and updated evidence-verifier-protocol.md specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ebc5836` | (see git log) |
+| `67be146` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
