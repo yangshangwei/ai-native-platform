@@ -198,6 +198,40 @@ search for the shared type's name.
 
 ---
 
+## Return the digest from whatever writes the bytes
+
+When a value must be derived from exactly the content that lands somewhere —
+a digest of what was written, a length of what was stored — return it from the
+function that does the writing. Do not let a caller compute it separately.
+
+`writeRedactedFile` (`packages/shared/src/node/redacted-write.ts`) redacts,
+writes, and hashes in one call, returning `{ sha256, bytes, content }`. That
+is not convenience packaging. `evidence.artifact_digests_match` fails the gate
+whenever a re-read disagrees with the recorded digest, so hashing the input
+while writing a transformed output would report every credential-bearing
+command as tampered evidence — a security improvement manufacturing false
+accusations of tampering.
+
+The distinction worth internalising: a comment saying "redact before hashing"
+relies on the next reader noticing it. A signature that never exposes the
+untransformed bytes' digest makes the wrong pairing hard to write in the first
+place. Prefer the latter whenever a transformation sits between input and
+persistence.
+
+Applies to any transform-then-persist path: compression, encoding
+normalisation, truncation. If output bytes can differ from input bytes, the
+digest and the length both belong to the writer.
+
+### Also update the reported size
+
+`command-runner.ts` reported `stdoutBytes` from its streaming accumulator (the
+counter feeding `maxLogBytes` truncation), which stopped matching the file the
+moment redaction could change the length. When you introduce a transform,
+re-check every field that claims to describe the persisted form, not just the
+digest.
+
+---
+
 ## Anti-patterns this team has hit
 
 ### 1. Type extension protocol
