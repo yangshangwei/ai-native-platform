@@ -462,4 +462,141 @@ describe('runner watch workflow request processing', () => {
     // FLOW_REGISTRY['feature.standard'].kind === 'feature'.
     expect(calls).toEqual(['orchestrate:feature.standard:review:feature']);
   });
+
+  // ---- 08-09 P1-2b bounded auto-rework -------------------------------------
+  //
+  // The engine owns the decision; these tests pin what the watch loop does with
+  // it. The dangerous direction is a loop that keeps re-entering, so each test
+  // asserts the exact number of orchestrate calls, not just the final result.
+
+  it('re-enters orchestration at the stage the engine granted, on the same run', async () => {
+    const { processNextWorkflowRequest } = await import('../src/cmd/watch');
+    const calls: string[] = [];
+
+    const result = await processNextWorkflowRequest({
+      runnerId: 'runner@test',
+      listPending: async () => [testRequest({ id: 'wreq_rework' })],
+      triage: async () => ({ action: 'proceed', runType: 'feature', decision: fakeDecision() }),
+      claim: async (requestId) => testRequest({ id: requestId }),
+      orchestrate: async (_request, _runType, _brief, resume) => {
+        calls.push(`orchestrate:${resume?.workflowRunId ?? 'new'}:${resume?.startStage ?? 'none'}`);
+        // First pass fails and the engine grants; the re-entry succeeds.
+        return resume
+          ? { workflowRunId: resume.workflowRunId, ok: true, autoReworkStage: null }
+          : { workflowRunId: 'run_rework', ok: false, autoReworkStage: 'build_test' as const };
+      },
+      complete: async (requestId, completion) => {
+        calls.push(`complete:${requestId}:${completion.workflowRunId}:${completion.ok}`);
+      },
+    });
+
+    expect(result).toBe('processed');
+    expect(calls).toEqual([
+      'orchestrate:new:none',
+      'orchestrate:run_rework:build_test',
+      'complete:wreq_rework:run_rework:true',
+    ]);
+  });
+
+  it('completes the request as failed when the rework fails again', async () => {
+    const { processNextWorkflowRequest } = await import('../src/cmd/watch');
+    const calls: string[] = [];
+
+    const result = await processNextWorkflowRequest({
+      runnerId: 'runner@test',
+      listPending: async () => [testRequest({ id: 'wreq_rework_failed' })],
+      triage: async () => ({ action: 'proceed', runType: 'feature', decision: fakeDecision() }),
+      claim: async (requestId) => testRequest({ id: requestId }),
+      orchestrate: async (_request, _runType, _brief, resume) => {
+        calls.push(`orchestrate:${resume?.startStage ?? 'none'}`);
+        // The engine declines the second time (budget spent / same fingerprint).
+        return { workflowRunId: 'run_rework_failed', ok: false, autoReworkStage: resume ? null : ('review' as const) };
+      },
+      complete: async (requestId, completion) => {
+        calls.push(`complete:${requestId}:${completion.ok}:${completion.error}`);
+      },
+    });
+
+    expect(result).toBe('failed');
+    expect(calls).toEqual([
+      'orchestrate:none',
+      'orchestrate:review',
+      'complete:wreq_rework_failed:false:orchestration failed',
+    ]);
+  });
+
+  it('stops re-entering at the declared cap even if the engine keeps granting', async () => {
+    // A circuit breaker, not a second budget: an engine bug that granted
+    // forever would otherwise loop here, spending real money each pass.
+    const { processNextWorkflowRequest } = await import('../src/cmd/watch');
+    const { AUTO_REWORK_MAX_ATTEMPTS } = await import('@ainp/shared');
+    let orchestrations = 0;
+
+    const result = await processNextWorkflowRequest({
+      runnerId: 'runner@test',
+      listPending: async () => [testRequest({ id: 'wreq_rework_runaway' })],
+      triage: async () => ({ action: 'proceed', runType: 'feature', decision: fakeDecision() }),
+      claim: async (requestId) => testRequest({ id: requestId }),
+      orchestrate: async () => {
+        orchestrations += 1;
+        return {
+          workflowRunId: 'run_runaway',
+          ok: false,
+          autoReworkStage: 'build_test' as const,
+        };
+      },
+      complete: async () => {},
+    });
+
+    expect(result).toBe('failed');
+    expect(orchestrations).toBe(1 + AUTO_REWORK_MAX_ATTEMPTS);
+  });
+
+  it('does not re-enter when the engine granted nothing', async () => {
+    const { processNextWorkflowRequest } = await import('../src/cmd/watch');
+    let orchestrations = 0;
+
+    const result = await processNextWorkflowRequest({
+      runnerId: 'runner@test',
+      listPending: async () => [testRequest({ id: 'wreq_no_rework' })],
+      triage: async () => ({ action: 'proceed', runType: 'feature', decision: fakeDecision() }),
+      claim: async (requestId) => testRequest({ id: requestId }),
+      orchestrate: async () => {
+        orchestrations += 1;
+        return { workflowRunId: 'run_no_rework', ok: false, autoReworkStage: null };
+      },
+      complete: async () => {},
+    });
+
+    expect(result).toBe('failed');
+    expect(orchestrations).toBe(1);
+  });
+
+  it('leaves an operational pause during a rework to manual resume', async () => {
+    const { processNextWorkflowRequest } = await import('../src/cmd/watch');
+    const completions: string[] = [];
+
+    const result = await processNextWorkflowRequest({
+      runnerId: 'runner@test',
+      listPending: async () => [testRequest({ id: 'wreq_rework_paused' })],
+      triage: async () => ({ action: 'proceed', runType: 'feature', decision: fakeDecision() }),
+      claim: async (requestId) => testRequest({ id: requestId }),
+      orchestrate: async (_request, _runType, _brief, resume) =>
+        resume
+          ? { workflowRunId: 'run_rework_paused', ok: true, paused: true, autoReworkStage: null }
+          : {
+              workflowRunId: 'run_rework_paused',
+              ok: false,
+              autoReworkStage: 'implementation' as const,
+            },
+      complete: async (requestId) => {
+        completions.push(requestId);
+      },
+    });
+
+    expect(result).toBe('paused');
+    // The engine already moved the request to `paused`; completing it here
+    // would overwrite that with a terminal state.
+    expect(completions).toEqual([]);
+  });
 });

@@ -5,8 +5,9 @@ import type {
   RequestMessage,
   WorkflowRequest,
   WorkflowRunType,
+  WorkflowStage,
 } from '@ainp/shared';
-import { FLOW_REGISTRY, errorMessage } from '@ainp/shared';
+import { AUTO_REWORK_MAX_ATTEMPTS, FLOW_REGISTRY, errorMessage } from '@ainp/shared';
 import { api } from '../api-client';
 import { sendHeartbeat } from '../heartbeat';
 import { cmdOrchestrate } from '../orchestrator';
@@ -45,7 +46,17 @@ export interface ProcessNextWorkflowRequestDeps {
     request: ClaimedRequest,
     runType: WorkflowRunType,
     agentTaskBrief?: string,
-  ): Promise<{ workflowRunId: string; ok: boolean; paused?: boolean }>;
+    /**
+     * 08-09 P1-2b: set on an auto-rework re-entry. Resumes the existing run at
+     * the stage the engine reset, instead of creating a second run.
+     */
+    resume?: { workflowRunId: string; startStage: WorkflowStage },
+  ): Promise<{
+    workflowRunId: string;
+    ok: boolean;
+    paused?: boolean;
+    autoReworkStage?: WorkflowStage | null;
+  }>;
   complete(
     requestId: string,
     completion: { workflowRunId: string | null; ok: boolean; error: string | null },
@@ -94,7 +105,7 @@ export async function processNextWorkflowRequest(
     const agentTaskBrief = deps.buildAgentTaskBrief
       ? await deps.buildAgentTaskBrief(claimed)
       : undefined;
-    const result = await deps.orchestrate(claimed, runType, agentTaskBrief);
+    let result = await deps.orchestrate(claimed, runType, agentTaskBrief);
     // 07-26 operational pause (R4): a paused run must NOT complete the
     // request — the engine already linked it (claimed → paused) when the
     // runner reported workflow-paused. Resume is manual via retry-run.
@@ -103,6 +114,36 @@ export async function processNextWorkflowRequest(
         `[runner] request ${claimed.id} paused (operational) with run ${result.workflowRunId}; awaiting manual resume`,
       );
       return 'paused';
+    }
+    // 08-09 P1-2b: the engine granted a bounded auto-rework and already reset
+    // the run to the failed stage. Re-enter orchestration there rather than
+    // completing the request as failed.
+    //
+    // The engine owns the budget — the runner keeps no counter of its own,
+    // because a second counter would be a second budget that could disagree.
+    // The loop bound is the *declared* cap read from the same shared constant
+    // the engine decides with: a circuit breaker for an engine that keeps
+    // granting, not an independent policy. It can only ever stop the loop
+    // earlier than the engine would, never extend it.
+    for (
+      let reworks = 0;
+      result.autoReworkStage && reworks < AUTO_REWORK_MAX_ATTEMPTS;
+      reworks += 1
+    ) {
+      const stage = result.autoReworkStage;
+      console.log(
+        `[runner] request ${claimed.id} auto-rework at ${stage} for run ${result.workflowRunId}`,
+      );
+      result = await deps.orchestrate(claimed, runType, agentTaskBrief, {
+        workflowRunId: result.workflowRunId,
+        startStage: stage,
+      });
+      if (result.paused) {
+        console.log(
+          `[runner] request ${claimed.id} paused (operational) during auto-rework of run ${result.workflowRunId}`,
+        );
+        return 'paused';
+      }
     }
     await deps.complete(claimed.id, {
       workflowRunId: result.workflowRunId,
@@ -240,7 +281,7 @@ export async function cmdWatch(opts: WatchOpts = {}): Promise<void> {
       triage: defaultTriage,
       claim: (requestId, id) => api.claimWorkflowRequest({ requestId, runnerId: id }),
       buildAgentTaskBrief: defaultAgentTaskBrief,
-      orchestrate: (request, runType, agentTaskBrief) =>
+      orchestrate: (request, runType, agentTaskBrief, resume) =>
         cmdOrchestrate({
           project: request.projectId,
           title: request.title,
@@ -250,7 +291,11 @@ export async function cmdWatch(opts: WatchOpts = {}): Promise<void> {
           runType,
           agentBackend: request.agentBackend,
           flowId: request.flowId ?? undefined,
-          startStage: request.startStage ?? undefined,
+          // On an auto-rework re-entry the run already exists and the engine
+          // decided where it restarts; the request's original overrides would
+          // send it back to the wrong stage.
+          startStage: resume?.startStage ?? request.startStage ?? undefined,
+          workflowRunId: resume?.workflowRunId,
           cleanup: !opts.keepWorktree,
           setExitCode: false,
         }),

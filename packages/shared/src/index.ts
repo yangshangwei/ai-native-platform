@@ -7,6 +7,8 @@ export * from './types/dual-write';
 export * from './types/command';
 export * from './types/gate';
 export * from './types/review-verdict';
+export * from './types/prior-feedback';
+export * from './types/auto-rework';
 export * from './types/build';
 export * from './types/agent';
 export * from './types/agent-session';

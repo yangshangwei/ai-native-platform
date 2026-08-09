@@ -844,6 +844,12 @@ export const MIGRATIONS: Migration[] = [
   addColumn(32, 'source_chunk_index_entries', 'embedding_model', `embedding_model TEXT`),
   addColumn(33, 'source_chunk_index_entries', 'embedding_dimensions', `embedding_dimensions INTEGER`),
   addColumn(34, 'source_chunk_index_entries', 'embedding_vector_json', `embedding_vector_json TEXT`),
+  // 08-09 P1-2b bounded auto-rework: `(run, stage)`-keyed attempt counter plus
+  // the no-progress fingerprint of the failure each attempt was granted for.
+  // NULL on historical rows and read as `{}` — a run with no ledger has spent
+  // no automatic budget, which is the correct reading of "this predates the
+  // feature". No backfill (database-guidelines § Schema changes).
+  addColumn(35, 'workflow_runs', 'auto_rework_json', `auto_rework_json TEXT`),
 ];
 
 // ---------------------------------------------------------------------------

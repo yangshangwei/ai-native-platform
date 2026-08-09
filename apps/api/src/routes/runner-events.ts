@@ -72,6 +72,7 @@ import {
   runEvidenceGate,
 } from '../gate-engine';
 import { store } from '../store/store';
+import { maybeAutoRework } from '../auto-rework';
 import { assertReadableFileUri } from '../artifact-content';
 import { mergeStepCheckpoint } from '../step-checkpoints';
 
@@ -551,7 +552,22 @@ runnerEvents.post('/await-human', async (c) => {
 runnerEvents.post('/workflow-completed', async (c) => {
   const body = (await c.req.json()) as { workflowRunId: string; ok: boolean };
   const run = completeWorkflowRun(body.workflowRunId, body.ok);
-  return c.json({ ok: true, run });
+  // 08-09 P1-2b bounded auto-rework. Deliberately mounted on the FAILURE branch
+  // of this route and nowhere else: `/workflow-paused` below is the operational
+  // path (backend unavailable / timeout / protocol / reviewer_unavailable) and
+  // is mutually exclusive with this one, so an outage cannot spend the rework
+  // budget. That is a structural guarantee — do NOT "complete" it with a
+  // redundant outage check here or in `maybeAutoRework`.
+  //
+  // `run.status` rather than `body.ok`: a paused run stays paused through a
+  // late duplicate `ok: false` (see completeWorkflowRun), and this must read the
+  // state the engine actually settled on, not the event's claim about it.
+  const autoRework = run.status === 'failed' ? maybeAutoRework(run) : null;
+  // Re-read: a granted retry moved the run back to `running` at the failed
+  // stage, and returning the pre-retry snapshot would tell the runner the run
+  // is still failed.
+  const settled = autoRework?.retry ? (store.workflowRuns.get(run.id) ?? run) : run;
+  return c.json({ ok: true, run: settled, autoRework });
 });
 
 /**

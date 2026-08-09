@@ -1,4 +1,5 @@
 import type {
+  AutoReworkDecision,
   CommandRun,
   FlowId,
   WorkflowRun,
@@ -382,8 +383,19 @@ export const api = {
   awaitHuman: (params: { workflowRunId: string; stage: WorkflowStage }) =>
     request('POST', '/runner/events/await-human', params),
 
+  /**
+   * Report the end of a run. The response carries the engine's bounded
+   * auto-rework decision (08-09 P1-2b): on a grant the run has already been
+   * reset to the failed stage, and the caller must keep the worktree and
+   * re-enter orchestration there. The runner never makes this decision itself —
+   * it only obeys, so the budget has a single owner.
+   */
   workflowCompleted: (params: { workflowRunId: string; ok: boolean }) =>
-    request('POST', '/runner/events/workflow-completed', params),
+    request<{ ok: boolean; run: WorkflowRun; autoRework: AutoReworkDecision | null }>(
+      'POST',
+      '/runner/events/workflow-completed',
+      params,
+    ),
 
   /**
    * 07-26 operational pause (R3): report an operational failure so the engine

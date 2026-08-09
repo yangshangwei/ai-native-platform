@@ -1,4 +1,5 @@
 import type {
+  AutoReworkLedger,
   Project,
   WorkflowRequest,
   WorkflowRun,
@@ -232,8 +233,29 @@ interface WorkflowRunRow {
   flow_id: string;
   /** V2 W2-4: nullable — null means "start from flow's first stage". */
   start_stage: string | null;
+  /** 08-09 P1-2b: JSON {@link AutoReworkLedger}; null on rows predating it. */
+  auto_rework_json: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * Parse the auto-rework ledger, degrading to `{}` on anything unreadable.
+ *
+ * Degrading is safe in exactly one direction here: an empty ledger means "no
+ * automatic budget spent", so a corrupt value can cost at most one extra
+ * attempt, capped by {@link AUTO_REWORK_MAX_ATTEMPTS}. Throwing instead would
+ * make an unrelated JSON typo break every read of the run.
+ */
+function parseAutoReworkLedger(value: string | null): AutoReworkLedger {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed as AutoReworkLedger;
+  } catch {
+    return {};
+  }
 }
 
 function rowToWorkflowRun(r: WorkflowRunRow): WorkflowRun {
@@ -250,6 +272,7 @@ function rowToWorkflowRun(r: WorkflowRunRow): WorkflowRun {
     branch: r.branch,
     workspacePath: r.workspace_path,
     title: r.title,
+    autoRework: parseAutoReworkLedger(r.auto_rework_json),
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -271,6 +294,7 @@ const workflowRunsTable = defineTable<WorkflowRunRow, WorkflowRun>({
     title: run.title,
     flow_id: run.flowId,
     start_stage: run.startStage,
+    auto_rework_json: JSON.stringify(run.autoRework ?? {}),
     created_at: run.createdAt,
     updated_at: run.updatedAt,
   }),

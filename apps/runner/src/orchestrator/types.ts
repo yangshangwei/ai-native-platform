@@ -74,6 +74,15 @@ export interface OrchestrateResult {
    * the engine already linked it to `paused`.
    */
   paused: boolean;
+  /**
+   * 08-09 P1-2b: the stage the engine granted a bounded auto-rework for, or
+   * null (the normal case). Non-null means the run has already been reset to
+   * that stage server-side and the worktree was kept, so the caller must
+   * re-enter orchestration there instead of completing the request.
+   *
+   * The decision is the engine's; this field only relays it.
+   */
+  autoReworkStage: WorkflowStage | null;
 }
 
 // ---------------------------------------------------------------------------

@@ -415,13 +415,27 @@ export async function finalizeOrchestration(params: {
   setFailureExitCode: boolean;
   deps: OrchestrationFinalizationDeps;
 }): Promise<OrchestrateResult> {
+  let autoReworkStage: WorkflowStage | null = null;
   if (params.paused) {
     params.deps.log(
       `[runner] workflow-run ${params.workflowRunId} paused; worktree kept for resume at ${params.workspacePath}`,
     );
   } else {
-    await params.deps.workflowCompleted({ workflowRunId: params.workflowRunId, ok: params.ok });
-    if (params.cleanupEnabled) {
+    const completion = await params.deps.workflowCompleted({
+      workflowRunId: params.workflowRunId,
+      ok: params.ok,
+    });
+    // 08-09 P1-2b: the engine may have granted a bounded auto-rework on the
+    // failure branch, in which case the run is already reset to that stage.
+    // Keeping the worktree is not an optimisation — cleanup deletes the branch
+    // too, so a cleaned rework would restart from the source branch and lose
+    // every change the failed attempt made.
+    autoReworkStage = completion?.autoRework?.retry ? completion.autoRework.stage : null;
+    if (autoReworkStage) {
+      params.deps.log(
+        `[runner] workflow-run ${params.workflowRunId} auto-rework granted at ${autoReworkStage}; worktree kept at ${params.workspacePath}`,
+      );
+    } else if (params.cleanupEnabled) {
       await params.deps.cleanup();
       params.deps.log(`[runner] worktree removed: ${params.workspacePath}`);
     } else {
@@ -430,11 +444,15 @@ export async function finalizeOrchestration(params: {
   }
 
   // R4: a pause is not a process failure, even when it interrupted the work.
-  if (!params.paused && !params.ok && params.setFailureExitCode) params.deps.setExitCode(1);
+  // Neither is a granted auto-rework — the work is continuing, not over.
+  if (!params.paused && !autoReworkStage && !params.ok && params.setFailureExitCode) {
+    params.deps.setExitCode(1);
+  }
   return {
     workflowRunId: params.workflowRunId,
     ok: params.paused ? true : params.ok,
     paused: params.paused,
+    autoReworkStage,
   };
 }
 

@@ -218,7 +218,14 @@ describe('orchestration lifecycle finalization (R4/R7)', () => {
       deps,
     });
 
-    expect(result).toEqual({ workflowRunId: 'run_lifecycle_paused', ok: true, paused: true });
+    expect(result).toEqual({
+      workflowRunId: 'run_lifecycle_paused',
+      ok: true,
+      paused: true,
+      // 08-09 P1-2b: a pause never reaches the auto-rework trigger — the run is
+      // parked for manual resume, and `workflowCompleted` was never called.
+      autoReworkStage: null,
+    });
     expect(workflowCompleted).not.toHaveBeenCalled();
     expect(cleanup).not.toHaveBeenCalled();
     expect(setExitCode).not.toHaveBeenCalled();
@@ -255,8 +262,66 @@ describe('orchestration lifecycle finalization (R4/R7)', () => {
 
     expect(paused).toBe(false);
     expect(workflowPaused).not.toHaveBeenCalled();
-    expect(result).toEqual({ workflowRunId, ok: false, paused: false });
+    expect(result).toEqual({ workflowRunId, ok: false, paused: false, autoReworkStage: null });
     expect(workflowCompleted).toHaveBeenCalledWith({ workflowRunId, ok: false });
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(setExitCode).toHaveBeenCalledWith(1);
+  });
+
+  // ---- 08-09 P1-2b bounded auto-rework -------------------------------------
+
+  test('a granted auto-rework keeps the worktree and is not a process failure', async () => {
+    const { deps, cleanup, setExitCode, log } = finalizationDeps();
+    deps.workflowCompleted = (async () => ({
+      ok: true,
+      run: {},
+      autoRework: { retry: true, stage: 'build_test', fingerprint: 'fp', attempt: 1 },
+    })) as unknown as OrchestrationFinalizationDeps['workflowCompleted'];
+
+    const result = await finalizeOrchestration({
+      workflowRunId: 'run_auto_rework',
+      workspacePath: '/tmp/worktree-rework',
+      ok: false,
+      paused: false,
+      cleanupEnabled: true,
+      setFailureExitCode: true,
+      deps,
+    });
+
+    expect(result).toEqual({
+      workflowRunId: 'run_auto_rework',
+      ok: false,
+      paused: false,
+      autoReworkStage: 'build_test',
+    });
+    // Cleanup deletes the worktree AND the branch. A cleaned rework would
+    // restart from the source branch with every change of the failed attempt
+    // gone — the retry would be strictly worse than no retry.
+    expect(cleanup).not.toHaveBeenCalled();
+    // The work is continuing, so the process has not failed yet.
+    expect(setExitCode).not.toHaveBeenCalled();
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('auto-rework granted at build_test'));
+  });
+
+  test('a declined auto-rework cleans up exactly as before', async () => {
+    const { deps, cleanup, setExitCode } = finalizationDeps();
+    deps.workflowCompleted = (async () => ({
+      ok: true,
+      run: {},
+      autoRework: { retry: false, reason: 'no_actionable_feedback', detail: 'nothing to act on' },
+    })) as unknown as OrchestrationFinalizationDeps['workflowCompleted'];
+
+    const result = await finalizeOrchestration({
+      workflowRunId: 'run_auto_rework_declined',
+      workspacePath: '/tmp/worktree-declined',
+      ok: false,
+      paused: false,
+      cleanupEnabled: true,
+      setFailureExitCode: true,
+      deps,
+    });
+
+    expect(result.autoReworkStage).toBeNull();
     expect(cleanup).toHaveBeenCalledTimes(1);
     expect(setExitCode).toHaveBeenCalledWith(1);
   });

@@ -1,5 +1,10 @@
 import type { Artifact } from '@ainp/shared';
-import { REVIEW_VERDICT_SCHEMA_VERSION, parseReviewerVerdict } from '@ainp/shared';
+import {
+  REVIEW_VERDICT_SCHEMA_VERSION,
+  actionableRejectionComment,
+  actionableRemediation,
+  parseReviewerVerdict,
+} from '@ainp/shared';
 import type { PriorFeedbackInput } from '../context/builder';
 
 /**
@@ -17,6 +22,12 @@ import type { PriorFeedbackInput } from '../context/builder';
  *
  * Returns an empty array on a first attempt: there is no prior approval and no
  * prior verdict, so nothing is injected and no placeholder appears.
+ *
+ * WHAT counts as actionable lives in `@ainp/shared`
+ * (`types/prior-feedback.ts`); this file only decides how to render it. The
+ * api's auto-rework trigger (08-09 P1-2b) gates on the same predicate, and a
+ * decider more permissive than this extractor would authorise paid retries
+ * whose prompts contain nothing new.
  */
 
 export interface PriorApprovalRecord {
@@ -29,9 +40,8 @@ export function priorFeedbackFromApprovals(
   approvals: readonly PriorApprovalRecord[],
 ): PriorFeedbackInput[] {
   return approvals
-    .filter((approval) => approval.decision === 'rejected')
     .map((approval): PriorFeedbackInput | null => {
-      const text = approval.comment?.trim();
+      const text = actionableRejectionComment(approval);
       if (!text) return null;
       return {
         source: 'human_rejection',
@@ -62,11 +72,8 @@ export function priorFeedbackFromVerdicts(
     if (!text) continue;
     const parsed = parseReviewerVerdict(text);
     if (!parsed.ok) continue;
-    // Only a failing verdict describes something to fix. A passing verdict's
-    // advisory notes are not "why the last attempt was rejected".
-    if (parsed.verdict.status !== 'fail') continue;
     const blockerById = new Map(parsed.verdict.blocking.map((item) => [item.id, item]));
-    for (const remediation of parsed.verdict.remediation) {
+    for (const remediation of actionableRemediation(parsed.verdict)) {
       const blocker = blockerById.get(remediation.blockerId);
       const lines = [
         blocker ? `Problem: ${blocker.summary}` : `Problem: ${remediation.blockerId}`,
@@ -85,3 +92,4 @@ export function priorFeedbackFromVerdicts(
   }
   return feedback;
 }
+

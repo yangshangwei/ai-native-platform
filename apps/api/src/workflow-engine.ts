@@ -136,6 +136,7 @@ export function createWorkflowRun(params: {
     sourceBranch: params.sourceBranch?.trim() || 'main',
     branch,
     workspacePath: null,
+    autoRework: {},
     createdAt: now,
     updatedAt: now,
   };
@@ -576,7 +577,10 @@ export function completeWorkflowRun(workflowRunId: string, ok: boolean): Workflo
  *   - idempotent: pausing an already-paused run returns it without a second
  *     audit row (AC-007);
  *   - cancelled runs cannot be paused (AC-007);
- *   - resume is manual only (retry-run); the engine never schedules retries.
+ *   - resume is manual only (retry-run). The engine does schedule bounded
+ *     auto-rework since 08-09 P1-2b, but only off the `/workflow-completed`
+ *     failure branch — a paused run never reaches it, so an operational outage
+ *     cannot spend the rework budget. See `auto-rework.ts`.
  */
 export function pauseWorkflowRun(input: {
   workflowRunId: string;

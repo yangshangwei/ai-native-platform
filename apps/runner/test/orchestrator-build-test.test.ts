@@ -127,7 +127,12 @@ async function expectHistoricalBusinessFailure(params: {
     },
   });
 
-  expect(result).toEqual({ workflowRunId: params.c.run.id, ok: false, paused: false });
+  expect(result).toEqual({
+    workflowRunId: params.c.run.id,
+    ok: false,
+    paused: false,
+    autoReworkStage: null,
+  });
   expect(workflowCompleted).toHaveBeenCalledWith({ workflowRunId: params.c.run.id, ok: false });
   expect(cleanup).toHaveBeenCalledTimes(1);
   expect(setExitCode).toHaveBeenCalledWith(1);

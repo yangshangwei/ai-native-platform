@@ -1,4 +1,5 @@
 import type { ProjectAgentBackendKind } from './agent';
+import type { AutoReworkLedger } from './auto-rework';
 import type { Iso8601, ProjectId, WorkflowRunId, WorkflowRequestId, StepRunId } from './ids';
 
 export type WorkflowStage =
@@ -218,6 +219,17 @@ export interface WorkflowRun {
   /** Path to the worktree workspace, set after Runner prepares it. */
   workspacePath: string | null;
   title: string;
+  /**
+   * 08-09 P1-2b: `(run, stage)`-keyed bounded auto-rework bookkeeping. `{}` for
+   * a run that never auto-reworked, which is every run until a deterministic
+   * failure with remediation shows up.
+   *
+   * Deliberately separate from manual retries: `retryStage` called by a person
+   * writes a `stage.retry` audit row and nothing here, so a human clicking
+   * retry never spends the automatic budget and the automatic budget never caps
+   * a human (PRD R1).
+   */
+  autoRework: AutoReworkLedger;
   createdAt: Iso8601;
   updatedAt: Iso8601;
 }
