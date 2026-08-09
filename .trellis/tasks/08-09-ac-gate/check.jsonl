@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "检查 api 侧 gate 判据改动的质量合规"}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "检查 web 侧透传改造的质量合规"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "检查 shared 类型合并的质量合规"}
+{"file": ".trellis/spec/runner/backend/quality-guidelines.md", "reason": "检查 runner 接线改动的质量合规"}
+{"file": ".trellis/spec/shared/backend/evidence-verifier-protocol.md", "reason": "检查跨层契约一致性：gate 决定 pass/warn/fail、digest 证据语义"}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "检查类型合并是否符合 web 类型约定"}
+{"file": ".trellis/tasks/08-09-ac-gate/research/current-shape.md", "reason": "检查者的事实基线：四处判定现状与修正结论"}
+{"file": ".trellis/tasks/08-09-ac-gate/research/gate-evidence-access.md", "reason": "验证新判据取数路径与研究结论一致"}

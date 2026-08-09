@@ -516,6 +516,138 @@ test('acceptance traceability gate requires requirement, design, diff, review, a
     },
   });
 
+  const compileCmdId = 'cmd_compile_acceptance_trace';
+  storeMod.store.commandRuns.set(compileCmdId, {
+    id: compileCmdId,
+    workflowRunId,
+    stepRunId,
+    cwd: '/tmp',
+    command: 'mvn -B compile',
+    stage: 'implement',
+    status: 'passed',
+    exitCode: 0,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    durationMs: 1,
+    stdoutRef: 'file:///tmp/stdout.log',
+    stderrRef: 'file:///tmp/stderr.log',
+    stdoutBytes: 0,
+    stderrBytes: 0,
+    timedOut: false,
+    truncated: false,
+  });
+
+  gates.runCompileGate({
+    workflowRunId,
+    stepRunId,
+    buildRun: {
+      id: 'build_compile_acceptance_trace',
+      workflowRunId,
+      stepRunId,
+      language: 'java',
+      buildTool: 'maven',
+      jdkVersion: '1.8',
+      mavenCommand: 'mvn -B compile',
+      status: 'passed',
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      commandRunIds: [compileCmdId],
+      artifactIds: [],
+    },
+  });
+
+  const surefireDir = mkdtempSync(join(tmpdir(), 'ainp-surefire-'));
+  const surefirePath = join(surefireDir, 'surefire.txt');
+  writeFileSync(surefirePath, 'Tests run: 3, Passed: 3, Failures: 0');
+  storeMod.store.artifacts.insert({
+    ...artifact('surefire_report', surefirePath),
+    workflowRunId,
+    stepRunId,
+  });
+
+  // Create test command run for test gate
+  const testCmdId = 'cmd_test_acceptance_trace';
+  storeMod.store.commandRuns.set(testCmdId, {
+    id: testCmdId,
+    workflowRunId,
+    stepRunId,
+    cwd: '/tmp',
+    command: 'mvn -B test',
+    stage: 'test',
+    status: 'passed',
+    exitCode: 0,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    durationMs: 1000,
+    stdoutRef: 'file:///tmp/test-stdout.log',
+    stderrRef: 'file:///tmp/test-stderr.log',
+    stdoutBytes: 0,
+    stderrBytes: 0,
+    stdoutSha256: '',
+    stderrSha256: '',
+    combinedSha256: '',
+    timedOut: false,
+    truncated: false,
+  });
+
+  // Insert BuildRun and TestRun so hasPassingTests check succeeds
+  const testBuildRunId = 'build_test_acceptance_trace';
+  storeMod.store.buildRuns.insert({
+    id: testBuildRunId,
+    workflowRunId,
+    stepRunId,
+    language: 'java',
+    buildTool: 'maven',
+    jdkVersion: '1.8',
+    mavenCommand: 'mvn -B test',
+    status: 'passed',
+    startedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+    commandRunIds: [testCmdId],
+    artifactIds: [],
+  });
+
+  storeMod.store.testRuns.insert({
+    id: 'test_run_acceptance_trace',
+    buildRunId: testBuildRunId,
+    framework: 'maven-surefire',
+    total: 3,
+    passed: 3,
+    failed: 0,
+    skipped: 0,
+    errors: 0,
+    reportArtifactIds: [],
+  });
+
+  // Run test gate to provide execution evidence
+  gates.runTestGate({
+    workflowRunId,
+    stepRunId,
+    buildRun: {
+      id: testBuildRunId,
+      workflowRunId,
+      stepRunId,
+      language: 'java',
+      buildTool: 'maven',
+      jdkVersion: '1.8',
+      mavenCommand: 'mvn -B test',
+      status: 'passed',
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      commandRunIds: [testCmdId],
+      artifactIds: [],
+    },
+    testRuns: [],
+    surefireAggregate: {
+      framework: 'maven-surefire',
+      total: 3,
+      passed: 3,
+      failed: 0,
+      skipped: 0,
+      errors: 0,
+    },
+  });
+
   const gate = gates.runAcceptanceTraceabilityGate({ workflowRunId, stepRunId });
 
   expect(gate.status).toBe('pass');
@@ -565,6 +697,27 @@ test('acceptance traceability gate rejects feature ACs when only test_gate passe
       completedAt: new Date().toISOString(),
     });
   }
+
+  // Add compile gate to satisfy new execution evidence requirement
+  gates.runCompileGate({
+    workflowRunId,
+    stepRunId,
+    buildRun: {
+      id: `build_compile_${workflowRunId}`,
+      workflowRunId,
+      stepRunId,
+      language: 'java',
+      buildTool: 'maven',
+      jdkVersion: '1.8',
+      mavenCommand: 'mvn -B compile',
+      status: 'passed',
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      commandRunIds: [],
+      artifactIds: [],
+    },
+  });
+
   insertPassingTestGate(workflowRunId, stepRunId);
 
   const gate = gates.runAcceptanceTraceabilityGate({ workflowRunId, stepRunId });
@@ -669,6 +822,53 @@ test('acceptance traceability gate rejects business matrix without core boundary
   }
   insertPassingTestGate(workflowRunId, stepRunId);
 
+  const compileCmdId = `cmd_compile_${workflowRunId}`;
+  storeMod.store.commandRuns.set(compileCmdId, {
+    id: compileCmdId,
+    workflowRunId,
+    stepRunId,
+    cwd: '/tmp',
+    command: 'mvn -B compile',
+    stage: 'implement',
+    status: 'passed',
+    exitCode: 0,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    durationMs: 1,
+    stdoutRef: 'file:///tmp/stdout.log',
+    stderrRef: 'file:///tmp/stderr.log',
+    stdoutBytes: 0,
+    stderrBytes: 0,
+    timedOut: false,
+    truncated: false,
+  });
+
+  gates.runCompileGate({
+    workflowRunId,
+    stepRunId,
+    buildRun: {
+      id: `build_compile_${workflowRunId}`,
+      workflowRunId,
+      stepRunId,
+      language: 'java',
+      buildTool: 'maven',
+      jdkVersion: '1.8',
+      mavenCommand: 'mvn -B compile',
+      status: 'passed',
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      commandRunIds: [compileCmdId],
+      artifactIds: [],
+    },
+  });
+  const surefirePath = join(dir, 'surefire.txt');
+  writeFileSync(surefirePath, 'Tests run: 2, Passed: 2');
+  storeMod.store.artifacts.insert({
+    ...artifact('surefire_report', surefirePath),
+    workflowRunId,
+    stepRunId,
+  });
+
   const gate = gates.runAcceptanceTraceabilityGate({ workflowRunId, stepRunId });
   const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
 
@@ -708,11 +908,38 @@ function insertPassingTestGate(workflowRunId: string, stepRunId: string | null) 
     timedOut: false,
     truncated: false,
   });
+  const buildRunId = `build_${workflowRunId}`;
+  const testRun: import('@ainp/shared').TestRun = {
+    id: `test_${workflowRunId}`,
+    buildRunId,
+    framework: 'maven-surefire',
+    total: 1,
+    passed: 1,
+    failed: 0,
+    skipped: 0,
+    errors: 0,
+    reportArtifactIds: [],
+  };
+  storeMod.store.testRuns.insert(testRun);
+  storeMod.store.buildRuns.insert({
+    id: buildRunId,
+    workflowRunId,
+    stepRunId,
+    language: 'java',
+    buildTool: 'maven',
+    jdkVersion: '1.8',
+    mavenCommand: 'mvn -B test',
+    status: 'passed',
+    startedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+    commandRunIds: [cmdId],
+    artifactIds: [],
+  });
   gates.runTestGate({
     workflowRunId,
     stepRunId,
     buildRun: {
-      id: `build_${workflowRunId}`,
+      id: buildRunId,
       workflowRunId,
       stepRunId,
       language: 'java',
@@ -725,7 +952,7 @@ function insertPassingTestGate(workflowRunId: string, stepRunId: string | null) 
       commandRunIds: [cmdId],
       artifactIds: [],
     },
-    testRuns: [],
+    testRuns: [testRun],
     surefireAggregate: {
       framework: 'maven-surefire',
       total: 1,
@@ -856,6 +1083,27 @@ function runBusinessMatrixFixture(input: {
     },
   });
   insertStepRun(workflowRunId, 'requirement');
+
+  // Add compile gate to satisfy execution evidence requirement
+  gates.runCompileGate({
+    workflowRunId,
+    stepRunId,
+    buildRun: {
+      id: `build_compile_${workflowRunId}`,
+      workflowRunId,
+      stepRunId,
+      language: 'java',
+      buildTool: 'maven',
+      jdkVersion: '1.8',
+      mavenCommand: 'mvn -B compile',
+      status: 'passed',
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      commandRunIds: [],
+      artifactIds: [],
+    },
+  });
+
   insertPassingTestGate(workflowRunId, stepRunId);
   return gates.runAcceptanceTraceabilityGate({ workflowRunId, stepRunId });
 }
@@ -1795,4 +2043,322 @@ test('an unreadable evidence file is unverifiable, not a mismatch', () => {
 
   expect(digestMatchRule(evidenceGateOverArtifact('run_digest_gone', 'step_digest_gone', note)).status)
     .toBe('pass');
+});
+
+test('acceptance gate downgrades document-level passed to at_risk when execution evidence is missing', () => {
+  const workflowRunId = 'run_ac_atrisk';
+  const stepRunId = 'step_verifier_atrisk';
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-ac-atrisk-'));
+
+  const reqPath = join(dir, 'requirement.md');
+  writeFileSync(reqPath, `---
+doc_type: requirement
+pitch: Test requirement with AC
+status: draft
+---
+# REQ-001
+
+## AC-001
+Calculator returns correct results.
+`);
+
+  storeMod.store.stepRuns.set('step_req', {
+    id: 'step_req',
+    workflowRunId,
+    stage: 'requirement',
+    name: 'requirement-fixture',
+    status: 'passed',
+    startedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+  });
+
+  storeMod.store.artifacts.insert({
+    ...artifact('requirement_draft', reqPath),
+    workflowRunId,
+    stepRunId: 'step_req',
+  });
+
+  const reqArtifact = storeMod.store.artifacts.byKind(workflowRunId, 'requirement_draft').at(-1)!;
+  const matrixPath = join(dir, 'ac-matrix.json');
+  writeFileSync(matrixPath, JSON.stringify({
+    schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+    workflowRunId,
+    stepRunId,
+    verifierRequired: false,
+    verifierStatus: 'pass',
+    acceptanceCriteria: [
+      {
+        id: 'AC-001',
+        text: 'Calculator returns correct results.',
+        scenarioType: 'core',
+        verificationMethod: 'Manual review',
+        businessStatus: 'passed',
+        status: 'pass',
+        evidenceRefs: [
+          { artifactId: reqArtifact.id, claim: 'requirement evidence' },
+        ],
+      },
+    ],
+  }, null, 2));
+
+  storeMod.store.artifacts.insert({
+    ...artifact('other', matrixPath),
+    workflowRunId,
+    stepRunId,
+    contentType: 'application/json',
+    metadata: {
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      reportKind: 'verifier_ac_matrix',
+      verifierArtifactType: 'ac_matrix',
+    },
+  });
+
+  const gate = gates.runAcceptanceTraceabilityGate({
+    workflowRunId,
+    stepRunId: null,
+  });
+
+  const criteriaRule = gate.ruleResults.find((r) => r.ruleId === 'acceptance.business_matrix_criteria_proven');
+  expect(criteriaRule?.status).toBe('warn');
+  expect(criteriaRule?.message).toMatch(/at risk.*execution evidence missing/i);
+});
+
+test('acceptance gate produces passed when execution evidence triple is present', () => {
+  const workflowRunId = 'run_ac_passed';
+  const stepRunId = 'step_verifier_passed';
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-ac-passed-'));
+
+  const reqPath = join(dir, 'requirement.md');
+  writeFileSync(reqPath, `---
+doc_type: requirement
+pitch: Test requirement with full evidence
+status: draft
+---
+# REQ-002
+
+## AC-002
+Calculator handles all operations correctly.
+`);
+
+  storeMod.store.stepRuns.set('step_req2', {
+    id: 'step_req2',
+    workflowRunId,
+    stage: 'requirement',
+    name: 'requirement-fixture',
+    status: 'passed',
+    startedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+  });
+
+  storeMod.store.artifacts.insert({
+    ...artifact('requirement_draft', reqPath),
+    workflowRunId,
+    stepRunId: 'step_req2',
+  });
+
+  storeMod.store.commandRuns.set('cmd_ac_passed', {
+    id: 'cmd_ac_passed',
+    workflowRunId,
+    stepRunId,
+    cwd: '/tmp',
+    command: 'mvn -B test',
+    stage: 'test',
+    status: 'passed',
+    exitCode: 0,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    durationMs: 1,
+    stdoutRef: 'file:///tmp/stdout.log',
+    stderrRef: 'file:///tmp/stderr.log',
+    stdoutBytes: 0,
+    stderrBytes: 0,
+    stdoutSha256: sha256(''),
+    stderrSha256: sha256(''),
+    combinedSha256: sha256('combined'),
+    timedOut: false,
+    truncated: false,
+  });
+
+  gates.runCompileGate({
+    workflowRunId,
+    stepRunId,
+    buildRun: {
+      id: 'build_ac_passed',
+      workflowRunId,
+      stepRunId,
+      language: 'java',
+      buildTool: 'maven',
+      jdkVersion: '1.8',
+      mavenCommand: 'mvn -B compile',
+      status: 'passed',
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      commandRunIds: ['cmd_ac_passed'],
+      artifactIds: [],
+    },
+  });
+
+  gates.runTestGate({
+    workflowRunId,
+    stepRunId,
+    buildRun: {
+      id: 'build_ac_passed_test',
+      workflowRunId,
+      stepRunId,
+      language: 'java',
+      buildTool: 'maven',
+      jdkVersion: '1.8',
+      mavenCommand: 'mvn -B test',
+      status: 'passed',
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      commandRunIds: ['cmd_ac_passed'],
+      artifactIds: [],
+    },
+    testRuns: [],
+    surefireAggregate: {
+      framework: 'maven-surefire',
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      errors: 0,
+      suites: [],
+      reportPaths: [],
+    },
+  });
+
+  const reqArtifact = storeMod.store.artifacts.byKind(workflowRunId, 'requirement_draft').at(-1)!;
+  const matrixPath = join(dir, 'ac-matrix.json');
+  writeFileSync(matrixPath, JSON.stringify({
+    schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+    workflowRunId,
+    stepRunId,
+    verifierRequired: false,
+    verifierStatus: 'pass',
+    acceptanceCriteria: [
+      {
+        id: 'AC-002',
+        text: 'Calculator handles all operations correctly.',
+        scenarioType: 'core',
+        verificationMethod: 'JUnit tests via mvn test',
+        businessStatus: 'passed',
+        status: 'pass',
+        evidenceRefs: [
+          { artifactId: reqArtifact.id, claim: 'requirement evidence' },
+        ],
+      },
+    ],
+  }, null, 2));
+
+  storeMod.store.artifacts.insert({
+    ...artifact('other', matrixPath),
+    workflowRunId,
+    stepRunId,
+    contentType: 'application/json',
+    metadata: {
+      schemaVersion: VERIFIER_AC_MATRIX_SCHEMA_VERSION,
+      reportKind: 'verifier_ac_matrix',
+      verifierArtifactType: 'ac_matrix',
+    },
+  });
+
+  const surefireReportPath = join(dir, 'surefire-report.txt');
+  writeFileSync(surefireReportPath, 'Tests run: 1, Passed: 1, Failures: 0, Errors: 0\n');
+  storeMod.store.artifacts.insert({
+    ...artifact('surefire_report', surefireReportPath),
+    workflowRunId,
+    stepRunId,
+  });
+
+  // Create test command run for test gate
+  const testCmdId = 'cmd_test_execution_level';
+  storeMod.store.commandRuns.set(testCmdId, {
+    id: testCmdId,
+    workflowRunId,
+    stepRunId,
+    cwd: '/tmp',
+    command: 'mvn -B test',
+    stage: 'test',
+    status: 'passed',
+    exitCode: 0,
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+    durationMs: 1000,
+    stdoutRef: 'file:///tmp/test-stdout.log',
+    stderrRef: 'file:///tmp/test-stderr.log',
+    stdoutBytes: 0,
+    stderrBytes: 0,
+    stdoutSha256: '',
+    stderrSha256: '',
+    combinedSha256: '',
+    timedOut: false,
+    truncated: false,
+  });
+
+  // Run test gate to provide execution evidence
+  const testBuildRunId = 'build_test_execution_level';
+  storeMod.store.buildRuns.insert({
+    id: testBuildRunId,
+    workflowRunId,
+    stepRunId,
+    language: 'java',
+    buildTool: 'maven',
+    jdkVersion: '1.8',
+    mavenCommand: 'mvn -B test',
+    status: 'passed',
+    startedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString(),
+    commandRunIds: [testCmdId],
+    artifactIds: [],
+  });
+
+  storeMod.store.testRuns.insert({
+    id: 'test_run_execution_level',
+    buildRunId: testBuildRunId,
+    framework: 'maven-surefire',
+    total: 1,
+    passed: 1,
+    failed: 0,
+    skipped: 0,
+    errors: 0,
+    reportArtifactIds: [],
+  });
+
+  gates.runTestGate({
+    workflowRunId,
+    stepRunId,
+    buildRun: {
+      id: testBuildRunId,
+      workflowRunId,
+      stepRunId,
+      language: 'java',
+      buildTool: 'maven',
+      jdkVersion: '1.8',
+      mavenCommand: 'mvn -B test',
+      status: 'passed',
+      startedAt: new Date().toISOString(),
+      completedAt: new Date().toISOString(),
+      commandRunIds: [testCmdId],
+      artifactIds: [],
+    },
+    testRuns: [],
+    surefireAggregate: {
+      framework: 'maven-surefire',
+      total: 1,
+      passed: 1,
+      failed: 0,
+      skipped: 0,
+      errors: 0,
+    },
+  });
+
+  const gate = gates.runAcceptanceTraceabilityGate({
+    workflowRunId,
+    stepRunId: null,
+  });
+
+  const criteriaRule = gate.ruleResults.find((r) => r.ruleId === 'acceptance.business_matrix_criteria_proven');
+  expect(criteriaRule?.status).toBe('pass');
+  expect(criteriaRule?.message).toMatch(/1\/1.*execution evidence/i);
 });

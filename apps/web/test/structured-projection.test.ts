@@ -89,7 +89,24 @@ describe('structured UI document parsing', () => {
       gates: [
         { id: 'g1', gateId: 'compile_gate', stepRunId: null, status: 'pass', decidedAt: '', ruleResults: [] },
         { id: 'g2', gateId: 'test_gate', stepRunId: null, status: 'pass', decidedAt: '', ruleResults: [] },
-        { id: 'g3', gateId: 'acceptance_gate', stepRunId: null, status: 'pass', decidedAt: '', ruleResults: [] },
+        {
+          id: 'g3',
+          gateId: 'acceptance_gate',
+          stepRunId: null,
+          status: 'pass',
+          decidedAt: '',
+          ruleResults: [
+            {
+              ruleId: 'acceptance.business_matrix_criteria_proven',
+              status: 'pass',
+              message: 'All AC passed',
+              evidenceRefs: [
+                { artifactId: 'art1', claim: 'AC-001: passed' },
+                { artifactId: 'art2', claim: 'AC-002: passed' },
+              ],
+            },
+          ],
+        },
       ],
       artifacts: [],
       builds: [],

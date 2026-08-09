@@ -6,6 +6,7 @@ import {
   REVIEW_VERDICT_ROLES,
   REVIEW_VERDICT_SCHEMA_VERSION,
   REVIEW_VERDICT_STATUSES,
+  executionContractOutputConflicts,
 } from '@ainp/shared';
 import type { SkillSpec, ProjectAgentBackendKind, ConfigKey } from '@ainp/shared';
 import { getConfig } from '../config-client';
@@ -607,6 +608,16 @@ export async function findSkillForStage(
 ): Promise<SkillSpec | undefined> {
   const base = SKILLS.find((s) => s.stage === stage);
   if (!base) return undefined;
+
+  const conflicts = executionContractOutputConflicts(base);
+  if (conflicts.length > 0) {
+    const details = conflicts.map(c => `  - ${c.outputName}: ${c.reason}`).join('\n');
+    throw new Error(
+      `[skill.${base.id}] ExecutionContract output conflicts:\n${details}\n` +
+      `Fix: align outputs[] and executionContract.expectedOutputs in apps/runner/src/skills/index.ts`
+    );
+  }
+
   const overrideKey = `${base.id}.instructions` as ConfigKey;
   // All `*.instructions` keys are typed as `string` in the registry, but
   // RegistryDefault<K> widens to the union; cast to string for the SkillSpec.

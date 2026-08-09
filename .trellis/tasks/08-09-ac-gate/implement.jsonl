@@ -1,0 +1,9 @@
+{"file": "apps/api/src/gate-engine.ts", "reason": "R1 核心：evaluateBusinessAcceptanceMatrix 叠加执行证据判据（D1），rule message 加覆盖率统计（D6）"}
+{"file": "apps/web/src/projection.ts", "reason": "R3+R4：buildAcceptanceChecklist 删除证据推导逻辑改兜底（D3），AcceptanceChecklistItem 类型合并（D4）"}
+{"file": "apps/web/src/page-task-detail.ts", "reason": "R4：AcceptanceChecklistItem['status'] 类型引用改为 AcceptanceBusinessStatus（D4 波及）"}
+{"file": "apps/runner/src/skills/index.ts", "reason": "R5：findSkillForStage 接线 executionContractOutputConflicts（D5）"}
+{"file": "apps/api/test/gate-engine.test.ts", "reason": "测试：gate at_risk 判据单测 + 覆盖率 message 断言"}
+{"file": "apps/runner/test/skills.test.ts", "reason": "测试：executionContract 接线单测（新建文件）"}
+{"file": "apps/web/test/projection.test.ts", "reason": "测试：web 兜底场景（matrix 缺失/加载失败）+ 类型合并回归"}
+{"file": ".trellis/spec/api/backend/gate-engine.md", "reason": "spec 沉淀：AC 状态判据演进（文档级→执行级降级规则）"}
+{"file": ".trellis/spec/shared/backend/evidence-verifier-protocol.md", "reason": "spec 沉淀：跨层 AC 状态契约更新（gate 权威判定、web 透传）"}

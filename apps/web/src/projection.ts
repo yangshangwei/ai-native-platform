@@ -5,6 +5,7 @@ import {
   isResumableGraphNodeStatus,
   isTerminalGraphNodeStatus,
   latestGraphNodeRunsByNode,
+  type AcceptanceBusinessStatus,
   type AgentResult,
   type AgentSession,
   type AgentTask,
@@ -275,12 +276,11 @@ export type CommandRunDto = Weaken<
 export type ToolInvocationDto = ToolInvocation;
 
 /**
- * Derived from the shared {@link GateRun}. `ruleResults` rows are trimmed to
- * the render fields ({@link RuleResult} minus `evidenceRefs`, which the SPA
- * does not consume).
+ * Derived from the shared {@link GateRun}. `ruleResults` include evidenceRefs
+ * for acceptance criteria status passthrough.
  */
 export type GateRunDto = Pick<GateRun, 'id' | 'gateId' | 'stepRunId' | 'status' | 'decidedAt'> & {
-  ruleResults: Array<Pick<RuleResult, 'ruleId' | 'status' | 'message'>>;
+  ruleResults: Array<Pick<RuleResult, 'ruleId' | 'status' | 'message' | 'evidenceRefs'>>;
 };
 
 /**
@@ -1216,7 +1216,7 @@ export interface DesignDoc {
 export interface AcceptanceChecklistItem {
   id: string;
   text: string;
-  status: 'passed' | 'at_risk' | 'missing' | 'failed';
+  status: AcceptanceBusinessStatus;
   scenarioType?: string;
   verificationMethod?: string;
   evidence: string[];
@@ -1474,32 +1474,35 @@ export function buildAcceptanceChecklist(
   design: DesignDoc,
   detail: RunDetail,
 ): AcceptanceChecklistItem[] {
-  const compileGate = latestGate(detail, 'compile_gate');
-  const testGate = latestGate(detail, 'test_gate');
   const acceptanceGate = latestGate(detail, 'acceptance_gate');
-  const hasPassingTests = detail.tests.some((t) => t.total > 0 && t.failed === 0 && t.errors === 0);
   const approvedAcceptance = detail.approvals.some(
     (a) => a.gateId === 'acceptance_gate' && a.decision === 'approved',
   );
+
+  const criteriaProvenRule = acceptanceGate?.ruleResults.find(
+    (r) => r.ruleId === 'acceptance.business_matrix_criteria_proven',
+  );
+
+  const statusById = new Map<string, AcceptanceBusinessStatus>();
+  if (criteriaProvenRule) {
+    for (const ref of criteriaProvenRule.evidenceRefs) {
+      const match = ref.claim.match(/^(AC-\S+): (passed|missing|at_risk|failed)$/);
+      if (match && match[1] && match[2]) {
+        statusById.set(match[1], match[2] as AcceptanceBusinessStatus);
+      }
+    }
+  }
 
   return requirement.acceptanceCriteria.map((ac) => {
     const covered = design.coverage.some((row) => row.acceptanceCriteria.includes(ac.id));
     const evidence: string[] = [];
     if (covered) evidence.push('Design coverage matrix');
-    if (compileGate?.status === 'pass') evidence.push('compile_gate=pass');
-    if (testGate?.status === 'pass' && hasPassingTests) evidence.push('test_gate=pass');
     if (acceptanceGate?.status === 'pass' || approvedAcceptance) evidence.push('acceptance approved');
 
-    let status: AcceptanceChecklistItem['status'] = 'missing';
-    let risk: string | null = null;
-    if (covered && compileGate?.status === 'pass' && testGate?.status === 'pass' && hasPassingTests) {
-      status = 'passed';
-    } else if (covered || compileGate?.status === 'pass' || testGate?.status === 'pass') {
-      status = 'at_risk';
-      risk = 'Evidence is partial; confirm risk before completion.';
-    } else {
-      risk = 'No implementation/test evidence found yet.';
-    }
+    const gateStatus = statusById.get(ac.id);
+    const status: AcceptanceBusinessStatus = gateStatus ?? 'missing';
+    const risk: string | null = status === 'at_risk' ? 'Execution evidence missing' : null;
+
     return { id: ac.id, text: ac.text, status, evidence, risk };
   });
 }

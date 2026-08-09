@@ -692,7 +692,13 @@ export function runAcceptanceTraceabilityGate(params: {
   const design = store.artifacts.byKind(params.workflowRunId, 'design_doc').at(-1) ?? null;
   const diff = store.artifacts.byKind(params.workflowRunId, 'diff').at(-1) ?? null;
   const review = resolveAcceptanceReview(params.workflowRunId);
-  const testGate = store.gateRuns.latestForGate(params.workflowRunId, 'test_gate');
+  const compileGate = store.gateRuns.latestForGate(params.workflowRunId, 'compile_gate') ?? null;
+  const testGate = store.gateRuns.latestForGate(params.workflowRunId, 'test_gate') ?? null;
+
+  // Compute hasPassingTests from structured TestRun data (matching web projection logic)
+  const buildRuns = store.buildRuns.byWorkflow(params.workflowRunId);
+  const allTestRuns = buildRuns.flatMap((build) => store.testRuns.byBuild(build.id));
+  const hasPassingTests = allTestRuns.some((t) => t.total > 0 && t.failed === 0 && t.errors === 0);
 
   // V2 W2-2a (PRD ADR Q3): stage-history-aware traceability rules. If the
   // run never scheduled a `requirement` / `design` step (e.g. issue.standard
@@ -712,7 +718,11 @@ export function runAcceptanceTraceabilityGate(params: {
     .at(-1) ?? null;
   const matrix = matrixArtifact ? parseVerifierAcMatrix(matrixArtifact) : null;
   const matrixRequired = stagesRun.has('requirement') || stagesRun.has('design');
-  const matrixEvaluation = evaluateBusinessAcceptanceMatrix(matrix);
+  const matrixEvaluation = evaluateBusinessAcceptanceMatrix(matrix, {
+    compileGate,
+    testGate,
+    hasPassingTests,
+  });
   const requiredAcIds = requirement ? acceptanceCriterionIds(readArtifactText(requirement)) : [];
   const requiredAcIdSet = new Set(requiredAcIds);
   const matrixAcIdCounts = new Map<string, number>();
@@ -870,8 +880,8 @@ export function runAcceptanceTraceabilityGate(params: {
           : matrixEvaluation.failed.length > 0
             ? `AC evidence missing or failed: ${matrixEvaluation.failed.slice(0, 6).join(', ')}${matrixEvaluation.failed.length > 6 ? '...' : ''}`
             : matrixEvaluation.atRisk.length > 0
-              ? `AC accepted at risk: ${matrixEvaluation.atRisk.slice(0, 6).join(', ')}${matrixEvaluation.atRisk.length > 6 ? '...' : ''}`
-              : `${matrixEvaluation.criteria.length} AC row(s) have business evidence`,
+              ? `AC accepted at risk (execution evidence missing): ${matrixEvaluation.atRisk.slice(0, 6).join(', ')}${matrixEvaluation.atRisk.length > 6 ? '...' : ''} (${matrixEvaluation.stats.passed}/${matrixEvaluation.stats.total} passed, ${matrixEvaluation.stats.atRisk} at risk)`
+              : `${matrixEvaluation.stats.passed}/${matrixEvaluation.stats.total} AC row(s) have business + execution evidence`,
       evidenceRefs: matrixEvaluation.criteria.flatMap((criterion) => criterion.evidenceRefs),
     },
     {
@@ -1627,31 +1637,54 @@ function parseAcceptanceBusinessStatus(value: unknown): AcceptanceBusinessStatus
 
 function evaluateBusinessAcceptanceMatrix(
   matrix: { acceptanceCriteria: ParsedVerifierCriterion[] } | null,
-): { criteria: ParsedVerifierCriterion[]; failed: string[]; atRisk: string[] } {
+  context: {
+    compileGate: GateRun | null;
+    testGate: GateRun | null;
+    hasPassingTests: boolean;
+  },
+): { criteria: ParsedVerifierCriterion[]; failed: string[]; atRisk: string[]; stats: { total: number; passed: number; atRisk: number; failed: number } } {
   const criteria = matrix?.acceptanceCriteria ?? [];
   const failed: string[] = [];
   const atRisk: string[] = [];
+
+  const hasExecutionEvidence = context.compileGate?.status === 'pass'
+    && context.testGate?.status === 'pass'
+    && context.hasPassingTests;
 
   for (const criterion of criteria) {
     const hasEvidence = criterion.evidenceRefs.length > 0;
     const passedStatus = criterion.businessStatusDeclared
       ? criterion.businessStatus === 'passed'
       : criterion.status === 'pass';
-    const passed = passedStatus
+    const documentPassed = passedStatus
       && hasEvidence
       && !isCommandOnlyText(`${criterion.text ?? ''} ${criterion.verificationMethod ?? ''}`);
-    const risk = criterion.businessStatusDeclared
+    const declaredRisk = criterion.businessStatusDeclared
       && criterion.businessStatus === 'at_risk'
       && hasEvidence;
-    if (passed) continue;
-    if (risk) {
+
+    if (documentPassed && hasExecutionEvidence) {
+      continue;
+    }
+    if (documentPassed && !hasExecutionEvidence) {
+      atRisk.push(criterion.id);
+      continue;
+    }
+    if (declaredRisk) {
       atRisk.push(criterion.id);
       continue;
     }
     failed.push(criterion.id);
   }
 
-  return { criteria, failed, atRisk };
+  const stats = {
+    total: criteria.length,
+    passed: criteria.length - failed.length - atRisk.length,
+    atRisk: atRisk.length,
+    failed: failed.length,
+  };
+
+  return { criteria, failed, atRisk, stats };
 }
 
 function parseVerifierEvidenceRef(value: unknown): ParsedVerifierCriterion['evidenceRefs'][number] | null {

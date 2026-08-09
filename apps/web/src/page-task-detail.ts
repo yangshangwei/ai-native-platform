@@ -58,6 +58,7 @@ import {
   VERIFIER_AC_MATRIX_SCHEMA_VERSION,
   errorMessage,
   parseReviewerVerdict,
+  type AcceptanceBusinessStatus,
   type GraphNodeStatus,
   type ReviewerVerdict,
 } from '@ainp/shared/browser';
@@ -2252,7 +2253,7 @@ function acceptanceMatrixChecklist(detail: RunDetail): ReturnType<typeof buildAc
 function acceptanceRowStatus(
   businessStatus: unknown,
   legacyStatus: unknown,
-): AcceptanceChecklistItem['status'] {
+): AcceptanceBusinessStatus {
   if (businessStatus !== undefined) {
     if (
       businessStatus === 'passed'
@@ -2269,7 +2270,7 @@ function acceptanceRowStatus(
   return 'missing';
 }
 
-function acceptanceStatusDisplay(status: AcceptanceChecklistItem['status']): {
+function acceptanceStatusDisplay(status: AcceptanceBusinessStatus): {
   label: string;
   kind: StatusKind;
 } {
