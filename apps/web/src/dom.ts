@@ -11,6 +11,7 @@
 
 import type { StatusKind } from './types';
 
+export { tooltipTerm, tooltipIcon } from './tooltip';
 
 export function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
@@ -57,53 +58,70 @@ export function octopusIcon(): SVGElement {
   svg.setAttribute('height', '28');
   svg.style.display = 'block';
 
-  // Octopus head (ellipse)
-  const head = document.createElementNS('http://www.w3.org/2000/svg', 'ellipse');
-  head.setAttribute('cx', '16');
-  head.setAttribute('cy', '12');
-  head.setAttribute('rx', '7');
-  head.setAttribute('ry', '8');
-  head.setAttribute('fill', 'none');
-  head.setAttribute('stroke', 'currentColor');
-  head.setAttribute('stroke-width', '2.5');
+  // Gate icon: three vertical bars with checkmarks, representing quality gates in a workflow
+  // Left gate (requirement)
+  const gate1 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  gate1.setAttribute('x', '4');
+  gate1.setAttribute('y', '6');
+  gate1.setAttribute('width', '6');
+  gate1.setAttribute('height', '20');
+  gate1.setAttribute('rx', '1.5');
+  gate1.setAttribute('fill', 'none');
+  gate1.setAttribute('stroke', 'currentColor');
+  gate1.setAttribute('stroke-width', '2');
 
-  // Tentacle 1 (left)
-  const tentacle1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  tentacle1.setAttribute('d', 'M 11 18 Q 8 22, 7 28');
-  tentacle1.setAttribute('fill', 'none');
-  tentacle1.setAttribute('stroke', 'currentColor');
-  tentacle1.setAttribute('stroke-width', '2.5');
-  tentacle1.setAttribute('stroke-linecap', 'round');
+  const check1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  check1.setAttribute('d', 'M 5.5 15 L 6.5 16 L 8.5 14');
+  check1.setAttribute('fill', 'none');
+  check1.setAttribute('stroke', 'currentColor');
+  check1.setAttribute('stroke-width', '2');
+  check1.setAttribute('stroke-linecap', 'round');
+  check1.setAttribute('stroke-linejoin', 'round');
 
-  // Tentacle 2 (center-left)
-  const tentacle2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  tentacle2.setAttribute('d', 'M 13 19 Q 12 24, 11 29');
-  tentacle2.setAttribute('fill', 'none');
-  tentacle2.setAttribute('stroke', 'currentColor');
-  tentacle2.setAttribute('stroke-width', '2.5');
-  tentacle2.setAttribute('stroke-linecap', 'round');
+  // Center gate (implementation + test)
+  const gate2 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  gate2.setAttribute('x', '13');
+  gate2.setAttribute('y', '6');
+  gate2.setAttribute('width', '6');
+  gate2.setAttribute('height', '20');
+  gate2.setAttribute('rx', '1.5');
+  gate2.setAttribute('fill', 'none');
+  gate2.setAttribute('stroke', 'currentColor');
+  gate2.setAttribute('stroke-width', '2');
 
-  // Tentacle 3 (center-right)
-  const tentacle3 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  tentacle3.setAttribute('d', 'M 19 19 Q 20 24, 21 29');
-  tentacle3.setAttribute('fill', 'none');
-  tentacle3.setAttribute('stroke', 'currentColor');
-  tentacle3.setAttribute('stroke-width', '2.5');
-  tentacle3.setAttribute('stroke-linecap', 'round');
+  const check2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  check2.setAttribute('d', 'M 14.5 15 L 15.5 16 L 17.5 14');
+  check2.setAttribute('fill', 'none');
+  check2.setAttribute('stroke', 'currentColor');
+  check2.setAttribute('stroke-width', '2');
+  check2.setAttribute('stroke-linecap', 'round');
+  check2.setAttribute('stroke-linejoin', 'round');
 
-  // Tentacle 4 (right)
-  const tentacle4 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  tentacle4.setAttribute('d', 'M 21 18 Q 24 22, 25 28');
-  tentacle4.setAttribute('fill', 'none');
-  tentacle4.setAttribute('stroke', 'currentColor');
-  tentacle4.setAttribute('stroke-width', '2.5');
-  tentacle4.setAttribute('stroke-linecap', 'round');
+  // Right gate (acceptance)
+  const gate3 = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  gate3.setAttribute('x', '22');
+  gate3.setAttribute('y', '6');
+  gate3.setAttribute('width', '6');
+  gate3.setAttribute('height', '20');
+  gate3.setAttribute('rx', '1.5');
+  gate3.setAttribute('fill', 'none');
+  gate3.setAttribute('stroke', 'currentColor');
+  gate3.setAttribute('stroke-width', '2');
 
-  svg.appendChild(head);
-  svg.appendChild(tentacle1);
-  svg.appendChild(tentacle2);
-  svg.appendChild(tentacle3);
-  svg.appendChild(tentacle4);
+  const check3 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  check3.setAttribute('d', 'M 23.5 15 L 24.5 16 L 26.5 14');
+  check3.setAttribute('fill', 'none');
+  check3.setAttribute('stroke', 'currentColor');
+  check3.setAttribute('stroke-width', '2');
+  check3.setAttribute('stroke-linecap', 'round');
+  check3.setAttribute('stroke-linejoin', 'round');
+
+  svg.appendChild(gate1);
+  svg.appendChild(check1);
+  svg.appendChild(gate2);
+  svg.appendChild(check2);
+  svg.appendChild(gate3);
+  svg.appendChild(check3);
 
   return svg;
 }

@@ -17,6 +17,13 @@ AI Native Platform 现在是一个本地可信执行的 AI 软件交付工作台
 - Shared 是跨进程契约层，包含类型、FLOW_REGISTRY、配置注册表、Coordinator 纯规则和 browser/node 子路径工具。
 - `WorkflowRequest.kind='ask'` 是轻量问答：只保留在请求/聊天通道，不创建 WorkflowRun，不进入 Runner execution。
 
+**最新架构深度文档** (2026-08-09):
+- [Workflow Engine Architecture](2026-08-09-workflow-engine-architecture.md) — 单一写者模式、状态机、TOCTOU 防护
+- [Gate Engine Architecture](2026-08-09-gate-engine-architecture.md) — 声明式规则、证据链、SHA-256 防篡改
+- [Graph Runtime Architecture](2026-08-09-graph-runtime-architecture.md) — DAG 编排、恢复机制、状态聚合
+- [Context & Knowledge Architecture](2026-08-09-context-knowledge-architecture.md) — Context Pack 构建、Knowledge 生命周期、双写流水线
+- [Agent Backend Architecture](2026-08-09-agent-backend-architecture.md) — 双后端对比、Worktree 隔离、实时流式通信
+
 ## 2. 总体架构
 
 ```text

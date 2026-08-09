@@ -55,6 +55,48 @@
   );
   background-size: 200% 100%;
   animation: skeleton 1.5s ease-in-out infinite;
+}
+
+/* Dark mode skeleton */
+@media (prefers-color-scheme: dark) {
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      #1a202c 25%,
+      #2d3748 50%,
+      #1a202c 75%
+    );
+    background-size: 200% 100%;
+  }
+}
+
+/* ============================================
+   3. Metric Card Hover Animation
+   ============================================ */
+
+@keyframes metricPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.02);
+  }
+}
+
+.metric-card-v2.clickable:hover {
+  animation: metricPulse 0.4s ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .metric-card-v2.clickable:hover {
+    animation: none;
+  }
+}
+
+    #f0f0f0 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton 1.5s ease-in-out infinite;
   border-radius: 4px;
 }
 

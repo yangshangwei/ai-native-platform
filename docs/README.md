@@ -19,10 +19,31 @@
 - `user/requirement-workflow.md`
   - 面向终端用户解释需求录入前准备、开始执行的基本条件，以及录入后从 Workflow Request 到 Report / Knowledge 的端到端 Pipeline。
 
-## 0.3 2026-06-27 当前代码架构（最新）
+## 0.3 当前代码架构（最新）
+
+### 2026-08-09 核心架构深度文档
+
+**最新补充**：以下五份深度技术文档基于 2026-08-09 代码实现，提供各核心子系统的完整架构说明、设计决策和实现细节：
+
+- `2026-08-09-workflow-engine-architecture.md`
+  - **Workflow Engine 单一写者架构**。详解状态机、TOCTOU 防护、核心函数（createWorkflowRun, claimWorkflowRequest, transitionStage, pauseWorkflowRun, completeWorkflowRun）、证据收集（recordCommandRun, recordMavenBuild）、设计决策和当前限制。
+
+- `2026-08-09-gate-engine-architecture.md`
+  - **Gate Engine 声明式规则系统**。完整 Gate 清单（Compile, Test, Requirement, Design, Diff Scope, Sensitive Change, Test Integrity, Acceptance Traceability, Evidence, Manual）、SHA-256 防篡改机制、证据链设计、Agent Note vs Gate Status、当前能力与限制。
+
+- `2026-08-09-graph-runtime-architecture.md`
+  - **Graph Runtime DAG 编排**。GraphDefinition/GraphRun/GraphNodeRun 数据模型、节点生命周期、resumeGraphNode() 恢复机制、deriveGraphRunStatus() 状态聚合算法、Checkpoint 机制、FLOW_REGISTRY 集成、设计决策和未来增强。
+
+- `2026-08-09-context-knowledge-architecture.md`
+  - **Context 与 Knowledge 管理架构**。Context Pack 多源候选构建、预算降级链（full → summary → snippet → retrieval_hint）、Incremental Context Request 协议（08-09 P1）、Prior Feedback 注入（08-09 P1-2）、Knowledge Artifact 生命周期（candidate → accepted → superseded）、双写流水线（DB + codestable/*.md）、Project Inventory 特殊处理、成熟度感知模式选择。
+
+- `2026-08-09-agent-backend-architecture.md`
+  - **Agent Backend 双后端架构**。Claude Code vs Codex 对比表、Backend 选择与 preflight 检查、Worktree 隔离与生命周期、Operational Pause 支持（07-26）、Workspace Guard、实时流式通信（line-by-line streaming）、Secret Masking、SSE Broadcasting、Context 注入、Orchestrator 集成、设计决策和当前能力。
+
+### 2026-06-27 架构快照（背景参考）
 
 - `2026-06-27-current-technical-architecture.md`
-  - **当前技术架构快照**。以 2026-06-27 代码事实为基准，覆盖 Bun/TypeScript monorepo、API/Runner/Web/Shared 四层、WorkflowRequest 到 WorkflowRun 的端到端流转、FLOW_REGISTRY、Context Injection、AgentBackend、Gate、Knowledge、Web 页面拆分、关键不变量、扩展点和剩余风险。建议作为理解当前实现的第一入口。
+  - **当前技术架构快照**。以 2026-06-27 代码事实为基准，覆盖 Bun/TypeScript monorepo、API/Runner/Web/Shared 四层、WorkflowRequest 到 WorkflowRun 的端到端流转、FLOW_REGISTRY、Context Injection、AgentBackend、Gate、Knowledge、Web 页面拆分、关键不变量、扩展点和剩余风险。已补充指向 2026-08-09 深度文档的链接。
 - `2026-06-27-context-management-architecture.md`
   - **上下文管理架构说明**。以 2026-06-27 代码事实回答“上下文管理是如何设计的”，覆盖 ContextPack / ContextManifest / ContextRequest 核心对象、Runner 构建与注入流水线、增量补充、API 治理读模型、Web 可观测面、安全边界和当前限制。
 - `2026-06-27-agent-orchestration-and-harness-improvement-plan.md`

@@ -1,0 +1,14 @@
+{"type":"spec","path":"apps/web/PRODUCT.md","reason":"产品定位与用户画像，指导文案改写方向"}
+{"type":"spec","path":"apps/web/public/design-tokens.css","reason":"设计 token 系统，P0 焦点指示器需要在此添加全局样式"}
+{"type":"spec","path":"apps/web/public/components.css","reason":"组件样式，P1 触摸目标尺寸修复、P2 等宽字体修正在此文件"}
+{"type":"spec","path":"apps/web/public/animations.css","reason":"动画系统，P0 需添加 prefers-reduced-motion 支持"}
+{"type":"spec","path":"apps/web/public/landing.html","reason":"着陆页主文件，P0 ARIA 标签、P1 文案重写与布局重构的核心目标"}
+{"type":"spec","path":"apps/web/public/landing.css","reason":"着陆页样式，P1 需删除装饰效果、添加响应式断点"}
+{"type":"spec","path":"apps/web/src/shell.ts","reason":"应用外壳与导航，P0 需为导航图标按钮添加 ARIA 标签"}
+{"type":"spec","path":"apps/web/src/dom.ts","reason":"DOM 辅助函数，了解按钮/图标的构造方式以便正确添加 ARIA"}
+{"type":"spec","path":"apps/web/src/page-workbench.ts","reason":"工作台页面，P0 ARIA 标签、P1 交互文案产品化、P2 图表延迟加载、P3 欢迎引导改进"}
+{"type":"spec","path":"apps/web/src/page-my-todos.ts","reason":"待办页面，P1 交互文案产品化"}
+{"type":"spec","path":"apps/web/src/page-new-task.ts","reason":"新建任务页面，P1 交互文案、P2 占位符替换与加载态"}
+{"type":"spec","path":"apps/web/src/page-projects.ts","reason":"项目管理页面，P2 占位符替换与加载态"}
+{"type":"research","path":".claude/skills/impeccable/reference/craft-floor.md","reason":"Impeccable 质量底线标准，指导具体改动决策"}
+{"type":"research","path":".claude/skills/impeccable/reference/audit.md","reason":"Impeccable 审计标准，理解 5 个维度的评分规则"}

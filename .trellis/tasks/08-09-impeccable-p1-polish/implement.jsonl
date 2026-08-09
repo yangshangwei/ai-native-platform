@@ -1,0 +1,6 @@
+{"type":"spec","path":"apps/web/PRODUCT.md","reason":"产品定位和设计原则"}
+{"type":"spec","path":"apps/web/public/design-tokens.css","reason":"设计 token 系统，确保新布局使用 token"}
+{"type":"spec","path":"apps/web/public/landing.html","reason":"当前 landing page 结构，需要重构的目标"}
+{"type":"spec","path":"apps/web/public/landing.css","reason":"当前样式，需要了解现有布局"}
+{"type":"spec","path":"apps/web/public/components.css","reason":"可复用组件样式"}
+{"type":"research","path":".trellis/tasks/08-09-impeccable-p1-polish/prd.md","reason":"任务需求文档"}

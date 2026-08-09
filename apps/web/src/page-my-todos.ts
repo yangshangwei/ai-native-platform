@@ -48,7 +48,7 @@ function renderPageHeader(count: number): HTMLElement {
               el('h1', { class: 'page-title', text: '我的待办' }),
               el('p', {
                 class: 'muted compact',
-                text: '这里显示所有需要你补充信息、恢复运行或处理失败的任务。',
+                text: '需要补充上下文、通过门禁或处理失败的任务会出现在这里。',
               }),
             ],
           }),
@@ -175,8 +175,8 @@ function renderEmptyState(): HTMLElement {
         class: 'empty-state-icon',
         text: '🎉',
       }),
-      el('h3', { class: 'empty-state-title', text: '暂无待办任务' }),
-      el('p', { class: 'empty-state-description', text: 'AI 会继续推进运行中的任务；你也可以创建一个新任务。' }),
+      el('h3', { class: 'empty-state-title', text: '太好了，待办清空了' }),
+      el('p', { class: 'empty-state-description', text: '运行中的任务会自动推进，需要你的时候会出现在这里。' }),
       el('div', {
         class: 'button-row',
         children: [

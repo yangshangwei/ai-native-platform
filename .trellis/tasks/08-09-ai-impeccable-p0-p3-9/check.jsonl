@@ -1,0 +1,4 @@
+{"type":"spec","path":".trellis/spec/web/frontend/accessibility.md","reason":"无障碍规范，验证焦点指示器与 ARIA 标签是否符合项目标准"}
+{"type":"spec","path":".trellis/spec/web/frontend/component-patterns.md","reason":"组件模式规范，验证按钮加载态、触摸目标尺寸等实现"}
+{"type":"research","path":".claude/skills/impeccable/scripts/detect.mjs","reason":"运行检测器验证 AI 味是否已移除"}
+

@@ -220,12 +220,12 @@ export function backendStatusText(label: string): string {
 // Shared label helper (moved verbatim from main.ts, T2.3 page split) — used
 // by both the workbench task list and the task-detail focus summary.
 export function requestStatusLabel(status: WorkflowRequestDto['status']): string {
-  if (status === 'pending') return '等待开始';
-  if (status === 'awaiting_clarification') return '等待补充信息';
+  if (status === 'pending') return '排队等待';
+  if (status === 'awaiting_clarification') return '需要补充信息';
   if (status === 'claimed') return '执行中';
-  if (status === 'paused') return '已暂停（运维）';
+  if (status === 'paused') return '已暂停';
   if (status === 'completed') return '已完成';
-  if (status === 'failed') return '需要处理';
+  if (status === 'failed') return '执行失败';
   if (status === 'cancelled') return '已取消';
   return status;
 }

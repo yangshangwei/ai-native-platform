@@ -669,6 +669,16 @@ function renderSettingsOverview(vm: SettingsViewModel | null): HTMLElement {
           panelHeader('常用操作', '优先处理连接、刷新和执行器状态。'),
           el('div', { class: 'settings-action-list', children: [refresh, checkBackend, startRunner] }),
           el('p', { class: 'muted compact', text: '高级配置在下方卡片中单项保存，历史记录按配置项查看。' }),
+          (() => {
+            const resetWelcome = button('重置欢迎引导', 'btn btn-ghost btn-sm');
+            resetWelcome.onclick = () => {
+              localStorage.removeItem('hasSeenWelcome');
+              alert('欢迎引导已重置，返回工作台查看。');
+            };
+            const wrapper = el('div', { class: 'settings-action-list', children: [resetWelcome] });
+            wrapper.style.marginTop = '0.75rem';
+            return wrapper;
+          })(),
         ],
       }),
     ],

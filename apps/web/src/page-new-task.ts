@@ -199,8 +199,8 @@ function renderNewTaskNoProjectPage(): HTMLElement {
       el('div', {
         class: 'empty-state new-task-empty',
         children: [
-          el('h2', { text: '还没有连接项目' }),
-          el('p', { text: '先接入一个项目，才能创建任务并交给 AI 执行。' }),
+          el('h2', { text: '还没有项目' }),
+          el('p', { text: '先接入一个代码仓库，就可以开始了。' }),
           el('div', { class: 'button-row', children: [actionLink('连接项目', 'projects'), refresh] }),
         ],
       }),
@@ -232,7 +232,7 @@ export function renderNewTaskPage(): HTMLElement {
   // plumbed through a future override. Users only touch this dropdown
   // when they want to override the AI judgment (e.g. for refactor / smoke / ask
   // which the coordinator's rules may not pick up reliably).
-  typeSelect.appendChild(el('option', { text: '(让 AI 自动判定)', attrs: { value: '' } }));
+  typeSelect.appendChild(el('option', { text: '(自动识别)', attrs: { value: '' } }));
   for (const type of ['feature', 'bugfix', 'smoke', 'refactor', 'ask']) typeSelect.appendChild(el('option', { text: type, attrs: { value: type } }));
 
   // 05-08 new-task-form-flow-startstage-override: explicit Flow override.
@@ -241,7 +241,7 @@ export function renderNewTaskPage(): HTMLElement {
   // + Router still drive flow selection. Non-empty value bypasses Coordinator
   // entirely (PRD Q1 = A): runner watch derives runType from FlowDef.kind.
   const flowSelect = el('select', { attrs: { name: 'flowId' } });
-  flowSelect.appendChild(el('option', { text: '(让 router 推荐)', attrs: { value: '' } }));
+  flowSelect.appendChild(el('option', { text: '(自动推荐)', attrs: { value: '' } }));
   for (const fid of [
     'feature.standard',
     'feature.fastforward',
@@ -255,7 +255,7 @@ export function renderNewTaskPage(): HTMLElement {
   // three flows are short and run head-to-tail per FlowDef.startStage docstring.
   // Stages mirror FLOW_REGISTRY['feature.standard'].stages 1:1.
   const startStageSelect = el('select', { attrs: { name: 'startStage' } });
-  startStageSelect.appendChild(el('option', { text: '(从第一阶段开始)', attrs: { value: '' } }));
+  startStageSelect.appendChild(el('option', { text: '(从头开始)', attrs: { value: '' } }));
   for (const st of [
     'context_pack',
     'requirement',
@@ -276,7 +276,7 @@ export function renderNewTaskPage(): HTMLElement {
     attrs: {
       name: 'title',
       'data-new-task-title': 'true',
-      placeholder: '例如：优化新建任务页面，让普通用户更容易创建任务',
+      placeholder: '例如：在用户服务中增加邮箱验证逻辑',
     },
   });
   const details = el('textarea', {
@@ -285,7 +285,7 @@ export function renderNewTaskPage(): HTMLElement {
       name: 'details',
       rows: '5',
       'data-new-task-details': 'true',
-      placeholder: '可补充验收标准、约束、参考页面或不希望改变的内容。',
+      placeholder: '可补充验收标准、约束、参考实现或不希望改变的模块。',
     },
   });
   // Hydrate the user-owned draft fields (see state-management.md).
@@ -389,10 +389,10 @@ export function renderNewTaskPage(): HTMLElement {
     recoInFlight = true;
     recoCard.style.display = 'block';
     recoCard.replaceChildren(
-      panelHeader('执行建议', '正在判断建议路径…'),
+      panelHeader('执行建议', '分析中…'),
       el('p', {
         class: 'muted compact',
-        text: userOverrideType ? '将参考你指定的任务类型。' : '仅作参考，创建时仍会按默认流程判断。',
+        text: userOverrideType ? '将按你指定的类型执行。' : '供参考，提交后会按默认流程走。',
       }),
     );
     try {
@@ -423,8 +423,8 @@ export function renderNewTaskPage(): HTMLElement {
         panelHeader(
           '执行建议',
           userOverrideType
-            ? '使用你在高级设置里指定的任务类型'
-            : '仅作参考；创建任务默认从完整流程开始',
+            ? '将按你指定的类型执行'
+            : '供参考，提交后按默认流程',
         ),
       ];
       if (coordPreview) {

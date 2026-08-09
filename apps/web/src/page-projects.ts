@@ -112,20 +112,20 @@ export function renderProjectsPage(): HTMLElement {
   const isEditing = Boolean(projectSourceForm.editingProjectId);
   const actionState = projectFormActionState();
   form.append(
-    panelHeader(isEditing ? '编辑项目' : '接入项目', isEditing ? '修改来源、默认分支或 AI 执行方式后，建议重新检测再保存。' : '按步骤连接项目，检测通过后即可用于新任务。'),
-    renderProjectOnboardingStep(1, '选择来源', '告诉系统项目从哪里来。', [
+    panelHeader(isEditing ? '编辑项目' : '接入项目', isEditing ? '修改来源、分支或执行方式后，重新检测再保存。' : '连接项目，检测通过后就能创建任务。'),
+    renderProjectOnboardingStep(1, '选择来源', '项目代码在哪里。', [
       el('label', { class: 'input-block', children: [el('span', { text: '项目来源' }), sourceSelect] }),
       ...renderProjectSourceDynamicFields(),
     ]),
-    renderProjectOnboardingStep(2, '设置默认项', '确认项目名称和默认工作分支。', renderProjectDefaultsFields()),
-    renderProjectOnboardingStep(3, '配置 AI 执行方式', '后续任务会默认使用这里选择的工具。', [
+    renderProjectOnboardingStep(2, '设置默认项', '项目名称和工作分支。', renderProjectDefaultsFields()),
+    renderProjectOnboardingStep(3, '配置执行方式', '后续任务用哪个工具执行。', [
       renderAgentBackendConfigFields(),
       ...renderBuildCommandFields(),
     ]),
     renderProjectDetectPanel(),
   );
 
-  const detect = el('button', { class: 'btn btn-secondary', text: projectSourceForm.detecting ? '检测中…' : '检测项目连接', attrs: { type: 'button' } });
+  const detect = el('button', { class: 'btn btn-secondary', text: projectSourceForm.detecting ? '检测中…' : '检测连接', attrs: { type: 'button' } });
   detect.disabled = projectSourceForm.detecting;
   detect.onclick = () => void detectProjectSource();
   const submit = el('button', { class: 'btn btn-primary', text: actionState.submitLabel, attrs: { type: 'submit' } });
@@ -134,7 +134,7 @@ export function renderProjectsPage(): HTMLElement {
   if (cancelEdit) cancelEdit.onclick = () => { resetProjectSourceForm(); render(); };
   form.append(
     el('div', { class: 'project-form-actions', children: [detect, submit, cancelEdit] }),
-    el('p', { class: `compact project-submit-hint ${actionState.blocker ? 'warn' : 'good'}`, text: actionState.blocker ?? '检测已通过，可以接入并用于新任务。' }),
+    el('p', { class: `compact project-submit-hint ${actionState.blocker ? 'warn' : 'good'}`, text: actionState.blocker ?? '检测通过，可以保存了。' }),
   );
   form.onsubmit = (event) => void submitProject(event);
 
@@ -145,7 +145,7 @@ export function renderProjectsPage(): HTMLElement {
       el('section', {
         class: 'panel',
         children: [
-          panelHeader('已接入项目', '点击卡片编辑；删除会先判断是否应归档以保留历史。'),
+          panelHeader('已接入项目', '点击编辑；删除时会提示是否归档以保留历史。'),
           data.projects.length
             ? el('div', { class: 'stack', children: data.projects.map(renderProjectCard) })
             : el('p', { class: 'muted', text: '暂无项目。' }),
@@ -315,7 +315,7 @@ function renderLocalPathPickerField(): HTMLElement {
   const input = el('input', {
     attrs: {
       name: 'sourceValue',
-      placeholder: './examples/java-maven-sample',
+      placeholder: '/Users/dev/projects/user-service',
       value: projectSourceForm.sourceValue,
     },
   });
@@ -411,7 +411,7 @@ function sourceUrlPlaceholder(sourceKind: ProjectSourceKind): string {
   if (sourceKind === 'github') return 'owner/repo 或 https://github.com/owner/repo.git';
   if (sourceKind === 'gitee') return 'owner/repo 或 https://gitee.com/owner/repo.git';
   if (sourceKind === 'gitlab') return 'git@gitlab.company.com:group/repo.git 或 HTTPS URL';
-  return 'https://git.example.com/group/repo.git';
+  return 'https://gitea.company.com/team/java-service.git';
 }
 
 function renderAuthFields(sourceKind: ProjectSourceKind): HTMLElement {

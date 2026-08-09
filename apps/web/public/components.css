@@ -71,8 +71,8 @@
 }
 
 .metric-icon {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border-radius: var(--radius-md);
   display: grid;
   place-items: center;
@@ -82,8 +82,8 @@
 }
 
 .metric-icon svg {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   stroke-width: 2.2;
 }
 
@@ -138,7 +138,6 @@
   font-weight: var(--font-weight-bold);
   line-height: var(--line-height-tight);
   color: var(--text-primary);
-  font-family: var(--font-mono);
 }
 
 .metric-value.clickable {
@@ -559,7 +558,8 @@
  * My Todos Header - 页面标题和统计
  */
 .my-todos-header {
-  border-left: 4px solid var(--color-primary, #5e6ad2);
+  border-top: 1px solid var(--border-light);
+  padding-top: var(--space-md);
 }
 
 .my-todos-header-content {
@@ -623,7 +623,7 @@
 
 .my-todos-item:hover {
   background: var(--bg-surface-hover, #f9fafb);
-  border-color: var(--color-primary, #5e6ad2);
+  border-color: var(--color-primary, #0891b2);
 }
 
 .my-todos-item-main {
@@ -687,28 +687,6 @@
 
 /* ==================== Todos Alert ==================== */
 
-/**
- * Todos Alert - 工作台顶部提示条
- * 提醒用户有待办任务需要处理
- */
-.todos-alert {
-  background: var(--bg-surface, #ffffff);
-  border: 1px solid var(--border-light);
-  border-left: 3px solid var(--color-warning, #fb923c);
-  border-radius: var(--radius-lg);
-  padding: var(--space-md) var(--space-lg);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-lg);
-}
-
-.todos-alert-content {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  flex: 1;
-}
 
 .todos-alert-icon {
   font-size: 1.5rem;
@@ -766,22 +744,22 @@
 
 .filter-group button.small.secondary:hover {
   background: var(--bg-surface-hover, #f3f4f6);
-  border-color: var(--color-primary, #5e6ad2);
+  border-color: var(--color-primary, #0891b2);
   color: var(--text-primary);
 }
 
 /* 选中状态 */
 .filter-group button.small.primary {
-  background: var(--color-primary, #5e6ad2);
-  border: 1px solid var(--color-primary, #5e6ad2);
+  background: var(--color-primary, #0891b2);
+  border: 1px solid var(--color-primary, #0891b2);
   color: #ffffff;
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3);
 }
 
 .filter-group button.small.primary:hover {
-  background: var(--color-primary-hover, #4f5bc2);
-  border-color: var(--color-primary-hover, #4f5bc2);
+  background: var(--color-primary-hover, #0e7490);
+  border-color: var(--color-primary-hover, #0e7490);
 }
 
 /* ==================== Empty State ==================== */
@@ -867,22 +845,22 @@
   box-shadow: var(--shadow-xl);
 }
 
-/* Status color indicators via left border accent */
+/* Status color indicators via subtle background tint */
 .report-card-v2.completed,
 .report-card-v2.passed {
-  border-left: 4px solid var(--success-500);
+  background: color-mix(in srgb, var(--success-500) 3%, var(--bg-surface));
 }
 
 .report-card-v2.failed {
-  border-left: 4px solid var(--error-500);
+  background: color-mix(in srgb, var(--error-500) 3%, var(--bg-surface));
 }
 
 .report-card-v2.awaiting_human {
-  border-left: 4px solid var(--warning-500);
+  background: color-mix(in srgb, var(--warning-500) 3%, var(--bg-surface));
 }
 
 .report-card-v2.running {
-  border-left: 4px solid var(--info-500);
+  background: color-mix(in srgb, var(--info-500) 3%, var(--bg-surface));
 }
 
 /* Header: Title and metadata */
@@ -1010,3 +988,104 @@
     justify-content: flex-start;
   }
 }
+
+/* ==================== Tooltip System ==================== */
+
+/**
+ * Tooltip - Contextual help for technical terms
+ * Appears on hover, positioned above the trigger element
+ */
+.tooltip-term {
+  position: relative;
+  text-decoration: underline dotted;
+  text-underline-offset: 0.2em;
+  text-decoration-color: var(--text-muted);
+  cursor: help;
+  transition: text-decoration-color var(--transition-base);
+}
+
+.tooltip-term:hover {
+  text-decoration-color: var(--accent-primary);
+}
+
+.tooltip-term::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: var(--space-xs) var(--space-sm);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+  white-space: nowrap;
+  max-width: 280px;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--transition-base), visibility var(--transition-base);
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.tooltip-term:hover::after {
+  opacity: 1;
+  visibility: visible;
+}
+
+.tooltip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-left: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: 50%;
+  cursor: help;
+  position: relative;
+  transition: all var(--transition-base);
+}
+
+.tooltip-icon:hover {
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+  background: var(--bg-elevated);
+}
+
+.tooltip-icon::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  padding: var(--space-xs) var(--space-sm);
+  font-size: 0.875rem;
+  line-height: 1.4;
+  font-weight: 400;
+  color: var(--text-primary);
+  white-space: normal;
+  max-width: 240px;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--transition-base), visibility var(--transition-base);
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.tooltip-icon:hover::after {
+  opacity: 1;
+  visibility: visible;
+}
+

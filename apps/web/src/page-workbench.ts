@@ -15,7 +15,7 @@
 
 import { STAGE_LABELS, type WorkflowRunDto } from './projection';
 import type { ProjectDto, RunnerDto, StatusKind, WorkflowRequestDto } from './types';
-import { button, el, field, fmtTime, panelHeader, pill, statusKind, metricCardV2 } from './dom';
+import { button, el, field, fmtTime, panelHeader, pill, statusKind, metricCardV2, tooltipIcon } from './dom';
 import {
   agentBackendContextLabel,
   agentBackendStatusForProject,
@@ -32,17 +32,16 @@ import { setHash } from './router';
 import { renderEvidencePanel } from './page-task-detail';
 
 export function workbenchEnvironmentSummary(project: ProjectDto | null, runner: RunnerDto | null): { value: string; kind: StatusKind } {
-  if (!project) return { value: '需要连接项目', kind: 'warn' };
-  if (!project.agentBackend) return { value: '需要配置执行方式', kind: 'warn' };
-  if (!runner) return { value: '执行器待启动', kind: 'warn' };
+  if (!project) return { value: '未连接项目', kind: 'warn' };
+  if (!project.agentBackend) return { value: '需要配置 AI 后端', kind: 'warn' };
+  if (!runner) return { value: '执行器未启动', kind: 'warn' };
   const backend = agentBackendStatusForProject(project);
-  if (backend.kind === 'bad') return { value: '执行方式需处理', kind: 'bad' };
-  if (backend.kind === 'warn') return { value: '执行方式待处理', kind: 'warn' };
+  if (backend.kind === 'bad') return { value: '后端配置有误', kind: 'bad' };
+  if (backend.kind === 'warn') return { value: '后端需要处理', kind: 'warn' };
   return { value: '正常', kind: 'good' };
 }
 
 import { render } from './render-core';
-import { createLineChart } from './charts';
 
 interface WorkbenchActionItem {
   title: string;
@@ -98,20 +97,20 @@ function renderWelcomeGuide(): HTMLElement | null {
   return el('article', {
     class: 'welcome-guide panel',
     children: [
-      panelHeader('🎉 欢迎使用 AI Native Platform', '完成以下步骤即可开始'),
+      panelHeader('开始第一个 AI 交付任务', '让 AI 写代码，你来把关每一步'),
       el('div', {
         class: 'welcome-checklist',
         children: [
-          renderChecklistItem('启动执行器 (Runner)', hasRunner, null, '已检测到 Runner 正在运行'),
-          renderChecklistItem('接入第一个项目', hasProjects, hasRunner ? 'projects' : null, hasRunner ? '立即接入项目' : '请先启动 Runner'),
-          renderChecklistItem('创建第一个任务', hasAnyRequests, hasProjects ? 'new-task' : null, hasProjects ? '立即创建任务' : '完成项目接入后解锁'),
+          renderChecklistItem('本地执行器已就绪', hasRunner, null, '检测到执行器正在运行'),
+          renderChecklistItem('接入你的代码仓库', hasProjects, hasRunner ? 'projects' : null, hasRunner ? '前往接入' : '等待执行器启动'),
+          renderChecklistItem('说出你想做什么', hasAnyRequests, hasProjects ? 'new-task' : null, hasProjects ? '创建任务' : '接入项目后可用'),
         ],
       }),
       el('div', {
         class: 'button-row',
         children: [
           (() => {
-            const btn = button('稍后再说', 'ghost');
+            const btn = button('我知道了', 'ghost');
             btn.onclick = () => {
               localStorage.setItem('hasSeenWelcome', 'true');
               render();
@@ -169,9 +168,12 @@ function renderWorkbenchActionQueue(): HTMLElement {
         children: [
           el('div', {
             children: [
-              el('span', { class: 'eyebrow', text: 'Action Queue' }),
-              el('h2', { text: `${items.length} 个需要处理` }),
-              el('p', { class: 'muted compact', text: '优先处理人工确认、补充信息和失败任务。' }),
+              el('span', { class: 'eyebrow', text: '需要你的决策' }),
+              el('h2', { text: `${items.length} 个任务等待处理` }),
+              el('p', { class: 'muted compact', children: [
+                el('span', { text: 'AI 完成阶段后需要你批准才能继续，失败任务需要查看原因。' }),
+                tooltipIcon('每个工作流分多个阶段（需求、设计、实现、测试、验收），AI 完成某阶段后会在这里等你批准，或者执行失败时提醒你查看。'),
+              ] }),
             ],
           }),
           (() => {
@@ -201,10 +203,10 @@ function buildWorkbenchActionItems(): WorkbenchActionItem[] {
       // the user to the task detail where the resume button lives, instead
       // of the misleading "查看失败" default.
       actionLabel: request.status === 'awaiting_clarification'
-        ? '补充信息'
+        ? '补充上下文'
         : request.status === 'paused'
           ? '恢复运行'
-          : '查看失败',
+          : '查看原因',
       onClick: () => setHash('task', request.id),
     }));
 
@@ -216,9 +218,9 @@ function buildWorkbenchActionItems(): WorkbenchActionItem[] {
       return {
         title: run.title,
         meta: `${projectName(run.projectId)} · ${STAGE_LABELS[run.currentStage] ?? run.currentStage} · ${fmtTime(run.createdAt)}`,
-        statusLabel: run.status === 'awaiting_human' ? '等待你确认' : '执行失败',
+        statusLabel: run.status === 'awaiting_human' ? '待放行' : '执行失败',
         statusKind: statusKind(run.status),
-        actionLabel: run.status === 'awaiting_human' ? '处理确认' : '查看证据',
+        actionLabel: run.status === 'awaiting_human' ? '审查证据链' : '查看证据',
         onClick: () => (request ? setHash('task', request.id) : setHash('workbench', run.id)),
       };
     });
@@ -258,9 +260,9 @@ function renderEmptyActionQueue(): HTMLElement {
         children: [
           el('div', {
             children: [
-              el('span', { class: 'eyebrow', text: 'Action Queue' }),
-              el('h2', { text: '没有待处理事项' }),
-              el('p', { class: 'muted compact', text: '运行正常时保持安静；有确认、失败或澄清时会置顶。' }),
+              el('span', { class: 'eyebrow', text: '需要你的决策' }),
+              el('h2', { text: '暂无待处理事项' }),
+              el('p', { class: 'muted compact', text: 'AI 完成阶段后会在这里等你批准；失败任务也会置顶提醒。' }),
             ],
           }),
           createBtn,
@@ -336,7 +338,7 @@ function renderWorkbenchEnvironmentPanel(): HTMLElement {
   return el('section', {
     class: 'panel workbench-environment-panel',
     children: [
-      panelHeader('执行环境', summary.kind === 'good' ? '正常时无需处理。' : '需要处理时再展开查看细节。'),
+      panelHeader('执行环境', summary.kind === 'good' ? '一切正常，无需处理。' : '需要时展开查看详情。'),
       details,
     ],
   });
@@ -348,12 +350,12 @@ function renderTaskExecutionChart(): HTMLElement {
     return el('section', {
       class: 'panel chart-panel trend-empty-panel',
       children: [
-        panelHeader('任务执行趋势', '最近 7 天暂无真实任务数据'),
+        panelHeader('任务执行趋势', '最近 7 天暂无数据'),
         el('div', {
           class: 'trend-empty-state',
           children: [
-            el('strong', { text: '等待真实执行数据' }),
-            el('p', { class: 'muted compact', text: '不会用示例数据伪装趋势；任务完成、失败或运行后这里会自动生成图表。' }),
+            el('strong', { text: '等待真实任务数据' }),
+            el('p', { class: 'muted compact', text: '完成第一个任务后，这里会自动生成趋势图表。' }),
           ],
         }),
       ],
@@ -364,7 +366,8 @@ function renderTaskExecutionChart(): HTMLElement {
   canvas.id = 'task-execution-chart';
   canvas.style.maxHeight = '300px';
 
-  requestAnimationFrame(() => {
+  requestAnimationFrame(async () => {
+    const { createLineChart } = await import('./charts');
     createLineChart(canvas, trend.labels, trend.datasets, '任务执行趋势');
   });
 
