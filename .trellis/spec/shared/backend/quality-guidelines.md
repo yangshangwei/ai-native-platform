@@ -271,6 +271,36 @@ that the contract is actually the blocker.
 
 ---
 
+## Automating an action means finding out who used to perform it
+
+Before wiring a trigger that fires an existing action automatically, trace
+what happened *after* that action when a person invoked it. A manual path
+often leans on the caller's follow-through, and the automatic path inherits
+none of it.
+
+`retryStage` resets a step to `pending` and returns. Its only caller was an
+HTTP route — a person clicking retry, who then leaves the worktree alone.
+`08-09-p1-2b` bolted a trigger onto that same function and would have shipped
+a zombie: the runner reaches `finalizeOrchestration` moments later and calls
+`env.cleanup(workspace)`, which runs `git branch -D` (`worktree.ts:122`). The
+run would sit in `running` with its worktree and branch deleted, and the next
+attempt would restart from the source branch having lost every change the
+failed attempt made. A mechanism meant to repair a defect, destroying the work
+it was supposed to repair.
+
+The fix was to complete the execution path — keep the worktree when a rework
+is granted, relay the stage back, re-enter at it — not to trim the feature.
+
+Three questions before automating an existing action:
+
+1. **Who calls it today, and what do they do next?** Cleanup, navigation, and
+   "the user will notice" are all follow-through.
+2. **Does an executor exist for the new path?** State transitions that only a
+   person can drive forward are not automatable by flipping a flag.
+3. **What does the surrounding lifecycle assume about who triggered this?**
+
+---
+
 ## Anti-patterns this team has hit
 
 ### 1. Type extension protocol
