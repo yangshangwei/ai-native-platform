@@ -10,7 +10,7 @@ import {
   type CommandSpec,
   type CommandStatus,
 } from '@ainp/shared';
-import { sha256Buffer, sha256CombinedStreams } from '@ainp/shared/node';
+import { sha256CombinedStreams, writeRedactedFile } from '@ainp/shared/node';
 
 export interface RunCommandInput extends CommandSpec {
   workflowRunId: string;
@@ -121,12 +121,15 @@ export async function runWhitelistedCommand(input: RunCommandInput): Promise<Com
   }
 
   await mkdir(dirname(stdoutPath), { recursive: true });
-  const stdoutContent = Buffer.concat(stdoutBuf);
-  const stderrContent = Buffer.concat(stderrBuf);
-  await Promise.all([
-    writeFile(stdoutPath, stdoutContent),
-    writeFile(stderrPath, stderrContent),
-  ]);
+  // 08-09 P1-3: redact before the bytes land AND before they are hashed.
+  // `writeRedactedFile` returns the digest of what it actually wrote, so the
+  // two cannot drift — a raw-vs-redacted mismatch would make P1-1's
+  // `evidence.artifact_digests_match` flag every credential-bearing command
+  // as tampered evidence.
+  const stdoutWrite = await writeRedactedFile(stdoutPath, Buffer.concat(stdoutBuf));
+  const stderrWrite = await writeRedactedFile(stderrPath, Buffer.concat(stderrBuf));
+  const stdoutContent = stdoutWrite.content;
+  const stderrContent = stderrWrite.content;
 
   const finishedAt = nowIso();
   const durationMs = Date.now() - start;
@@ -150,10 +153,13 @@ export async function runWhitelistedCommand(input: RunCommandInput): Promise<Com
     durationMs,
     stdoutRef: pathToFileUri(stdoutPath),
     stderrRef: pathToFileUri(stderrPath),
-    stdoutBytes,
-    stderrBytes,
-    stdoutSha256: sha256Buffer(stdoutContent),
-    stderrSha256: sha256Buffer(stderrContent),
+    // Post-redaction lengths and digests: these describe the bytes on disk,
+    // which is what a reader re-hashes. `stdoutBytes` above is the streaming
+    // accumulator used for `maxLogBytes` truncation, not the written size.
+    stdoutBytes: stdoutWrite.bytes,
+    stderrBytes: stderrWrite.bytes,
+    stdoutSha256: stdoutWrite.sha256,
+    stderrSha256: stderrWrite.sha256,
     combinedSha256: sha256CombinedStreams(stdoutContent, stderrContent),
     timedOut,
     truncated,

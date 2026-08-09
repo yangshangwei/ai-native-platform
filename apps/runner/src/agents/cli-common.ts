@@ -18,6 +18,7 @@ import {
   type AgentStreamEventInput,
   type SkillSpec,
 } from '@ainp/shared';
+import { writeRedactedFile } from '@ainp/shared/node';
 import { sh } from '../sh';
 import { api } from '../api-client';
 import { parseContextRequestFromAgentOutput } from '../context/request';
@@ -150,26 +151,31 @@ export async function captureWorktreeDiffOutputs(
   workspacePath: string,
   artifactsDir: string,
 ): Promise<AgentArtifactOutput[]> {
+  // 08-09 P1-3: the diff goes through the same redaction boundary as the
+  // stream events below. A credential in a diff usually comes from a config
+  // file committed by mistake — precisely the case worth catching before it
+  // is persisted as an artifact and bound as gate evidence.
   const diff = await sh('git', ['diff'], { cwd: workspacePath });
   const diffPath = join(artifactsDir, 'changes.diff');
-  await writeFile(diffPath, diff.stdout, 'utf8');
+  const diffWrite = await writeRedactedFile(diffPath, Buffer.from(diff.stdout, 'utf8'));
 
   const namesOnly = await sh('git', ['diff', '--name-only'], { cwd: workspacePath });
   const namesPath = join(artifactsDir, 'changed-files.txt');
-  await writeFile(namesPath, namesOnly.stdout, 'utf8');
+  const namesWrite = await writeRedactedFile(namesPath, Buffer.from(namesOnly.stdout, 'utf8'));
 
   return [
     {
       name: 'diff',
       path: diffPath,
       contentType: 'text/x-diff',
-      size: Buffer.byteLength(diff.stdout, 'utf8'),
+      // Post-redaction size, matching the bytes actually on disk.
+      size: diffWrite.bytes,
     },
     {
       name: 'changed-files',
       path: namesPath,
       contentType: 'text/plain',
-      size: Buffer.byteLength(namesOnly.stdout, 'utf8'),
+      size: namesWrite.bytes,
     },
   ];
 }

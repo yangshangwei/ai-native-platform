@@ -5,3 +5,4 @@
 // `node:*` imports. `apps/web` must never import `@ainp/shared/node`.
 export * from './agent-backend-preflight';
 export * from './digest';
+export * from './redacted-write';
