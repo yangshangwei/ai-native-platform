@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "校验单一判定原则落实、无第二份拷贝残留、union ripple 完整"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "校验 GateEngine 边界与测试运行方式"}
+{"file": ".trellis/spec/api/backend/evidence-verifier-protocol.md", "reason": "校验未与既有 evidence 协议冲突或重复建设"}
+{"file": ".trellis/spec/guides/index.md", "reason": "跨层一致性 + fixture 是否用真实 sha256 计算值"}
+{"file": ".trellis/tasks/08-09-p1-1-evidencecontract-artifact-freshness-node/research/ac-proof-heuristics.md", "reason": "复核 AC 分级是否真解决了调研指出的问题，而非换个说法"}

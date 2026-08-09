@@ -1,0 +1,9 @@
+{"file": ".trellis/tasks/08-09-p1-1-evidencecontract-artifact-freshness-node/research/artifact-sha256-coverage.md", "reason": "digest 机制已存在、mismatch 信号零消费的完整证据链与行号（R1 的事实基础）"}
+{"file": ".trellis/tasks/08-09-p1-1-evidencecontract-artifact-freshness-node/research/ac-proof-heuristics.md", "reason": "AC proof 最松通过路径、两份重复判定、at_risk 悬空的完整证据（R2/R3/R4 的事实基础）"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "command-only 判定下沉到 shared，需遵守 purity / barrel / type-first 纪律"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "单一判定原则（本任务第三次应用）+ union 成员移除的 ripple 清单（R4 若删 at_risk）"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "evidence_gate 新规则与 AC proof 分级都在 api"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "GateEngine 判定权边界、bun runtime 测试约束、typecheck 不覆盖 test 的盲区"}
+{"file": ".trellis/spec/api/backend/evidence-verifier-protocol.md", "reason": "既有 evidence / verifier 协议，digest 规则与 AC 分级必须复用而非另起"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "runner 改用 shared 判定、at_risk 产出路径"}
+{"file": ".trellis/spec/guides/index.md", "reason": "fixture 必须用真实计算值而非编造（digest 尤其容易编）"}
