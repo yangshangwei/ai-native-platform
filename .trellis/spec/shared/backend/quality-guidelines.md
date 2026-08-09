@@ -168,6 +168,34 @@ Two rules that fall out of this:
 Adding a new GraphRun writer (P1-1 policy enforcement, auto-rework, …) means
 calling this function, not re-deriving the rule.
 
+### Counting the judgements before you remove one
+
+`08-09-p1-1` set out to delete `AcceptanceBusinessStatus.at_risk` as a
+declared-but-never-produced value. Research confirmed the runner never
+returns it. That was true and still the wrong conclusion, because a grep for
+the *value* rather than the *type* found a second judgement:
+
+| Judgement | Type | Produces `at_risk`? | Decides from |
+|---|---|---|---|
+| runner `businessAcceptanceStatus` | `AcceptanceBusinessStatus` (shared) | no | markdown text only |
+| web `buildAcceptanceChecklist` | `AcceptanceChecklistItem['status']` (inline literal in `projection.ts`) | **yes** | compile gate + test gate + passing tests |
+
+Two same-named states, two unrelated types, two different strictness
+levels — and the *client-side* one was the stricter. Deleting the shared
+member would have left the web copy as the only definition of a concept the
+platform is supposed to own.
+
+So before removing a union member or calling one "dead":
+
+```bash
+grep -rn "at_risk" apps packages | grep -v node_modules   # the VALUE
+grep -rn "AcceptanceBusinessStatus" apps packages          # the TYPE
+```
+
+An inline string-literal union (`status: 'passed' | 'at_risk' | ...`)
+declared in a consumer is the shape to watch for: it never shows up when you
+search for the shared type's name.
+
 ---
 
 ## Anti-patterns this team has hit
