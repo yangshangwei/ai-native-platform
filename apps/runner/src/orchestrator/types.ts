@@ -11,6 +11,7 @@ import type {
   WorkspaceRef,
 } from '@ainp/shared';
 import type { AgentBackend } from '../agents/types';
+import type { PriorFeedbackInput } from '../context/builder';
 import type { ProjectProfileResult } from '../profile';
 
 export interface HistoricalProjectInventoryInput {
@@ -111,6 +112,12 @@ export interface RunCtx {
     historicalInventoryArtifactChecked: boolean;
   };
   contextPolicy: ContextPolicy;
+  /**
+   * Why the previous attempt was rejected, collected when resuming a run.
+   * Empty on a first attempt (08-09 P1-2) — there is nothing to learn from
+   * yet, so the context builder injects no feedback section at all.
+   */
+  priorFeedback: PriorFeedbackInput[];
   contextRequestChain: ContextRequestCapture[];
   draftsToPromote: PromoteDraftInput[];
   handoffContext: HandoffRuntimeContext;

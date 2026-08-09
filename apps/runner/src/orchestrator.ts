@@ -2,8 +2,10 @@ import { join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import type { FlowId, GraphDefinition, GraphNodeDefinition, GraphNodeRun, StageStep, WorkflowRun, WorkflowStage } from '@ainp/shared';
-import { errorMessage, flowToGraphDefinition, isOperationalError } from '@ainp/shared';
+import { REVIEW_VERDICT_SCHEMA_VERSION, errorMessage, flowToGraphDefinition, isOperationalError } from '@ainp/shared';
 import { api } from './api-client';
+import type { PriorFeedbackInput } from './context/builder';
+import { priorFeedbackFromApprovals, priorFeedbackFromVerdicts } from './orchestrator/prior-feedback';
 import { sh } from './sh';
 import { TrustedLocalWorktreeEnvironment } from './worktree';
 import { getConfig } from './config-client';
@@ -102,6 +104,42 @@ async function loadContextPolicy(): Promise<ContextPolicy> {
  * de-closure moved the step implementations to top-level functions without
  * changing behavior.
  */
+/**
+ * Gather why the previous attempt was rejected (08-09 P1-2).
+ *
+ * Returns an empty array for a fresh run — `detail` is only non-null on the
+ * resume path, so a first attempt has nothing to learn from and injects no
+ * feedback at all.
+ *
+ * Never throws: feedback is a nice-to-have for the next prompt, and losing it
+ * must not stop a retry that would otherwise proceed.
+ */
+async function collectPriorFeedback(
+  detail: Awaited<ReturnType<typeof api.getWorkflowRun>> | null,
+): Promise<PriorFeedbackInput[]> {
+  if (!detail) return [];
+  try {
+    const approvals = await api.listApprovals(detail.run.id);
+    const verdictArtifacts = detail.artifacts
+      .filter((artifact) => artifact.metadata?.schemaVersion === REVIEW_VERDICT_SCHEMA_VERSION);
+    const withText = await Promise.all(verdictArtifacts.map(async (artifact) => {
+      try {
+        const content = await api.getArtifactContent(artifact.id);
+        return { artifact, text: content.text };
+      } catch {
+        return { artifact, text: null };
+      }
+    }));
+    return [
+      ...priorFeedbackFromApprovals(approvals.items),
+      ...priorFeedbackFromVerdicts(withText),
+    ];
+  } catch (err) {
+    console.warn(`[runner] could not collect prior feedback for ${detail.run.id}:`, errorMessage(err));
+    return [];
+  }
+}
+
 export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<OrchestrateResult> {
   const { tools, runnerId } = await sendHeartbeat();
   console.log(`[runner] heartbeat from ${runnerId} (jdk=${tools.jdk}, mvn=${tools.maven})`);
@@ -229,6 +267,9 @@ export async function cmdOrchestrate(opts: OrchestrateOpts): Promise<Orchestrate
         historicalInventoryArtifactChecked: false,
       },
       contextPolicy,
+      // Only a resumed run has a previous attempt to learn from; on a fresh
+      // run this stays empty and no feedback reaches the prompt (P1-2 R3).
+      priorFeedback: await collectPriorFeedback(existingRunDetail),
       contextRequestChain: [],
       draftsToPromote: [] as PromoteDraftInput[],
       handoffContext: {

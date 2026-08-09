@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "union 成员扩展的 ripple 清单（R1 新增 prior_feedback）+ 「删除/新增前同时 grep 值和类型」那节"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "ContextManifestItemType 在 shared，需遵守 purity / barrel / type-first 纪律"}
+{"file": ".trellis/spec/shared/backend/context-injection-protocol.md", "reason": "ContextPack 的 manifest / trust / freshness 契约，prior_feedback 必须挂在既有协议上"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "buildContextPack 与注入时机都在 runner"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "bun runtime 测试约束 + typecheck 不覆盖 test 文件的盲区"}
+{"file": ".trellis/spec/guides/index.md", "reason": "跨模块字段 fixture key 必须从真实写入方抄（rejection_feedback 的 comment 在 metadata 里，不在正文）"}
+{"file": ".trellis/tasks/archive/2026-08/07-30-umadev/research/comparison.md", "reason": "P1-2 建议原文，含「先手动消费 remediation 再谈自动返工」的排序理由"}

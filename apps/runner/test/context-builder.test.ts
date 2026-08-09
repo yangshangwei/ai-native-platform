@@ -8527,3 +8527,78 @@ function legacyBillingRefundActionInventoryFixture(): Record<string, unknown> {
     },
   };
 }
+
+// 08-09 P1-2: feedback from a rejected attempt has to reach the next prompt.
+// Before this, a human's rejection comment and a reviewer's remediation were
+// both recorded and then dropped on retry.
+describe('prior-attempt feedback', () => {
+  const priorFeedbackPackInput = {
+    project: projectFixture(),
+    run: runFixture(),
+    stage: 'implementation' as const,
+    stepRunId: 'step_impl',
+    workspacePath: '/tmp/workspace',
+    branch: 'ai/run-1',
+    taskBrief: 'Add bounded retry to the order service.',
+    inputNames: ['user_request'],
+    createdAt: '2026-08-09T00:00:00.000Z',
+  };
+
+  test('a first attempt injects no feedback section at all', () => {
+    const pack = buildContextPack(priorFeedbackPackInput);
+
+    expect(pack.manifest.some((item) => item.type === 'prior_feedback')).toBe(false);
+    expect(pack.sections.some((section) => section.id.startsWith('prior_feedback_'))).toBe(false);
+  });
+
+  test('a rejected attempt carries both the human comment and the reviewer remediation forward', () => {
+    const pack = buildContextPack({
+      ...priorFeedbackPackInput,
+      priorFeedback: [
+        {
+          source: 'human_rejection',
+          stage: 'acceptance_gate',
+          text: 'AC-003 has no boundary case; the retry cap is untested.',
+          sourceRef: 'gate:acceptance_gate',
+          createdAt: null,
+        },
+        {
+          source: 'reviewer_remediation',
+          stage: 'review',
+          text: 'Problem: retry loop has no upper bound\nSuggested fix: cap attempts at 2',
+          sourceRef: 'artifact:art_verdict_1',
+          createdAt: '2026-08-09T00:00:00.000Z',
+        },
+      ],
+    });
+
+    const items = pack.manifest.filter((item) => item.type === 'prior_feedback');
+    expect(items).toHaveLength(2);
+
+    const text = pack.sections
+      .filter((section) => section.id.startsWith('prior_feedback_'))
+      .map((section) => section.content)
+      .join('\n');
+    expect(text).toContain('AC-003 has no boundary case');
+    expect(text).toContain('cap attempts at 2');
+  });
+
+  test('feedback is trusted below evidence, because a judgement can itself be wrong', () => {
+    const pack = buildContextPack({
+      ...priorFeedbackPackInput,
+      priorFeedback: [{
+        source: 'human_rejection',
+        stage: 'acceptance_gate',
+        text: 'An opinion about a failure, not a fact about the code.',
+        sourceRef: 'gate:acceptance_gate',
+        createdAt: null,
+      }],
+    });
+
+    const section = pack.sections.find((item) => item.id.startsWith('prior_feedback_'));
+    // `inference` is the lowest level: it must never outrank code or artifacts.
+    expect(section?.trustLevel).toBe('inference');
+    // And it must not be filed as a fact this run produced.
+    expect(pack.manifest.find((item) => item.ref === section?.id)?.type).toBe('prior_feedback');
+  });
+});

@@ -30,6 +30,14 @@ export type ContextManifestItemType =
   | 'nfr'
   | 'convention'
   | 'task_artifact'
+  /**
+   * Why a previous attempt was rejected — a human's gate comment or a
+   * reviewer verdict's remediation. Deliberately NOT `task_artifact`: that
+   * type carries facts this run produced, whereas feedback is a *judgement
+   * about a failure*, and the judgement itself may be wrong. Keeping them
+   * apart is what lets trust levels stay meaningful (08-09 P1-2 ADR-2).
+   */
+  | 'prior_feedback'
   | 'code_probe';
 
 export type ContextInclusionMode =

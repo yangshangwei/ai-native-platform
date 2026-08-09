@@ -34,6 +34,30 @@ import {
   type ContextCandidate,
 } from './retriever';
 
+/**
+ * Section id prefix for prior-attempt feedback. `manifestTypeForSection` keys
+ * on it, so it must stay in sync with the ids `candidatesForPriorFeedback`
+ * emits — one constant, not two string literals.
+ */
+const PRIOR_FEEDBACK_SECTION_PREFIX = 'prior_feedback_';
+
+/**
+ * Why a previous attempt was rejected, extracted from the run's own artifacts.
+ * `source` distinguishes a human's gate comment from a reviewer's remediation:
+ * both are judgements about a failure, but a human rejection outranks an
+ * agent's when they disagree.
+ */
+export interface PriorFeedbackInput {
+  source: 'human_rejection' | 'reviewer_remediation';
+  /** Stage the rejection was aimed at, when known. */
+  stage: string | null;
+  /** The feedback text itself — a gate comment, or a remediation action. */
+  text: string;
+  /** `artifact:<id>` of the artifact this came from, for traceability. */
+  sourceRef: string;
+  createdAt: string | null;
+}
+
 export interface BuildContextPackInput {
   project: Project;
   run: WorkflowRun;
@@ -50,6 +74,12 @@ export interface BuildContextPackInput {
   artifactHistoryCount?: number;
   inputNames?: readonly string[];
   inputArtifacts?: readonly BuildContextPackInputArtifact[];
+  /**
+   * Why the previous attempt was rejected. Only populated when resuming a run
+   * (08-09 P1-2) — on a first attempt there is no prior attempt to learn from,
+   * so an empty list is the normal case and injects nothing.
+   */
+  priorFeedback?: readonly PriorFeedbackInput[];
   budget?: Partial<ContextPackBudget>;
   sensitivePathPatterns?: readonly string[];
   supplement?: ContextPack['supplement'];
@@ -220,6 +250,9 @@ export function buildContextPack(input: BuildContextPackInput): ContextPack {
     sensitivePathPatterns,
   }));
   candidates.push(...candidatesForInputArtifacts(safeInputArtifacts, sensitivePathPatterns));
+  // Empty on a first attempt — there is no prior attempt to learn from, so
+  // nothing is injected and no placeholder section appears (R3).
+  candidates.push(...candidatesForPriorFeedback(input.priorFeedback ?? [], sensitivePathPatterns));
 
   const selected = selectContextCandidates({
     candidates,
@@ -496,6 +529,9 @@ function contextManifestItemForSection(section: ContextSection): ContextManifest
 
 function manifestTypeForSection(section: ContextSection): ContextManifestItemType {
   if (section.sourceType === 'code_probe') return 'code_probe';
+  // 08-09 P1-2: prior-attempt feedback is a judgement about a failure, not a
+  // fact this run produced, so it must not fall through to `task_artifact`.
+  if (section.id.startsWith(PRIOR_FEEDBACK_SECTION_PREFIX)) return 'prior_feedback';
   if (section.id.startsWith('knowledge_')) {
     return section.knowledgeClass === 'seed' ? 'seed' : 'domain';
   }
@@ -716,6 +752,52 @@ function sourceChunkIndexContentForKnowledgeArtifact(artifact: KnowledgeArtifact
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+/**
+ * Turn prior-attempt feedback into candidates (08-09 P1-2 R2).
+ *
+ * Both sources render into the same shape so the agent does not have to know
+ * whether a human or a reviewer said it — only "last time this was wrong, and
+ * here is the suggestion".
+ *
+ * `trustLevel: 'inference'` on purpose: this is somebody's judgement about a
+ * failure, and that judgement can itself be wrong. It must never outrank the
+ * code and artifacts, which are facts. Same reason it gets its own manifest
+ * type rather than `task_artifact` (ADR-2).
+ */
+function candidatesForPriorFeedback(
+  priorFeedback: readonly PriorFeedbackInput[],
+  sensitivePathPatterns: readonly string[],
+): ContextCandidate[] {
+  return priorFeedback
+    .map((feedback, index): ContextCandidate | null => {
+      const content = sanitizeSensitiveContextText(feedback.text, sensitivePathPatterns);
+      if (!normalizeOptionalText(content)) return null;
+      const label = feedback.source === 'human_rejection'
+        ? 'Human rejection'
+        : 'Reviewer remediation';
+      const scope = feedback.stage ? ` (${feedback.stage} stage)` : '';
+      return candidate({
+        id: `${PRIOR_FEEDBACK_SECTION_PREFIX}${index}_${slugify(feedback.source)}`,
+        title: `Prior attempt feedback: ${label}${scope}`,
+        content,
+        summary: inputArtifactSummary(content),
+        retrievalQuery: `Why the previous ${feedback.stage ?? 'attempt'} was rejected and what to change.`,
+        sourceType: 'run_artifact',
+        sourceRefs: filteredSourceRefs([feedback.sourceRef], sensitivePathPatterns),
+        reason: `A previous attempt was rejected; ${label.toLowerCase()} explains what to fix.`,
+        priority: 1,
+        knowledgeClass: 'recovered',
+        trustLevel: 'inference',
+        freshness: 'current',
+        confidence: feedback.source === 'human_rejection' ? 0.9 : 0.75,
+        mode: 'full',
+        createdAt: feedback.createdAt ?? null,
+        required: false,
+      });
+    })
+    .filter((item): item is ContextCandidate => item !== null);
 }
 
 function candidatesForInputArtifacts(

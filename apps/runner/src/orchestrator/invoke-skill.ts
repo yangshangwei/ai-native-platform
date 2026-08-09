@@ -120,6 +120,8 @@ export async function invokeSkill(
     inputArtifacts,
     budget: c.contextPolicy.budget,
     sensitivePathPatterns: c.contextPolicy.sensitivePathPatterns,
+    // 08-09 P1-2: empty on a first attempt, so nothing is injected then.
+    priorFeedback: c.priorFeedback,
   });
   const baseAttempt = await invokeSkillAttempt(c, skill, skillCtx, {
     contextPack: baseContextPack,

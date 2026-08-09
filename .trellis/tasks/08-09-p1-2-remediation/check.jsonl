@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "校验 union ripple 是否逐个核查（含内联字面量 union），shared 纯函数与 barrel 是否合规"}
+{"file": ".trellis/spec/shared/backend/context-injection-protocol.md", "reason": "校验 prior_feedback 的 trust 级别未破坏既有 ContextPack 契约"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "校验测试运行方式（bun runtime）与 typecheck 覆盖盲区"}
+{"file": ".trellis/spec/guides/index.md", "reason": "跨层一致性 + fixture key 是否从真实写入方抄"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "校验注入时机未新增状态、未改 retryStage 语义"}
