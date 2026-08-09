@@ -37,6 +37,14 @@
   `verificationMethod`, `businessStatus` (`passed | missing | at_risk |
   failed`), `risk` / `riskAccepted`, and evidence refs. `status` remains the
   verifier execution status (`pass | fail | blocked`) for compatibility.
+- **AC status authority (2026-08-09)**: Acceptance criteria status is determined
+  solely by the gate engine through `acceptance_gate` / `acceptance_traceability_gate`.
+  The gate evaluates both document-level evidence (requirement + design + diff + review)
+  and execution-level evidence (compile gate pass + test gate pass + ≥1 passing test).
+  Status `at_risk` indicates document tier complete but execution proof insufficient.
+  Web projection transparently passes through gate-determined status; it must not
+  derive AC status from store queries. When matrix is unavailable, show loading
+  state rather than computed fallback status.
 - The authoritative AC id set comes only from explicit `AC-###` declaration
   lines in requirement markdown or ids in structured
   `requirement.json.acceptanceCriteria`. Prose references and design-only ids
