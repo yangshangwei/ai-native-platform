@@ -121,6 +121,11 @@ test('fresh DB includes source chunk index catalog table and lookup indexes', ()
 
 test('source chunk index catalog migration repairs a partial table without indexes', () => {
   const database = new Database(tmpDbPath('ainp-mig-source-index-partial-'));
+  // Start from a real v1 baseline: the fixture records migrations 1..30 as
+  // applied, so the tables those versions created must actually exist.
+  // Pretending otherwise makes any later ALTER on a baseline table fail here
+  // for a reason that has nothing to do with what this test is about.
+  MIGRATIONS[0]!.up(database);
   database.prepare(
     `CREATE TABLE schema_migrations (
        version INTEGER PRIMARY KEY,
