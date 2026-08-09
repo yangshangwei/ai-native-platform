@@ -676,3 +676,36 @@ Unified AC status determination in gate engine with two-tier evidence (document 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 70: 完成端到端集成测试（完整 8 阶段验证）
+
+**Date**: 2026-08-09
+**Task**: 完成端到端集成测试（完整 8 阶段验证）
+**Branch**: `feat/design-md-workbench-ui-ralph-finish`
+
+### Summary
+
+实现 scripts/e2e-comprehensive.ts，覆盖完整 8 阶段 workflow（context_pack → knowledge），包含 preflight 检查、SSE 验证、30+ 详细断言、结构化 JSON 报告。trellis-check 发现并修复了 REQUIRED_STAGES 缺少 completion/knowledge 的问题。新增 package.json 的 e2e:full 命令和 scripts/tsconfig.json 配置。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0276966` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
