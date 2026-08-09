@@ -23,6 +23,7 @@ import {
   STAGE_HANDOFF_SCHEMA_VERSION,
   VERIFIER_AC_MATRIX_SCHEMA_VERSION,
   errorMessage,
+  isCommandOnlyText,
   isWorkflowStage,
   newId,
   nowIso,
@@ -823,7 +824,7 @@ function businessAcceptanceStatus(input: {
   if (
     !input.text
     || !input.verificationMethod
-    || commandOnlyVerifierText(input.verificationMethod)
+    || isCommandOnlyText(input.verificationMethod)
   ) return 'missing';
   if (input.uiVerifierRequired && !input.mediaSatisfied) return 'missing';
   return 'passed';
@@ -864,19 +865,6 @@ function verifierCriterionNotes(input: {
     return 'Missing before+after screenshots or video evidence under .ainp-verifier/.';
   }
   return 'Missing business AC text or verification method beyond a build/test command.';
-}
-
-function commandOnlyVerifierText(text: string): boolean {
-  const normalized = text
-    .replace(/`[^`]*(?:mvn|mvnw|bun|npm|pnpm|yarn|pytest|gradle|go test)[^`]*`/gi, ' ')
-    .replace(/\b(?:\.\/)?mvnw?\b[\w\s./:=+-]*/gi, ' ')
-    .replace(/\b(?:bun|npm|pnpm|yarn|pytest|gradle|go)\b[\w\s./:=+-]*/gi, ' ')
-    .replace(/\b(?:test|tests|compile|build|typecheck|lint|verify|verified|verifies|passed?|passing|green|exit|command|standard|is|by)\b/gi, ' ')
-    .replace(/验收|标准|命令|测试|编译|通过|全部|用例|运行|项目|标准|成功|失败|错误|无/g, ' ')
-    .replace(/\b(?:AC|REQ)-\d{3}\b/gi, ' ')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim();
-  return normalized.length < 8;
 }
 
 export async function executeAcceptance(

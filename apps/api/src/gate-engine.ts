@@ -16,6 +16,7 @@ import {
   type TestSurfaceCounts,
   type TestSurfaceFileEntry,
   type TestSurfaceReport,
+  isCommandOnlyText,
   isJavaTestFile,
   parseReviewerVerdict,
   REVIEW_MARKDOWN_OUTPUT_NAME,
@@ -31,7 +32,8 @@ import {
   type VerifierStatus,
 } from '@ainp/shared';
 import { store } from './store/store';
-import { readFileUriText } from './artifact-content';
+import { sha256File } from '@ainp/shared/node';
+import { readFileUriText, resolvedReadableFileUriForDigest } from './artifact-content';
 import { audit } from './audit';
 import { checkpointGateRun } from './step-checkpoints';
 
@@ -495,17 +497,28 @@ function verificationTextFromPotentialTableRow(line: string): string {
   return cells[3] ?? cells.at(-1) ?? line;
 }
 
-function isCommandOnlyText(text: string): boolean {
-  const normalized = text
-    .replace(/`[^`]*(?:mvn|mvnw|bun|npm|pnpm|yarn|pytest|gradle|go test)[^`]*`/gi, ' ')
-    .replace(/\b(?:\.\/)?mvnw?\b[\w\s./:=+-]*/gi, ' ')
-    .replace(/\b(?:bun|npm|pnpm|yarn|pytest|gradle|go)\b[\w\s./:=+-]*/gi, ' ')
-    .replace(/\b(?:test|tests|compile|build|typecheck|lint|verify|verified|verifies|passed?|passing|green|exit|command|standard|is|by)\b/gi, ' ')
-    .replace(/验收|标准|命令|测试|编译|通过|全部|用例|运行|项目|标准|成功|失败|错误|无/g, ' ')
-    .replace(/\b(?:AC|REQ)-\d{3}\b/gi, ' ')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim();
-  return normalized.length < 8;
+/**
+ * Three-state digest check for one evidence artifact (08-09 P1-1 R1).
+ *
+ * `unverifiable` deliberately absorbs every reason we cannot compare rather
+ * than failing: no recorded digest (`mem://` and legacy artifacts), a
+ * non-file URI, a file that has since been cleaned up, or a path outside the
+ * allowed artifact roots. Only a genuine expected-vs-actual disagreement is a
+ * `mismatch`, so this rule cannot punish runs for the platform's own coverage
+ * gaps — `evidence.artifact_digests_present` already warns about those.
+ *
+ * Never throws: `resolvedReadableFileUriForDigest` and `sha256File` both
+ * raise on unreadable paths, and a gate must not crash because an artifact
+ * was tidied away.
+ */
+function verifyArtifactDigestState(artifact: Artifact): 'match' | 'mismatch' | 'unverifiable' {
+  if (!artifact.uri.startsWith('file://') || !artifact.sha256) return 'unverifiable';
+  try {
+    const path = resolvedReadableFileUriForDigest(artifact.uri);
+    return sha256File(path) === artifact.sha256 ? 'match' : 'mismatch';
+  } catch {
+    return 'unverifiable';
+  }
 }
 
 function businessTextScore(text: string): number {
@@ -1171,6 +1184,13 @@ export function runEvidenceGate(params: {
   const fileArtifactsMissingDigest = artifactEvidence.filter((artifact) => (
     artifact.uri.startsWith('file://') && !artifact.sha256
   ));
+  // 08-09 P1-1 R1: the platform has always recomputed the digest on every
+  // artifact read (`verifyFileSha256` via `readArtifactContent`), but the
+  // mismatch signal never reached the api — its only consumer was a pill in
+  // the web UI. Re-check the evidence chain here so tampered or corrupted
+  // evidence stops the gate instead of merely looking odd on screen.
+  const artifactsWithDigestMismatch = uniqueById(artifactEvidence)
+    .filter((artifact) => verifyArtifactDigestState(artifact) === 'mismatch');
 
   const latestAcceptanceGate = gates
     .filter((gate) => gate.gateId === 'acceptance_gate')
@@ -1237,6 +1257,30 @@ export function runEvidenceGate(params: {
         artifactId: artifact.id,
         claim: `artifact digest=${artifact.sha256 ?? '(missing)'}`,
       })),
+    },
+    {
+      // Stricter than `artifact_digests_present` above on purpose (P1-1
+      // ADR-1): a missing digest is our own coverage gap and only warns, but
+      // content that disagrees with its recorded digest means the evidence
+      // changed after it was filed, which voids the whole chain.
+      ruleId: 'evidence.artifact_digests_match',
+      status: artifactsWithDigestMismatch.length === 0 ? 'pass' : 'fail',
+      message: artifactsWithDigestMismatch.length === 0
+        ? `${artifactEvidence.length} artifact evidence item(s) match their recorded digest or cannot be checked`
+        : `artifact content no longer matches its recorded digest: ${artifactsWithDigestMismatch
+          .map((artifact) => `${artifact.id} (${artifact.kind})`)
+          .join(', ')}`,
+      // Name the offending artifacts specifically — R1 requires the evidence
+      // to say WHICH artifact drifted, not just that something did.
+      evidenceRefs: artifactsWithDigestMismatch.length === 0
+        ? artifactEvidence.map((artifact) => ({
+          artifactId: artifact.id,
+          claim: `artifact digest verified=${verifyArtifactDigestState(artifact)}`,
+        }))
+        : artifactsWithDigestMismatch.map((artifact) => ({
+          artifactId: artifact.id,
+          claim: `digest mismatch: recorded sha256=${artifact.sha256} no longer matches ${artifact.uri}`,
+        })),
     },
     {
       ruleId: 'evidence.acceptance_has_execution_evidence',

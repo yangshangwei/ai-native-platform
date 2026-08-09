@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeAll, expect, test } from 'vitest';
@@ -1691,4 +1691,108 @@ test('test_gate keeps surefire_present fail on the default Maven path without re
   expect(ruleById['test.exit_zero'].status).toBe('pass');
   expect(ruleById['test.surefire_present'].status).toBe('fail');
   expect(ruleById['test.surefire_present'].message).toBe('no Surefire reports parsed');
+});
+
+// 08-09 P1-1 R1: the digest comparison already ran on every artifact read,
+// but nothing in the api consumed the result — its only destination was a
+// pill in the web UI. These four pin the three states so the signal cannot
+// go dark again.
+
+/** Files a passing gate whose sole evidence is `note`, then runs evidence gate. */
+function evidenceGateOverArtifact(workflowRunId: string, stepRunId: string, note: Artifact) {
+  const evidenceRefs = [{ artifactId: note.id, claim: 'sole evidence' }];
+  storeMod.store.artifacts.insert(note);
+  storeMod.store.gateRuns.insert({
+    id: `gate_digest_${workflowRunId}`,
+    gateId: 'compile_gate',
+    workflowRunId,
+    stepRunId,
+    status: 'pass',
+    ruleResults: [{ ruleId: 'compile.exit_zero', status: 'pass', message: 'claimed', evidenceRefs }],
+    evidenceRefs,
+    commandRunIds: [],
+    decidedAt: new Date().toISOString(),
+    agentNote: null,
+  });
+  return gates.runEvidenceGate({ workflowRunId, stepRunId });
+}
+
+function digestMatchRule(gate: ReturnType<typeof gates.runEvidenceGate>) {
+  return Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]))['evidence.artifact_digests_match'];
+}
+
+test('evidence gate fails and names the artifact when content no longer matches its digest', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-digest-mismatch-'));
+  const path = join(dir, 'review.md');
+  writeFileSync(path, '# Review\n\nOriginal content that was filed as evidence.\n');
+  // Digest is recorded from the original bytes by `artifact()`...
+  const note = {
+    ...artifact('other', path),
+    workflowRunId: 'run_digest_mismatch',
+    stepRunId: 'step_digest_mismatch',
+  };
+  // ...then the file is rewritten behind the platform's back.
+  writeFileSync(path, '# Review\n\nTampered after the digest was recorded.\n');
+
+  const gate = evidenceGateOverArtifact('run_digest_mismatch', 'step_digest_mismatch', note);
+  const rule = digestMatchRule(gate);
+
+  expect(rule.status).toBe('fail');
+  expect(gate.status).toBe('fail');
+  // R1 requires naming WHICH artifact drifted, not just that something did.
+  expect(rule.message).toContain(note.id);
+  expect(rule.evidenceRefs.map((ref) => ref.artifactId)).toEqual([note.id]);
+  expect(rule.evidenceRefs[0]?.claim).toMatch(/digest mismatch/i);
+});
+
+test('evidence gate passes the digest-match rule when content still matches', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-digest-match-'));
+  const path = join(dir, 'review.md');
+  writeFileSync(path, '# Review\n\nUntouched since it was filed.\n');
+  const note = {
+    ...artifact('other', path),
+    workflowRunId: 'run_digest_match',
+    stepRunId: 'step_digest_match',
+  };
+
+  expect(digestMatchRule(evidenceGateOverArtifact('run_digest_match', 'step_digest_match', note)).status)
+    .toBe('pass');
+});
+
+test('artifacts with no recorded digest do not trip the mismatch rule', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-digest-absent-'));
+  const path = join(dir, 'legacy.md');
+  writeFileSync(path, '# Legacy\n\nFiled before digests were recorded.\n');
+  // `verified === null` — a legacy or `mem://` artifact. R1 is explicit that
+  // this must not become a new failure: coverage gaps are the platform's own
+  // problem, and `artifact_digests_present` already warns about them.
+  const note = {
+    ...artifact('other', path),
+    sha256: null,
+    workflowRunId: 'run_digest_absent',
+    stepRunId: 'step_digest_absent',
+  };
+
+  const gate = evidenceGateOverArtifact('run_digest_absent', 'step_digest_absent', note);
+  const ruleById = Object.fromEntries(gate.ruleResults.map((r) => [r.ruleId, r]));
+
+  expect(ruleById['evidence.artifact_digests_match'].status).toBe('pass');
+  // The pre-existing "missing digest" rule still warns — unchanged by P1-1.
+  expect(ruleById['evidence.artifact_digests_present'].status).toBe('warn');
+});
+
+test('an unreadable evidence file is unverifiable, not a mismatch', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'ainp-digest-gone-'));
+  const path = join(dir, 'transient.md');
+  writeFileSync(path, '# Transient\n\nCleaned up after the run.\n');
+  const note = {
+    ...artifact('other', path),
+    workflowRunId: 'run_digest_gone',
+    stepRunId: 'step_digest_gone',
+  };
+  // A tidied-away artifact must neither crash the gate nor read as tampering.
+  rmSync(path);
+
+  expect(digestMatchRule(evidenceGateOverArtifact('run_digest_gone', 'step_digest_gone', note)).status)
+    .toBe('pass');
 });
