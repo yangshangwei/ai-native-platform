@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API routes, workflow engine, gate engine patterns for E2E assertions"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "Runner orchestration, agent backend integration, worktree management"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "Shared types and utilities used across API and Runner"}
+{"file": ".trellis/spec/guides/index.md", "reason": "Project-wide coding conventions and patterns"}
+{"file": ".trellis/tasks/08-09-end-to-end-integration-test/research/e2e-test-framework.md", "reason": "测试框架选型决策和实现模式"}
+{"file": ".trellis/tasks/08-09-end-to-end-integration-test/research/api-health-check.md", "reason": "API preflight 检查实现方案"}
+{"file": ".trellis/tasks/08-09-end-to-end-integration-test/research/sse-stream-verification.md", "reason": "SSE 端点验证策略"}

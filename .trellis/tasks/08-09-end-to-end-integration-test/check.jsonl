@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/api/backend/index.md", "reason": "验证 API 路由、workflow engine、gate engine 的正确性"}
+{"file": ".trellis/spec/runner/backend/index.md", "reason": "验证 Runner orchestration、agent backend 集成"}
+{"file": ".trellis/spec/shared/backend/index.md", "reason": "验证共享类型和工具的正确使用"}
+{"file": ".trellis/spec/guides/index.md", "reason": "验证代码风格和项目约定"}
+{"file": ".trellis/tasks/08-09-end-to-end-integration-test/prd.md", "reason": "验证所有 Acceptance Criteria 是否满足"}
+{"file": ".trellis/tasks/08-09-end-to-end-integration-test/research/e2e-test-framework.md", "reason": "验证实现符合选定的测试框架模式"}
+{"file": ".trellis/tasks/08-09-end-to-end-integration-test/research/api-health-check.md", "reason": "验证 preflight 检查实现正确"}
+{"file": ".trellis/tasks/08-09-end-to-end-integration-test/research/sse-stream-verification.md", "reason": "验证 SSE 端点检查符合策略"}

@@ -16,6 +16,7 @@
     "smoke": "bun run scripts/smoke.ts",
     "smoke:codex": "bun run scripts/smoke-codex.ts",
     "e2e": "bun run scripts/e2e.ts",
+    "e2e:full": "bun run scripts/e2e-comprehensive.ts",
     "typecheck": "bun x tsc -p packages/shared/tsconfig.json --noEmit && bun x tsc -p apps/api/tsconfig.json --noEmit && bun x tsc -p apps/runner/tsconfig.json --noEmit && bun x tsc -p apps/web/tsconfig.json --noEmit",
     "test": "bun x --bun vitest run",
     "smoke:claude-code": "bun run scripts/smoke-claude-code.ts",
