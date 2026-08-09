@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import { redactBuffer, writeRedactedFile } from '../src/node/redacted-write';
+import { maskSecrets } from '../src/utils/redaction';
 
 function tmpPath(name: string): string {
   return join(mkdtempSync(join(tmpdir(), 'ainp-redact-')), name);
@@ -90,4 +91,36 @@ test('KNOWN GAP: a secret glued to a -D flag is not redacted', async () => {
   // The dash-separated form IS covered, which is what makes the gap specific
   // to letter-adjacent prefixes rather than to flags in general.
   expect(onDisk).not.toContain('caught-by-contrast');
+});
+
+/**
+ * The gap's exact boundary, measured rather than reasoned about.
+ *
+ * Two independent causes, worth separating because they need different fixes:
+ *  - a letter-adjacent prefix (`-D`) eats the `\b` the patterns rely on
+ *  - the assignment patterns accept `:` and `=`, but not a space
+ *
+ * Whoever widens the patterns should make this table all-`masked` and delete
+ * the KNOWN GAP test above.
+ */
+test('KNOWN GAP: exactly which credential shapes leak', () => {
+  const leaks = [
+    '-Dapi_key=leaked', // letter-adjacent prefix
+    '-Dtoken=leaked', // same
+    '-token leaked', // space-separated assignment
+  ];
+  const covered = [
+    '--token=safe', // `-` is not a word char, so the boundary survives
+    '--api-key=safe',
+    '-D api_key=safe', // `-D` standing alone leaves `api_key` boundary-intact
+    'api_key=safe',
+    'TOKEN=safe',
+  ];
+
+  for (const input of leaks) {
+    expect(maskSecrets(input), `expected ${input} to still leak`).toContain('leaked');
+  }
+  for (const input of covered) {
+    expect(maskSecrets(input), `expected ${input} to be masked`).not.toContain('safe');
+  }
 });
