@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "校验 workflow-engine 唯一写者不变量未被破坏，测试运行方式正确"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "校验计数与指纹的持久化符合 schema / 迁移约定"}
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "校验类型扩展 ripple 完整、无新增悬空声明"}
+{"file": ".trellis/spec/guides/index.md", "reason": "校验是否做了变异验证——每条拒绝条件移除后测试须变红"}

@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/shared/backend/quality-guidelines.md", "reason": "union / 类型扩展的 ripple 清单（含值与类型两次 grep）+ 「声明必须有消费方」判据"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "触发器挂在 /workflow-completed，计数与指纹落在 api 侧"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "workflow-engine 是唯一状态写者的不变量 + bun runtime 测试约束 + typecheck 不覆盖 test"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "attempt 计数与指纹需要持久化，涉及 schema 与迁移约定"}
+{"file": ".trellis/spec/guides/index.md", "reason": "多层接线的变异验证要求——本任务须证明每条拒绝条件都在守"}
+{"file": ".trellis/tasks/archive/2026-08/07-30-umadev/research/comparison.md", "reason": "P1-2 段第 2-5 步原文，含「sensitive change / human rejection / knowledge gate 永不自动循环」清单"}
+{"file": ".trellis/tasks/archive/2026-08/08-09-p1-2-remediation/prd.md", "reason": "前置任务：remediation 已可消费，本任务的 R3 条件 5 依赖它；含 R4 移出时的完整分析"}
