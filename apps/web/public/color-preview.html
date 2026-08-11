@@ -25,8 +25,8 @@
     .swatch-info { flex: 1; }
     .swatch-label { font-size: 14px; font-weight: 500; margin-bottom: 2px; }
     .swatch-hex { font-family: monospace; font-size: 12px; color: var(--text-muted); }
-    .rationale { background: #f0f9ff; border-left: 3px solid #0891b2; padding: 20px; border-radius: 8px; margin-top: 32px; }
-    .rationale h3 { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #0369a1; }
+    .rationale { background: #f1f5f9; border: 1px solid #475569; padding: 20px; border-radius: 8px; margin-top: 32px; }
+    .rationale h3 { font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #475569; }
     .rationale ul { margin: 0; padding-left: 20px; line-height: 1.8; }
   </style>
 </head>
@@ -60,21 +60,21 @@
           </div>
         </div>
         <div class="swatch">
-          <div class="swatch-color" style="background: #9333ea;"></div>
+          <div class="swatch-color" style="background: #64748b;"></div>
           <div class="swatch-info">
-            <div class="swatch-label">Purple - Metrics</div>
-            <div class="swatch-hex">#9333ea</div>
+            <div class="swatch-label">Slate - Metrics</div>
+            <div class="swatch-hex">#64748b</div>
           </div>
         </div>
       </div>
 
       <div class="palette">
-        <h2>新配色 <span class="new-badge">工程信赖</span></h2>
+        <h2>新配色 <span class="new-badge">专业工具</span></h2>
         <div class="swatch">
-          <div class="swatch-color" style="background: #0891b2;"></div>
+          <div class="swatch-color" style="background: #475569;"></div>
           <div class="swatch-info">
-            <div class="swatch-label">Primary - Engineering Teal</div>
-            <div class="swatch-hex">#0891b2</div>
+            <div class="swatch-label">Primary - Slate</div>
+            <div class="swatch-hex">#475569</div>
           </div>
         </div>
         <div class="swatch">
@@ -85,16 +85,16 @@
           </div>
         </div>
         <div class="swatch">
-          <div class="swatch-color" style="background: #d97706;"></div>
+          <div class="swatch-color" style="background: #ea580c;"></div>
           <div class="swatch-info">
-            <div class="swatch-label">Warning - Amber</div>
-            <div class="swatch-hex">#d97706</div>
+            <div class="swatch-label">Warning - Orange</div>
+            <div class="swatch-hex">#ea580c</div>
           </div>
         </div>
         <div class="swatch">
           <div class="swatch-color" style="background: #0284c7;"></div>
           <div class="swatch-info">
-            <div class="swatch-label">Info - Slate Blue</div>
+            <div class="swatch-label">Info - Sky Blue</div>
             <div class="swatch-hex">#0284c7</div>
           </div>
         </div>
@@ -104,9 +104,9 @@
     <div class="rationale">
       <h3>为什么这样改？</h3>
       <ul>
-        <li><strong>Primary 从 Indigo 改为 Teal/Cyan</strong> — Indigo (#5e6ad2) 是 Linear、Tailwind、几乎所有 AI 生成工具的默认色，毫无辨识度。Teal (#0891b2) 传递"精确、可控、工程"感，更符合你的可验证交付定位。</li>
-        <li><strong>Success 从亮绿改为祖母绿</strong> — 亮绿 (#22c55e) 很活泼，但"验证通过"应该沉稳可靠。祖母绿 (#059669) 更专业，像真正的工程验收。</li>
-        <li><strong>删除 Purple，改为 Info (Slate Blue)</strong> — Purple 在你的系统里只用于"API/Token metrics"，但实际应该用更中性的信息色。Slate Blue 适合上下文提示。</li>
+        <li><strong>Primary 从 Cyan/Teal 改为 Slate</strong> — Cyan (#0891b2) 是最典型的 AI 生成默认色，Linear、Tailwind、大部分 AI 工具都用它。Slate (#475569) 传递"克制、专业、技术严谨"感，是工具类产品的正确选择，去除 AI 痕迹的关键一步。</li>
+        <li><strong>Success 保持祖母绿</strong> — 祖母绿 (#059669) 沉稳可靠，像真正的工程验收，比亮绿更专业。</li>
+        <li><strong>Warning 从 Amber 改为 Orange</strong> — Orange (#ea580c) 更鲜明，警告色需要足够突出，在深浅两种模式下都清晰可见。</li>
         <li><strong>Warning 保持 Amber</strong> — 这个本来就对，不需要改。</li>
         <li><strong>Danger 保持红色</strong> — 错误就应该是红色，但我们保持了合理的饱和度。</li>
       </ul>

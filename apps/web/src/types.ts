@@ -110,6 +110,7 @@ export interface ProjectSourceFormState {
   buildTestCommand: string;
   detectResult: SourceDetectResult | null;
   detecting: boolean;
+  submitting: boolean;
 }
 
 /** Exactly the shared {@link AgentBackendPreflight} — the API serializes it verbatim. */

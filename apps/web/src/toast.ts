@@ -91,10 +91,10 @@ export function showToast(options: ToastOptions): void {
   const updateProgress = () => {
     const elapsed = Date.now() - startTime;
     const remaining = Math.max(0, duration - elapsed);
-    // Guard against a zero/negative duration so the width never becomes NaN.
-    const progress = duration > 0 ? (remaining / duration) * 100 : 0;
+    // Guard against a zero/negative duration so the scale never becomes NaN.
+    const progress = duration > 0 ? remaining / duration : 0;
 
-    progressBar.style.width = `${progress}%`;
+    progressBar.style.transform = `scaleX(${progress})`;
 
     if (remaining > 0) {
       animationFrame = requestAnimationFrame(updateProgress);

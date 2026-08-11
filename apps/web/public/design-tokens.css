@@ -8,17 +8,17 @@
 :root {
   /* ===== Color Palette ===== */
 
-  /* Primary - Engineering teal/cyan (precise, controlled, trust) */
-  --primary-50: #ecfeff;
-  --primary-100: #cffafe;
-  --primary-200: #a5f3fc;
-  --primary-300: #67e8f9;
-  --primary-400: #22d3ee;
-  --primary-500: #06b6d4;
-  --primary-600: #0891b2;
-  --primary-700: #0e7490;
-  --primary-800: #155e75;
-  --primary-900: #164e63;
+  /* Primary - Slate (precise, operational, technical authority) */
+  --primary-50: #f8fafc;
+  --primary-100: #f1f5f9;
+  --primary-200: #e2e8f0;
+  --primary-300: #cbd5e1;
+  --primary-400: #94a3b8;
+  --primary-500: #64748b;
+  --primary-600: #475569;
+  --primary-700: #334155;
+  --primary-800: #1e293b;
+  --primary-900: #0f172a;
 
   /* Success - Emerald (verified, proven, reliable) */
   --success-50: #ecfdf5;
@@ -100,20 +100,20 @@
   --border-strong: #aeb9c9;
 
   /* Semantic shortcuts */
-  --color-primary: #0891b2;
-  --color-primary-hover: #0e7490;
+  --color-primary: #475569;
+  --color-primary-hover: #334155;
   --color-success: var(--success-600);
   --color-warning: var(--warning-600);
   --color-danger: var(--danger-600);
   --color-info: var(--info-600);
 
   /* AI stage colors stay separate from result good/warn/bad semantics. */
-  --stage-thinking: #d97706;
-  --stage-thinking-bg: #fef3c7;
-  --stage-context: #0369a1;
-  --stage-context-bg: #e0f2fe;
-  --stage-implementation: #7c3aed;
-  --stage-implementation-bg: #f5f3ff;
+  --stage-thinking: #f59e0b;
+  --stage-thinking-bg: #fffbeb;
+  --stage-context: #475569;
+  --stage-context-bg: #f1f5f9;
+  --stage-implementation: #64748b;
+  --stage-implementation-bg: #f8fafc;
   --stage-validation: #047857;
   --stage-validation-bg: #d1fae5;
   --stage-done: #059669;

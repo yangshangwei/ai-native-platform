@@ -30,8 +30,8 @@
   --border-light: #334155;
   --border-medium: #475569;
   --border-strong: #64748b;
-  --color-primary: #22d3ee;
-  --color-primary-hover: #06b6d4;
+  --color-primary: #475569;
+  --color-primary-hover: #334155;
   --on-accent: #0b1220;
   --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.32);
   --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);

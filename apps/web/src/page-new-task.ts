@@ -192,7 +192,13 @@ function renderNewTaskInlineNotice(
 
 function renderNewTaskNoProjectPage(): HTMLElement {
   const refresh = button('刷新', 'btn btn-secondary');
-  refresh.onclick = () => void loadData({ keepDetail: true });
+  refresh.onclick = async () => {
+    refresh.classList.add('loading');
+    refresh.disabled = true;
+    await loadData({ keepDetail: true });
+    refresh.classList.remove('loading');
+    refresh.disabled = false;
+  };
   return el('section', {
     class: 'page-grid two-col',
     children: [

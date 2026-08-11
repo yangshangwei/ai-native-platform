@@ -124,7 +124,7 @@ export function createWebServer(options: { port?: number; apiBase?: string; host
         return browserModuleResponse(file);
       }
 
-      return new Response(Bun.file(file), { headers: { 'content-type': type, 'cache-control': ext === '.html' ? 'no-cache' : 'max-age=60' } });
+      return new Response(Bun.file(file), { headers: { 'content-type': type, 'cache-control': (ext === '.html' || ext === '.css') ? 'no-cache' : 'max-age=60' } });
     },
   });
 }

@@ -51,12 +51,12 @@ function getColorPalette(): {
 
   if (isDark) {
     return {
-      primary: '#60a5fa',
+      primary: '#94a3b8',
       success: '#4ade80',
       warning: '#fb923c',
       danger: '#f87171',
-      info: '#22d3ee',
-      purple: '#c084fc',
+      info: '#60a5fa',
+      purple: '#94a3b8',
       text: '#f1f5f9',
       textMuted: '#94a3b8',
       gridLines: '#334155',
@@ -64,12 +64,12 @@ function getColorPalette(): {
     };
   } else {
     return {
-      primary: '#2563eb',
+      primary: '#475569',
       success: '#15803d',
       warning: '#f97316',
       danger: '#b91c1c',
-      info: '#1d4ed8',
-      purple: '#9333ea',
+      info: '#2563eb',
+      purple: '#64748b',
       text: '#1e293b',
       textMuted: '#64748b',
       gridLines: '#dbe3ef',

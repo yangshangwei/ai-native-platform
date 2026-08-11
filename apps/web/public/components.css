@@ -220,6 +220,24 @@
   cursor: not-allowed;
 }
 
+.btn.loading {
+  position: relative;
+  pointer-events: none;
+  opacity: 0.7;
+}
+
+.btn.loading::before {
+  content: '';
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
 /* Button variants */
 .btn-primary {
   background: var(--color-primary);
@@ -623,7 +641,7 @@
 
 .my-todos-item:hover {
   background: var(--bg-surface-hover, #f9fafb);
-  border-color: var(--color-primary, #0891b2);
+  border-color: var(--color-primary, #475569);
 }
 
 .my-todos-item-main {
@@ -744,22 +762,22 @@
 
 .filter-group button.small.secondary:hover {
   background: var(--bg-surface-hover, #f3f4f6);
-  border-color: var(--color-primary, #0891b2);
+  border-color: var(--color-primary, #475569);
   color: var(--text-primary);
 }
 
 /* 选中状态 */
 .filter-group button.small.primary {
-  background: var(--color-primary, #0891b2);
-  border: 1px solid var(--color-primary, #0891b2);
+  background: var(--color-primary, #475569);
+  border: 1px solid var(--color-primary, #475569);
   color: #ffffff;
   font-weight: 600;
-  box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 1px 3px rgba(71, 85, 105, 0.3);
 }
 
 .filter-group button.small.primary:hover {
-  background: var(--color-primary-hover, #0e7490);
-  border-color: var(--color-primary-hover, #0e7490);
+  background: var(--color-primary-hover, #334155);
+  border-color: var(--color-primary-hover, #334155);
 }
 
 /* ==================== Empty State ==================== */

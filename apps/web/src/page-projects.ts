@@ -94,6 +94,7 @@ const projectSourceForm: ProjectSourceFormState = {
   buildTestCommand: '',
   detectResult: null,
   detecting: false,
+  submitting: false,
 };
 
 export function renderProjectsPage(): HTMLElement {
@@ -128,8 +129,8 @@ export function renderProjectsPage(): HTMLElement {
   const detect = el('button', { class: 'btn btn-secondary', text: projectSourceForm.detecting ? '检测中…' : '检测连接', attrs: { type: 'button' } });
   detect.disabled = projectSourceForm.detecting;
   detect.onclick = () => void detectProjectSource();
-  const submit = el('button', { class: 'btn btn-primary', text: actionState.submitLabel, attrs: { type: 'submit' } });
-  submit.disabled = !actionState.canSubmit;
+  const submit = el('button', { class: `btn btn-primary${projectSourceForm.submitting ? ' loading' : ''}`, text: actionState.submitLabel, attrs: { type: 'submit' } });
+  submit.disabled = !actionState.canSubmit || projectSourceForm.submitting;
   const cancelEdit = isEditing ? el('button', { class: 'btn btn-ghost', text: '取消编辑', attrs: { type: 'button' } }) : null;
   if (cancelEdit) cancelEdit.onclick = () => { resetProjectSourceForm(); render(); };
   form.append(
@@ -1619,6 +1620,8 @@ async function submitProject(event: SubmitEvent): Promise<void> {
     render();
     return;
   }
+  projectSourceForm.submitting = true;
+  render();
   try {
     const editingProjectId = projectSourceForm.editingProjectId;
     const projectName = (projectSourceForm.name || projectSourceForm.detectResult.projectName).trim();
@@ -1642,6 +1645,9 @@ async function submitProject(event: SubmitEvent): Promise<void> {
   } catch (err) {
     ui.lastError = errorMessage(err);
     render();
+  } finally {
+    projectSourceForm.submitting = false;
+    render();
   }
 }
 
@@ -1659,4 +1665,5 @@ function resetProjectSourceForm(): void {
   projectSourceForm.buildTestCommand = '';
   projectSourceForm.detectResult = null;
   projectSourceForm.detecting = false;
+  projectSourceForm.submitting = false;
 }

@@ -366,19 +366,30 @@ function renderTaskExecutionChart(): HTMLElement {
   canvas.id = 'task-execution-chart';
   canvas.style.maxHeight = '300px';
 
-  requestAnimationFrame(async () => {
-    const { createLineChart } = await import('./charts');
-    createLineChart(canvas, trend.labels, trend.datasets, '任务执行趋势');
+  const container = el('div', {
+    class: 'chart-container',
+    children: [canvas],
   });
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        observer.disconnect();
+        void (async () => {
+          const { createLineChart } = await import('./charts');
+          createLineChart(canvas, trend.labels, trend.datasets, '任务执行趋势');
+        })();
+      }
+    },
+    { rootMargin: '100px' },
+  );
+  observer.observe(container);
 
   return el('section', {
     class: 'panel chart-panel',
     children: [
       panelHeader('任务执行趋势', '最近 7 天的任务完成情况'),
-      el('div', {
-        class: 'chart-container',
-        children: [canvas],
-      }),
+      container,
     ],
   });
 }

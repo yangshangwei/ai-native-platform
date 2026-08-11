@@ -14,6 +14,7 @@
     /* Backgrounds - Dark */
     --bg-base: #080a0f;           /* Main background */
     --bg-surface: #101318;        /* Card/panel background */
+    --bg-surface-elevated: #161b22; /* Panel raised above a surface */
     --bg-surface-hover: #181d25;  /* Hover state */
     --bg-elevated: #202734;       /* Elevated elements */
 
@@ -31,15 +32,15 @@
 
     /* ===== Semantic Colors (Dark Mode Adjusted) ===== */
 
-    /* Primary - Blue (slightly brighter for dark bg) */
-    --color-primary: #8b92e7;
-    --color-primary-hover: #a5abf3;
-    --primary-50: #171a33;
-    --primary-100: #20254d;
-    --primary-200: #303875;
-    --primary-300: #4f5bc2;
-    --primary-600: #8b92e7;
-    --primary-700: #a5abf3;
+    /* Primary - Slate (slightly brighter for dark bg) */
+    --color-primary: #94a3b8;
+    --color-primary-hover: #cbd5e1;
+    --primary-50: #0f172a;
+    --primary-100: #1e293b;
+    --primary-200: #334155;
+    --primary-300: #475569;
+    --primary-600: #94a3b8;
+    --primary-700: #cbd5e1;
 
     /* Success - Green */
     --color-success: #7dd3a5;
@@ -72,16 +73,16 @@
     /* Purple */
     --purple-100: #581c87;
     --purple-200: #6b21a8;
-    --purple-600: #c084fc;
-    --purple-700: #d8b4fe;
+    --purple-600: #94a3b8;
+    --purple-700: #cbd5e1;
 
     /* AI stage colors stay separate from result good/warn/bad semantics. */
-    --stage-thinking: #f2c66d;
+    --stage-thinking: #fbbf24;
     --stage-thinking-bg: #332614;
-    --stage-context: #93b7ff;
-    --stage-context-bg: #13233e;
-    --stage-implementation: #b7a7ff;
-    --stage-implementation-bg: #241f3b;
+    --stage-context: #94a3b8;
+    --stage-context-bg: #1e293b;
+    --stage-implementation: #cbd5e1;
+    --stage-implementation-bg: #334155;
     --stage-validation: #7dd3a5;
     --stage-validation-bg: #0f2a21;
     --stage-done: #7dd3a5;
@@ -140,6 +141,7 @@
   /* Backgrounds */
   --bg-base: #080a0f;
   --bg-surface: #101318;
+  --bg-surface-elevated: #161b22;
   --bg-surface-hover: #181d25;
   --bg-elevated: #202734;
 
@@ -156,12 +158,12 @@
   --border-strong: #515b6a;
 
   /* Primary */
-  --color-primary: #8b92e7;
-  --color-primary-hover: #a5abf3;
-  --primary-50: #171a33;
-  --primary-100: #20254d;
-  --primary-200: #303875;
-  --primary-300: #4f5bc2;
+  --color-primary: #94a3b8;
+  --color-primary-hover: #cbd5e1;
+  --primary-50: #0f172a;
+  --primary-100: #1e293b;
+  --primary-200: #334155;
+  --primary-300: #475569;
   --primary-600: #8b92e7;
   --primary-700: #a5abf3;
 
@@ -194,17 +196,17 @@
   --info-700: #bad0ff;
 
   /* Purple */
-  --purple-100: #581c87;
-  --purple-200: #6b21a8;
-  --purple-600: #c084fc;
-  --purple-700: #d8b4fe;
+  --purple-100: #334155;
+  --purple-200: #475569;
+  --purple-600: #94a3b8;
+  --purple-700: #cbd5e1;
 
-  --stage-thinking: #f2c66d;
+  --stage-thinking: #fbbf24;
   --stage-thinking-bg: #332614;
-  --stage-context: #93b7ff;
-  --stage-context-bg: #13233e;
-  --stage-implementation: #b7a7ff;
-  --stage-implementation-bg: #241f3b;
+  --stage-context: #94a3b8;
+  --stage-context-bg: #1e293b;
+  --stage-implementation: #cbd5e1;
+  --stage-implementation-bg: #334155;
   --stage-validation: #7dd3a5;
   --stage-validation-bg: #0f2a21;
   --stage-done: #7dd3a5;

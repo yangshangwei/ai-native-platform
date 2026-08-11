@@ -24,9 +24,9 @@
         --text-muted: #6b7280;
         --muted: #6b7280;
         --faint: #9aa3b2;
-        --primary: #5e6ad2;
-        --primary-2: #8b92e7;
-        --orange: #d97706;
+        --primary: #475569;
+        --primary-2: #64748b;
+        --orange: #ea580c;
         --good: #157f4f;
         --good-bg: #e5f6ed;
         --bad: #b4232a;
@@ -35,12 +35,12 @@
         --warn-bg: #fff4db;
         --info: #2563a8;
         --info-bg: #e8f1ff;
-        --stage-thinking: #b45309;
-        --stage-thinking-bg: #fff4db;
-        --stage-context: #2563a8;
-        --stage-context-bg: #e8f1ff;
-        --stage-implementation: #6d5bd0;
-        --stage-implementation-bg: #f0edff;
+        --stage-thinking: #f59e0b;
+        --stage-thinking-bg: #fffbeb;
+        --stage-context: #475569;
+        --stage-context-bg: #f1f5f9;
+        --stage-implementation: #64748b;
+        --stage-implementation-bg: #f8fafc;
         --stage-validation: #15803d;
         --stage-validation-bg: #e5f6ed;
         --stage-done: #157f4f;
@@ -81,8 +81,8 @@
         --text-muted: #8c95a3;
         --muted: #8c95a3;
         --faint: #626b79;
-        --primary: #8b92e7;
-        --primary-2: #a5abf3;
+        --primary: #94a3b8;
+        --primary-2: #cbd5e1;
         --orange: #f59e0b;
         --good: #7dd3a5;
         --good-bg: #0f2a21;
@@ -92,12 +92,12 @@
         --warn-bg: #332614;
         --info: #93b7ff;
         --info-bg: #13233e;
-        --stage-thinking: #f2c66d;
+        --stage-thinking: #fbbf24;
         --stage-thinking-bg: #332614;
-        --stage-context: #93b7ff;
-        --stage-context-bg: #13233e;
-        --stage-implementation: #b7a7ff;
-        --stage-implementation-bg: #241f3b;
+        --stage-context: #94a3b8;
+        --stage-context-bg: #1e293b;
+        --stage-implementation: #cbd5e1;
+        --stage-implementation-bg: #334155;
         --stage-validation: #7dd3a5;
         --stage-validation-bg: #0f2a21;
         --stage-done: #7dd3a5;
@@ -528,15 +528,14 @@
         align-items: center;
         min-width: 0;
         border: 1px solid var(--line);
-        border-left: 3px solid var(--line-strong);
         border-radius: var(--radius);
         background: var(--surface);
         padding: 10px 12px;
       }
-      .action-queue-item.warn { border-left-color: var(--warn); }
-      .action-queue-item.bad { border-left-color: var(--bad); }
-      .action-queue-item.info { border-left-color: var(--info); }
-      .action-queue-item.good { border-left-color: var(--good); }
+      .action-queue-item.warn { border-color: var(--warn); background: var(--warn-bg); }
+      .action-queue-item.bad { border-color: var(--bad); background: var(--bad-bg); }
+      .action-queue-item.info { border-color: var(--info); background: var(--info-bg); }
+      .action-queue-item.good { border-color: var(--good); background: var(--good-bg); }
       .action-queue-copy { min-width: 0; display: grid; gap: 3px; }
       .action-queue-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .action-queue-copy small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1087,10 +1086,9 @@
       }
       .new-task-details { min-height: 150px; resize: vertical; }
       .new-task-recommendation {
-        border: 1px solid var(--line);
-        border-left: 3px solid var(--primary);
+        border: 1px solid var(--primary);
         border-radius: var(--radius);
-        background: var(--surface);
+        background: var(--bg-surface-elevated);
         padding: 12px 14px;
       }
       .new-task-advanced { border-top: 1px solid var(--line); padding-top: 10px; }
@@ -1200,7 +1198,7 @@
       .settings-action-list { display: grid; gap: 8px; }
       .settings-action-list .button { width: 100%; justify-content: center; }
       .settings-diagnostics { padding: 14px 18px; }
-      .settings-diagnostics.attention { border-left: 3px solid var(--warn); background: var(--warn-bg); }
+      .settings-diagnostics.attention { border: 1px solid var(--warn); background: var(--warn-bg); }
       .settings-diagnostics summary {
         cursor: pointer; min-height: 34px; font-weight: 800;
         display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -1240,24 +1238,24 @@
       .config-list { display: grid; gap: 10px; margin-top: 4px; }
       .config-row {
         border: 1px solid var(--line);
-        border-left: 4px solid var(--line);
         border-radius: 14px;
         padding: 14px 16px;
         background: var(--surface);
         display: grid;
         gap: 8px;
-        transition: border-color .16s ease, background .16s ease, box-shadow .16s ease, border-left-color .16s ease;
+        transition: border-color .16s ease, background .16s ease, box-shadow .16s ease;
       }
       .config-row:hover { border-color: var(--line-strong); }
       .config-row.overridden {
-        border-left-color: var(--info);
+        border-color: var(--info);
+        background: var(--info-bg);
       }
       .config-row.dirty {
-        border-left-color: var(--warn);
+        border-color: var(--warn);
         background: var(--warn-bg);
       }
       .config-row.recently-saved {
-        border-left-color: var(--good);
+        border-color: var(--good);
         background: var(--good-bg);
       }
       .config-row-header {
@@ -1540,9 +1538,11 @@
         position: absolute;
         bottom: 0;
         left: 0;
+        width: 100%;
         height: 3px;
         background: var(--good);
-        transition: width 0.1s linear;
+        transform-origin: left;
+        transition: transform 0.1s linear;
         border-radius: 0 0 0 16px;
       }
       .toast-error .toast-progress {
